@@ -18,3 +18,13 @@
 - Kaldıraç riski artırmaz (risk işlem başı %2 ile sabit), yalnızca bağlanan teminatı ve likidasyon mesafesini belirler. Kural: zarar durdurma her zaman likidasyon fiyatından önce gelmeli; kod bunu her işlemde kontrol etmeli.
 - LLM maliyeti tahmini ~2-4 USD/ay (Haiku 5.5 döngü + Sonnet 5.5 günlük ders, Batch).
 - Test: freqtrade dry-run (Binance herkese açık veri, anahtar gerekmez), öğrenen bot + dondurulmuş ikiz + al-tut + rastgele giriş kolları yan yana (bkz. research_notes/diger-hesap/gorev5 ve gorev8).
+
+## İlk sürüm (MVP) için onaylanan sapmalar (15 Kasım 2026)
+
+Danışman denetimi (parca-plani-denetim.md) sonrası kullanıcı onayıyla:
+
+1. **Haberler ilk sürümde yok** (Karar 3 ertelendi): istem enjeksiyonu riski; sonraki sürüme.
+2. **İlk 2 hafta otomatik değişiklik yok** (Karar 6 kademeli): bot yalnızca ders önerilerini deftere kaydeder; otomatik uygulama 3. haftadan sonra, test-terfi kapısıyla.
+3. **FreqAI ilk sürümde yok** (Karar 4): fırsatları kurallar bulur, Claude veto eder; ML sonraki sürüme.
+
+Ek notlar: Claude kredisi/harcama limiti dolarsa bot yeni işlem açmaz (açık pozisyonlar SL/TP ile yönetilmeye devam eder). Sahte para ile gerçek para arasında isteğe bağlı ara adım: Bybit demo (freqtrade destekliyor).
