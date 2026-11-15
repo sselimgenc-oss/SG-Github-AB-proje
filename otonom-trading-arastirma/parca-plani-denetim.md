@@ -54,3 +54,12 @@ Botun gürültüden "ders" çıkarması. 20-30 işlem ve 4-8 hafta, öğrenmeyi 
 1. **Vadeli sahte para uçtan uca:** botun çalışacağı makineden anahtarsız veri geliyor mu; kaldıraçlı alış ve açığa satış açılıyor mu; zarar durdurma likidasyondan önce tetikleniyor ve kayıp bakiyenin yaklaşık %2'si mi.
 2. **İki özdeş kopya yan yana:** ayrı veritabanı ve portla aynı işlemleri açıyorlar mı (hedef en az %95 eşleşme). Tutmazsa öğrenme ölçülemez.
 3. **Veto ve ayar yolu:** veto dosyası yokken, bayatken veya Claude limiti dolmuşken giriş reddediliyor mu; ayar dosyası değişince bot açık pozisyonları bozmadan yenisini yüklüyor mu.
+
+## Ek aday: tradermonty/claude-trading-skills (15 Kasım 2026, hızlı bakış)
+
+MIT, aktif (son commit 2026-11-14), Claude skill koleksiyonu. Otonom bot DEĞİL (README: "not designed for fully automated trading"). Yalnızca README + dosya yapısı + SKILL.md açıklamaları okundu; kod ve testler incelenmedi/çalıştırılmadı. Parça adayı olarak işaretlenenler:
+- `skills/crypto-regime-analyzer`: anahtarsız açık veriyle (CoinGecko + Binance funding) 0-100 kripto rejim skoru, 6 bileşen. → MVP'deki "piyasa durumu etiketi" için aday (uyarla).
+- `skills/signal-postmortem`: sinyal sonuçlarını sınıflandırıp (yanlış pozitif, kaçan fırsat, rejim uyumsuzluğu) ağırlıklara geri besleme; testli. → "ders çıkarma" için fikir/uyarlama adayı.
+- `skills/drawdown-circuit-breaker`: kayıp serisi bekleme süresi, haftalık/aylık düşüş limitleri; testli. → risk çerçevesine ek adayı.
+- Faz 2 (ABD hisseleri) için çok sayıda tarayıcı/analiz skill'i var.
+- `futures-position-sizer` CME vadeli kontratları içindir, kripto perp için uygun değil.
