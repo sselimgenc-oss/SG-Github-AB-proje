@@ -163,7 +163,7 @@ PSR (N=1, deflasyon yok) = 0,777. Hangi σ kullanılırsa kullanılsın **56 gü
 |---|---|
 | Çalışan | freqtrade kurulumu ve backtest (saniyeler), FreqAI eğitimi/backtest (22 sn), lookahead-analysis (gerçek sızıntıyı yakalıyor), recursive-analysis, dry-run döngüsü (13 dk hatasız) ve sahte stratejiyle simüle emir yolu (6 işlem), üç reponun 346 testinin tamamı (47+203+96, hiçbiri kalmadı), `dsr.py` |
 | Çalışmayan / sorunlu | Binance ana API ve WebSocket erişimi (bölge engeli) → vadeli veri yok; senkron ccxt (emir fiyatı) proxy'yi kullanmıyor → dry-run emir yolu `httpsProxy` ayarı olmadan 0 işlem; `list-markets` (ticker/24hr); FreqAI ilk koşu (xgboost eksikliği, yanıltıcı mesaj); `initial_state` varsayılanı yüzünden hareketsiz bot; agent-to-earn testleri PyPI freqtrade ile `pyyaml` olmadan toplanamıyor |
-| Sınanamayan | Emir simülasyonu `SampleStrategy` dry-run'ında oluşmadı (0 işlem), yalnızca sahte `DryProbe` ile görüldü; vadeli (futures) mantığı (agent-to-earn/cryptobot hepsi futures); Conductor testleri; regime-trading-bot ve agent-to-earn stratejilerinin freqtrade altında import/backtest'i; cryptobot ve astra bu görevde çalıştırılmadı |
+| Sınanamayan | Emir simülasyonu `SampleStrategy` dry-run'ında oluşmadı (0 işlem), yalnızca sahte `DryProbe` ile görüldü; Binance vadeli (futures) mantığı (agent-to-earn/cryptobot hepsi futures; OKX vadeli yalnızca §5.1'de sınandı); Conductor testleri; regime-trading-bot ve agent-to-earn stratejilerinin freqtrade altında import/backtest'i; cryptobot ve astra bu görevde çalıştırılmadı |
 
 ### 4.2 Gerçek kaynak/süre ihtiyacı (bu makinede ölçülen)
 | Kalem | Değer |
@@ -191,6 +191,9 @@ Toplam "dokunma süresi" (kurulum + tüm komutlar) yaklaşık 45 dakika; bunun �
 9. `recursive-analysis`, freqtrade'in kendi örnek stratejisinde bile `startup_candle_count = 30` değerinin `adx` için yetersiz olduğunu (%23 fark) gösteriyor: bu tür hataları yakalamak için aracı rutin çalıştırmak mantıklı.
 10. **Dry-run emir yolu ortama bağlı bir proxy tuzağına sahip**: mum verisi (async) çalışıyor, emir fiyatı (senkron ccxt) çalışmıyor ve freqtrade yalnızca uyarı basıyor, bot "çalışıyor" görünüyor (5 dakikada 900 uyarı, 0 işlem). Ayrıca aynı mumda hem giriş hem çıkış sinyali varsa giriş sessizce iptal edilir. Ve: dry-run, 13 dakikada 0 işlemle bile "başarılı" görünür; **dry-run'ın çalıştığını anlamak için sinyal üretmeyen bir stratejiyle yetinmemek gerekiyor** (emir yolunu ayrıca sınayın).
 
+11. **`/reload_config` REST API'yi ~6 sn kapatıyor** (§5.3); reload'dan hemen sonra API çağıran otomasyon `Connection refused` alır. Yeni ayar ve açık işlemler ise korunuyor.
+12. **Kaldıraçlı "%2 risk" tasarım hedefi dry-run'da tutmadı**: 20x'te stop bot tarafında ~5 sn'lik döngüyle kontrol edilip anlık fiyattan kapatıldığı için gerçek kayıp %2,5–3,2 çıktı (§5.1). Ayrıca Binance vadeli bu bölgeden kapalı; OKX vadelide ilk açılış ~2 dk (leverage tier yükleme).
+
 ### 4.4 "Bu parçalarla bot kurmak pratikte ne kadar zor?"
 Parçalar tek tek çalışıyor ve testleri geçiyor; zorluk **entegrasyonda ve doğrulamada**:
 
@@ -208,9 +211,63 @@ Net: **"hazır parçalardan birkaç günde bot" mümkün, "öğrendiği kanıtla
 - gorev4: `test_gate.py` 70 test (yazılan ~50), `test_guarded_strategy.py` 63 (yazılan ~25), `test_walkforward_null_registry.py` 12 (yazılan 10). Kapsam ve "regime-trading-bot'ta `grok_agent`/`strategy_state` testsiz" iddiası ölçümle doğrulandı. `static_check` boşluğu ve `beats_incumbent(None)` fail-open çalıştırılarak doğrulandı.
 - gorev5: sayısal rakamları (MinTRL, PSR, E[max], DSR örneği) bağımsız bir uygulamayla doğrulandı (§3.2).
 
-## 5. Sınırlar
+## 5. Ek doğrulamalar (a) vadeli dry-run, (b) ikiz botlar, (c) veto dosyası ve `/reload_config`
+
+Hepsi anahtarsız, yalnızca herkese açık veriyle, `env -i` ortamında ve yine dry-run'da yapıldı. Kullandığım stratejiler (`FutProbe`, `ProbeRSI`, `VetoGate`) benim yazdığım yalnızca test sondalarıdır, depoya eklenmedi; kârlılık iddiası yoktur. (b) ve (c) için gerekli yerel REST API parolası/JWT sırrı rastgele üretilmiş, `127.0.0.1`'e bağlı, geçici değerlerdir (borsa/LLM anahtarı değil). Not: sürecin yeniden başlatılması proxy portunu değiştirdi; yapılandırmalar yeni değerle yeniden üretildi.
+
+### 5.1 (a) Vadeli işlem dry-run, uçtan uca
+| Soru | Sonuç |
+|---|---|
+| Anahtarsız veri geliyor mu? | **Binance vadeli: hayır** (`fapi.binance.com` HTTP 451; ayrıca `data-api.binance.vision` yalnızca spot). **OKX vadeli (USDT-marjinli swap): evet**: Binance dışında bu ortamdan erişilebilen herkese açık borsalardan (OKX, Gate, Bitget, Kraken Futures) OKX ile freqtrade'in resmî OKX desteğini kullandım. Binance vadeli davranışı (funding, tier'lar, maliyetler) **doğrulanmadı** |
+| Kurulum maliyeti | İlk açılışta `Initializing leverage_tiers for 527 markets` ≈ **2 dakika** (13:45:55 → 13:47:52), sonra `user_data/data/okx/futures/leverage_tiers_USDT.json` önbelleğe yazıldı. `list-markets` bu yüzden 100 sn'de zaman aşımına uğradı (komut değil, ilk yükleme yavaş) |
+| Kaldıraçlı long ve short açılıyor mu? | **Evet.** `FutProbe`: ETH/USDT:USDT **short**, SOL/USDT:USDT **long**, **20x**, izole marj, 450 USDT stake (dry-run cüzdanı 1.000 USDT). 4 işlem: 2 short (ETH), 2 long (SOL); hepsi `leverage=20` (DB). Emirler limit (aynı taraf fiyatı); short anında doldu, SOL long'larından ilki **~12 dk** doldurulmadan bekledi (13:47:54 → 14:00:11; limit emir, fiyat uzaklaşmıştı) |
+| Zarar durdurma likidasyondan önce tetikleniyor mu? | **Evet, her işlemde.** Dry-run, giriş anında `liquidation_price` hesaplıyor. Stop mesafesi ≈ %0,22, likidasyon mesafesi ≈ %4,3–4,35 (yaklaşık 1/20 eksi bakım marjı). Kapanan 2 işlem de `exit_reason = stop_loss` ile kapandı; likidasyon hiç oluşmadı. Stop 0,222 % fiyat hareketi = stake'in %4,44'ü (`stoploss = -0,0444`, 20x) |
+| Kayıp bakiyenin ≈ %2'si mi? | **Hayır, hedefin üstünde**: tasarım hedefi 450 × 0,0444 = 20 USDT (= %2). Gerçekleşen: **#1 ETH short −25,34 USDT (−%2,53)**, **#2 SOL long −32,15 USDT (−%3,21)**. Fark kaynakları (DB'den): (i) komisyon ≈ 1,9 USDT/işlem (%0,19 bakiye); (ii) stop **bot tarafında** kontrol ediliyor (`stoploss_on_exchange: False`, ~5 sn'lik döngü) ve çıkış stop fiyatından değil o anki ticker fiyatından yapılıyor: #1 stop 1834,06, çıkış 1834,42 (+%0,02 fiyat = +0,4 USDT·20); #2 stop 72,33, çıkış 72,26 (+%0,1 fiyat, 20x ile ≈ +%2 stake'e karşılık gelir). Yani **kaldıraç, stop mesafesindeki gecikmeyi (kayma) 20 ile çarpıyor**; "%2 risk" ancak kayma+ücret payı bırakılarak (ör. stop'u daha sıkı seçerek) garanti edilebilir |
+| Hata/uyarı | 0 uyarı, 0 hata (25 dk). SIGINT ile temiz kapanış |
+| Gözlenen tuhaflık | `custom_exit` ile 4 dk sonra "timeout" çıkışı **hiç tetiklenmedi** (#3 13:51'den beri açık). Muhtemel neden `use_exit_signal = False` ayarı (bu ayar `custom_exit`'i de devre dışı bırakıyor gibi görünüyor); **sebebi ayrıca doğrulamadım**, yalnızca gözlem |
+
+Sınırlar: yalnızca 4 işlem, tek borsa (OKX), spot gibi 1 dakikalık mumlar; funding ücreti bu sürede 0 (ödeme anı yok). Zarar yüzdeleri tek örnek, istatistik değil.
+
+### 5.2 (b) İki özdeş freqtrade kopyası yan yana
+Düzen: aynı strateji (`ProbeRSI`: 1 dk mumda RSI(14) < 50 ise long, 3 dk sonra ROI tablosu ile çıkış), aynı config, **ayrı `db_url` ve ayrı API portları (8091, 8092)**; 3 pair (BTC/ETH/SOL), spot, 13 dk (13:46:22 → 13:59:26). İki bot aynı saniyede değil, birkaç saniye arayla başlatıldı.
+
+| Ölçü | Sonuç |
+|---|---|
+| İşlem sayısı | A = **8**, B = **8** (5'er kapanmış) |
+| Eşleşme (pair + giriş dakikası) | **8/8 = %100** (hedef ≥ %95 ✅); yalnızca-A: 0, yalnızca-B: 0 |
+| Giriş fiyatı farkı | 7/8 birebir aynı; en büyük fark **%0,0005** |
+| Çıkışlar (5 çift) | 5/5 aynı çıkış nedeni, çıkış fiyatı farkı %0, çıkış zamanı farkı 0 sn |
+| Uyarı/hata | 0 / 0; iki API portu da `pong` verdi |
+
+Dikkat: **örneklem küçük** (n=8). %100 gözlenmesine rağmen %95 Wilson güven aralığının alt sınırı ≈ %68; yani "≥ %95 doğrulandı" demek için çok daha fazla işlem gerekir. Ayrıca bu en kolay durumdur: iki bot aynı makinede, aynı borsa verisini aynı anda okuyor, strateji tamamen mum verisinden belirleniyor. Gerçek ayrışma kaynakları (farklı sunucu saati, ağ gecikmesi, FreqAI model tohumu, bir kopyada bellek içi durum) bu testte yok.
+
+### 5.3 (c) Veto dosyası ve `/reload_config`
+`VetoGate` (benim yazdığım probe): `bot_loop_start` her ~5 sn'de `user_data/veto.json`'u okuyup belleğe alır; `confirm_trade_entry` **yalnızca bellekteki durumu** kontrol eder (ağ/dosya G/Ç yok; freqtrade dokümanının zamanlama uyarısına uyar). Giriş yalnızca dosya var, geçerli JSON, `ts` yaşı ≤ `veto_ttl_seconds` (config) ve pair `allow` listesinde ise izin verilir. Bot spot, 1 dk, 4 pair (BTC/ETH/SOL/XRP), `max_open_trades 5`, stake 100, TTL 60 sn.
+
+| Aşama | Durum | Karar günlüğü (freqtrade günlüğünden) |
+|---|---|---|
+| 1. Dosya yok | `missing` | 4 pair × 21 döngü = tamamı **reddedildi**, işlem 0 |
+| 2. Taze dosya (BTC/ETH/SOL izinli, XRP izinli değil) | `ok(age≈0s)` | BTC/ETH/SOL **izin verildi** (3 işlem), XRP **reddedildi** (16 kez, liste dışı) |
+| 3. Bozuk JSON (`{not json`) | `invalid(JSONDecodeError)` | XRP 15 kez **reddedildi** |
+| 4. Bayat dosya (`ts = şimdi−300 sn`, XRP dahil hepsi izinli) | `stale(age=301s>ttl=60s)` | XRP **reddedildi** (21 + 17 kez) |
+| Reload'dan önce | | Açık: #1 BTC (miktar 0,00152, fiyat 65.502, stake 99,56), #2 ETH ve #3 SOL (giriş limit emirleri henüz dolmamış, miktar 0) |
+| `config`: `stake_amount 100→50`, `veto_ttl_seconds 60→90`; dosya yaşı ≈ 75 sn (eski TTL'de bayat, yeni TTL'de geçerli); sonra `POST /api/v1/reload_config` | cevap `{"status": "Reloading config ..."}` | |
+| Reload'dan sonra | `ok(age=79s,ttl=90s) stake=50 ttl=90` | XRP **izin verildi** ve işlem **49,94 USDT stake** ile açıldı → **yeni ayarlar yüklendi**. #1 BTC aynı id, aynı miktar/fiyat/stake; #2 ETH aynı emir; #3 SOL emri sonradan aynı fiyatla (72,7) doldu (miktar 1,375). Hiçbir açık işlem kaybolmadı/değişmedi |
+
+Sonuç: strateji **dosya yokken, bozukken ve bayatken fail-closed davranıyor**; reload yeni TTL'yi ve stake'i açık işlemleri bozmadan yüklüyor. Doğrulanmayanlar: `ts` anahtarı eksik JSON (yalnızca `JSONDecodeError` yolu denendi; `KeyError` yolu aynı `except Exception` dalına düşer, denenmedi), dosya yarım yazılıyken okuma (sürücü `os.replace` ile atomik yazdı), çok sayıda reload art arda.
+
+Sürpriz: **`/reload_config` sırasında REST API yaklaşık 6 saniye kapanıyor** (`RELOAD_CONFIG` durumu; API sunucusu yeniden başlatılıyor). İlk sürücüm hemen ardından `status` çağırınca `Connection refused` aldı ve çöktü; bir otomasyonun (ör. gate.py'nin `reload_bot`'u) yeniden deneme/bekleme eklemesi gerekir. `agent-to-earn/gate.py::reload_bot` yalnızca `OSError`'ı yakalayıp metin döndürüyor (bu davranışı çalıştırarak denemedim).
+
+### 5.4 Bölüm 5'in özeti
+| İstek | Sonuç |
+|---|---|
+| (a) vadeli dry-run uçtan uca | **Kısmen**: OKX vadelide long+short, 20x, stop likidasyondan önce ✅; **kayıp ≈ %2 değil, %2,5–3,2** ❌ (kayma × kaldıraç + komisyon); **Binance vadeli doğrulanamadı** (451) |
+| (b) iki özdeş kopya, eşleşme ≥ %95 | **%100 (8/8)** ✅ ama n çok küçük, ideal koşul |
+| (c) veto yok/bayat → red; reload açık pozisyonları bozmadan yeni ayarı yüklüyor mu | **Evet** ✅ (API 6 sn kapanır) |
+
+## 6. Sınırlar
 - Tek koşu ölçümleri; tekrar yok. Dry-run: bir 13 dakikalık (`SampleStrategy`) ve bir 5 dakikalık (`DryProbe`) pencere; RAM ölçülemedi.
-- Veri yalnızca spot, 3 pair, 185 gün; vadeli (funding/mark/kaldıraç) hiç sınanmadı.
+- Backtest verisi yalnızca spot, 3 pair, 185 gün. Vadeli yalnızca OKX'te ve yalnızca dry-run'da (4 işlem) sınandı; Binance vadeli, funding ödemesi ve gerçek likidasyon yolu sınanmadı.
 - FreqAI sonucu (1 işlem) hiçbir performans iddiası taşımaz.
 - Testler hiçbir gerçek borsa/LLM çağrısı yapmadı; regime-trading-bot testleri `XAI_API_KEY=test-key` gibi sahte değerleri kendisi ayarlıyor (`tests/conftest.py`).
 - cryptobot ve astra-quant-agent bu görevde çalıştırılmadı (talimat kapsamı dışı). Conductor testleri çalıştırılmadı.
