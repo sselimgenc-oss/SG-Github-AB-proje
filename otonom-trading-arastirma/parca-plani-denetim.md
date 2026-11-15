@@ -63,3 +63,11 @@ MIT, aktif (son commit 2026-11-14), Claude skill koleksiyonu. Otonom bot DEĞİL
 - `skills/drawdown-circuit-breaker`: kayıp serisi bekleme süresi, haftalık/aylık düşüş limitleri; testli. → risk çerçevesine ek adayı.
 - Faz 2 (ABD hisseleri) için çok sayıda tarayıcı/analiz skill'i var.
 - `futures-position-sizer` CME vadeli kontratları içindir, kripto perp için uygun değil.
+
+## Ek: @quantscience_ (X) paylaşımlarından (15 Kasım 2026, ekran görüntüleri)
+
+Çoğu zaten incelenmiş repolar: Agentic Trading Lab (= Open-Finance-Lab/AgenticTrading, L2), TradingAgents (L2), HKUDS/AI-Trader (L0-L1; "%100 otonom" iddiası kodla çelişiyor), ai-hedge-fund, freqtrade, qlib.
+- Yeni: **shiyu-coder/Kronos** (≈47,8k yıldız, MIT, son push 2026-04): finansal mum verisi için "temel model" (fiyat tahmini). Bot değil; sonraki sürümde (ML fazı) tahmin özelliği olarak aday. İncelenmedi.
+- **0xemmkty/QuantMuse** (≈3k yıldız, MIT): son push 2025-07, bayat; "Production Ready" rozeti doğrulanmamış. Elendi.
+- Ziplime (Limex): kullanıcının tarif ettiği stratejiyi koda çeviren yardımcı; otonom değil. Elendi.
+- ZhuLinsen/daily_stock_analysis, OpenBB, FinGPT, hyperswitch: analiz/veri/ödeme; kapsam dışı.
