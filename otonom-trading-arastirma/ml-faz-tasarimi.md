@@ -1,6 +1,6 @@
-# ML fazı tasarımı (taslak v1, 17 Kasım 2026)
+# ML fazı tasarımı (v2, 17 Kasım 2026 — kullanıcı onaylı)
 
-Mentor taslağıdır; kullanıcı onayı bekler. Kod içermez. `tasarim-kararlari.md` ile çelişirse o belge geçerlidir.
+Kullanıcı 17 Kasım'da açık noktalardaki mentor önerilerini onayladı ve ML'yi Faz 2'ye aldı (Bölüm 9 ve 10; takvim Bölüm 7). Kod içermez. `tasarim-kararlari.md` ile çelişirse o belge geçerlidir.
 
 ## 0. Kısa sonuç
 
@@ -35,7 +35,7 @@ Amaç: botun kendi kayıtlarından (alınan ve alınmayan her aday) düzenli ola
 | Çok zaman dilimli özellikler (`include_timeframes`) | FreqAI | Fikir | Özellik üretici: 1s, 4s, 1g | ML-1 |
 | Bağlı çift özellikleri (`include_corr_pairlist`) | FreqAI | Fikir | BTC ve ETH'nin trend/oynaklık durumu her çifte özellik | ML-1 |
 | Kaydırılmış mumlar (`include_shifted_candles`) | FreqAI | Fikir | Seçili özelliklerin 1–3 mum gecikmeli kopyası | ML-1 |
-| Kayan eğitim/test pencereleri (`train_period`, `backtest_period`) | FreqAI | Fikir | 18 ay eğitim, 3 ay test, ileri kaydırma | ML-1 |
+| Kayan eğitim/test pencereleri (`train_period`, `backtest_period`) | FreqAI | Fikir | Genişleyen pencere: ≥ 8 ay eğitim, 2 ay test (Bölüm 3.3) | ML-1 |
 | Canlıda zamanlanmış yeniden eğitim (`live_retrain_hours`) | FreqAI | Fikir | Haftalık iş (168 saat) | ML-4 |
 | Model son kullanma süresi (`expiration_hours`) | FreqAI | Fikir | 21 gün; aşılırsa yeni giriş yok | ML-3 |
 | Eğitim dağılımı dışını reddetme (DI eşiği, `do_predict`) | FreqAI | Fikir | Aday eğitim verisine benzemiyorsa alınmaz | ML-2 |
@@ -73,7 +73,7 @@ Amaç: botun kendi kayıtlarından (alınan ve alınmayan her aday) düzenli ola
 ### 3.3 Eğitim döngüsü
 
 1. Veri derlenir, etiketlenir, ağırlıklanır (gerçek 1,0; kağıt 0,7; varsayımsal 0,5; geçmiş tarama 0,3; yaşa göre azalır).
-2. Purged walk-forward: 18 ay eğitim, 3 ay test, 3 ay kaydırma.
+2. Purged walk-forward, genişleyen pencere: en az 8 ay eğitim, 2 ay test, 2 ay kaydırma (2026-04 sonuna kadar 4 test dilimi). v1'deki "18 ay eğitim, 3 ay test" eldeki veriyle kurulamaz: veri 2024-11'de başlıyor, ısınma sonrası fiilen 2024-12-21, kilitli dönem 2026-05'te; kullanılabilir süre ~16 ay. Veri 2024-11 öncesine uzatılırsa pencere yeniden yazılır (yeni deneme sayılır).
 3. Sabit tarifle eğitim: lojistik regresyon (taban) ve sığ LightGBM (derinlik ≤ 4, yaprak başı en az 50 örnek, erken durdurma). LightGBM tabanı net R'de geçemezse lojistik seçilir.
 4. Olasılık kalibrasyonu ve eşik seçimi yalnız test dilimlerinde; eşik [0,45 – 0,70] aralığında, alınan aday oranı ≥ %30 şartıyla.
 5. Çıktı paketi: ağaçların JSON dökümü, eşik, özellik listesi ve aralıkları, DI referansı, eğitim tarihi, veri ve kod özeti (hash). Pickle yok.
@@ -82,7 +82,7 @@ Tarif (özellik listesi, hiperparametre, etiket) değişirse bu yeni **denemedir
 
 ### 3.4 Terfi kapısı (sırayla; biri kalırsa model reddedilir)
 
-1. **IC kapısı:** test dilimlerinde model puanı ile net R arasındaki sıra korelasyonu > 0, t ≥ 2 ve dilimlerin en az üçte ikisinde pozitif.
+1. **IC kapısı:** test dilimlerinde model puanı ile net R arasındaki sıra korelasyonu > 0, t ≥ 2 ve 4 test diliminin en az 3'ünde pozitif.
 2. **Kalibrasyon:** Brier skoru sabit taban oran tahmininden iyi.
 3. **Bölüm 1 ölçütleri**, mount edilen Aurum istatistikleriyle (DSR, PBO, durağan bootstrap; çoklu karşılaştırmada Holm).
 4. **Maliyet dayanıklılığı:** komisyon ×2 + 5 bp kolunda filtreli net beklenti ≥ −0,05 R.
@@ -99,7 +99,7 @@ Tarif (özellik listesi, hiperparametre, etiket) değişirse bu yeni **denemedir
 ### 3.6 Sıcak yükleme, kayma alarmı, geri alma
 
 - **Sıcak yükleme:** model paketi sunucuda hash'iyle statik model kaydına konur; devreye alma = defterde yeni parametre sürümü (`ml_model_id`, `ml_threshold`). Motor modeli kayıttan yükler ve stratejiye salt okunur verir; strateji dosya/ağ görmez. Açık pozisyonlar giriş anındaki sürümle yönetilir.
-- **Güvenli taraf:** model yok, hash tutmuyor, süresi dolmuş (21 gün) ya da aday DI eşiğinin dışındaysa ML'li strateji **yeni giriş açmaz**; çıkışlar çalışır, Telegram uyarır. Filtresiz stratejiye dönüş yalnız kullanıcı kararıyla.
+- **Güvenli taraf (yalnız `ml_mode=active` iken; `off` ve `shadow` modunda model eksikliği hiçbir işlemi engellemez, yalnız uyarı üretir):** model yok, hash tutmuyor, süresi dolmuş (21 gün) ya da aday DI eşiğinin dışındaysa ML'li strateji **yeni giriş açmaz**; çıkışlar çalışır, Telegram uyarır. Filtresiz stratejiye dönüş yalnız kullanıcı kararıyla.
 - **Kayma alarmı:** (a) özellik kayması: canlı özellik dağılımı eğitimdekiyle kıyaslanır (PSI); (b) model kayması: son 30 puanlı adayın IC'si ve isabeti, aynı modelin önceki canlı penceresiyle kıyaslanır; (c) DI reddi oranı %30'u geçerse. Alarm yalnız Telegram uyarısıdır; kendi başına parametre değiştirmez.
 - **Geri alma:** ders servisinin geri alma izleyicisi aynen kullanılır (ders-spec Bölüm 10): terfi sonrası gözlem penceresi kötüleşirse önceki model sürümüne dönülür, geri alınan model kara listeye girer. Kullanıcının geri alma düğmesi modeli de kapsar.
 
@@ -107,7 +107,7 @@ Tarif (özellik listesi, hiperparametre, etiket) değişirse bu yeni **denemedir
 
 - Yeni kayıtlı strateji: `price_action_v1_ml`. v1b'yi sarar; aynı adayları üretir, ardından yalnız "aday var → yok" nötrlemesi yapar (bugünkü `post_filter` sözleşmesi). Gerekçe alanına `ml:` öneki ve puan yazılır.
 - **Değişmeyenler:** kapı zinciri ve sırası, LLM vetosu, `risk.check_entry` ve kilitli risk ayarları, boyut/kaldıraç, çıkışların kapısızlığı, kill. Model puanı boyutu **etkilemez**; "güvene göre boyut" yok. Risk kilidi her zaman son sözü söyler.
-- **Gereken iki küçük sözleşme değişikliği (mentor/kullanıcı onayı ister):**
+- **İki küçük sözleşme değişikliği (17 Kasım'da onaylandı, Bölüm 10; faz planı 19a):**
   1. Motor §13: motor, yüklenmiş modeli stratejiye salt okunur bağlam alanı olarak verir (strateji saflığı korunur).
   2. Defter: ML'nin elediği aday da karar olarak yazılır (yeni atlama nedeni `ml_filter`, ekleme türü şema göçü) ki gece işi onun da sonucunu etiketlesin.
 - **Sonrası (ML-5):** kendi adayını üreten ML stratejisi aynı strateji arayüzüyle, önce `paper_allowed=False` (yalnız backtest), sonra kağıt; kapısı Bölüm 1 ile aynı, karşılaştırma tabanı o günkü en iyi filtreli strateji.
@@ -131,20 +131,27 @@ Tarif (özellik listesi, hiperparametre, etiket) değişirse bu yeni **denemedir
 
 Eğitim işi botla aynı süreçte çalışmaz, deftere salt okunur bağlanır, başarısız olursa hiçbir şey değişmez. Ölçülen tepe bellek 450 MB'ı aşarsa haftalık eğitim de sunucu dışına alınır ve yalnız model paketi sunucuya taşınır. API maliyeti yok (LLM kullanılmaz).
 
-## 7. Aşamalı yol haritası
+## 7. Aşamalı yol haritası (v2, faz-plani.md ile aynı)
 
-Başlama eşiği: **ML araştırması (ML-1) 4 haftalık kağıt dönemi bitmeden (27 Aralık) başlamaz; gölge model (ML-2) en az 8 haftalık kayıt ve en az 300 etiketli aday (alınan + alınmayan), bunların en az 60'ı kapanmış gerçek/kağıt işlem olmadan başlamaz.** Hangisi geç gelirse o beklenir.
+İlke: ana yapı (faz planı 13–19) her zaman önce gelir. 30 Kasım'dan önceki ML işleri 27 Kasım akşamı kesilir; bitmeyen kağıt dönemine kayar. ML hiçbir aşamada kağıt başlangıcını (30 Kasım) ya da canlı tarihini (28 Aralık – 4 Ocak) bekletmez. v1'deki "ML-1 27 Aralık'tan önce başlamaz" eşiği kalktı; yerine aşağıdaki sıra geçerli. v1'deki "gölge için 8 hafta kayıt + 300 etiketli aday" eşiği de kalktı: hacmi geçmiş tarama verir, canlı kanıt şartı etkinleştirme kapısına (ML-2 çıkışı) taşındı.
 
-| Aşama | İçerik | Giriş ölçütü | Çıkış ölçütü |
-|---|---|---|---|
-| ML-0 Temel | Alınmayan sinyal gece işi; Aurum istatistik/bölme/etiket montajı; özellik kaydının denetimi | Kağıt başlamış, ana yapı çalışıyor | 14 gün kesintisiz etiket üretimi; istatistikler makale örnekleriyle tutuyor |
-| ML-1 Araştırma (sunucu dışı) | Özellik üretici, etiket, taban model, kapı; en fazla 8 ön kayıtlı tarif | Kağıt 4 haftası bitti; kendi backtester'ımız çapraz doğrulandı; 6 denemelik strateji planı sonuçlandı ya da kullanıcı sırayı değiştirdi | Bir tarif Bölüm 3.4'ü 2026-04 öncesi veride geçer; geçemezse **faz durur**, rapor yazılır |
-| ML-2 Gölge | Model her karara puan yazar; kayma alarmı; DI | ML-1 geçti; yukarıdaki veri eşiği; iki sözleşme değişikliği onaylı | ≥ 6 hafta ve ≥ 150 puanlı aday (≥ 50'si alınmış); ileri dönemde net R farkı > 0 ve IC > 0 |
-| ML-3 Etkin filtre | `price_action_v1_ml` devrede; son kullanma süresi; geri alma izleyicisi | ML-2 geçti; kullanıcı onayı; o an botta gözlem altında başka değişiklik yok | 8 hafta geri almasız; ikize karşı net R farkı ≥ 0 |
-| ML-4 Kendi kendine yenileme | Haftalık eğitim + otomatik terfi | ML-3 geçti; ilk üç terfi kullanıcı onaylı | 8 hafta elle müdahalesiz, geri almasız |
-| ML-5 ML stratejisi | Kendi adayını üreten model, strateji arayüzüyle | ML-4'te en az 6 ay kayıt; ayrı ön kayıt | Bölüm 1 ölçütleri, tabanı filtreli strateji |
+| Aşama | Faz planı | İçerik | Ne zaman | Çıkış ölçütü |
+|---|---|---|---|---|
+| ML-0a Sözleşme ve kablolama | 19a, 19d | Motor bağlam alanı; `ml_filter` + puan alanı; `price_action_v1_ml`; `ml_mode` (varsayılan off) | 27 Kasım'a kadar — **zorunlu** | `off`/`shadow` modunda kararlar v1b ile birebir; uçtan uca test geçer |
+| ML-0b Geçmiş derlem | 19b | Backtester v1b'yi 2024-11 → 2026-04'te oynatır; her aday (alınan + atlanan) etiket ve net R ile | Backtester çapraz doğrulaması geçince; hedef 27–28 Kasım, olmazsa kağıt 1. hafta | Derlem hash'iyle dondurulur; rastgele 50 adayın etiketi elle doğrulanır |
+| ML-0c Eğitim hattı | 19c | Aurum montajı, özellik üretici, taban + LightGBM, JSON döküm, ağaç okuyucu, kapı betiği | Hedef 28 Kasım; olmazsa kağıt 1.–2. hafta | Bir uçtan uca koşu + kapı raporu; istatistikler makale örnekleriyle tutuyor; eşlik testi geçer |
+| ML-0d Alınmayan sinyal gece işi | 25a | Atlanan kararların varsayımsal net R'si | Kağıt 1. hafta | 14 gün kesintisiz etiket üretimi |
+| ML-1 Araştırma (sunucu dışı) | 25b | En fazla 8 ön kayıtlı tarif | ML-0b + ML-0c bitince; gerçekçi ilk sonuç aralık 1.–2. hafta | Bir tarif Bölüm 3.4'ü geçer; geçemezse **faz durur**, rapor yazılır |
+| ML-2 Gölge | 25c | Model her karara puan yazar; kayma alarmı; DI | ML-1 geçince; en erken kağıt 2. hafta. Canlıda da sürer | ≥ 6 hafta ve ≥ 150 puanlı aday (≥ 50'si alınmış); ileri dönemde net R farkı > 0 ve IC > 0 |
+| ML-3 Etkin filtre | 28a | `price_action_v1_ml` devrede; son kullanma süresi; geri alma izleyicisi | ML-2 geçti + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş + gözlem altında başka değişiklik yok. En erken ocak ortası | 8 hafta geri almasız; ikize karşı net R farkı ≥ 0 |
+| ML-4 Kendi kendine yenileme | Sonraki | Sunucuda haftalık eğitim + otomatik terfi | ML-3 geçti; ilk üç terfi kullanıcı onaylı | 8 hafta elle müdahalesiz, geri almasız |
+| ML-5 ML stratejisi | Sonraki | Kendi adayını üreten model | ML-4'te en az 6 ay kayıt; ayrı ön kayıt | Bölüm 1 ölçütleri, tabanı filtreli strateji |
 
-Her aşama önce kağıtta/gölgede kanıtlanır. Bot o sırada canlıdaysa gölge sonuçları kağıt kanıtı sayılır (filtre yalnız işlem çıkarır); etkinleştirme yine kullanıcı onayıyla ve mevcut işlem başı riskle olur, risk artırılmaz.
+Notlar:
+- **Geçmiş derlemin sınırı:** ~16 ay ve yalnız 4 test dilimi; geçmiş kanıt incedir. Bu yüzden geçmiş kapı yalnız gölgeye girişe yeter; paraya dokunma kararı (ML-3) gölgedeki ileri dönem kanıtına bağlıdır. Geçmiş tarama örnekleri eğitimde 0,3 ağırlıkla kalır.
+- Sunucuya ML-4'e kadar eğitim yükü binmez; sunucudaki tek ML yükü gölgede puanlamadır (≤ 30 MB, ≤ 20 ms). Bölüm 6'daki haftalık sunucu eğitimi ML-4'te başlar; o zamana kadar yenileme sunucu dışında, elle.
+- Bot canlıdayken gölge sonuçları kağıt kanıtı sayılır (filtre yalnız işlem çıkarır); etkinleştirme mevcut işlem başı riskle olur, risk artırılmaz.
+- Model strateji sürümüne bağlıdır: 6 denemelik plandan v1.1 çıkar ve devreye girerse, model yeni stratejinin adaylarıyla yeniden eğitilir (yeni deneme sayılır), kapıdan yeniden geçer ve gölge sayacı sıfırlanır.
 
 ## 8. Yapılmayacaklar
 
@@ -157,10 +164,18 @@ Her aşama önce kağıtta/gölgede kanıtlanır. Bot o sırada canlıdaysa göl
 - Dış çatı yok: freqtrade/FreqAI kodu, ccxt, hazır bot SDK'ları kullanılmaz; GPL/AGPL/lisanssız koddan satır alınmaz.
 - Çevrim içi (her mumda) ağırlık güncellemesi yok; yalnız haftalık, kapılı, geri alınabilir yenileme.
 
-## 9. Açık noktalar (kullanıcı kararı)
+## 9. Açık noktalar
 
-1. Bölüm 4'teki iki sözleşme değişikliğinin onayı (motor bağlamına model alanı; defterde `ml_filter` atlama nedeni).
-2. lightgbm'in sabitlenmiş, yalnız eğitim tarafında kullanılan bağımlılık olarak kabulü.
-3. Sıra: ML-1, 6 denemelik strateji planından sonra mı (öneri), yoksa paralel mi?
-4. Model süresi dolunca "yeni giriş yok" (öneri) mi, yoksa filtresiz stratejiye otomatik dönüş mü?
-5. Bölüm 1'deki eşikler (+0,10 R, DSR 0,95, PBO 0,25) mentor önerisidir; kalibrasyon ML-1'de backtest verisiyle yapılıp bir kez dondurulacak.
+Kalmadı; beşi de 17 Kasım'da çözüldü (Bölüm 10).
+
+## 10. Kararlar (kullanıcı onayı 17 Kasım)
+
+Kullanıcı: "Fable ne diyorsa onayım var" — mentor önerileri aynen geçerli. Ayrıca ML, faz planında Faz 2'ye alındı (19a–19d).
+
+1. **Sözleşme değişiklikleri — onaylandı.** (a) Motor §13: yüklenmiş model stratejiye salt okunur bağlam alanı olarak verilir; model yokken alan boştur. (b) Defter: `ml_filter` atlama nedeni ve karar başına ML puanı alanı, yalnız ekleme türü şema göçüyle. İkisi de 30 Kasım'dan önce yapılır (19a) ki uçtan uca test son sözleşmeyi sınasın ve kağıt ortasında şema göçü gerekmesin. İlgili spec'ler (motor, defter, strateji) aynı işte güncellenir.
+2. **lightgbm — kabul.** MIT; yalnız `ml` isteğe bağlı grubunda, tam sürüm + hash sabit; yalnız eğitim işi ve araştırma kullanır. Motor ve sunucudaki bot süreci lightgbm yüklemez; modeli kendi ağaç okuyucumuz çalıştırır, eşlik testi kapıdadır. scikit-learn ve scipy motora girmez.
+3. **Sıra — paralel, ayrı şeritlerde.** Öncelik: ana yapı ve teknik düzeltmeler > (6 denemelik strateji planı ve ML-1, ikisi de sunucu dışında, paralel). ML-0 (sözleşme, geçmiş derlem, eğitim hattı) kağıttan önce; ML-1 kağıt sırasında. Deneme defterleri ayrıdır (ML tarifleri ML'nin DSR deneme sayısını artırır, strateji denemeleri kendi sayısını). Kilitli dönem ML'ye kapalı kalır; strateji planının tek seferlik sınavıdır. Strateji sürümü değişirse model yeniden eğitilir ve gölge sayacı sıfırlanır.
+4. **Model süresi dolunca — güvenli tarafta kapanır.** Etkin modda model yok / hash tutmuyor / 21 günü geçmiş / aday DI dışındaysa yeni giriş açılmaz; çıkışlar çalışır; Telegram uyarır (14. ve 18. günde ön uyarı). Filtresiz stratejiye dönüş yalnız kullanıcı kararıyla. Bu kural `off` ve `shadow` modunda işlem engellemez.
+5. **Kapı eşikleri — onaylandı ve donduruldu.** Bölüm 1 (net R farkı ≥ +0,10 R ve bootstrap %90 alt sınırı > 0; filtreli net beklenti > 0; DSR ≥ 0,95; PBO ≤ 0,25; düşüş filtresizden kötü değil; adayların ≥ %30'u alınır; tek çift çıkarılınca çökmez) ve Bölüm 3.4 aynen geçerli. İlk koşudan önce yazıldıkları için "ML-1'de bir kez kalibre et" adımı kaldırıldı: eşikler sonuç görüldükten sonra gevşetilmez, yalnız sıkılaştırılabilir. Tek teknik düzeltme: walk-forward penceresi eldeki veriye uyduruldu (Bölüm 3.3).
+
+**Etkinleştirme kuralı (özet):** kağıt `ml_mode=off` ile başlar; `shadow` kapıdan geçmiş dondurulmuş modelle açılır; `active` yalnız ML-2 çıkış ölçütü + kullanıcının Telegram onayıyla. Canlı, filtre etkin olmadan başlar.
