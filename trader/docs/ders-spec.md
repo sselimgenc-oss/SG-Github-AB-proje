@@ -668,3 +668,10 @@ T1, `n_scope=36`; `A` = `trail_stop` çıkışlı ve `mfe_r ≥ 1.0` işlemleri:
 ## 16. Kapsam dışı (bu sürümde yok)
 
 Serbest biçimli (menü dışı) LLM önerisi (yalnız `allow_off_menu` ile ve her zaman kullanıcıya), birden çok parametre/adım, ders servisinin kural/kod yazması, haber verisi, ikiz defterine yazma ya da ikizin parametre değiştirmesi, çok-parametreli atıf (ikiz farkı yalnızca hüküm verir, parametreye atfedilmez; `twin_observed` yalnız iki giriş filtresi), `range_target_frac` için MFE tabanlı kural, `trail_atr:up` kuralı, `lesson_bounds` değiştirme (yalnız `author="user"`), Telegram gerçeklemesi (madde 18), rapor biçimi, birden çok bot, LLM yanıtını bir sonraki istemde bellek olarak kullanma (kasıtlı yok: enjeksiyon yüzeyi), Batch dışı eşzamanlı LLM çağrısı.
+
+## Netleştirmeler
+
+- `user_timeout` / `user_rejected` sonrası **bekleme (cooldown) yoktur**; kara liste (10.5) yalnızca geri alınan (param, yön) içindir. Ertesi günkü çalışma aynı öneriyi yeniden çıkarabilir; gölge dönemde yine yalnızca `needs_user` olur (uygulanmaz), gölge dönem bittiyse sınıflandırma normal kurallara (auto/ask_user) göre işler. Yorgunluğu `pending_proposal` kapısı, 3 günlük TTL ve haftalık etkin kota sınırlar (risk 16). Güvenli yön: hiçbir durumda gölge dönemde uygulanmaz.
+- Kullanıcı onayı geldiğinde etkin sürüm, önerinin dayandığı `base_version_id`'den farklıysa (araya elle kullanıcı sürümü girdi) onay **uygulanmaz** (bayat istek); yeni sürüm üstüne hiçbir şey eklenmez.
+- Defter, etkin sürümle aynı `params`/`lesson_bounds` ile kullanıcı sürümü açmayı `no_change` olarak reddeder; "öğrenici = ikiz" durumu bu yüzden etkin sürümü v1'de bırakarak ifade edilir.
+- Kanıt penceresi `exit_ts < as_of` (as_of = `run_day` 00:00 UTC) ile kesilir; `run_day`'den sonra kapanan işlemler havuza ve `n_scope`'a girmez (6.2 a).
