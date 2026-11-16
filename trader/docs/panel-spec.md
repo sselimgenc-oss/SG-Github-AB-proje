@@ -110,3 +110,21 @@ Telegram yeniden kullanımı: `section_ledger/budget/lesson` **metin** döndür�
 6. Sağlık durumu: panel yalnız `state.json`'u okuyor; "bot defteri yazabiliyor mu" için `health_probes.probed_at` ham okunsun mu, yoksa `gate_status_readonly()` (saglik-spec §12 Soru 2) beklensin mi?
 7. Günlük bütçe çubuğu ve diğer sabitler (%5, 120 sn bayatlık) panelde sabit kodlanmak yerine `risk.py`/`engine.*.json` yapılandırmasından mı okunsun (tek doğruluk kaynağı)?
 8. Gizli/kapalı süre için "panel açık bırakılırsa tarayıcı 10 sn'de bir çeker" yükü kabul mü; yoksa yenileme varsayılan 30 sn mi olsun?
+
+## 10. Mentor kararları (16 Kasım 2026)
+1. 1L3A'dan yalnız CSS/JS çekirdeği alınır, ekranlar yeniden yazılır. v2: yalnız aylık rapor ve öğrenen↔ikiz karşılaştırması; karne/koni/korelasyon/yoğunlaşma yok (veri kaynağı yok).
+2. Stdlib `ThreadingHTTPServer`; Starlette ve SSE yok.
+3. Ek parola yok; SSH tüneli + loopback yeterli. Telefonda Telegram ya da port yönlendirmeli SSH uygulaması.
+4. `telegram.py` yeniden düzenlemesi sonra (kağıt döneminde, canlıdan önce). v1'de yeni `panel_data.py` + eşdeğerlik testleri; `telegram.py`'ye dokunulmaz.
+5. `Ledger.list_closed_trades(since, until, limit)` kamusal salt-okunur yöntemi eklenir; `_trades` kullanılmaz.
+6. Sağlık: yalnız `state.json` + `status.json.loop_at`; ham `health_probes` okunmaz (`gate_status_readonly()` beklenir).
+7. Sabit sayı yok: günlük sınır `risk.py`/motor yapılandırmasından, bayatlık mevcut `STALE_S`'den. (`telegram.py`'deki 0.05 ve 120 sabitleri madde 4 düzenlemesinde düzeltilir.)
+8. Yenileme: üst şerit 10 sn (yalnız dosya), gerisi 30 sn; sekme gizliyken durur.
+
+Zorunlu düzeltmeler:
+- Defter WAL kipinde: `ReadOnlyPaths` altında `mode=ro`, `-shm`/`-wal` yokken (botlar durmuş) açılmayabilir. Birim tasarımından önce bot çalışırken ve durmuşken salt-okunur bağlamada test edilir.
+- Port 8787 (8080 1L3A paneliyle çakışır).
+- En çok 8 eşzamanlı istek için semafor ve panel tarafında istek zaman aşımı açıkça yazılır (stdlib bunu kendisi uygulamaz; `Ledger` 5 sn busy timeout'u sabit).
+- "JS olmadan çalışır" iddiası ve ilgili test maddesi çıkarılır.
+
+Zamanlama: 30 Kasım için gerekli değil (kağıt başlangıcını Telegram raporu karşılar). Kağıt döneminin ilk iki haftasında gerçek veriyle yapılır; canlıdan önce kararlı olmalı.
