@@ -55,7 +55,7 @@ Sütunlar: Fır = Fırsat bulma, Yür = Yürütme, Öğr = Öğrenme, Ris = Risk
 | 26 | [virattt/ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) | Yok (dahili kâğıt defter) | MIT | 65 | 35 | 3 | 72 | 15 | 95 | 72 | 40 | **43** | Olgunluk | LLM kişilikleri sinyal verir, limitleri deterministik kod uygular (en olgun risk mimarisi, kullanıcı açarsa); gerçek broker yok, öğrenme yok. |
 | 27 | [ygwyg/MAHORAGA](https://github.com/ygwyg/MAHORAGA) | Alpaca (paper varsayılan) | MIT | 62 | 70 | 5 | 80 | 10 | 38 | 75 | 15 | **42** | Risk | 30 sn'lik döngü, kural çıkışları ve sert PolicyEngine (kill switch, günlük zarar) var; hafıza harness'e bağlı değil, opsiyon yolu limiti atlıyor, Şubat 2026'dan beri durağan. |
 | 28 | [maxwellcm92/darwinfi](https://github.com/maxwellcm92/darwinfi) | Base L2 / Uniswap V3 (zincir üstü) | MIT | 40 | 48 | 68 | 50 | 10 | 10 | 25 | 10 | **41** | Öğrenme | Kâğıttan canlıya kapılı terfi kodda var (kâğıt kapısı fikri iyi), ama hackathon kalitesi, zincir üstü özel anahtar, 1 yıldız ve Binance yok. |
-| 29 | [AleksNovo/freqai-3ai-strategy](https://github.com/AleksNovo/freqai-3ai-strategy) | Bybit (varsayılan işlem açmıyor) | GPL-3.0 | 50 | 40 | 55 | 40 | 10 | 25 | 65 | 10 | **40** | Güvenlik | Her sinyalin sanal sonucundan öğrenme fikri yaratıcı (tasarım referansı); ama varsayılan olarak işlem açmıyor, Bybit ve çok karmaşık, sonuç yayımlamıyor. |
+| 29 | [AleksNovo/freqai-3ai-strategy](https://github.com/AleksNovo/freqai-3ai-strategy) | Bybit (varsayılan işlem açmıyor) | GPL-3.0 | 50 | 40 | 55 | 40 | 10 | 25 | 65 | 10 | **41** | Güvenlik | Her sinyalin sanal sonucundan öğrenme fikri yaratıcı (tasarım referansı); ama varsayılan olarak işlem açmıyor, Bybit ve çok karmaşık, sonuç yayımlamıyor. |
 | 30 | [danderson197874/apex-crypto-bot](https://github.com/danderson197874/apex-crypto-bot) | Coinbase (DRY_RUN varsayılan) | Yok | 55 | 55 | 55 | 45 | 5 | 8 | 10 | 20 | **40** | Fırsat bulma | Katman ağırlıkları kendi işlem sonuçlarıyla güncelleniyor, ama günlükleri üçüncü taraf siteye gönderiyor ve ağırlıkları uzaktan çekiyor; Binance yok. |
 | 31 | [sorry510/go_binance_futures](https://github.com/sorry510/go_binance_futures) | Binance spot/vadeli (spot testnet döngüsü doğrulanmış) | MIT | 48 | 58 | 15 | 50 | 30 | 52 | 55 | 28 | **40** | Yürütme | Çok dürüst README ('mainnet doğrulanmadı'), 235 test; ders çıkarma otomatik bağlı değil, arayüz Çince, MySQL önerilir. |
 | 32 | [iterativv/NostalgiaForInfinity](https://github.com/iterativv/NostalgiaForInfinity) | Freqtrade üzerinden Binance dahil (dry-run) | GPL-3.0 | 35 | 78 | 0 | 28 | 30 | 88 | 85 | 60 | **40** | Olgunluk | Strateji yazmadan çalışan olgun kural botu (öğrenmeyen taban çizgisi); eski sürümde stoploss -0,99 yani fiilen stop yok, kanıt yalnız backtest. |
@@ -154,12 +154,12 @@ Sütunlar: Fır = Fırsat bulma, Yür = Yürütme, Öğr = Öğrenme, Ris = Risk
 | # | Repo | Borsa | Lisans | Fır | Yür | Öğr | Ris | Kan | Olg | Güv | Kol | **Genel** | En güçlü alan | Gerekçe ve kaynak not |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | [Bachhsunkid/agent-to-earn](https://github.com/Bachhsunkid/agent-to-earn) | Binance USDⓈ-M vadeli (freqtrade, dry-run varsayılan) | MIT | 45 | 65 | 68 | 82 | 35 | 45 | 55 | 35 | **58** | Risk | Gece LLM döngüsü aday strateji yazıyor; kapı (gate.py) bütünlük kilidi, lookahead, ayrılmış dönem backtest, sabit-stake kıyas ve bekleme süresiyle terfi ettiriyor; risk kodu (guarded_strategy) ezilemez, 203 test geçti (gate %99). Delikler çalıştırılarak doğrulandı: static_check pandas/numpy ile dosya/ağ erişimini kaçırıyor, beats_incumbent(None) fail-open; ileri dry-run kapısı yok, getiri iddiası yok, 0 yıldız. (Kaynak: gorev1, gorev4, gorev6, gorev6b) |
-| 2 | [ruiwang20010702/cryptobot](https://github.com/ruiwang20010702/cryptobot) | Binance vadeli (freqtrade, dry-run yapılandırması) | AGPL-3.0 | 80 | 58 | 65 | 55 | 15 | 50 | 55 | 25 | **56** | Fırsat bulma | En zengin veri/rol tasarımı (16 kaynak: funding, açık pozisyon, haber; boğa/ayı tartışması); strategy_advisor kapanan işlemlerden kural üretip LLM istemine koyuyor, TTL ve önce/sonra değerlendirmeyle yeniliyor/emekli ediyor; ama değerlendirme 2 işlemle yapılıyor, kural denetimi yok, sinyal dosyasında bayat sinyal hatası, sonuç yayımlanmamış, Şubat 2026'dan beri durağan. (Kaynak: gorev1, gorev4) |
+| 2 | [ruiwang20010702/cryptobot](https://github.com/ruiwang20010702/cryptobot) | Binance vadeli (freqtrade, dry-run yapılandırması) | AGPL-3.0 | 80 | 58 | 65 | 45 | 15 | 50 | 55 | 25 | **54** | Fırsat bulma | En zengin veri/rol tasarımı (16 kaynak: funding, açık pozisyon, haber; boğa/ayı tartışması); strategy_advisor kapanan işlemlerden kural üretip LLM istemine koyuyor, TTL ve önce/sonra değerlendirmeyle yeniliyor/emekli ediyor; ama değerlendirme 2 işlemle yapılıyor, kural denetimi yok, sinyal dosyasında bayat sinyal hatası, sonuç yayımlanmamış, Şubat 2026'dan beri durağan. (Kaynak: gorev1, gorev4) |
 | 3 | [ymcbzrgn/HydraQuant](https://github.com/ymcbzrgn/HydraQuant) | Binance/Bybit (freqtrade çatalı, dry-run) | GPL-3.0 | 60 | 65 | 62 | 65 | 15 | 40 | 50 | 12 | **53** | Yürütme | Kapanan işlem -> parametre -> canlı karar döngüsü kodda doğrulandı (forgone-alpha defteri, haftalık zarf sınırlı eşik uyarlaması, güven kalibratörü, otonomi merdiveni, Constitution); ~344 özgün test; ama öğrenilen parametre dry-run kapısı olmadan uygulanıyor, getiri etkisi kanıtsız, 70 bin satır ve freqtrade çatalı, kurulum ağır. (Kaynak: gorev1, gorev7) |
-| 4 | [aplicy-com/guarded-trader](https://github.com/aplicy-com/guarded-trader) | Binance spot (freqtrade); LLM emir veremez | Apache-2.0 | 25 | 50 | 30 | 82 | 62 | 60 | 85 | 20 | **49** | Güvenlik | Ölçüm ve güvenlik iskeleti: dsr/null/registry/walkforward %95-100 kapsamlı (47 test geçti, DSR bağımsız hesapla örtüştü), conductor risk/halt katmanı (~537 test iddiası), kendi stratejilerinin zararını açıkça yayımlıyor. Ama öğrenme/fırsat bulma yok (LLM kısmı stub), auto-flatten yok, ft_runner %0 test, spot ve Docker/uv kurulumu. (Kaynak: gorev1, gorev4, gorev6, gorev6b) |
-| 5 | [danny123-sudo/regime-trading-bot](https://github.com/danny123-sudo/regime-trading-bot) | KuCoin (freqtrade, dry-run varsayılan) | MIT | 45 | 55 | 35 | 62 | 25 | 28 | 60 | 22 | **42** | Risk | Rejim sınıflandırıcı + LLM vetosu (fail-closed) + imzalı, sınırlı parametre güncelleme tasarımı iyi (96 test geçti, levers anayasası). Ama LLM vetosu (grok_agent, strategy_state) testsiz (%0 kapsam), geri alma/backtest kapısı çalışma zamanına bağlı değil, imza boşsa atlanıyor, tek commit, "henüz kârlı değil". (Kaynak: gorev1, gorev4, gorev6, gorev6b) |
+| 4 | [aplicy-com/guarded-trader](https://github.com/aplicy-com/guarded-trader) | Spot (freqtrade; veri arşivi Kraken, borsa notlarda doğrulanmadı); LLM emir veremez | Apache-2.0 | 25 | 50 | 10 | 82 | 50 | 60 | 85 | 20 | **42** | Güvenlik | Ölçüm ve güvenlik iskeleti: dsr/null/registry/walkforward %95-100 kapsamlı (47 test geçti, DSR bağımsız hesapla örtüştü), conductor risk/halt katmanı (~537 test iddiası), kendi stratejilerinin zararını açıkça yayımlıyor. Ama öğrenme/fırsat bulma yok (LLM kısmı stub), auto-flatten yok, ft_runner %0 test, spot ve Docker/uv kurulumu. (Kaynak: gorev1, gorev4, gorev6, gorev6b) |
+| 5 | [danny123-sudo/regime-trading-bot](https://github.com/danny123-sudo/regime-trading-bot) | KuCoin (freqtrade, dry-run varsayılan) | MIT | 45 | 55 | 25 | 62 | 25 | 28 | 60 | 22 | **40** | Risk | Rejim sınıflandırıcı + LLM vetosu (fail-closed) + imzalı, sınırlı parametre güncelleme tasarımı iyi (96 test geçti, levers anayasası). Ama LLM vetosu (grok_agent, strategy_state) testsiz (%0 kapsam), geri alma/backtest kapısı çalışma zamanına bağlı değil, imza boşsa atlanıyor, tek commit, "henüz kârlı değil". (Kaynak: gorev1, gorev4, gorev6, gorev6b) |
 | 6 | [Superior-Trade/trading-terminal](https://github.com/Superior-Trade/trading-terminal) | Hyperliquid (barındırılan Superior Trade API) | Apache-2.0 | 40 | 40 | 8 | 45 | 25 | 65 | 25 | 20 | **32** | Olgunluk | Grafikten LLM ile freqtrade stratejisi üretip doğrulayan hat (freqtrade-guard, metrics-honesty, 20 test + e2e eval, CI); öğrenme yok (strategy_log yazılıyor ama geri okunmuyor), kimlik doğrulaması bilerek yok, Sentry telemetrisi, yürütme üçüncü tarafta. Parça (güvenlik kuralları) olarak değerli, bot olarak değil. (Kaynak: gorev7) |
-| 7 | [tradermonty/claude-trading-skills](https://github.com/tradermonty/claude-trading-skills) | Yok (ajan beceri koleksiyonu; emir yok) | MIT | 45 | 0 | 30 | 30 | 15 | 55 | 65 | 40 | **31** | Güvenlik | Otonom bot değil ("tam otomatik için tasarlanmadı"); crypto-regime-analyzer (anahtarsız rejim skoru), signal-postmortem (sonuçtan ağırlık geri beslemesi, testli), drawdown-circuit-breaker (testli) parça adayları. Yalnızca README ve SKILL.md açıklamaları okundu, kod ve testler incelenmedi; puanlar bilinçli temkinli. (Kaynak: parca-plani-denetim) |
+| 7 | [tradermonty/claude-trading-skills](https://github.com/tradermonty/claude-trading-skills) | Yok (ajan beceri koleksiyonu; emir yok) | MIT | 45 | 0 | 15 | 20 | 15 | 55 | 65 | 40 | **26** | Güvenlik | Otonom bot değil ("tam otomatik için tasarlanmadı"); crypto-regime-analyzer (anahtarsız rejim skoru), signal-postmortem (sonuçtan ağırlık geri beslemesi, testli), drawdown-circuit-breaker (testli) parça adayları. Yalnızca README ve SKILL.md açıklamaları okundu, kod ve testler incelenmedi; puanlar bilinçli temkinli. (Kaynak: parca-plani-denetim) |
 | 8 | [0Smallcat0/trialgate](https://github.com/0Smallcat0/trialgate) | Yok (ölçüm aracı; freqtrade hyperopt çıktısını okur) | MIT | 0 | 0 | 0 | 0 | 25 | 12 | 65 | 25 | **8** | Güvenlik | Deflated Sharpe ve PBO/CSCV ile "bu sonuç şans mı" sorusunu yanıtlayan ölçüm aracı (guarded-trader dsr.py için yedek aday). Bot değildir, o yüzden bot kategorileri 0; yalnızca README okundu, kod/test incelenmedi, 0 yıldız, yeni. (Kaynak: gorev10, mimari-taslak) |
 
 ### Puanlanmayan adaylar (2. tur, kısa gerekçe)
@@ -167,7 +167,7 @@ Sütunlar: Fır = Fırsat bulma, Yür = Yürütme, Öğr = Öğrenme, Ris = Risk
 | Depo | Neden |
 |---|---|
 | Sak-114514/freqtrade-agent | Lisans dosyası yok, öğrenme yok (yalnız sohbet belleği), API kimlik doğrulaması yok; yalnız araç/izin katmanı fikri alındı (gorev7) |
-| 6Kmfi6HP/ft-userdata-llm-share | İncelenemedi, bir yıllık bayat (gorev1, gorev7) |
+| 6Kmfi6HP/ft-userdata-llm-share | gorev1'de kısmen okundu (LLM giriş/çıkış çağrısı dosya:satır ile görüldü; yansıtma çıktısının isteme akışı izlenmedi), gorev7'de klonlanamadı; bir yıllık bayat (gorev1, gorev7) |
 | shiyu-coder/Kronos | Bot değil, fiyat tahmin modeli; incelenmedi (parca-plani-denetim) |
 | 0xemmkty/QuantMuse | Temmuz 2025'ten beri bayat, rozet doğrulanmamış (parca-plani-denetim) |
 | jgardet/evotrade, Giansn/SYGNIF, pulse-freqtrade, freqtrade_dev_mcp | Canlı yol yok, lisanssız/dağınık veya tanıtım ağırlıklı; yalnız geçerken anıldı (gorev1) |
@@ -187,7 +187,7 @@ Eşit puanda eski kayıt önce gelir. **Kalın** = 2. turda eklenen.
 | 6 | HKUDS/Vibe-Trading | 57 | Risk |
 | 7 | qrak/LLM_trader | 57 | Güvenlik |
 | 8 | FilipeThome/the-trader-bot | 56 | Güvenlik |
-| 9 | **ruiwang20010702/cryptobot** | 56 | Fırsat bulma |
+| 9 | **ruiwang20010702/cryptobot** | 54 | Fırsat bulma |
 | 10 | NoFxAiOS/nofx | 53 | Yürütme |
 | 11 | freqtrade/freqtrade + FreqAI | 53 | Olgunluk |
 | 12 | **ymcbzrgn/HydraQuant** | 53 | Yürütme |
@@ -196,3 +196,57 @@ Eşit puanda eski kayıt önce gelir. **Kalın** = 2. turda eklenen.
 | 15 | 195440/nof1.ai | 50 | Yürütme |
 
 Not: 2. turdaki repolar kısmen parça adayıdır; bu sıralama "tam otonom bot"a yakınlığı ölçer, parça olarak değerini değil (örneğin guarded-trader ve trialgate ölçüm/güvenlik parçası olarak mimaride kullanılır, ama bot olarak düşük puan alır).
+
+## Mentor doğrulaması (16 Kasım 2026)
+
+Kapsam: 2. turdaki 8 puan, eski ilk 15'in formül tutarlılığı, atlananlar listesi ve `mimari-taslak.md` içindeki parça seçimleri; dayanak `research_notes/diger-hesap/gorev1, 4, 6, 6b, 7, 10` ile Tur 3 notları. Yeni araştırma veya çalıştırma yapılmadı. 2. tur repolarının klonları bu oturumda yoktu; aşağıdaki hükümler notlardaki dosya:satır izlerine ve gorev6/6b çalıştırma sonuçlarına dayanır.
+
+### Puan düzeltmeleri
+
+Formül 61 kaydın hepsinde yeniden hesaplandı. Tek tutarsızlık yuvarlamadaydı: tam ,5 çıkan dört kayıttan üçü yukarı yuvarlanmış (39,5→40; 23,5→24; 48,5→49), biri aşağı (40,5→40). Kural "yarım yukarı" olarak sabitlendi. "En güçlü alan" sütununda hata yok.
+
+| Repo | Değişen | Eski → yeni | Genel | Neden |
+|---|---|---|---|---|
+| AleksNovo/freqai-3ai-strategy | yalnız yuvarlama | — | 40 → 41 | Ağırlıklı ortalama 40,5; diğer ,5 kayıtlarıyla aynı kural |
+| aplicy-com/guarded-trader | Öğrenme | 30 → 10 | 49 → 42 | Öğrenme döngüsü yok: LLM kısmı `NotImplementedError` (gorev4 G5). Çıpaya göre 25 bile "istatistiği modele göstermek" ister |
+| | Kanıt | 62 → 50 | | Yayımlanan şey ileri kayıt değil, kendi backtest/walk-forward zararı. Çıpa 40 + ön kayıt ve null testi dürüstlüğü; 62 gerçek para kaydı olan passivbot ile eşitti |
+| | Borsa alanı | "Binance spot" → "Spot, borsa doğrulanmadı" | | Notlarda Binance geçmiyor; veri arşivi Kraken (gorev6) |
+| danny123-sudo/regime-trading-bot | Öğrenme | 35 → 25 | 42 → 40 | `process_proposal` ve geri alma izleyicisini testler dışında çağıran kod yok (gorev4 R1); çalışan botta yalnız ayar dosyası okunuyor. Emsal: varsayılan kapalı uyarlaması olan orallexa 15 |
+| ruiwang20010702/cryptobot | Risk | 55 → 45 | 56 → 54 | Sert limit yalnız README iddiası, kodda okunmadı; kaldıraç ve lot LLM çıktısından geliyor, kural metni denetlenmiyor (gorev4 C1, C3) |
+| tradermonty/claude-trading-skills | Öğrenme | 30 → 15 | 31 → 26 | Yalnız README okundu; geri besleme elle çalıştırılan beceri, canlı karara bağlı değil |
+| | Risk | 30 → 20 | | Beceriler ajana tavsiye üretir, emri engelleyen kod yok (çıpa: "yalnız prompt" = 0) |
+
+Dokunulmayanlar: agent-to-earn (58), HydraQuant (53), trading-terminal (32) kanıtla uyumlu. trialgate (8) formül olarak doğru, ama bot olmadığı için bu sayı kalite ölçüsü değildir; sıralamada atlas-gic ile aynı yerde durması yanıltıcıdır. agent-to-earn için iki çekince: Risk 82 testlerde sahte freqtrade nesneleriyle ölçüldü ve sabitler bizim kurallarımızdan gevşek (10x); Öğrenme 68 uçtan uca hiç çalıştırılmamış bir hatta dayanıyor (alt süreçler taklitli).
+
+### Atlananlar
+
+Atlama kararları doğru. İki not: ft-userdata-llm-share için "incelenemedi" gerekçesi yanlıştı, düzeltildi (gorev1'de kısmen okundu). freqtrade-agent tam okunmuştu ve puanlanabilirdi, ama lisanssız ve öğrenmesiz olduğu için sonucu değiştirmez.
+
+### Parça seçimleri
+
+| # | Parça | Hüküm | Gerekçe ve koşul |
+|---|---|---|---|
+| 1 | freqtrade | **Onaylandı** | Tabloda Yürütme 88, Olgunluk 98 ile rakipsiz. Açık nokta: Binance vadeli hiç denenemedi (HTTP 451); vadeli uçtan uca yalnız OKX'te görüldü |
+| 3 | Kilitli risk: agent-to-earn `guarded_strategy.py` | **Onaylandı (uyarla)** | freqtrade içinde çalışan, testli (%98 kapsam, çalıştırıldı) ve kopyalanabilir tek aday. Riski daha yüksek puanlı Vibe-Trading freqtrade'e uymuyor; TEMPEST ve the-trader-bot lisanssız. Yapılacaklar: 10x → 3-5x, %1 → %2, sabit kodlu özsermaye tabanı, yalnız 1h/2h/4h izni (gün içi için dar), "SL likidasyondan önce" kontrolü dosyada açık bir kural değil, yazılacak. gorev6b: bot tarafı stopla %2 hedefi %2,5-3,2 çıktı (20x); borsa tarafı stop ve kayma payı gerekli |
+| 4 | Piyasa durumu etiketi | **Değişmeli → regime-trading-bot `core/regime.py` + `indicators.py` uyarla** | "Kendimiz yaz" yerine MIT, testli (%87 ve %93 kapsam, çalıştırıldı) kod var. claude-trading-skills'teki rejim skoru okunmadı, kaynak olmamalı |
+| 5 | Veto: regime-trading-bot R3 | **Onaylandı, ama kaynak etiketi düzeltilmeli** | Çalıştığına dair kanıtı olmayan tek parça: `grok_agent.py` ve `strategy_state.py` kapsamı %0, tek commit, anahtar yoksa veto atlanıyor. Çalıştığı görülen şey bizim gorev6b'deki dosya tabanlı sondamız (yok/bozuk/bayat → ret). Doğru tarif: "kendimiz yaz; R3'ten yalnız JSON sözleşmesi ve doğrulama mantığı". Sonda depoda yok, yeniden yazılacak. Daha iyi hazır aday yok |
+| 6 | Funding / açık pozisyon | **Onaylandı** | Kendimiz; Binance vadeli açık uçları bu ortamdan sınanamadı |
+| 7 | Kayıt defteri: guarded-trader `registry.py` | **Onaylandı (uyarla)** | %97 kapsam, çalıştırıldı. Şema "backtest öncesi deneme sicili"dir; ders ve değişiklik kaydına uyar. İşlemler freqtrade veritabanında kalmalı, buraya kopyalanmamalı |
+| 8 | Ders servisi fikirleri: astra, cryptobot, HydraQuant | **Onaylandı, iki ek kaynakla** | Üçü de yalnız fikir (lisans). Eksik: tablonun Öğrenme birincisi TEMPEST (88; ders → DSR kapısı → terfi, Tur 3'te temel mimari seçilmişti) listede yok, fikir olarak eklenmeli (lisanssız, kod alınamaz). Kodu kopyalanabilen tek öğrenme kaynağı qrak/LLM_trader (MIT, Öğrenme 75). cryptobot'un 2 işlemle değerlendirmesi örnek alınmamalı |
+| 9 | Sınır anayasası: regime-trading-bot `levers.py` | **Onaylandı (şablon)** | %94 kapsam, saf sabitler. Uygulayan kısım için `adaptive.py` içindeki kırpma ve yasak anahtar işlevleri testli ve çalışma zamanına bağlı; onlar da uyarlanabilir. Yasak listesine kendi risk anahtarlarımız eklenmeli |
+| 10 | Ölçüm: guarded-trader `dsr.py`, `null.py` | **Onaylandı** | En sağlam kanıtlı parça (%100 ve %98 kapsam, sayılar bağımsız hesapla örtüştü). `null.py` backtest içindir; freqtrade'e bağlayan `ft_runner.py` %0 testli, bağlantı bizde. 4-8 haftada DSR 0,95'e ulaşamaz, yalnız "elendi / elenmedi" der |
+| 10 | Yedek: trialgate | **Yedek sayılmamalı** | Yalnız README okundu, 0 yıldız, kod ve test görülmedi. `dsr.py` doğrulandığı için yedeğe gerek yok; tek katkısı PBO/CSCV, o da hyperopt eklenirse |
+| — | Terfi kapısı (sonra): agent-to-earn `gate.py` | **Onaylandı (uyarla)** | `beats_incumbent(None)` terfiyi geçiriyor (çalıştırılarak doğrulandı), kapatılmalı. Parametre terfisinde `static_check` gereksiz |
+| — | Risk eki: claude-trading-skills devre kesici | **Gerek yok** | A3'te günlük/haftalık/aylık kesici var; bu beceri okunmadı |
+
+### Lisans
+
+- **freqtrade GPL-3.0:** strateji ve onunla aynı süreçte çalışan her şey, dağıtılırsa GPL-3.0 olur. Yalnız kendi sunucumuzda çalıştırmak yükümlülük doğurmaz.
+- **MIT (agent-to-earn, regime-trading-bot):** kopyalanan dosyada telif satırı ve MIT metni kalmalı. regime-trading-bot tek commit ve aynı adlı en az üç repo var (gorev10); asıl sahibi doğrulanmadı, kopyalamadan önce bakılmalı.
+- **Apache-2.0 (guarded-trader):** lisans metni, varsa NOTICE ve değiştirilen dosyalarda değişiklik notu korunmalı. NOTICE dosyasının varlığı notlarda doğrulanmadı.
+- **Yalnız fikir:** astra (AGPL + Commons Clause), cryptobot (AGPL), HydraQuant (GPL), TEMPEST ve freqtrade-agent (lisans yok). Kod, istem metni veya satır satır çeviri alınmamalı.
+- trialgate ve claude-trading-skills için MIT bilgisi README düzeyinde; LICENSE dosyası görülmedi.
+
+### Hâlâ doğrulanmayanlar
+
+Binance vadeli dry-run (Frankfurt'tan erişim dahil); `guarded_strategy.py`'nin gerçek freqtrade altında içe aktarılıp çalışması; veto yolunun tamamı; guarded-trader conductor testleri (537 sayısı grep sayımı); cryptobot ve HydraQuant'ın tümü (yalnız statik okuma); trialgate ve claude-trading-skills kodu; ikiz eşleşmesi yalnız 8 işlemle görüldü. Hukuki görüş değildir.
