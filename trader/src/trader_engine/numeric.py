@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
 from .types import OrderSide, Side
 
@@ -52,6 +52,11 @@ def round_adverse(price: float, order_side: OrderSide, tick: float) -> float:
     if order_side == "sell":
         return floor_step(price, tick)
     raise ValueError(f"gecersiz order_side: {order_side!r}")
+
+
+def round_nearest(price: float, tick: float) -> float:
+    """En yakin tick'e (yarim: yukari). legacy_compat dolum yuvarlamasi (freqtrade ROUND)."""
+    return _snap(price, tick, ROUND_HALF_UP)
 
 
 def bps(x: float) -> float:

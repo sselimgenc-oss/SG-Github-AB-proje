@@ -103,6 +103,30 @@ def _step_dec(values) -> float:
     return 10.0 ** -min(dec, 8)
 
 
+def decimals_of(values) -> int:
+    """freqtrade `get_pair_precision`: her deger 10 ondaliga yuvarlanir, sonra ondalik hane sayisi (float repr'ine
+    dayanikli; sondaki sifirlar sayilmaz); tum degerlerin en buyugu."""
+    dec = 0
+    for v in np.unique(np.round(np.asarray(values, dtype="float64"), 10)):
+        e = Decimal(repr(float(v))).normalize().as_tuple().exponent
+        dec = max(dec, -int(e))
+    return dec
+
+
+def monthly_ticks(ms: np.ndarray, o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray) -> dict[tuple[int, int], float]:
+    """freqtrade `get_tick_size_over_time`: (yil, ay UTC) -> 10^-(OHLC ondalik hane sayisinin ayi icindeki en buyugu)."""
+    out: dict[tuple[int, int], float] = {}
+    if len(ms) == 0:
+        return out
+    mo = ms.astype("int64").astype("datetime64[ms]").astype("datetime64[M]")
+    for m in np.unique(mo):
+        k = mo == m
+        dec = decimals_of(np.concatenate([o[k], h[k], l[k], c[k]]))
+        y, mm = divmod(int(m.astype("int64")), 12)
+        out[(1970 + y, mm + 1)] = float(Decimal(1).scaleb(-dec))
+    return out
+
+
 def _day_chunks(start_ms: int, end_ms: int) -> Iterator[tuple[int, int]]:
     cur = start_ms
     while cur < end_ms:
@@ -209,6 +233,8 @@ class HistoricalSource:
         self._cache: dict[tuple[str, str], _Series] = {}
         self._funding_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self._rules_json: dict | None = None
+        self.main_tf = "1h"                                  # tick_at: ana (strateji) zaman dilimi; backtest ayarlar
+        self._tick_tab: dict[str, dict[tuple[int, int], float]] = {}
 
     # -- dosya
     def _path(self, pair: str, suffix: str) -> Path:
@@ -371,6 +397,19 @@ class HistoricalSource:
             return to_symbol_rules(p, spec_from_json(v if isinstance(v, str) else json.dumps(v)))
         except RulesError as e:
             raise DataError(f"{p}: kural bozuk: {e}") from e
+
+    def tick_at(self, pair: str, ts: datetime) -> float:
+        """legacy_compat: `ts`'nin UTC ayina ait tarihsel tick (ana tf mumlarinin OHLC ondaligi, `monthly_ticks`);
+        ayda veri yoksa sentetik/gercek kural tick'i. Gelecek veriye bakar: yalniz uyum kipi (GuardedView kilitler)."""
+        p = canon_pair(pair)
+        tab = self._tick_tab.get(p)
+        if tab is None:
+            s = self._maybe_series(p, self.main_tf)
+            tab = {} if s is None else monthly_ticks(s.ms, s.o, s.h, s.l, s.c)
+            self._tick_tab[p] = tab
+        t = _utc(ts, "ts")
+        v = tab.get((t.year, t.month))
+        return v if v is not None else self.rules(p).tick
 
     def _synthetic_rules(self, p: str) -> SymbolRules:
         """SENTETIK kurallar (gercek borsa kurallari degil; raporda etiketlenmeli): son 2000 1h bar ondaliklari."""

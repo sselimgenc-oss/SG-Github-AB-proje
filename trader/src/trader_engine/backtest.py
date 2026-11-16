@@ -363,8 +363,12 @@ class BacktestRunner:
             paranoid_report = self.paranoid_check(raw, strategy, signals, cfg, params, version_id, end, out_dir)
         state = StateStore(":memory:", bot=cfg.bot, durability="off", lock=False)
         broker_cls = _CoarsePaperBroker if cfg.cost.fill_model == "legacy_compat" else PaperBroker
+        tick_fn = None
+        if cfg.cost.fill_model == "legacy_compat" and hasattr(raw, "tick_at"):
+            raw.main_tf = tf                                # freqtrade: tarihsel tick ana zaman dilimi mumlarindan
+            tick_fn = view.tick_at
         broker = broker_cls(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate, wallet_start=cfg.wallet_start),
-                             view.rules, view.funding, clock)
+                             view.rules, view.funding, clock, tick_fn=tick_fn)
         if s.veto.startswith("ledger:"):
             veto = LedgerReplayVeto(_resolve(s.veto[len("ledger:"):]))
         else:
@@ -375,7 +379,8 @@ class BacktestRunner:
             def entry_ref(pair, D, row, _v=view):          # noqa: E306  (freqtrade current_rate: sonraki adim acilisi)
                 return _v.open_at(pair, D)
         eng = Engine(cfg, clock=clock, view=view, broker=broker, ledger=ledger, state=state, signals=signals,
-                     strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=True)
+                     strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=True,
+                     tick_fn=tick_fn)
         view_peek = [0]
         if cfg.cost.fill_model == "legacy_compat":
             eng.gate.state = _CompatEntryView(state, raw, clock, view_peek)

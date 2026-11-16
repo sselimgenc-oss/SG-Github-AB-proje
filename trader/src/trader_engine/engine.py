@@ -73,7 +73,7 @@ class Engine:
     def __init__(self, cfg: EngineConfig, *, clock: Clock, view: MarketView, broker: Broker, ledger: L.Ledger,
                  state: StateStore, signals: SignalSource, strategy: Strategy, veto: VetoSource, kill: Killswitch,
                  status: StatusWriter | None, orders: OrderManager | None = None, entry_ref_fn=None,
-                 strict: bool = False) -> None:
+                 strict: bool = False, tick_fn=None) -> None:
         self.cfg = cfg
         self.clock = clock
         self.view = view
@@ -88,6 +88,8 @@ class Engine:
         self.strict = strict
         rules_fn = broker.rules
         self.orders = orders or OrderManager(cfg.bot, broker, state, clock, rules_fn)
+        if tick_fn is not None:
+            self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
         self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn)
         self.reconciler = Reconciler(cfg, broker, state, ledger, self.orders, clock)
         if getattr(signals, "last_exit_fn", False) is None:
@@ -481,7 +483,7 @@ class Engine:
         self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp))
         self._c["trades_opened"] += 1
         eq = self.state.kv_get(f"eq:{pos.trade_id}")
-        tick = self.broker.rules(e.pair).tick
+        tick = self.orders.stop_tick(newp)
         viol = fill_risk_violation(newp, float(eq), tick) if eq else None
         cur = self.state.get_position(pos.trade_id) or newp
         if viol:

@@ -15,7 +15,7 @@ from ..clock import Clock
 from ..config import CostModel
 from ..errors import BrokerError, BrokerUncertain
 from ..funding import due_funding_times, funding_payment
-from ..numeric import is_multiple, round_adverse
+from ..numeric import is_multiple, round_adverse, round_nearest
 from ..types import (BrokerAccount, BrokerEvent, BrokerOrder, BrokerPosition, Fill, FundingPoint, MinuteBar,
                      OrderRequest, OrderResult, Role, Side, SymbolRules, require_utc)
 
@@ -101,8 +101,10 @@ class PaperBroker:
 
     def __init__(self, cfg: PaperConfig, rules_fn: Callable[[str], SymbolRules],
                  funding_fn: Callable[[str, datetime, datetime], list[FundingPoint]],
-                 clock: Clock, fault_plan: FaultPlan | None = None) -> None:
+                 clock: Clock, fault_plan: FaultPlan | None = None,
+                 tick_fn: Callable[[str, datetime], float] | None = None) -> None:
         self._cfg = cfg
+        self._tick_fn = tick_fn            # yalniz legacy_compat: (cift, giris ani) -> aylik tarihsel tick
         self._rules_fn = rules_fn
         self._funding_fn = funding_fn
         self._clock = clock
@@ -400,9 +402,13 @@ class PaperBroker:
                                             rate=p.rate, mark=mark))
         self._last_funding[pair] = ts
 
-    def _slipped(self, base: float, order_side: str, slip_bps: float, tick: float) -> float:
+    def _slipped(self, base: float, order_side: str, slip_bps: float, tick: float,
+                 pair: str | None = None, opened_ts: datetime | None = None) -> float:
         if self._legacy:
-            return base
+            # freqtrade: tarihsel tick'e en yakin yuvarlama; pozisyonun tick'i GIRIS ayininkidir ve omur boyu sabit
+            if self._tick_fn is None or pair is None or opened_ts is None:
+                return base
+            return round_nearest(base, self._tick_fn(pair, opened_ts))
         d = Decimal(slip_bps) / Decimal(10000)
         f = Decimal(1) + d if order_side == "buy" else Decimal(1) - d
         raw = float(Decimal(repr(float(base))) * f)
@@ -420,7 +426,7 @@ class PaperBroker:
         cost = self._cfg.cost
         if o.pair in self._pos:
             return self._reject_at_fill(o, ts, "position_exists")
-        fp = self._slipped(bar.last_o, o.order_side, cost.slip_entry_bps, rules.tick)
+        fp = self._slipped(bar.last_o, o.order_side, cost.slip_entry_bps, rules.tick, o.pair, ts)
         notional = o.qty * fp
         if notional < rules.min_notional:
             return self._reject_at_fill(o, ts, "min_notional")
@@ -448,7 +454,7 @@ class PaperBroker:
         if pos is None:
             return self._reject_at_fill(o, ts, "no_position")
         qty = min(o.qty, pos.qty)
-        fp = self._slipped(bar.last_o, o.order_side, self._cfg.cost.slip_exit_bps, rules.tick)
+        fp = self._slipped(bar.last_o, o.order_side, self._cfg.cost.slip_exit_bps, rules.tick, o.pair, pos.opened_ts)
         fee = qty * fp * self._cfg.cost.taker_fee
         self._close(o, pos, qty, fp, fee, ts, "market", "fill", None)
 
@@ -510,7 +516,7 @@ class PaperBroker:
                 return self._liquidate(pair, pos, stops, stop_px, ts)
             gap = op <= stop_px if long else op >= stop_px   # type: ignore[operator]
             base = bar.last_o if gap else stop_px
-            fp = self._slipped(base, stop.order_side, cost.slip_stop_bps, rules.tick)   # type: ignore[union-attr,arg-type]
+            fp = self._slipped(base, stop.order_side, cost.slip_stop_bps, rules.tick, pair, pos.opened_ts)   # type: ignore[union-attr,arg-type]
             qty = min(stop.qty, pos.qty)   # type: ignore[union-attr]
             self._close(stop, pos, qty, fp, qty * fp * cost.taker_fee, ts, "stop", "fill", None)   # type: ignore[arg-type]
             return
@@ -521,7 +527,7 @@ class PaperBroker:
             t = min(hit, key=lambda x: x.trigger_price) if long else max(hit, key=lambda x: x.trigger_price)   # type: ignore[arg-type,return-value]
             gap = op >= t.trigger_price if long else op <= t.trigger_price   # type: ignore[operator]
             base = bar.last_o if gap else t.trigger_price
-            fp = self._slipped(base, t.order_side, cost.slip_exit_bps, rules.tick)   # type: ignore[arg-type]
+            fp = self._slipped(base, t.order_side, cost.slip_exit_bps, rules.tick, pair, pos.opened_ts)   # type: ignore[arg-type]
             qty = min(t.qty, pos.qty)
             self._close(t, pos, qty, fp, qty * fp * cost.taker_fee, ts, "target", "fill", None)
         if bar.mark_c is not None:

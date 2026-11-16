@@ -89,6 +89,12 @@ class GuardedView:
         self.peek_uses += 1
         return self._v.open_at(pair, ts)                                   # type: ignore[attr-defined]
 
+    def tick_at(self, pair: str, ts: datetime) -> float:
+        """Aylik tarihsel tick (freqtrade); ayin tum mumlarina bakar => yalniz uyum kipi."""
+        if not self._compat:
+            raise LookaheadError("tick_at yalniz fill_model='legacy_compat' ile kullanilabilir")
+        return self._v.tick_at(pair, ts)                                   # type: ignore[attr-defined]
+
     def __getattr__(self, name: str):
         return getattr(self._v, name)
 

@@ -58,7 +58,13 @@ class OrderManager:
         self.rules_fn = rules_fn
         self.unknown_grace_s = unknown_grace_s
         self.max_attempts = max(1, int(max_attempts))
+        self.tick_fn: Callable[[str, datetime], float] | None = None   # yalniz legacy_compat: giris-ayi tarihsel tick
 
+    def stop_tick(self, pos: Position) -> float:
+        """Stop yuvarlama tick'i: native = borsa kurali; legacy_compat = pozisyonun GIRIS ayinin tarihsel tick'i."""
+        if self.tick_fn is not None and pos.entry_ts is not None:
+            return self.tick_fn(pos.pair, pos.entry_ts)
+        return self.rules_fn(pos.pair).tick
     # ------------------------------------------------------------------ yardimcilar
     def _call(self, req: OrderRequest) -> OrderResult:
         if req.role in ("entry", "exit"):
@@ -303,7 +309,7 @@ class OrderManager:
     def place_initial_stop(self, pos: Position) -> SubmitOutcome:
         if pos.qty is None or not pos.qty > 0:
             raise ValueError("pozisyon qty yok")
-        tick = self.rules_fn(pos.pair).tick
+        tick = self.stop_tick(pos)
         price = round_tight(pos.initial_stop, pos.side, tick)
         out = self._stop_attempt(pos, price, 0)
         if out.ok:
@@ -330,7 +336,7 @@ class OrderManager:
     def replace_stop(self, pos: Position, new_stop: float) -> SubmitOutcome:
         if pos.qty is None or not pos.qty > 0:
             raise ValueError("pozisyon qty yok")
-        tick = self.rules_fn(pos.pair).tick
+        tick = self.stop_tick(pos)
         new = round_tight(new_stop, pos.side, tick)
         tighter = new > pos.current_stop if pos.side == "long" else new < pos.current_stop
         if not tighter:
