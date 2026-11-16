@@ -159,10 +159,12 @@ Veri: özsermaye geçmişi ve günlük K/Z defterin kapanmış işlemlerinden (`
 - Dizin **yazılabilir** ve yazar kapalıysa `mode=ro` açılır ama SQLite `-wal`/`-shm` oluşturur (ana DB dosyası aynı kalır). Üretimde `ReadOnlyPaths` bunu engeller; geliştirme/test dizinlerinde bu yan etki beklenir.
 - Karar: `immutable=1` ile yedek açma eklenmedi (yazar başlarsa tutarsız okuma riski; fail-closed seçildi). Bot hep çalıştığı için üretimde ilk durum geçerlidir; bot bakım için durdurulursa panel "veri yok" der (istenirse kararlı bir alternatif: motor kapanışta `-wal`'i bırakmaz → `gate_status_readonly()` bekleniyor, soru §9.6).
 
-## 13. PC + iPhone erişimi (mentor kararı, 16 Kasım 2026)
-Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı canlı veriyle. Karar: **Tailscale + `tailscale serve`**.
-- Sunucu: Tailscale kurulur, `tailscale serve --bg 8787`. Panel 127.0.0.1:8787'de, salt okunur, parolasız kalır. Host izin listesine `*.ts.net` adı eklenir (yapılandırmadan); CSP değişmez. **`tailscale funnel` asla kullanılmaz** (genel internete açar).
-- Kullanıcı: iPhone ve PC'ye Tailscale uygulaması, ikisinde aynı hesapla giriş, tek adres yer imi (cihaz başına ~3 adım, bir kez). Hesapta iki adımlı doğrulama açık olmalı.
-- Risk: düşük — açık port yok, WireGuard + HTTPS. Kalan açık nokta hesabın kendisi.
-- Reddedilen: SSH uygulamasıyla port yönlendirme (iOS arka planda kapatıyor, zahmetli); herkese açık HTTPS + parola (paylaşılan sunucuda açık port).
-- Zamanlama: 30 Kasım için engel değil (uyarılar Telegram'da); kağıt döneminin ilk haftasında (~15 dk).
+## 13. PC + iPhone erişimi (mentor kararı, 16 Kasım 2026 — revize)
+Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı veriyle; kullanıcı cihazına kurulum istemiyor ve diğer projelerinde (1L3A, CT) Cloudflare Worker kullanıyor. İlk karar (Tailscale) bu bilgiyle **değiştirildi**. Karar: **1L3A tarzı statik yayın — Cloudflare Worker + Basic Auth.**
+- Sunucu: panel "anlık görüntü" kipinde verisi gömülü, tek, kendi kendine yeten bir HTML üretir; üstünde görünür "oluşturulma zamanı" damgası ve bayatlık şeridi. Zamanlayıcı 5 dakikada bir `wrangler deploy` ile yükler (veri en çok ~6 dk eski). Canlı sunucu 127.0.0.1'de kalır.
+- Worker 1L3A'dan alınır (`deploy/pano_worker.js`): Basic Auth, fail-closed, parola Worker sırrı. **Kilitsiz yayın bayrağı yok.**
+- Kullanıcı: Cloudflare'da kapsamlı bir API anahtarı oluşturur (güvenli formla; sohbete yazılmaz), parolayı belirler (rastgele, 32+ karakter), adresi yer imine ekler. Kurulum yok.
+- Güvenlik: Basic Auth HTTPS üzerinden, ama hız sınırı/kilitleme yok → uzun rastgele parola. Wrangler anahtarı tek Worker'a daraltılamaz: sunucu ele geçirilirse 1L3A ve CT Worker'ları da üzerine yazılabilir → ayrı Cloudflare hesabı ya da bu riski kabul (kullanıcı kararı). Anlık görüntüde yalnız pozisyon/özsermaye/özet; asla anahtar yok.
+- Reddedilen: Tunnel + Access (Cloudflare DNS'te alan adı gerekir; trycloudflare'de Access yok, adres değişken); Tailscale (cihaz kurulumu).
+- Sonra (doğrulanmadı): workers.dev üzerinde Cloudflare Access e-posta kodu Basic Auth'un yerini alabilir.
+- Zamanlama: ~1–2 gün; 30 Kasım'dan önce sığar.
