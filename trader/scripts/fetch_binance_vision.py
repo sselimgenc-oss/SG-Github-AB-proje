@@ -14,7 +14,13 @@ Cikti (freqtrade 2026.10 adlandirmasi, --datadir user_data/data/binance):
 Idempotent: ham zip'ler user_data/data/_vision_raw altinda onbelleklenir, var olan
 dosyalar tekrar indirilmez. .CHECKSUM (sha256) dogrulanir. Yalniz data.binance.vision.
 
-Kullanim: python scripts/fetch_binance_vision.py [--start 2024-11] [--pairs BTC,ETH] [--workers 8]
+1m eklentisi (06 §5): `--tfs 1m` (ya da `--only-1m`) klines 1m (last) ve markPriceKlines 1m (mark) indirir:
+  futures/BTC_USDT_USDT-1m-futures.feather, futures/BTC_USDT_USDT-1m-mark.feather
+  (date, open, high, low, close, volume; compression="uncompressed": HistoricalSource memory_map ile okur).
+Boyut: ~1,05 M satir x 6 sutun x 8 bayt ~ 50 MB / dosya / cift. `--end YYYY-MM` son ayi (dahil) sinirlar.
+
+Kullanim: python scripts/fetch_binance_vision.py [--start 2024-11] [--end 2026-04] [--pairs BTC,ETH] [--workers 8]
+          [--tfs 15m,1h,4h,1d,1m] [--only-1m]
 """
 from __future__ import annotations
 
@@ -36,6 +42,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 BASE_URL = "https://data.binance.vision/data/futures/um"
 KLINE_TFS = ["15m", "1h", "4h", "1d"]
+DEFAULT_TFS = "15m,1h,4h,1d"  # 1m yalniz acikca istenince (boyut)
 MARK_TF = "1h"  # binance: mark_ohlcv_timeframe = funding_fee_timeframe = 1h (freqtrade 2026.10)
 FUNDING_TF = "1h"
 OHLCV = ["date", "open", "high", "low", "close", "volume"]
@@ -154,6 +161,9 @@ def main() -> int:
     ap.add_argument("--data-dir", type=Path, default=ROOT / "user_data/data")
     ap.add_argument("--pairs", help="virgullu baz kisaltmalar (BTC,ETH); varsayilan: config")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--end", default=None, help="YYYY-MM (dahil); varsayilan bugun")
+    ap.add_argument("--tfs", default=DEFAULT_TFS, help="virgullu: 15m,1h,4h,1d,1m (1m last+mark ekler)")
+    ap.add_argument("--only-1m", action="store_true", help="yalniz 1m last + 1m mark")
     args = ap.parse_args()
 
     pairs = load_pairs(args.config)
@@ -162,15 +172,25 @@ def main() -> int:
         pairs = [p for p in pairs if p.split("/")[0] in keep]
     today = datetime.now(timezone.utc).date()
     start = date(int(args.start[:4]), int(args.start[5:7]), 1)
-    mlist = months(start, today)
+    end_d = today if not args.end else date(int(args.end[:4]), int(args.end[5:7]), 1)
+    mlist = months(start, end_d)
+    tfs = [t.strip() for t in args.tfs.split(",") if t.strip()]
+    if args.only_1m:
+        tfs = ["1m"]
+    for t in tfs:
+        if t not in ("1m", *KLINE_TFS):
+            ap.error(f"gecersiz tf: {t}")
     raw_dir = args.data_dir / "_vision_raw"
     out_dir = args.data_dir / "binance" / "futures"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # datasets: (kind, pair, tf)
-    datasets = [("klines", p, tf) for p in pairs for tf in KLINE_TFS]
-    datasets += [("markPriceKlines", p, MARK_TF) for p in pairs]
-    datasets += [("fundingRate", p, None) for p in pairs]
+    datasets = [("klines", p, tf) for p in pairs for tf in tfs]
+    if not args.only_1m:
+        datasets += [("markPriceKlines", p, MARK_TF) for p in pairs]
+        datasets += [("fundingRate", p, None) for p in pairs]
+    if "1m" in tfs:
+        datasets += [("markPriceKlines", p, "1m") for p in pairs]
 
     # 1) indirme gorevleri: (url, dest)
     def monthly_url(kind, sym, tf, mo):
@@ -242,7 +262,10 @@ def main() -> int:
                     (raw_dir / "daily" / kind).glob(f"{sym}-{tf}-*.zip")
                 )
                 df = build(files, reader)
-        df.to_feather(out_dir / name, compression="lz4", compression_level=9)
+        if tf == "1m":
+            df.to_feather(out_dir / name, compression="uncompressed")
+        else:
+            df.to_feather(out_dir / name, compression="lz4", compression_level=9)
         summary.append((name, df["date"].iloc[0], df["date"].iloc[-1], len(df)))
     for name, a, b, n in summary:
         print(f"{name:42s} {a:%Y-%m-%d %H:%M} -> {b:%Y-%m-%d %H:%M}  {n:>7d}")
