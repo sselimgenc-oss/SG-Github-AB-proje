@@ -128,3 +128,13 @@ Zorunlu düzeltmeler:
 - "JS olmadan çalışır" iddiası ve ilgili test maddesi çıkarılır.
 
 Zamanlama: 30 Kasım için gerekli değil (kağıt başlangıcını Telegram raporu karşılar). Kağıt döneminin ilk iki haftasında gerçek veriyle yapılır; canlıdan önce kararlı olmalı.
+
+## 11. Kullanıcı yanıtı (16 Kasım 2026)
+Kullanıcı 1L3A panelinde en çok **Özet** sekmesine bakıyor (`motor/canli/pano.py` `_sekme_ozet`). Bu yüzden v1'in ana ekranı 1L3A Özet düzenini izler:
+- Özsermaye eğrisi + kutular: max düşüş, başlangıç, zirve özsermaye, kapanan işlem sayısı.
+- Sağ sütun: risk payı (açık risk / limitler) ve sağlık özeti.
+- Zirveden düşüş grafiği, günlük K/Z grafiği.
+- Takvim (günlük K/Z ısı haritası; güne dokununca o günün işlemleri).
+- Öğrenen↔ikiz karşılaştırması bu ekrana kapalı bir bölüm olarak eklenir (v2 yerine v1'de, veri hazır olduğu için).
+- 1L3A'daki "Kıyas", "Dönemsel getiri (ajan)", "Beklenti aralığı", "Aralık karnesi" ve "İçgörüler" alınmaz (veri kaynağı yok).
+Veri: özsermaye geçmişi ve günlük K/Z defterin kapanmış işlemlerinden (`list_closed_trades`) ve status.json'dan türetilir; motor ayrı bir ozet dosyası yazmaz.
