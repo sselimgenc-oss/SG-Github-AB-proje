@@ -25,13 +25,14 @@ def label_candidates(candles: pd.DataFrame, cands: pd.DataFrame, *, horizon: int
                      target_r: float = TARGET_R, fee_rate: float = FEE_RATE,
                      slippage_rate: float = SLIPPAGE_RATE) -> pd.DataFrame:
     """candles: tek cift, indeks = mum ACILIS zamani (UTC). cands: ts, side, planned_entry,
-    planned_stop, planned_target. Doner: label, label_end_ts, barrier_net_r, net_r (referans cikis),
+    planned_stop, planned_target. Doner: label, label_end_ts, barrier_net_r, net_r (referans cikis), exit_ts (referans cikis zamani),
     cost_r, ayni indeksle."""
     assert_pre_holdout(candles.index, "mum verisi")
     idx = candles.index
     hi, lo, cl = (candles[c].to_numpy(float) for c in ("high", "low", "close"))
     n = len(candles)
     out = {k: np.full(len(cands), np.nan) for k in ("label", "barrier_net_r", "net_r", "cost_r")}
+    exit_ts = np.full(len(cands), np.datetime64("NaT", "ns"), dtype="datetime64[ns]")
     end_ts = np.full(len(cands), np.datetime64("NaT", "ns"), dtype="datetime64[ns]")
     pos_all = idx.searchsorted(pd.DatetimeIndex(cands["ts"]) - BAR)
     for k, (side, e, s, tg, p) in enumerate(zip(cands["side"], cands["planned_entry"], cands["planned_stop"],
@@ -73,14 +74,16 @@ def label_candidates(candles: pd.DataFrame, cands: pd.DataFrame, *, horizon: int
             th, tR = np.zeros_like(sh), 0.0
         is_, it_ = (int(np.argmax(sh)) if sh.any() else None), (int(np.argmax(th)) if th.any() else None)
         if is_ is not None and (it_ is None or is_ <= it_):
-            g2 = -1.0
+            g2, x = -1.0, is_
         elif it_ is not None:
-            g2 = tR
+            g2, x = tR, it_
         elif len(c2) == ts_:
-            g2 = sgn * (c2[-1] - e) / rr
+            g2, x = sgn * (c2[-1] - e) / rr, ts_ - 1
         else:
             continue
         out["net_r"][k] = g2 - cost
+        exit_ts[k] = (idx[a + x] + BAR).to_datetime64()
     res = pd.DataFrame(out, index=cands.index)
     res["label_end_ts"] = pd.to_datetime(end_ts, utc=True)
+    res["exit_ts"] = pd.to_datetime(exit_ts, utc=True)       # referans (gercek) cikis zamani
     return res

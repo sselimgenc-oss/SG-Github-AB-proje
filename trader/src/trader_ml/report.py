@@ -51,7 +51,9 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
                  f"{m['taken_frac']:.1%} | {_fmt(m['mean_filtered'])} | {_fmt(m['mean_all'])} | {_fmt(m['delta'])} | {_fmt(m['lower'])} |")
     L += ["", "## Notlar ve sınırlar", "",
           "- Evren: stratejinin aldığı adaylar (`taken`); filtresiz temel = hepsi. Örtüşen pozisyonlar ve risk payı etkileşimi modellenmedi (§3.5 yaklaşıklığı).",
-          "- IC ve DSR hesabında adaylar bağımsız sayıldı; ardışık aday bağımlılığı bootstrap blok uzunluğuyla yalnız fark testinde hesaba katıldı.",
+          "- IC t-istatistiği ve DSR günlük (UTC) toplulaştırılmış gözlemlerle hesaplandı (aynı mum/gün adayları bağımsız sayılmaz); fark testinde ayrıca bootstrap blok uzunluğu kullanıldı.",
+          "- Platt kalibrasyonu ve eşik İLERİ YÖNLÜ uyduruldu (k. dilim için yalnız önceki dilimler; ilk dilimde özdeşlik + sabit 0,50 eşik). Paketteki Platt/eşik tüm OOF'a uydurulur ve kapıda skorlanmaz.",
+          "- Maliyet stresi: komisyon ×2 + 5 bp TARAF başına (tur başına 10 bp).",
           f"- Eşikler önceden yazılıdır ve gevşetilmez: {GATE}.",
           "- Kapıyı geçse bile geçmiş kapı yalnız gölgeye girişe yeter (§7 notları); paraya dokunma kararı ML-3'tedir.", ""]
     return "\n".join(L)

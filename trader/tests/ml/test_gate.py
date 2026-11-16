@@ -29,7 +29,7 @@ def test_select_threshold_respects_grid_and_min_fraction():
 def test_max_drawdown_and_stress():
     assert max_drawdown(np.array([1, -2, -1, 3, -1.0])) == pytest.approx(3.0)
     df = pd.DataFrame({"net_r": [1.0], "cost_r": [0.2]})           # entry/R = 100
-    assert stress_r(df)[0] == pytest.approx(1.0 - (0.001 + 0.0005) * 100)
+    assert stress_r(df)[0] == pytest.approx(1.0 - (0.001 + 0.0010) * 100)      # +5 bp PER SIDE = 10 bp tur
 
 
 def _oof(oracle: bool, seed=0, n=900):

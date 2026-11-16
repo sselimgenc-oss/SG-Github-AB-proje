@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.fixture(scope="module")
 def run(table, tmp_path_factory):
     out = tmp_path_factory.mktemp("ml_run")
-    return out, pipeline.run(table, out, synthetic=True, n_boot=300)
+    return out, pipeline.run(table, out, synthetic=True, n_boot=300, n_trials=2)
 
 
 def test_end_to_end_artifacts_and_parity(run, table):
@@ -29,7 +29,7 @@ def test_end_to_end_artifacts_and_parity(run, table):
     for f in ("model_candidate.json", "gate_report.md", "gate_result.json", "oof_predictions.parquet"):
         assert (out / f).exists()
     assert s["parity_max_abs_diff"] <= 1e-9
-    pkg = load_package(out / "model_candidate.json", check_expiry=False)
+    pkg = load_package(out / "model_candidate.json", check_expiry=False, require_gate=False)
     assert pkg["meta"]["features"] == feature_columns(table) and pkg["meta"]["expiry_days"] == 21
     assert pkg["meta"]["train_window"]["end"].startswith("2026-04-30")
     assert pkg["meta"]["synthetic"] is True
@@ -57,8 +57,7 @@ def test_oof_never_contains_training_rows(run, table):
 
 
 def test_cli_script_synthetic(tmp_path):
-    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "ml_gate.py"), "--synthetic", "--out", str(tmp_path / "o"),
-                        "--limits"], capture_output=True, text=True, timeout=600, cwd=ROOT)
+    r = subprocess.run([sys.executable, str(ROOT / "scripts" / "ml_gate.py"), "--synthetic", "--out", str(tmp_path / "o")], capture_output=True, text=True, timeout=600, cwd=ROOT)
     assert r.returncode == 0, r.stderr[-2000:]
     assert (tmp_path / "o" / "gate_report.md").exists()
 

@@ -64,15 +64,36 @@ def select_threshold(p: np.ndarray, r: np.ndarray, min_frac: float = GATE["min_t
     return (best[0] if best else None), best
 
 
+def _day(ts) -> pd.Series:
+    return pd.Series(pd.to_datetime(ts, utc=True)).dt.floor("D").reset_index(drop=True)
+
+
+def daily_mean(ts, *cols) -> list[np.ndarray]:
+    """Ayni gun (UTC) satirlarini ortalayarak bagimsiz-olmayan (ayni mum/gun) gozlemleri tek gozleme indirir."""
+    d = _day(ts)
+    frame = pd.DataFrame({f"c{i}": np.asarray(c, dtype=float) for i, c in enumerate(cols)})
+    g = frame.groupby(d.to_numpy()).mean()
+    return [g[f"c{i}"].to_numpy() for i in range(len(cols))]
+
+
+def daily_pnl(ts, r: np.ndarray, span) -> np.ndarray:
+    """Filtreli islemlerin gunluk net R toplami; span=(ilk gun, son gun) takvimi boyunca (islemsiz gun = 0)."""
+    s = pd.Series(np.asarray(r, dtype=float)).groupby(_day(ts).to_numpy()).sum()
+    days = pd.date_range(span[0], span[1], freq="D")
+    return s.reindex(days, fill_value=0.0).to_numpy()
+
+
 def max_drawdown(r: np.ndarray) -> float:
     c = np.cumsum(r)
     return float(np.max(np.maximum.accumulate(np.r_[0.0, c])[1:] - c)) if len(r) else 0.0
 
 
 def stress_r(df: pd.DataFrame) -> np.ndarray:
-    """Komisyon x2 + 5 bp (tur basina toplam) kolu: ek maliyet = notional orani * (entry/R)."""
+    """Komisyon x2 + 5 bp TARAF BASINA (tur basina 10 bp) kolu: ek maliyet = notional orani * (entry/R).
+    cost_r yalniz komisyon+kayma oldugundan entry/R onunla geri cikarilir (schema.py)."""
     entry_over_r = df["cost_r"].to_numpy() / (2.0 * (FEE_RATE + SLIPPAGE_RATE))
-    extra = ((GATE["stress_fee_mult"] - 1.0) * 2.0 * FEE_RATE + GATE["stress_extra_bp"] * 1e-4) * entry_over_r
+    extra = ((GATE["stress_fee_mult"] - 1.0) * 2.0 * FEE_RATE
+             + 2.0 * GATE["stress_extra_bp_per_side"] * 1e-4) * entry_over_r
     return df["net_r"].to_numpy() - extra
 
 
@@ -122,16 +143,23 @@ def model_metrics(oof: pd.DataFrame, pcol: str, n_boot: int = 2000) -> dict:
     th, best = select_threshold(p, r)
     feasible = th is not None
     th_used = th if feasible else float(np.quantile(p, 1.0 - GATE["min_taken_frac"]))   # yalniz rapor icin
-    m = p >= th_used
+    tcol = "th_" + pcol[2:] if pcol.startswith("p_") else None
+    if tcol is not None and tcol in U.columns:
+        # ILERI YONLU esik: her satirin esigi yalniz o satirdan once bilinen dilimlerle secildi (NaN = esik yok -> alinmaz)
+        m = p >= U[tcol].to_numpy(float)
+    else:
+        m = p >= th_used
     out = {"threshold": th, "threshold_used": th_used, "feasible": feasible, "n": int(len(U)),
            "taken_frac": float(m.mean()), "mean_all": float(r.mean()),
            "mean_filtered": float(r[m].mean()) if m.any() else float("nan")}
     out.update(boot_delta(r, m, n_boot))
-    # DSR: filtreli islem basina net R serisi (zaman sirali)
+    # DSR: gunluk toplulastirilmis filtreli net R serisi (ayni mum/gun adaylari bagimsiz sayilmaz)
     rf = r[m]
-    sr = float(rf.mean() / rf.std(ddof=1)) if len(rf) > 2 and rf.std(ddof=1) > 0 else float("nan")
-    g3, g4 = return_moments(rf) if len(rf) > 2 else (0.0, 3.0)
-    out["sr_per_trade"], out["n_filtered"] = sr, int(m.sum())
+    ts_u = U["ts"].to_numpy()
+    rd = daily_pnl(ts_u[m], rf, (_day(ts_u).min(), _day(ts_u).max())) if m.any() else np.array([])
+    sr = float(rd.mean() / rd.std(ddof=1)) if len(rd) > 2 and rd.std(ddof=1) > 0 else float("nan")
+    g3, g4 = return_moments(rd) if len(rd) > 2 else (0.0, 3.0)
+    out["sr_per_trade"], out["n_filtered"], out["n_days"] = sr, int(m.sum()), int(len(rd))
     out["dd_all"], out["dd_filtered"] = max_drawdown(r), max_drawdown(rf)
     out["skew"], out["kurt"] = g3, g4
     # tek cift cikarilinca
@@ -176,20 +204,24 @@ def run_gate(oof: pd.DataFrame, pcols: list[str], *, selected: str, parity_max_a
     res = GateResult(model=selected, passed=False, threshold=mm["threshold"], metrics={"per_model": met})
     C = res.checks
 
-    # 1) IC kapisi
+    # 1) IC kapisi: gunluk toplulastirma (ayni gun/mum adaylari bagimsiz sayilmaz), tam 4 dilim, >= 3 pozitif
     L = oof[oof["label"].notna()]
-    rho = spearman(L[selected].to_numpy(), L["net_r"].to_numpy())
-    t = rho_t(rho, len(L))
-    folds = sorted(L["fold"].unique())
-    fr = {int(f): spearman(L.loc[L["fold"] == f, selected].to_numpy(), L.loc[L["fold"] == f, "net_r"].to_numpy())
-          for f in folds}
+    ds, dr = daily_mean(L["ts"], L[selected], L["net_r"])
+    rho = spearman(ds, dr)
+    t = rho_t(rho, len(ds))
+    all_folds = sorted(oof["fold"].unique())
+    fr = {}
+    for f in all_folds:
+        Lf = L[L["fold"] == f]
+        a_, b_ = daily_mean(Lf["ts"], Lf[selected], Lf["net_r"]) if len(Lf) else ([], [])
+        fr[int(f)] = spearman(a_, b_)
     pos = sum(1 for v in fr.values() if np.isfinite(v) and v > 0)
-    need = math.ceil(G["ic_min_pos_folds_frac"] * len(folds) - 1e-9)
-    ok = bool(np.isfinite(rho) and rho > 0 and t >= G["ic_min_t"] and pos >= need)
-    C.append(Check("1. IC kapisi", ok, f"rho={rho:.4f}, t={t:.2f}, pozitif dilim {pos}/{len(folds)}",
-                   f"rho>0, t>={G['ic_min_t']}, dilimlerin >= {need}/{len(folds)}'i pozitif",
+    need, want = G["ic_min_pos_folds"], G["required_folds"]
+    ok = bool(len(all_folds) == want and np.isfinite(rho) and rho > 0 and t >= G["ic_min_t"] and pos >= need)
+    C.append(Check("1. IC kapisi", ok, f"rho={rho:.4f}, t={t:.2f} (n={len(ds)} gun), pozitif dilim {pos}/{len(all_folds)}",
+                   f"tam {want} dilim degerlendirilmis, rho>0, t>={G['ic_min_t']}, en az {need} dilim pozitif (gunluk toplulastirma)",
                    "dilim rho: " + ", ".join(f"{k}:{v:+.3f}" for k, v in fr.items())))
-    res.metrics["ic"] = {"rho": rho, "t": t, "fold_rho": fr}
+    res.metrics["ic"] = {"rho": rho, "t": t, "fold_rho": fr, "n_days": int(len(ds))}
 
     # 2) kalibrasyon
     brier = float(np.mean((L[selected] - L["label"]) ** 2))
@@ -207,10 +239,10 @@ def run_gate(oof: pd.DataFrame, pcols: list[str], *, selected: str, parity_max_a
                    f"fark >= +{G['delta_net_r_min']} R ve alt sinir > 0"))
     C.append(Check("3c. Filtreli net beklenti", bool(mm["mean_filtered"] > G["filtered_expectancy_min"]),
                    f"{mm['mean_filtered']:+.4f} R (filtresiz {mm['mean_all']:+.4f})", "> 0 R"))
-    dsr = (deflated_sharpe(mm["sr_per_trade"], mm["n_filtered"], mm["skew"], mm["kurt"], n_trials=n_trials)
+    dsr = (deflated_sharpe(mm["sr_per_trade"], mm["n_days"], mm["skew"], mm["kurt"], n_trials=n_trials)
            if np.isfinite(mm["sr_per_trade"]) else float("nan"))
     C.append(Check("3d. Deflated Sharpe", bool(np.isfinite(dsr) and dsr >= G["dsr_min"]),
-                   f"DSR={dsr:.4f} (deneme sayisi {n_trials})", f">= {G['dsr_min']}"))
+                   f"DSR={dsr:.4f} (deneme sayisi {n_trials}, {mm['n_days']} gunluk gozlem)", f">= {G['dsr_min']}"))
     pbo = pbo_for(oof, pcols)
     C.append(Check("3e. PBO (CSCV)", bool(np.isfinite(pbo["pbo"]) and pbo["pbo"] <= G["pbo_max"]),
                    f"PBO={pbo['pbo']:.3f} ({pbo['n_configs']} yapilandirma, {pbo['T']} gun)", f"<= {G['pbo_max']}"))
@@ -228,7 +260,7 @@ def run_gate(oof: pd.DataFrame, pcols: list[str], *, selected: str, parity_max_a
     C.append(Check("3h. Holm (coklu karsilastirma)", bool(padj <= G["holm_alpha"]),
                    f"duzeltilmis p={padj:.4f} ({len(pcols)} model)", f"<= {G['holm_alpha']}"))
     # 4) maliyet dayaniklilik
-    C.append(Check("4. Maliyet dayanikliligi (komisyon x2 + 5 bp)", bool(mm["stress_filtered"] >= G["stress_expectancy_min"]),
+    C.append(Check("4. Maliyet dayanikliligi (komisyon x2 + 5 bp/taraf)", bool(mm["stress_filtered"] >= G["stress_expectancy_min"]),
                    f"{mm['stress_filtered']:+.4f} R", f">= {G['stress_expectancy_min']} R"))
     # 5) esleme
     if parity_max_abs_diff is None:

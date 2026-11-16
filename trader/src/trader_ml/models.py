@@ -9,7 +9,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from .config import AGE_HALF_LIFE_DAYS, LGBM_PARAMS, LOGIT_PARAMS, SOURCE_WEIGHTS
+from .config import AGE_HALF_LIFE_DAYS, BAR, EMBARGO_BARS, LGBM_PARAMS, LOGIT_PARAMS, SOURCE_WEIGHTS
 from .treeeval import _sigmoid
 
 
@@ -73,16 +73,22 @@ def _lgb_params() -> dict:
     return p
 
 
-def fit_lgbm(X, y, w, *, val_frac: float = 0.2, num_rounds: int | None = None):
+def fit_lgbm(X, y, w, *, val_frac: float = 0.2, num_rounds: int | None = None, ts=None, label_end=None):
     """Sabit tarif; erken durdurma icin kronolojik son %val_frac dogrulama. (booster, best_iter).
-    num_rounds verilirse erken durdurma yok (nihai model)."""
+    num_rounds verilirse erken durdurma yok (nihai model). ts + label_end (datetime64, X ile ayni sira)
+    verilirse egitim/dogrulama arasinda ARINDIRMA yapilir: etiketi dogrulama baslangicindan (- ambargo)
+    sonra biten egitim satirlari atilir."""
     import lightgbm as lgb
     p = _lgb_params()
     if num_rounds is not None:
         ds = lgb.Dataset(X, label=y, weight=w, free_raw_data=False)
         return lgb.train(p, ds, num_boost_round=num_rounds), num_rounds
     k = int(len(X) * (1 - val_frac))
-    dtr = lgb.Dataset(X[:k], label=y[:k], weight=w[:k], free_raw_data=False)
+    tr_ix = np.arange(k)
+    if ts is not None and label_end is not None:
+        cut = np.asarray(ts, dtype="datetime64[ns]")[k] - np.timedelta64(EMBARGO_BARS * BAR.value, "ns")
+        tr_ix = tr_ix[np.asarray(label_end, dtype="datetime64[ns]")[:k] < cut]
+    dtr = lgb.Dataset(X[tr_ix], label=y[tr_ix], weight=w[tr_ix], free_raw_data=False)
     dva = lgb.Dataset(X[k:], label=y[k:], weight=w[k:], reference=dtr, free_raw_data=False)
     b = lgb.train(p, dtr, num_boost_round=LGBM_PARAMS["n_estimators_max"], valid_sets=[dva],
                   callbacks=[lgb.early_stopping(LGBM_PARAMS["early_stopping_rounds"], verbose=False)])

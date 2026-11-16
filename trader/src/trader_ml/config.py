@@ -33,12 +33,13 @@ MIN_TEST_BARS = 30 * 24
 # --- esik ve kapi (§1, §3.3 adim 4, §3.4) -- DONDURULDU
 THRESHOLD_GRID = tuple(round(0.45 + 0.01 * i, 2) for i in range(26))   # 0.45 .. 0.70
 MIN_TAKEN_FRAC = 0.30
+BURN_IN_THRESHOLD = 0.50             # ilk dilim: gecmis yok -> onceden yazili sabit esik (veriyle uydurulmaz)
 GATE = {
-    "ic_min_t": 2.0, "ic_min_pos_folds_frac": 0.75,
+    "ic_min_t": 2.0, "required_folds": 4, "ic_min_pos_folds": 3,
     "delta_net_r_min": 0.10, "bootstrap_alpha_two_sided": 0.20,      # %90 tek tarafli alt sinir
     "filtered_expectancy_min": 0.0, "dsr_min": 0.95, "pbo_max": 0.25,
     "min_taken_frac": MIN_TAKEN_FRAC, "stress_expectancy_min": -0.05,
-    "stress_fee_mult": 2.0, "stress_extra_bp": 5.0, "parity_tol": 1e-9,
+    "stress_fee_mult": 2.0, "stress_extra_bp_per_side": 5.0, "parity_tol": 1e-9,
     "holm_alpha": 0.10,
 }
 

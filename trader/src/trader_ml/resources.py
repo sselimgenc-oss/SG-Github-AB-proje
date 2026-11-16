@@ -1,6 +1,7 @@
 """Kaynak kurallari (§6): egitim isi botla ayni surecte degil, dusuk oncelikli, tek cekirdek, bellek
 tavani 450 MB (asarsa is olur, bot etkilenmez), <= 20 dk. Arastirma (CPCV, PBO, yeni tarif) sunucu DISI
-calisir: `apply_limits` yalniz sunucu modunda (--limits) cagrilir; gelistirme makinesinde cagrilmaz."""
+calisir: `apply_limits` CLI'da VARSAYILAN uygulanir; `--research` ile (sunucu disi) atlanir. Thread ortam
+degiskenleri numpy/lightgbm ice aktarilmadan ONCE ayarlanmali: `preset_threads` (scripts/ml_gate.py ilk satirlar)."""
 from __future__ import annotations
 
 import os
@@ -8,7 +9,7 @@ import resource
 
 from .config import TRAIN_MEM_CAP_MB, TRAIN_NICE, TRAIN_THREADS, TRAIN_TIME_LIMIT_S
 
-THREAD_ENV = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+from ._threads import THREAD_ENV, preset_threads  # noqa: F401  (numpy-free; numpy/pandas ice aktarilmadan once)
 
 
 def apply_limits(mem_mb: int = TRAIN_MEM_CAP_MB, nice: int = TRAIN_NICE, cpu_seconds: int = TRAIN_TIME_LIMIT_S,

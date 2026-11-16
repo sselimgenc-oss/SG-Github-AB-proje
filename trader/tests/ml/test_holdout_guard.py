@@ -41,13 +41,18 @@ def test_candidate_table_rows_in_holdout_rejected(table):
     bad2.loc[bad2.index[-1], "label_end_ts"] = pd.Timestamp("2026-05-02", tz="UTC")
     with pytest.raises(HoldoutViolation):
         validate_candidates(bad2)
+    bad3 = table.copy()                                            # gercek cikis (exit_ts) de kilitli doneme giremez
+    i = bad3.index[bad3["taken"]][-1]
+    bad3.loc[i, "exit_ts"] = pd.Timestamp("2026-05-03", tz="UTC")
+    with pytest.raises(HoldoutViolation):
+        validate_candidates(bad3)
 
 
 def test_pipeline_and_folds_refuse_holdout(table, tmp_path):
     bad = table.copy()
     bad.loc[bad.index[-1], "ts"] = pd.Timestamp("2026-05-15", tz="UTC")
     with pytest.raises(HoldoutViolation):
-        pipeline.run(bad, tmp_path)
+        pipeline.run(bad, tmp_path, n_trials=2)
     with pytest.raises(HoldoutViolation):
         make_folds(bad)
 

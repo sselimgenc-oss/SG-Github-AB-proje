@@ -17,7 +17,10 @@ Zorunlu sutunlar:
   label           float  uclu bariyer: 1 (+2R once) | 0 (stop/sure) | NaN (cozulmemis)
   label_end_ts    UTC    bariyer temas / ufuk sonu zamani (sizinti temizligi icin)
   net_r           float  GERCEK cikis kuraliyla maliyet sonrasi net R (degerlendirme olcusu, §3.1)
-  cost_r          float  tur basi maliyetin R cinsinden payi (stres testi icin)
+  cost_r          float  tur (giris+cikis) maliyetin R cinsinden payi: YALNIZ komisyon+kayma = 2*(fee+slip)*entry/|entry-stop|
+                         (funding/spread yok; stres testi entry/R'yi bundan turetir)
+  exit_ts         UTC    GERCEK cikis zamani (alinan islemlerde zorunlu; alinmayanlarda NaT/yok sayilir).
+                         f_bars_since_exit yalniz alinan islemlerin gercek cikislarindan uretilir
   f_*             float  ozellikler (en fazla 40)
 """
 from __future__ import annotations
@@ -31,7 +34,7 @@ from .config import MAX_FEATURES, SOURCE_WEIGHTS
 from .guards import assert_pre_holdout
 
 REQUIRED = ["pair", "ts", "setup", "side", "planned_entry", "planned_stop", "planned_target",
-            "source", "taken", "label", "label_end_ts", "net_r", "cost_r"]
+            "source", "taken", "label", "label_end_ts", "exit_ts", "net_r", "cost_r"]
 FEATURE_PREFIX = "f_"
 
 
@@ -55,9 +58,16 @@ def validate_candidates(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["ts"] = pd.to_datetime(out["ts"], utc=True)
     out["label_end_ts"] = pd.to_datetime(out["label_end_ts"], utc=True)
+    out["exit_ts"] = pd.to_datetime(out["exit_ts"], utc=True)
     assert_pre_holdout(out["ts"], "aday tablosu ts")
     # label_end_ts de kilitli doneme tasmamali (etiket ufku ileri bakar)
     assert_pre_holdout(out["label_end_ts"].dropna(), "aday tablosu label_end_ts")
+    assert_pre_holdout(out["exit_ts"].dropna(), "aday tablosu exit_ts")
+    out["taken"] = out["taken"].astype(bool)
+    if out.loc[out["taken"], "exit_ts"].isna().any():
+        raise SchemaError("alinan satirlarda exit_ts zorunlu")
+    if (out["exit_ts"] < out["ts"]).any():
+        raise SchemaError("exit_ts < ts")
     if not out["side"].isin(["long", "short"]).all():
         raise SchemaError("side yalniz long/short")
     if not out["setup"].isin(["T1", "R1"]).all():

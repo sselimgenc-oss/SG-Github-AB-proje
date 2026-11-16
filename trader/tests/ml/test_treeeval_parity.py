@@ -80,7 +80,7 @@ def test_package_roundtrip_hash_and_expiry(data, booster, tmp_path):
     names, X, y, k = data
     t0 = datetime(2026, 11, 20, tzinfo=timezone.utc)
     pkg = build_package(models.lgbm_dump(booster), {"a": 1.0, "b": 0.0}, 0.5, names, X[:k], "2025-01-01",
-                        "2026-04-30", "d" * 64, created_at=t0)
+                        "2026-04-30", "d" * 64, created_at=t0, extra={"gate_passed": True})
     assert pkg["meta"]["expiry_days"] == 21
     assert datetime.fromisoformat(pkg["meta"]["expires_at"]) - t0 == timedelta(days=21)
     assert pkg["meta"]["feature_list_hash"] and len(pkg["meta"]["features"]) == len(names)
@@ -100,3 +100,17 @@ def test_package_roundtrip_hash_and_expiry(data, booster, tmp_path):
     bad["meta"]["features"] = bad["meta"]["features"][::-1]
     with pytest.raises(PackageError, match="hash"):
         load_package(bad, now=t0)
+
+
+def test_load_package_refuses_gate_failed_null_or_thresholdless(data, booster):
+    names, X, y, k = data
+    t0 = datetime(2026, 11, 20, tzinfo=timezone.utc)
+    mk = lambda th, **ex: build_package(models.lgbm_dump(booster), {"a": 1.0, "b": 0.0}, th, names, X[:k], "2025-01-01",
+                                        "2026-04-30", "d" * 64, created_at=t0, extra=ex)
+    for pkg in (mk(0.5), mk(0.5, gate_passed=False), mk(0.5, gate_passed=None)):
+        with pytest.raises(PackageError, match="kapidan gecmedi"):
+            load_package(pkg, now=t0)
+        assert load_package(pkg, now=t0, require_gate=False)["meta"]["kind"] == "lgbm"   # inceleme yolu acik
+    with pytest.raises(PackageError, match="esigi yok"):
+        load_package(mk(None, gate_passed=True), now=t0)
+    assert load_package(mk(0.5, gate_passed=True), now=t0)["threshold"] == 0.5

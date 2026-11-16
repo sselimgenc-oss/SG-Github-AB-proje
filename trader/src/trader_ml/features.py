@@ -124,20 +124,21 @@ def candidate_rows(frame: pd.DataFrame, pair: str) -> pd.DataFrame:
 
 
 def add_bars_since_exit(table: pd.DataFrame) -> pd.DataFrame:
-    """Ayni cift icin, karar aninda ZATEN cozulmus (label_end_ts <= ts) son adaydan beri gecen mum
-    sayisi. Yalniz gecmis bilgiyle: gelecekte cozulen aday sayilmaz."""
+    """Ayni cift icin, karar aninda ZATEN gerceklesmis (exit_ts <= ts) son ALINAN islemin cikisindan
+    beri gecen mum sayisi. Canli bot alinmayan adaylarin bariyer bitisini goremez; yalniz alinan
+    islemlerin gercek cikislari (exit_ts) kullanilir, gelecekte biten islem sayilmaz."""
     out = table.copy()
     vals = np.full(len(out), np.nan)
     for _, g in out.groupby("pair", sort=False):
-        ends = g["label_end_ts"].to_numpy("datetime64[ns]")
         ts = g["ts"].to_numpy("datetime64[ns]")
-        order = np.argsort(ends, kind="mergesort")
-        e_sorted = ends[order]
-        valid = ~np.isnat(e_sorted)
-        e_valid = e_sorted[valid]
-        pos = np.searchsorted(e_valid, ts, side="right") - 1
-        for j, ix in enumerate(g.index):
-            if pos[j] >= 0:
-                vals[out.index.get_loc(ix)] = (ts[j] - e_valid[pos[j]]) / np.timedelta64(1, "h")
+        ex = g.loc[g["taken"].astype(bool), "exit_ts"].dropna().to_numpy("datetime64[ns]")
+        if len(ex) == 0:
+            continue
+        e_sorted = np.sort(ex)
+        pos = np.searchsorted(e_sorted, ts, side="right") - 1
+        ok = pos >= 0
+        res = np.full(len(g), np.nan)
+        res[ok] = (ts[ok] - e_sorted[pos[ok]]) / np.timedelta64(1, "h")
+        vals[out.index.get_indexer(g.index)] = res
     out["f_bars_since_exit"] = vals
     return out

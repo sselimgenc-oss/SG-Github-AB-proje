@@ -16,10 +16,11 @@ import numpy as np
 import pandas as pd
 
 from . import models
-from .config import GATE, RECIPE_ID
-from .gate import GateResult, model_metrics, run_gate
+from .config import BURN_IN_THRESHOLD, GATE, RECIPE_ID
+from .gate import GateResult, model_metrics, run_gate, select_threshold
 from .guards import assert_pre_holdout
 from .package import build_package, data_hash, load_package, save_package
+from .registry import DEFAULT_REGISTRY, n_trials_from_registry
 from .report import render_report
 from .resources import apply_limits, peak_rss_mb
 from .schema import feature_columns, validate_candidates
@@ -29,10 +30,11 @@ from .walkforward import make_folds
 MODELS = ("logistic", "lgbm")
 
 
-def _fold_models(X, y, w, tr):
+def _fold_models(X, y, w, tr, ts=None, ends=None):
     out = {"logistic": models.fit_logistic(X[tr], y[tr], w[tr])}
     try:
-        booster, best = models.fit_lgbm(X[tr], y[tr], w[tr])
+        booster, best = models.fit_lgbm(X[tr], y[tr], w[tr], ts=None if ts is None else ts[tr],
+                                        label_end=None if ends is None else ends[tr])
         out["lgbm"] = (booster, best)
     except ImportError:                                   # lightgbm yok -> yalniz lojistik
         pass
@@ -42,15 +44,17 @@ def _fold_models(X, y, w, tr):
 def run_oof(t: pd.DataFrame, names: list[str]):
     X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
     folds = make_folds(t)
+    ts_arr, ends_arr = t["ts"].to_numpy("datetime64[ns]"), t["label_end_ts"].to_numpy("datetime64[ns]")
     rows, last, bests = [], None, []
     for f in folds:
         tr, te = f["train_rows"], f["test_rows"]
         if len(tr) < 100 or len(te) == 0:
             continue
         w = models.sample_weights(t.iloc[tr], t["ts"].iloc[tr].max())
-        fm = _fold_models(X, y, w, tr)
-        d = t.iloc[te][["ts", "pair", "taken", "label", "net_r", "cost_r"]].copy()
+        fm = _fold_models(X, y, w, tr, ts_arr, ends_arr)
+        d = t.iloc[te][["ts", "pair", "taken", "label", "net_r", "cost_r", "label_end_ts", "exit_ts"]].copy()
         d["fold"] = f["fold"]
+        d["test_start"] = f["test_start"]
         d["base_rate"] = float(np.average(y[tr], weights=w))
         d["z_logistic"] = TreeModel(fm["logistic"]).predict_raw(X[te])
         if "lgbm" in fm:
@@ -58,11 +62,41 @@ def run_oof(t: pd.DataFrame, names: list[str]):
             bests.append(fm["lgbm"][1])
         rows.append(d)
         last = (f, fm, te)
+    if not rows:
+        raise ValueError("hicbir dilim degerlendirilemedi (egitim satiri < 100 ya da bos test)")
     return folds, pd.concat(rows), last, bests
 
 
-def run(t: pd.DataFrame, out_dir: str | Path, *, synthetic: bool = False, n_trials: int = 2, n_boot: int = 2000,
+def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
+    """Platt ve esik ILERI YONLU uydurulur: k. dilimin satirlari icin yalniz, etiketi/cikisi k. dilimin
+    baslangicindan ONCE bilinen onceki dilim satirlari kullanilir (gate'in kendi test satirlarina uydurma yok).
+    Ilk dilim: Platt = ozdeslik (a=1,b=0), esik = BURN_IN_THRESHOLD (onceden yazili sabit). Onceki veri var ama
+    uygun esik yoksa esik NaN (o dilimde islem alinmaz). Sonuc oof'a yazilir: p_<m> (ileri
+    yonlu kalibre olasilik) ve th_<m> (satira ozgu ileri yonlu esik)."""
+    oof["known_ts"] = oof[["label_end_ts", "exit_ts"]].max(axis=1)
+    for m in kinds:
+        z = oof[f"z_{m}"].to_numpy()
+        p = np.full(len(oof), np.nan)
+        th = np.full(len(oof), np.nan)
+        for k in sorted(oof["fold"].unique()):
+            cur = (oof["fold"] == k).to_numpy()
+            t0 = oof.loc[cur, "test_start"].iloc[0]
+            prior = (oof["fold"] < k).to_numpy() & (oof["known_ts"] < t0).to_numpy()
+            if prior.sum() == 0:
+                a, b, th[cur] = 1.0, 0.0, BURN_IN_THRESHOLD
+                p[cur] = 1.0 / (1.0 + np.exp(-(a * z[cur] + b)))
+                continue
+            c = models.fit_platt(z[prior], oof["label"].to_numpy()[prior])
+            p[cur] = 1.0 / (1.0 + np.exp(-(c["a"] * z[cur] + c["b"])))
+            pt = prior & oof["taken"].to_numpy()
+            thr, _ = select_threshold(p[pt], oof["net_r"].to_numpy()[pt]) if pt.any() else (None, None)
+            th[cur] = np.nan if thr is None else thr
+        oof[f"p_{m}"], oof[f"th_{m}"] = p, th
+
+
+def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool = False, n_boot: int = 2000,
         now: datetime | None = None) -> dict:
+    """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     t = validate_candidates(t)
@@ -73,11 +107,8 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, synthetic: bool = False, n_tria
     folds, oof, last, bests = run_oof(t, names)
     kinds = [m for m in MODELS if f"z_{m}" in oof.columns]
 
-    cal = {}
-    for m in kinds:                                          # Platt: yalniz test dilimleri (§3.3 adim 4)
-        cal[m] = models.fit_platt(oof[f"z_{m}"].to_numpy(), oof["label"].to_numpy())
-        a, b = cal[m]["a"], cal[m]["b"]
-        oof[f"p_{m}"] = 1.0 / (1.0 + np.exp(-(a * oof[f"z_{m}"] + b)))
+    # kapi icin ILERI YONLU Platt + esik (A1); paket icin tum-OOF Platt asagida ayrica uydurulur
+    forward_calibrate(oof, kinds)
     pcols = [f"p_{m}" for m in kinds]
 
     # model secimi: LightGBM net R'de lojistigi gecemezse lojistik (§3.3 adim 3)
@@ -89,7 +120,13 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, synthetic: bool = False, n_tria
             selected, reason = "lgbm", f"filtreli net R {a_:+.4f} > lojistik {b_:+.4f}"
         else:
             reason = f"LightGBM lojistigi net R'de gecemedi ({_fmt(a_)} <= {_fmt(b_)})"
-    th = pm[selected]["threshold"]
+
+    # paket kalibrasyonu + esigi: tum OOF'a uydurulur (uretim artefakti; kapi bunu SKORLAMAZ)
+    z_sel = oof[f"z_{selected}"].to_numpy()
+    cal_pkg = models.fit_platt(z_sel, oof["label"].to_numpy())
+    p_pkg = 1.0 / (1.0 + np.exp(-(cal_pkg["a"] * z_sel + cal_pkg["b"])))
+    tk = oof["taken"].to_numpy()
+    th, _ = select_threshold(p_pkg[tk], oof["net_r"].to_numpy()[tk])
 
     # nihai model: tum egitim penceresi (kilitli donem yok)
     w_all = models.sample_weights(t, t["ts"].max())
@@ -98,12 +135,13 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, synthetic: bool = False, n_tria
         model = models.lgbm_dump(booster)
     else:
         booster, model = None, models.fit_logistic(X, y, w_all)
-    pkg = build_package(model, cal[selected], th,
-                        names, X, t["ts"].min(), t["ts"].max(), data_hash(t),
-                        created_at=now, extra={"selected_reason": reason, "threshold_feasible": th is not None,
-                                               "synthetic": synthetic, "n_trials": n_trials})
-    pkg_path = save_package(pkg, out_dir / "model_candidate.json")
-    pkg = load_package(pkg_path, now=now)                     # hash'ler tutuyor mu (gidis-donus)
+    created = now or datetime.now(timezone.utc)
+    extra = {"selected_reason": reason, "threshold_feasible": th is not None, "synthetic": synthetic,
+             "n_trials": n_trials, "gate_passed": None}
+    args = (model, cal_pkg, th, names, X, t["ts"].min(), t["ts"].max(), data_hash(t))
+    pkg0 = build_package(*args, created_at=created, extra=extra)
+    # gidis-donus (JSON) -- henuz kapi sonucu yok, bu yuzden require_gate=False
+    pkg = load_package(json.loads(json.dumps(pkg0, allow_nan=False)), now=now, require_gate=False)
 
     # esleme: motor okuyucusu == egitim kutuphanesi, tutulan (test) satirlarda
     f_last, fm_last, te_last = last
@@ -122,13 +160,18 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, synthetic: bool = False, n_tria
 
     res = run_gate(oof, pcols, selected=f"p_{selected}", parity_max_abs_diff=parity, n_trials=n_trials, n_boot=n_boot)
     res.model = selected
+    passed = bool(res.passed and th is not None)               # esiksiz paket asla kabul edilmez (A3)
+    res.passed, res.threshold = passed, th
+    extra["gate_passed"] = passed
+    pkg_path = save_package(build_package(*args, created_at=created, extra=extra), out_dir / "model_candidate.json")
+    pkg = load_package(pkg_path, now=now, require_gate=False)  # hash'ler tutuyor mu
     md = render_report(res, meta=pkg["meta"], folds=folds, peak_rss_mb=peak_rss_mb(), synthetic=synthetic,
                        selected_reason=reason)
     (out_dir / "gate_report.md").write_text(md, encoding="utf-8")
     summary = {"passed": res.passed, "model": selected, "threshold": th, "parity_max_abs_diff": parity,
                "checks": [{"name": c.name, "ok": c.ok, "value": c.value} for c in res.checks],
                "package": str(pkg_path), "report": str(out_dir / "gate_report.md"), "peak_rss_mb": peak_rss_mb(),
-               "n_candidates": int(len(t)), "n_oof": int(len(oof))}
+               "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
     return summary
@@ -144,19 +187,28 @@ def main(argv=None) -> int:
     g.add_argument("--candidates", help="19b ciktisi (parquet/csv)")
     g.add_argument("--synthetic", action="store_true", help="sentetik fixture ile uctan uca")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--limits", action="store_true", help="sunucu modu: nice 19, tek cekirdek, 450 MB tavan")
-    ap.add_argument("--n-trials", type=int, default=2, help="DSR deneme sayisi (deneme defterinden)")
+    ap.add_argument("--research", action="store_true",
+                    help="sunucu DISI arastirma: kaynak limitleri UYGULANMAZ (varsayilan: nice 19, tek cekirdek, 450 MB)")
+    ap.add_argument("--limits", action="store_true", help=argparse.SUPPRESS)      # eski bayrak: artik varsayilan
+    ap.add_argument("--registry", default=str(DEFAULT_REGISTRY), help="deneme defteri (n_trials = tarif x 2 model)")
+    ap.add_argument("--n-trials", type=int, default=None,
+                    help="deftere ek olarak ACIK deneme sayisi (defter miktarindan kucuk olamaz)")
     a = ap.parse_args(argv)
-    if a.limits:
+    if not a.research:
         apply_limits()
+    n_trials = n_trials_from_registry(a.registry)
+    if a.n_trials is not None:
+        if a.n_trials < n_trials:
+            ap.error(f"--n-trials {a.n_trials} < defterden gelen {n_trials}: deneme sayisi kucultulemez")
+        n_trials = a.n_trials
     if a.synthetic:
         from .fixture import build_candidate_table, synthetic_candles
         t = build_candidate_table(synthetic_candles())
     else:
         from .schema import load_candidates
         t = load_candidates(a.candidates)
-    s = run(t, a.out, synthetic=a.synthetic, n_trials=a.n_trials)
-    print(f"{'KABUL' if s['passed'] else 'RED'}: rapor {s['report']}")
+    s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials)
+    print(f"{'KABUL' if s['passed'] else 'RED'}: rapor {s['report']} (n_trials={n_trials})")
     return 0
 
 

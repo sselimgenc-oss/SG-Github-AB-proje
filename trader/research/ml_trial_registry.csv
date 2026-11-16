@@ -1,0 +1,2 @@
+recipe_id,registered_at,note
+ml0c-baseline-v1,2026-11-16,ML-0c taban tarif (lojistik + LightGBM sabit tarif); n_trials = kayitli tarif x 2 model

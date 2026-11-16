@@ -76,6 +76,7 @@ def build_candidate_table(candles: dict[str, pd.DataFrame], *, source: str = "ba
     rng = np.random.default_rng(seed)
     t["source"] = source
     t["taken"] = rng.random(len(t)) < 0.8
+    t.loc[~t["taken"], "exit_ts"] = pd.NaT                 # alinmayanin gercek cikisi yok
     t = t.sort_values(["ts", "pair"], kind="mergesort").reset_index(drop=True)
     t = add_bars_since_exit(t)
     return validate_candidates(t)

@@ -85,10 +85,18 @@ class PackageError(ValueError):
     pass
 
 
-def load_package(path: str | Path | dict, *, now: datetime | None = None, check_expiry: bool = True) -> dict:
-    """Okur, hash'leri dogrular (tutmuyorsa PackageError), suresi dolmussa PackageError."""
+def load_package(path: str | Path | dict, *, now: datetime | None = None, check_expiry: bool = True,
+                 require_gate: bool = True) -> dict:
+    """Okur, hash'leri dogrular (tutmuyorsa PackageError), suresi dolmussa PackageError. Kapidan gecmemis
+    (meta.gate_passed true degil) ya da esiksiz paket require_gate=True iken REDDEDILIR; yalniz egitim hatti
+    kendi gidis-donus kontrolunde ve inceleme icin require_gate=False kullanir."""
     pkg = path if isinstance(path, dict) else json.loads(Path(path).read_text(encoding="utf-8"))
     meta = pkg["meta"]
+    if require_gate:
+        if meta.get("gate_passed") is not True:
+            raise PackageError(f"paket kapidan gecmedi (gate_passed={meta.get('gate_passed')!r}); yuklenemez")
+        if pkg.get("threshold") is None:
+            raise PackageError("paketin esigi yok (threshold null); yuklenemez")
     body = {"model": pkg["model"], "calibration": pkg["calibration"], "threshold": pkg["threshold"]}
     if sha256_text(canon(body)) != meta["model_hash"]:
         raise PackageError("model hash tutmuyor")
