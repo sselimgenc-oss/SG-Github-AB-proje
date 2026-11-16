@@ -34,3 +34,10 @@ def test_shared_mount_read_only_and_restart():
         assert "./shared:/freqtrade/shared:ro" in svc["volumes"]
         assert svc["restart"] == "unless-stopped"
         assert "max-size" in svc["logging"]["options"]
+
+
+def test_trader_core_importable_in_container():
+    # Strateji `trader_core`'u iceri aktarir: src salt-okunur baglanir, PYTHONPATH ona isaret eder.
+    for svc in services.values():
+        assert "./src:/freqtrade/trader_src:ro" in svc["volumes"]
+        assert "PYTHONPATH=/freqtrade/trader_src" in svc["environment"]
