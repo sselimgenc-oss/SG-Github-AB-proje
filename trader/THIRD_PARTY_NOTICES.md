@@ -7,3 +7,7 @@
 
 ## freqtrade (GPL-3.0)
 - Docker imajı olarak kullanılır (`freqtradeorg/freqtrade:2026.10`); kodu bu depoya kopyalanmamıştır.
+
+## 1L3A panosu (kullanıcının kendi projesi)
+- Kaynak: `1l3a-proje/motor/canli/pano.py` (kullanıcının kendi deposu; yalnız okunarak kopyalandı, çalıştırılmadı), 2026-11-16.
+- Kopyalanan/uyarlanan: `src/trader_panel/static/panel.css` (CSS dizgisi, satır 172-327, değiştirilmeden) ve `src/trader_panel/static/panel.js` içindeki tema düğmesi ile tablo sıralama çekirdeği (JS dizgisi, satır 329-380).

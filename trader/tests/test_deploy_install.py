@@ -126,3 +126,29 @@ def test_install_does_not_install_frameworks():
     code = re.sub(r"#.*", "", t)
     for banned in ("ccxt", "freqtrade", "python-binance"):
         assert banned not in code
+
+
+def test_panel_unit():
+    t = (DEPLOY / "trader-panel.service").read_text(encoding="utf-8")
+    assert re.search(r"^MemoryMax=64M$", t, re.M) and re.search(r"^Nice=10$", t, re.M)
+    assert "EnvironmentFile" not in re.sub(r"#.*", "", t)          # anahtar/token gorulmez
+    assert "-m trader_panel --config /opt/trader/config/panel.json" in t
+    assert re.search(r"^ReadOnlyPaths=.*/opt/trader/var", t, re.M)
+    assert re.search(r"^IPAddressAllow=localhost$", t, re.M) and re.search(r"^IPAddressDeny=any$", t, re.M)
+    assert (ROOT / "src/trader_panel/__main__.py").exists() and (ROOT / "config/panel.json").exists()
+
+
+def test_panel_installed_enabled_and_removed():
+    i = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r"^enable_now trader-panel\.service", i, re.M)       # etkin + baslatilir
+    u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
+    assert "trader-*.service" in u and 'case "$u" in trader-*)' in u      # glob trader-panel.service'i de kaldirir
+
+
+@pytest.mark.skipif(shutil.which("systemd-analyze") is None, reason="systemd-analyze yok")
+def test_panel_unit_systemd_verify():
+    r = subprocess.run(["systemd-analyze", "verify", "--man=no", str(DEPLOY / "trader-panel.service")],
+                       capture_output=True, text=True)
+    bad = [ln for ln in (r.stdout + r.stderr).splitlines()
+           if "trader-panel" in ln and not re.search(r"Failed to (create|connect)|not found|Executable|User|Group", ln)]
+    assert not bad, bad

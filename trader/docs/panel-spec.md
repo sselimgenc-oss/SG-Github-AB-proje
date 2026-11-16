@@ -138,3 +138,23 @@ Kullanıcı 1L3A panelinde en çok **Özet** sekmesine bakıyor (`motor/canli/pa
 - Öğrenen↔ikiz karşılaştırması bu ekrana kapalı bir bölüm olarak eklenir (v2 yerine v1'de, veri hazır olduğu için).
 - 1L3A'daki "Kıyas", "Dönemsel getiri (ajan)", "Beklenti aralığı", "Aralık karnesi" ve "İçgörüler" alınmaz (veri kaynağı yok).
 Veri: özsermaye geçmişi ve günlük K/Z defterin kapanmış işlemlerinden (`list_closed_trades`) ve status.json'dan türetilir; motor ayrı bir ozet dosyası yazmaz.
+
+## 12. Uygulama notları (v1, 16 Kasım 2026)
+
+**Dosyalar.** `src/trader_panel/{__init__,__main__,server,data}.py`, `src/trader_panel/static/{index.html,panel.css,panel.js}`, `src/trader_core/panel_data.py` (paylaşılan yapısal yardımcılar), `config/panel.json`, `deploy/trader-panel.service` (`install.sh` kurar ve etkinleştirir; `uninstall.sh` `trader-*.service` glob'u ile kaldırır), `Ledger.list_closed_trades(since, until, limit=200)` (`limit` ≤ 10000; çıkış zamanı yeniden eskiye; `since` dahil, `until` hariç). Testler: `tests/test_panel_*.py`, `tests/test_ledger_list_closed.py`, `tests/panel_support.py`. Kaynak yorumları: `panel.css` ilk satırı, `panel.js` başlığı, `THIRD_PARTY_NOTICES.md`.
+
+**Sapmalar / seçimler (kapsam eklenmedi, yalnızca §10-§11'in gerektirdiği).**
+1. Port 8787, `host` değiştirilemez (başka değer `ConfigError`); `config/panel.json` yolları engine sözleşmesine göre: `var/<bot>/status.json`, `var/<bot>/ledger.sqlite` (telegram'ın `user_data/ledger_*.sqlite` yolundan farklı: motor defterini buraya yazar).
+2. §3'teki uç noktalara ek olarak `/api/risk` (Risk payı) ve `/api/compare` (öğrenen↔ikiz) eklendi; §11 Özet düzeni bunları gerektirir. Tüm uç noktalar `{"ok":…,"generated_at":…}` döner; kaynak okunamazsa yalnız o uç nokta `{"ok":false,"code":…}`.
+3. `STALE_S` (120) `trader_core.panel_data`'da tek tanımdır: `telegram.py` `trader_engine`'i içe aktardığı için panel onu içe aktaramaz; eşitlik `tests/test_panel_equivalence.py` ile sınanır (madde 4 düzenlemesinde tek kaynağa iner). Günlük zarar sınırı ve açık/aynı yön risk sınırları `risk.LOCKED_CFG` oranlarından hesaplanır; sağlık renk eşikleri `health.DEFAULT_CFG`'den; sağlık denetimi tazelik eşiği `panel.json: health_stale_s`.
+4. Başlangıç özsermayesi `config/engine.base.json: wallet_start` dosyasından (yalnız JSON okuma; `trader_engine` içe aktarılmaz). Okunamazsa eğri kümülatif K/Z'ye düşer, yüzde düşüş/başlangıç/zirve "okunamadı" gösterilir. Eğri defterin son ≤ 5000 kapanan işleminden; aşılırsa panelde not düşer.
+5. Bayat/yok/bozuk `status.json`: API `data: null` ve `banner: "BAYAT: <TSİ zaman>'dan beri"` (zaman bilinmiyorsa `"BAYAT: durum dosyası okunamadı (<kod>)"`) döner; son bilinen değer hiç gönderilmez, canlı değere bağlı risk uç noktası da `ok:false` olur. Eşik: `age > STALE_S` (120 sn dahil değil bayat değil).
+6. `market.sqlite` v1'de okunmaz (§3 tablosunda widget yok); bütçe `BudgetGuard.status()` ile okunur (yazmaz: rollback-journal, `write=False`; testte ayrı yetkisiz kullanıcıyla salt okunur dizinde doğrulandı) — `mode=ro` URI'si yalnız defter ve ders deposu için kullanılabiliyor.
+7. Zaman aşımı: iş parçacığı 3 sn'de bırakılır (503 `zaman_asimi`) ama bitene kadar semaforu tutar; 8 üstü istek 1 sn bekler, sonra 503 `mesgul`. Yanıt üst sınırı 512 KB.
+8. Test: gerçek süreçte 200 işlemli defter + 8 eşzamanlı istemci × 4 sn: RSS tepe ≈ 37 MB (tavan 60 MB).
+
+**WAL salt okunur bağlama testi (§10 zorunlu düzeltme).** `tests/test_panel_readonly.py`, SQLite 3.53, yetkisiz kullanıcı (uid 65534, `setpriv`) ve `chmod 555` dizin (systemd `ReadOnlyPaths` benzeri). Sonuç:
+- **Yazar (bot) açık, `-wal`/`-shm` var, dizin salt okunur, okuyan farklı kullanıcı: AÇILIR**, okuma doğru, hiçbir dosya oluşmaz/silinmez/değişmez (sha256+mtime aynı).
+- **Yazar kapalı (temiz kapanış `-wal`/`-shm`'i siler), dizin salt okunur: AÇILAMAZ** (`attempt to write a readonly database`; `mode=ro` yine de `-shm` oluşturmak ister). Panel bunu çökmeden `veri yok: wal_yok_salt_okunur` olarak gösterir. Yani bot durmuşken Defter/Eğri/Risk/Özet defter kısımları görünmez; Bütçe/Ders/Sağlık/Durum etkilenmez (bütçe rollback-journal; ders deposu WAL olduğundan aynı kural).
+- Dizin **yazılabilir** ve yazar kapalıysa `mode=ro` açılır ama SQLite `-wal`/`-shm` oluşturur (ana DB dosyası aynı kalır). Üretimde `ReadOnlyPaths` bunu engeller; geliştirme/test dizinlerinde bu yan etki beklenir.
+- Karar: `immutable=1` ile yedek açma eklenmedi (yazar başlarsa tutarsız okuma riski; fail-closed seçildi). Bot hep çalıştığı için üretimde ilk durum geçerlidir; bot bakım için durdurulursa panel "veri yok" der (istenirse kararlı bir alternatif: motor kapanışta `-wal`'i bırakmaz → `gate_status_readonly()` bekleniyor, soru §9.6).

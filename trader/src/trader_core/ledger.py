@@ -1748,6 +1748,29 @@ class Ledger:
     def list_open_trades(self) -> list[TradeRecord]:
         return self._trades("exit_ts IS NULL")
 
+    LIST_CLOSED_MAX = 10000
+
+    def list_closed_trades(self, since: datetime | None = None, until: datetime | None = None,
+                           limit: int = 200) -> list[TradeRecord]:
+        """Kapanan islemler (salt okunur): `since <= exit_ts < until`, cikis zamani yeniden eskiye
+        (esitlikte trade_id azalan), en cok `limit` (>= 0, <= LIST_CLOSED_MAX) kayit."""
+        where, args = ["bot=?"], [self.bot]
+        if since is not None:
+            where.append("exit_ts>=?")
+            args.append(_ts(since, "since"))
+        if until is not None:
+            where.append("exit_ts<?")
+            args.append(_ts(until, "until"))
+        lim = _int(limit, "limit", minimum=0)
+        if lim > self.LIST_CLOSED_MAX:
+            raise LedgerValidationError(f"limit en cok {self.LIST_CLOSED_MAX} olmali")
+        sql = (f"SELECT * FROM v_closed_trades WHERE {' AND '.join(where)} "
+               "ORDER BY exit_ts DESC, trade_id DESC LIMIT ?")
+        args.append(lim)
+        with self._read() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._trade_from(r) for r in rows]
+
     def _since_where(self, c, version_id: int, exact: bool):
         if exact:
             return "param_version_id=?", [version_id]

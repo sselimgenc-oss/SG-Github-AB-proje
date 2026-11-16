@@ -1,0 +1,32 @@
+[Unit]
+Description=Trader panosu (salt okunur, yalniz 127.0.0.1:8787; erisim SSH tuneli ile)
+Documentation=file:///opt/trader/docs/panel-spec.md
+# Botlardan bagimsiz: botlar kapaliyken de acilir, "veri yok" gosterir
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONUNBUFFERED=1
+# EnvironmentFile YOK: panel API anahtari/Telegram token'i gormez
+ExecStart=/usr/bin/python3 -m trader_panel --config /opt/trader/config/panel.json
+Restart=on-failure
+RestartSec=5
+MemoryMax=64M
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# Veri dizinleri salt okunur (panel hicbir seye yazmaz; kill dosyasi dizini dahil)
+ReadOnlyPaths=/opt/trader/var /opt/trader/user_data /opt/trader/shared /opt/trader/config /var/lib/trader-health
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressAllow=localhost
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target
