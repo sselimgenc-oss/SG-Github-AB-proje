@@ -1,5 +1,7 @@
 # Mimari taslak — İlk sürüm (MVP)
 
+> Güncellendi: 16 Kasım 2026 (mentor doğrulaması işlendi)
+
 Tarih: 15 Kasım 2026 · Durum: **taslak, kullanıcı onayı bekliyor** · Dayanak: `tasarim-kararlari.md`, `parca-plani-denetim.md`, `research_notes/diger-hesap/gorev1-10`.
 
 ## 1. Tek cümlede
@@ -12,6 +14,7 @@ freqtrade üzerinde, kurallarla fırsat bulan, Claude'un veto edebildiği, risk 
 - **Boyut:** 2 vCPU / 4 GB RAM (~24 $/ay). Öğrenen bot + ikiz + yardımcı servisler için; FreqAI ileride eklenirse yeterli pay bırakır (Görev 6: backtest ~0,75 GB, FreqAI ~1,4 GB).
 - **Kurulum:** Docker Compose. Her bot ayrı konteyner, ayrı veritabanı, ayrı port. API/panel yalnızca `127.0.0.1`'e bağlı; erişim SSH tüneliyle.
 - **Anahtarlar:** dry-run aşamasında borsa anahtarı yok. Claude anahtarı ayrı Anthropic workspace'inde, aylık limitli.
+- **Kod yeri:** yeni bot `trader/` klasöründe.
 
 ## 3. Parçalar ve veri akışı
 
@@ -42,7 +45,7 @@ flowchart LR
   RK --- L & T
   L & T --> DF
   DF --> DR -->|aday ders| DF
-  DR -.->|3. haftadan sonra,<br/>kapıdan geçerse| AY --> L
+  DR -.->|≥20-30 işlem kanıtı,<br/>kapıdan geçerse| AY --> L
   DF --> KN --> TG
   L --> TG
 ```
@@ -51,18 +54,18 @@ flowchart LR
 |---|---|---|---|---|
 | 1 | freqtrade (×2) | Emir, dry-run, SL/TP, Telegram, panel | freqtrade 2026.10 | Hazır |
 | 2 | Strateji | Kurallarla giriş/çıkış; piyasa durumuna göre gün içi/swing ayarı; stop mesafesine göre pozisyon büyüklüğü | Kendimiz | Yaz |
-| 3 | Kilitli risk kuralları | %2 işlem riski, %5 günlük zarar, 3-5x kaldıraç, "SL likidasyondan önce" kontrolü; alt sınıf değiştiremez | agent-to-earn `guarded_strategy.py` (MIT) | Uyarla |
-| 4 | Piyasa durumu etiketi | Tek tanım; strateji, veto ve ders servisi aynı etiketi kullanır | Kendimiz (fikir: regime-trading-bot) | Yaz |
-| 5 | Analist + veto | Claude ayrı süreçte çalışır, kararı dosyaya yazar; strateji yalnız dosyayı okur. Dosya yok/bayat/limit dolu → giriş yok | regime-trading-bot R3 (MIT) + dosya deseni | Uyarla |
+| 3 | Kilitli risk kuralları | %2 işlem riski, %5 günlük zarar, 3-5x kaldıraç, "SL likidasyondan önce" kontrolü; alt sınıf değiştiremez | agent-to-earn `guarded_strategy.py` (MIT); sınırlar bizim kararlara göre değiştirilir; "zarar durdur likidasyondan önce" kontrolünü biz yazarız | Uyarla |
+| 4 | Piyasa durumu (rejim) etiketi | Tek tanım; strateji, veto ve ders servisi aynı etiketi kullanır | regime-trading-bot `core/regime.py` + `indicators.py` (MIT; telif notu korunur) | Uyarla |
+| 5 | Analist + veto | Claude ayrı süreçte çalışır, kararı dosyaya yazar; strateji yalnız dosyayı okur. Dosya yok/bayat/limit dolu → giriş yok | Kodu sıfırdan biz yazıyoruz; regime-trading-bot'tan yalnızca JSON dosya sözleşmesi/deseni alınır; testleri biz yazarız (kaynakta %0 test) | Yaz |
 | 6 | Funding / açık pozisyon verisi | Binance açık uçlarından | Kendimiz | Yaz (küçük) |
 | 7 | Kayıt defteri | Her işlem, gerekçe, ders önerisi, değişiklik; yalnız ekleme | guarded-trader `registry.py` (Apache) | Uyarla |
-| 8 | Ders servisi | Günlük: kapanan işlemler → istatistik → Claude → **aday ders** (ilk 2 hafta yalnız kayıt) | Kendimiz (fikir: astra, cryptobot, HydraQuant) | Yaz |
+| 8 | Ders servisi | Günlük: kapanan işlemler → istatistik → Claude → **aday ders** (ilk günden açık; değişiklik için ≥20–30 işlem kanıtı, değişiklik günlüğü ve geri alma) | Kendimiz (fikir: astra, cryptobot, HydraQuant, TEMPEST (rgg81/crypto-trade-claude-code; yalnız fikir, lisans yok), qrak/LLM_trader) | Yaz |
 | 9 | Sınır anayasası | Öğrenmenin değiştirebileceği ayarlar ve aralıkları; risk ayarları listede yok | regime-trading-bot `levers.py` (MIT) | Al |
-| 10 | Kontroller ve ölçüm | İkiz kıyası, al-tut, rastgele giriş, Deflated Sharpe | guarded-trader `dsr.py`, `null.py` (Apache); trialgate yedek aday | Al |
+| 10 | Kontroller ve ölçüm | İkiz kıyası, al-tut, rastgele giriş, Deflated Sharpe | guarded-trader `dsr.py`, `null.py` (Apache); trialgate yalnız README düzeyinde bilgi; `null.py`'yi freqtrade'e bağlayan kodu biz yazarız | Al; bağlantı kodu yaz |
 | 11 | Rapor | Telegram anlık + günlük özet (işlemler, dersler, maliyet) + onay sorusu | freqtrade + kendimiz | Kısmen yaz |
 | 12 | Harcama koruması | Anthropic aylık limit + uygulama içi günlük tavan; limit hatasında dur ve haber ver | Kendimiz | Yaz (küçük) |
 
-**Sonraki sürümlere kalanlar:** test-et-terfi kapısı ve otomatik geri alma (3. haftadan itibaren), bağımsız risk bekçisi, haberler, FreqAI/Kronos, gerçek para, Faz 2 (ABD hisse, emtia).
+**Sonraki sürümlere kalanlar:** bağımsız risk bekçisi, haberler, FreqAI/Kronos, gerçek para, Faz 2 (ABD hisse, emtia).
 
 ## 4. Yol haritası
 
@@ -72,9 +75,9 @@ flowchart LR
 | 1 | Strateji + kilitli risk + piyasa durumu etiketi; backtest + lookahead/recursive analiz | Testler geçiyor, sızıntı yok |
 | 2 | Analist + veto + harcama koruması | Dosya yok/bayatken giriş reddediliyor |
 | 3 | İkiz + kayıt defteri + rapor | İki özdeş kopya ≥ %95 aynı işlem |
-| 4 | Ders servisi (yalnız öneri) | Her gün aday dersler deftere düşüyor |
+| 4 | Ders servisi (ilk günden açık; ≥20–30 işlem kanıtı, değişiklik günlüğü ve geri alma) | Her gün aday dersler deftere düşüyor |
 | 5 | 4-8 hafta dry-run deneyi (Görev 5 planı) | "Elendi" / "elemeyi geçti" kararı |
-| 6 | Test-et-terfi kapısı + geri alma | 3. haftadan sonra açılır |
+| 6 | Test-et-terfi kapısı + geri alma | ≥20–30 işlem kanıtıyla açılır; geri alma her değişiklikte var |
 
 ## 5. Açık riskler
 
