@@ -1,0 +1,308 @@
+2026-11-16 14:32:01,218 - freqtrade - INFO - freqtrade 2026.10
+2026-11-16 14:32:02,434 - freqtrade.configuration.load_config - INFO - Using config: config/base.json ...
+2026-11-16 14:32:02,435 - freqtrade.configuration.load_config - INFO - Using config: config/backtest.json ...
+2026-11-16 14:32:02,437 - freqtrade.loggers - INFO - Enabling colorized output.
+2026-11-16 14:32:02,437 - freqtrade.loggers - INFO - Logfile configured
+2026-11-16 14:32:02,438 - freqtrade.loggers - INFO - Verbosity set to 0
+2026-11-16 14:32:02,438 - freqtrade.configuration.configuration - INFO - Using additional Strategy lookup path: research/strategies
+2026-11-16 14:32:02,438 - freqtrade.configuration.configuration - INFO - Parameter --timerange detected: 20250501-20250801 ...
+2026-11-16 14:32:02,439 - freqtrade.configuration.configuration - INFO - Using user-data directory: user_data ...
+2026-11-16 14:32:02,439 - freqtrade.configuration.configuration - INFO - Using data directory: user_data/data/binance ...
+2026-11-16 14:32:02,439 - freqtrade.configuration.configuration - INFO - Using pairs ['BNB/USDT:USDT']
+2026-11-16 14:32:02,439 - freqtrade.configuration.configuration - INFO - Filter trades by timerange: 20250501-20250801
+2026-11-16 14:32:02,440 - freqtrade.configuration.configuration - INFO - Targeted Trade amount: 20
+2026-11-16 14:32:02,440 - freqtrade.configuration.configuration - INFO - Minimum Trade amount: 5
+2026-11-16 14:32:02,440 - freqtrade.exchange.check_exchange - INFO - Checking exchange...
+2026-11-16 14:32:02,449 - freqtrade.exchange.check_exchange - INFO - Exchange "binance" is officially supported by the Freqtrade development team.
+2026-11-16 14:32:02,449 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:32:02,451 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Forced order_types to market orders.
+2026-11-16 14:32:02,452 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Forced max_open_trades to -1 (same amount as there are pairs)
+2026-11-16 14:32:02,452 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Dry run wallet was not set to 1 billion, pushing it up there just to avoid false positives
+2026-11-16 14:32:02,452 - freqtrade.optimize.analysis.lookahead_helpers - INFO - fixing stake_amount to 10k
+2026-11-16 14:32:02,481 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Bias test of TraderV1Analysis.py started.
+2026-11-16 14:32:02,482 - freqtrade.exchange.exchange - INFO - Instance is running with dry_run enabled
+2026-11-16 14:32:02,482 - freqtrade.exchange.exchange - INFO - Using CCXT 4.5.92
+2026-11-16 14:32:02,483 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:32:02,486 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:32:02,489 - freqtrade.exchange.exchange - INFO - Using Exchange "Binance"
+2026-11-16 14:32:02,559 - freqtrade.resolvers.exchange_resolver - INFO - Using resolved exchange class 'Binance' ...
+2026-11-16 14:32:02,560 - freqtrade.resolvers.iresolver - INFO - Using resolved strategy TraderV1Analysis from '/home/user/SG-Github-AB-proje/trader/research/strategies/TraderV1Analysis.py'...
+2026-11-16 14:32:02,561 - freqtrade.strategy.hyper - INFO - Found no parameter file.
+2026-11-16 14:32:02,561 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'timeframe' with value from the configuration: 1h.
+2026-11-16 14:32:02,562 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'order_types' with value from the configuration: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 
+'stoploss_on_exchange': False}.
+2026-11-16 14:32:02,562 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_currency' with value from the configuration: USDT.
+2026-11-16 14:32:02,562 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_amount' with value from the configuration: 10000.
+2026-11-16 14:32:02,562 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'max_open_trades' with value from the configuration: -1.
+2026-11-16 14:32:02,562 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using minimal_roi: {'0': 100}
+2026-11-16 14:32:02,563 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using timeframe: 1h
+2026-11-16 14:32:02,563 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stoploss: -0.99
+2026-11-16 14:32:02,563 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop: False
+2026-11-16 14:32:02,563 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop_positive_offset: 0.0
+2026-11-16 14:32:02,563 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_only_offset_is_reached: False
+2026-11-16 14:32:02,564 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_custom_stoploss: True
+2026-11-16 14:32:02,564 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using process_only_new_candles: True
+2026-11-16 14:32:02,564 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_types: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 'stoploss_on_exchange': False}
+2026-11-16 14:32:02,564 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_time_in_force: {'entry': 'GTC', 'exit': 'GTC'}
+2026-11-16 14:32:02,564 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_currency: USDT
+2026-11-16 14:32:02,565 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_amount: 10000
+2026-11-16 14:32:02,565 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using startup_candle_count: 1200
+2026-11-16 14:32:02,565 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_exit_signal: True
+2026-11-16 14:32:02,565 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_only: False
+2026-11-16 14:32:02,565 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_roi_if_entry_signal: False
+2026-11-16 14:32:02,566 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_offset: 0.0
+2026-11-16 14:32:02,566 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using disable_dataframe_checks: False
+2026-11-16 14:32:02,566 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_buying_expired_candle_after: 0
+2026-11-16 14:32:02,566 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using position_adjustment_enable: False
+2026-11-16 14:32:02,566 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_entry_position_adjustment: -1
+2026-11-16 14:32:02,567 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_open_trades: -1
+2026-11-16 14:32:02,567 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:32:02,570 - freqtrade.resolvers.iresolver - INFO - Using resolved pairlist StaticPairList from 
+'/home/user/SG-Github-AB-proje/trader/.venv-ft/lib/python3.12/site-packages/freqtrade/plugins/pairlist/StaticPairList.py'...
+2026-11-16 14:32:02,571 - freqtrade.optimize.backtesting - INFO - Using fee 0.0500% - worst case fee from exchange (lowest tier).
+2026-11-16 14:32:02,571 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:02,607 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-08-01 00:00:00 (142 days).
+2026-11-16 14:32:02,675 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:32:02,680 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:04,059 - freqtrade.loggers.set_log_levels - INFO - Reducing verbosity for bias tester.
+2026-11-16 14:32:04,059 - freqtrade.optimize.analysis.lookahead - INFO - Found 26 trades, calculating 20 trades.
+2026-11-16 14:32:04,069 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:04,092 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-01 10:00:00 (50 days).
+2026-11-16 14:32:04,096 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-01 08:00:00
+2026-11-16 14:32:04,131 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-01 10:00:00
+2026-11-16 14:32:04,136 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:04,265 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:04,287 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-01 23:00:00 (50 days).
+2026-11-16 14:32:04,341 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-01 23:00:00
+2026-11-16 14:32:04,347 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:04,562 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:04,576 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-02 23:00:00 (51 days).
+2026-11-16 14:32:04,612 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-02 23:00:00
+2026-11-16 14:32:04,619 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:04,745 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:04,759 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-02 23:00:00 (51 days).
+2026-11-16 14:32:04,797 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-02 23:00:00
+2026-11-16 14:32:04,801 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:05,000 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:05,022 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-08 00:00:00 (57 days).
+2026-11-16 14:32:05,066 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-08 00:00:00
+2026-11-16 14:32:05,070 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:05,202 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:05,219 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-10 05:00:00 (59 days).
+2026-11-16 14:32:05,224 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-10 00:00:00
+2026-11-16 14:32:05,262 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-10 05:00:00
+2026-11-16 14:32:05,266 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:05,641 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:05,663 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-16 11:00:00 (65 days).
+2026-11-16 14:32:05,669 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-16 08:00:00
+2026-11-16 14:32:05,720 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-16 11:00:00
+2026-11-16 14:32:05,726 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:06,081 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:06,096 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-16 17:00:00 (65 days).
+2026-11-16 14:32:06,100 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-16 16:00:00
+2026-11-16 14:32:06,133 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-16 17:00:00
+2026-11-16 14:32:06,137 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:06,440 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:06,454 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-18 22:00:00 (67 days).
+2026-11-16 14:32:06,458 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-18 16:00:00
+2026-11-16 14:32:06,493 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-18 22:00:00
+2026-11-16 14:32:06,498 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:06,807 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:06,824 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-20 22:00:00 (69 days).
+2026-11-16 14:32:06,829 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-20 16:00:00
+2026-11-16 14:32:06,869 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-20 22:00:00
+2026-11-16 14:32:06,874 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:07,345 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:07,365 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-24 10:00:00 (73 days).
+2026-11-16 14:32:07,374 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-24 08:00:00
+2026-11-16 14:32:07,422 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-24 10:00:00
+2026-11-16 14:32:07,428 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:07,949 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:07,974 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-25 01:00:00 (74 days).
+2026-11-16 14:32:07,979 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-25 00:00:00
+2026-11-16 14:32:08,034 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-25 01:00:00
+2026-11-16 14:32:08,040 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:08,512 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:08,527 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-28 09:00:00 (77 days).
+2026-11-16 14:32:08,531 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-28 08:00:00
+2026-11-16 14:32:08,570 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-28 09:00:00
+2026-11-16 14:32:08,574 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:09,069 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:09,086 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-29 05:00:00 (78 days).
+2026-11-16 14:32:09,090 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-29 00:00:00
+2026-11-16 14:32:09,137 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-29 05:00:00
+2026-11-16 14:32:09,143 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:09,886 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:09,901 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-29 09:00:00 (78 days).
+2026-11-16 14:32:09,905 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-05-29 08:00:00
+2026-11-16 14:32:09,941 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-29 09:00:00
+2026-11-16 14:32:09,945 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:10,439 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:10,454 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-29 15:00:00 (78 days).
+2026-11-16 14:32:10,493 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-29 15:00:00
+2026-11-16 14:32:10,498 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:11,039 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:11,058 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-02 10:00:00 (82 days).
+2026-11-16 14:32:11,064 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-02 08:00:00
+2026-11-16 14:32:11,107 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-02 10:00:00
+2026-11-16 14:32:11,112 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:11,849 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:11,870 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-02 17:00:00 (82 days).
+2026-11-16 14:32:11,876 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-02 16:00:00
+2026-11-16 14:32:11,939 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-02 17:00:00
+2026-11-16 14:32:11,946 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:12,847 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:12,869 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-07 09:00:00 (87 days).
+2026-11-16 14:32:12,875 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-07 08:00:00
+2026-11-16 14:32:12,940 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-07 09:00:00
+2026-11-16 14:32:12,947 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:13,720 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:13,735 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-07 14:00:00 (87 days).
+2026-11-16 14:32:13,739 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-07 08:00:00
+2026-11-16 14:32:13,783 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-07 14:00:00
+2026-11-16 14:32:13,787 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:14,377 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:14,399 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-08 07:00:00 (88 days).
+2026-11-16 14:32:14,448 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-08 07:00:00
+2026-11-16 14:32:14,454 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:15,137 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:15,159 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-08 14:00:00 (88 days).
+2026-11-16 14:32:15,166 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-08 08:00:00
+2026-11-16 14:32:15,224 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-08 14:00:00
+2026-11-16 14:32:15,230 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:16,079 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:16,099 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-10 21:00:00 (90 days).
+2026-11-16 14:32:16,104 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-10 16:00:00
+2026-11-16 14:32:16,165 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-10 21:00:00
+2026-11-16 14:32:16,171 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:17,013 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:17,033 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-10 21:00:00 (90 days).
+2026-11-16 14:32:17,041 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-10 16:00:00
+2026-11-16 14:32:17,079 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-10 21:00:00
+2026-11-16 14:32:17,084 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:17,908 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:17,923 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-12 01:00:00 (92 days).
+2026-11-16 14:32:17,927 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-12 00:00:00
+2026-11-16 14:32:17,968 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-12 01:00:00
+2026-11-16 14:32:17,973 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:18,595 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:18,610 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-12 16:00:00 (92 days).
+2026-11-16 14:32:18,661 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-12 16:00:00
+2026-11-16 14:32:18,665 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:19,416 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:19,437 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-15 09:00:00 (95 days).
+2026-11-16 14:32:19,443 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-15 08:00:00
+2026-11-16 14:32:19,504 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-15 09:00:00
+2026-11-16 14:32:19,511 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:20,430 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:20,452 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-16 02:00:00 (96 days).
+2026-11-16 14:32:20,458 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-16 00:00:00
+2026-11-16 14:32:20,519 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-16 02:00:00
+2026-11-16 14:32:20,525 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:21,712 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:21,728 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-18 08:00:00 (98 days).
+2026-11-16 14:32:21,775 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-18 08:00:00
+2026-11-16 14:32:21,780 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:22,581 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:22,598 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-19 06:00:00 (99 days).
+2026-11-16 14:32:22,603 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-19 00:00:00
+2026-11-16 14:32:22,687 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-19 06:00:00
+2026-11-16 14:32:22,692 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:23,783 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:23,806 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-20 23:00:00 (100 days).
+2026-11-16 14:32:23,876 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-20 23:00:00
+2026-11-16 14:32:23,882 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:24,899 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:24,918 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-22 01:00:00 (102 days).
+2026-11-16 14:32:24,924 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-22 00:00:00
+2026-11-16 14:32:24,976 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-22 01:00:00
+2026-11-16 14:32:24,981 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:26,071 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:26,092 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-23 16:00:00 (103 days).
+2026-11-16 14:32:26,162 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-23 16:00:00
+2026-11-16 14:32:26,168 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:27,511 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:27,533 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-23 18:00:00 (103 days).
+2026-11-16 14:32:27,538 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-23 16:00:00
+2026-11-16 14:32:27,603 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-23 18:00:00
+2026-11-16 14:32:27,609 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:28,887 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:28,909 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-27 15:00:00 (107 days).
+2026-11-16 14:32:28,982 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-27 15:00:00
+2026-11-16 14:32:28,988 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:30,332 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:30,353 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-27 19:00:00 (107 days).
+2026-11-16 14:32:30,359 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-27 16:00:00
+2026-11-16 14:32:30,421 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-27 19:00:00
+2026-11-16 14:32:30,427 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:31,656 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:31,684 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-27 21:00:00 (107 days).
+2026-11-16 14:32:31,690 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-27 16:00:00
+2026-11-16 14:32:31,740 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-27 21:00:00
+2026-11-16 14:32:31,746 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:32,832 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:32,848 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-06-29 21:00:00 (109 days).
+2026-11-16 14:32:32,852 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-06-29 16:00:00
+2026-11-16 14:32:32,898 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-06-29 21:00:00
+2026-11-16 14:32:32,905 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:34,602 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:34,630 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-07-01 08:00:00 (111 days).
+2026-11-16 14:32:34,709 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-07-01 08:00:00
+2026-11-16 14:32:34,716 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:36,116 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:32:36,142 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-07-01 13:00:00 (111 days).
+2026-11-16 14:32:36,148 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, funding_rate, 1h, data ends at 2025-07-01 08:00:00
+2026-11-16 14:32:36,227 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-07-01 13:00:00
+2026-11-16 14:32:36,234 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:32:37,870 - freqtrade.optimize.analysis.lookahead - INFO - Found targeted trade amount = 20 signals.
+2026-11-16 14:32:37,871 - freqtrade.loggers.set_log_levels - INFO - Restoring log verbosity.
+2026-11-16 14:32:37,872 - freqtrade.optimize.analysis.lookahead - INFO - TraderV1Analysis: no bias detected
+2026-11-16 14:32:37,873 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Checking look ahead bias via backtests of TraderV1Analysis.py took 35 seconds.
+Analyzing trades ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 20/20 100% • 0:00:33 • 0:00:00
+                                                          Lookahead Analysis                                                          
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃            filename ┃         strategy ┃ has_bias ┃ total_signals ┃ biased_entry_signals ┃ biased_exit_signals ┃ biased_indicators ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ TraderV1Analysis.py │ TraderV1Analysis │       No │            20 │                    0 │                   0 │                   │
+└─────────────────────┴──────────────────┴──────────┴───────────────┴──────────────────────┴─────────────────────┴───────────────────┘

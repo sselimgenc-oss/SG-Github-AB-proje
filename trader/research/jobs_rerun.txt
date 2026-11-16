@@ -1,0 +1,2 @@
+--id 1h_IS_f2_s2_rerun --period IS --fee-mult 2 --slip-bps 2 --tf 1h --notes 'tekrar kosu (determinizm; ledger.py v2 sonrasi)'
+--id 1h_WF_f2_s2_rerun --period WF --fee-mult 2 --slip-bps 2 --tf 1h --notes 'tekrar kosu (determinizm; ledger.py v2 sonrasi)'

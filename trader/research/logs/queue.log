@@ -1,0 +1,144 @@
+[1h_WF_f2_s2] backtest 297s
+[1h_WF_f2_s2] n=374 expR=-0.05544625336975952 PF=0.9272512823481948 DD=39.31393708341343
+[15m_WF_f2_s2] backtest 334s
+[15m_WF_f2_s2] n=745 expR=-0.3999532409355861 PF=0.44136086471268077 DD=90.45629263233468
+[15m_IS_f2_s2] backtest 402s
+[15m_IS_f2_s2] n=904 expR=-0.2594124649007065 PF=0.5769454192548413 DD=90.56288152351232
+[1h_IS_f2_s2] backtest 562s
+[1h_IS_f2_s2] n=627 expR=-0.09148028249985021 PF=0.7903846971795769 DD=66.2169487836136
+[1h_IS_f1_s5] backtest 474s
+[1h_IS_f2_s0] backtest 476s
+[1h_IS_f1_s5] n=629 expR=-0.07022108453955171 PF=0.8132625108276357 DD=63.555590160915266
+[1h_IS_f2_s0] n=629 expR=-0.07022108453955171 PF=0.8132625108276357 DD=63.555590160915266
+[1h_IS_f1_s2] backtest 482s
+[1h_IS_f1_s2] n=624 expR=-0.017064863696376213 PF=0.8967560091938055 DD=48.51452947883113
+[1h_IS_f1_s0] backtest 486s
+[1h_IS_f1_s0] n=630 expR=0.018162051390953955 PF=0.9596616950736012 DD=37.1743818205707
+[15m_IS_f1_s5] backtest 301s
+[15m_IS_f1_s5] n=951 expR=-0.22479679269796282 PF=0.6044861964384433 DD=90.60277117970892
+[1h_IS_f2_s5] backtest 461s
+[1h_IS_f2_s5] n=615 expR=-0.15882829065642645 PF=0.7176110326085114 DD=74.70653399846812
+[15m_IS_f2_s0] backtest 306s
+[15m_IS_f2_s0] n=951 expR=-0.22479679269796282 PF=0.6044861964384433 DD=90.60277117970892
+[15m_IS_f2_s5] backtest 184s
+[15m_IS_f2_s5] n=705 expR=-0.33668390427607575 PF=0.5055366239544297 DD=90.5752464424032
+[1h_WF_f1_s0] backtest 201s
+[1h_WF_f1_s0] n=379 expR=0.06316385966039408 PF=1.0984179941514236 DD=28.738649470011644
+[1h_WF_f1_s2] backtest 205s
+[1h_WF_f1_s2] n=378 expR=0.019225651035143516 PF=1.0270161478346855 DD=34.06845316377712
+[1h_WF_f1_s5] backtest 176s
+[1h_WF_f1_s5] n=374 expR=-0.028831795220286782 PF=0.9616968065605559 DD=36.95012451915322
+[1h_WF_f2_s0] backtest 173s
+[1h_WF_f2_s0] n=374 expR=-0.028831795220286782 PF=0.9616968065605559 DD=36.95012451915322
+[15m_IS_f1_s2] backtest 1077s
+[15m_IS_f1_s2] n=1808 expR=-0.13338119110702318 PF=0.7384580251274615 DD=90.59346332022497
+[1h_WF_f2_s5] backtest 161s
+[1h_WF_f2_s5] n=371 expR=-0.11645106350808328 PF=0.8545445611576027 DD=44.86804755110574
+[15m_WF_f1_s5] backtest 236s
+[15m_WF_f1_s5] n=876 expR=-0.32935358087567196 PF=0.49365781633827593 DD=90.7730217051956
+[15m_IS_f1_s0] backtest 1458s
+[15m_WF_f1_s0] backtest 426s
+[15m_WF_f1_s0] n=1222 expR=-0.1912563783156777 PF=0.6169834190675462 DD=87.87160889956228
+[15m_IS_f1_s0] n=2195 expR=-0.0731103286431469 PF=0.8178523714402365 DD=86.24050273191591
+[15m_WF_f1_s2] backtest 377s
+[15m_WF_f1_s2] n=1138 expR=-0.23944811596948276 PF=0.5661695549579814 DD=89.95334222216414
+[15m_WF_f2_s5] backtest 140s
+[15m_WF_f2_s5] n=656 expR=-0.4583586858272732 PF=0.3910939112039883 DD=90.32958325026664
+[15m_WF_f2_s0] backtest 233s
+[15m_WF_f2_s0] n=876 expR=-0.32935358087567196 PF=0.49365781633827593 DD=90.7730217051956
+Traceback (most recent call last):
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 258, in <module>
+    main()
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 244, in main
+    out = BT_DIR / a.id if a.analyze_only else build_and_run(a)
+                                               ^^^^^^^^^^^^^^^^
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 54, in build_and_run
+    params = json.loads(a.params) if a.params else {}
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+Traceback (most recent call last):
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 258, in <module>
+    main()
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 244, in main
+    out = BT_DIR / a.id if a.analyze_only else build_and_run(a)
+                                               ^^^^^^^^^^^^^^^^
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 54, in build_and_run
+    params = json.loads(a.params) if a.params else {}
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+Traceback (most recent call last):
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 258, in <module>
+    main()
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 244, in main
+    out = BT_DIR / a.id if a.analyze_only else build_and_run(a)
+                                               ^^^^^^^^^^^^^^^^
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 54, in build_and_run
+    params = json.loads(a.params) if a.params else {}
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+Traceback (most recent call last):
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 258, in <module>
+    main()
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 244, in main
+    out = BT_DIR / a.id if a.analyze_only else build_and_run(a)
+                                               ^^^^^^^^^^^^^^^^
+  File "/home/user/SG-Github-AB-proje/trader/research/run_bt.py", line 54, in build_and_run
+    params = json.loads(a.params) if a.params else {}
+             ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/json/decoder.py", line 353, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ^^^^^^^^^^^^^^^^^^^^^^
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+[1h_IS_f2_s2_sb0.4] backtest 384s
+[1h_IS_f2_s2_sb0.4] n=575 expR=-0.019706389034573456 PF=0.9116680353617421 DD=51.82183123139593
+[1h_IS_f2_s2_tr2.5] backtest 398s
+[1h_IS_f2_s2_tr2.5] n=655 expR=-0.10727402640660161 PF=0.7712197332166091 DD=70.94430123878574
+[1h_IS_f2_s2_tr3.5] backtest 421s
+[1h_IS_f2_s2_tr3.5] n=581 expR=-0.026657357642056997 PF=0.8856615414613698 DD=57.468158399020176
+[1h_IS_f2_s2_sb0.2] backtest 461s
+[1h_IS_f2_s2_sb0.2] n=657 expR=-0.0648096849339553 PF=0.8400872257333096 DD=58.145832332023
+usage: run_bt.py [-h] --id ID --period PERIOD [--fee-mult FEE_MULT]
+                 [--slip-bps SLIP_BPS] [--tf {1h,15m}] [--params PARAMS]
+                 [--notes NOTES] [--analyze-only]
+usage: run_bt.py [-h] --id ID --period PERIOD [--fee-mult FEE_MULT]
+                 [--slip-bps SLIP_BPS] [--tf {1h,15m}] [--params PARAMS]
+                 [--notes NOTES] [--analyze-only]
+run_bt.py: error: unrecognized arguments: v2 sonrasi)
+run_bt.py: error: unrecognized arguments: v2 sonrasi)
+[1h_WF_f2_s2_rerun] backtest 179s
+[1h_WF_f2_s2_rerun] n=374 expR=-0.05544625336975952 PF=0.9272512823481948 DD=39.31393708341343
+[1h_IS_f2_s2_rerun] backtest 431s
+[1h_IS_f2_s2_rerun] n=627 expR=-0.09148028249985021 PF=0.7903846971795769 DD=66.2169487836136
