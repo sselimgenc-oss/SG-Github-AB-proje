@@ -168,3 +168,4 @@ Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı veriyle; ku
 - Reddedilen: Tunnel + Access (Cloudflare DNS'te alan adı gerekir; trycloudflare'de Access yok, adres değişken); Tailscale (cihaz kurulumu).
 - Sonra (doğrulanmadı): workers.dev üzerinde Cloudflare Access e-posta kodu Basic Auth'un yerini alabilir.
 - Zamanlama: ~1–2 gün; 30 Kasım'dan önce sığar.
+- **Kullanıcı kararı (16 Kasım 2026):** Mevcut Cloudflare hesabı kullanılır (ayrı hesap açılmaz). Hesap çapındaki anahtar riski kabul edildi; anahtar yalnız "Workers Scripts: Edit" izinli, sunucuda 0600 dosyada tutulur.
