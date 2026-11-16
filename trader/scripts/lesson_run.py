@@ -26,6 +26,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import lesson as LS  # noqa: E402
+from trader_core import telegram as _TG  # noqa: E402,F401  (NOTIFIER_FACTORIES["telegram"] kaydi)
 
 EXIT_OK, EXIT_CONFIG, EXIT_FAILED, EXIT_DEGRADED = LS.EXIT_OK, LS.EXIT_CONFIG, LS.EXIT_FAILED, LS.EXIT_DEGRADED
 log = logging.getLogger("trader.lesson.run")
@@ -57,11 +58,48 @@ def _build_cfg(args, env):
     return dataclasses.replace(cfg, **over)
 
 
+def _resolve_request(args, cfg, clock, env, sleep_fn) -> int:
+    """Telegram daemon'u ders defterini acmaz; onay bu alt surecle `lesson.lock` altinda cozulur (karar 3).
+    Cikis: 0 cozuldu/bilinen durum; 1 kullanim; 2 hata/kilit alinamadi. Tek satir JSON yazar."""
+    import re
+    if args.approve == args.reject:
+        print("--approve ya da --reject (yalniz biri) gerekli", file=sys.stderr)
+        return EXIT_CONFIG
+    if not re.fullmatch(r"lr-\d{4}-\d{2}-\d{2}-\d+", args.resolve):
+        print("gecersiz request_id", file=sys.stderr)
+        return EXIT_CONFIG
+    lock = _resolve(os.path.join(os.path.dirname(cfg.store_path), "lesson.lock"))
+    fl = LS.FileLock(lock)
+    try:
+        got = fl.acquire()
+    except OSError:
+        got = False
+    if not got:
+        print(json.dumps({"status": "error", "code": "lock_busy", "message": "lesson.lock alinamadi",
+                          "request_id": args.resolve}))
+        return EXIT_FAILED
+    try:
+        svc = LS.LessonService(cfg, notifier=LS.LogNotifier(), clock=clock, sleep_fn=sleep_fn)
+        res = svc.resolve_request(args.resolve, bool(args.approve), "telegram")
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"status": "error", "code": "exception", "message": LS.scrub(type(e).__name__),
+                          "request_id": args.resolve}))
+        return EXIT_FAILED
+    finally:
+        fl.release()
+    print(json.dumps({"status": res.status, "code": res.code, "message": LS.scrub(res.message),
+                      "request_id": res.request_id}))
+    return EXIT_OK
+
+
 def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env=None, sleep_fn=None) -> int:
     ap = argparse.ArgumentParser(prog="lesson_run.py", add_help=True)
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--once", action="store_true")
     g.add_argument("--rollback-to-user-approved", action="store_true")
+    g.add_argument("--resolve", metavar="REQUEST_ID", help="onay talebini coz (--approve|--reject); lesson.lock alir")
+    ap.add_argument("--approve", action="store_true")
+    ap.add_argument("--reject", action="store_true")
     ap.add_argument("--config")
     ap.add_argument("--mode", choices=("llm", "rule_proxy", "both"))
     ap.add_argument("--day")
@@ -90,6 +128,8 @@ def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env
     if args.day and not args.dry_run and args.day > LS._aware(clock()).date().isoformat():
         print("--day gelecekte olamaz (yalniz --dry-run serbest)", file=sys.stderr)
         return EXIT_CONFIG
+    if args.resolve:
+        return _resolve_request(args, cfg, clock, env, sleep_fn)
     if args.rollback_to_user_approved:
         if not args.reason or not args.reason.strip():
             print("--reason gerekli", file=sys.stderr)

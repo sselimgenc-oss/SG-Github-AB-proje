@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader gunluk Telegram raporu 21:00 Europe/Istanbul
+
+[Timer]
+OnCalendar=*-*-* 21:00:00 Europe/Istanbul
+# Persistent: kacirilirsa acilista bir kez; 23:30 kesimini ve "gecikmis" etiketini telegram_run.py report uygular
+Persistent=true
+Unit=trader-telegram-report.service
+
+[Install]
+WantedBy=timers.target

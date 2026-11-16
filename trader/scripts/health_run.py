@@ -257,6 +257,12 @@ def load_env(environ=None) -> dict:
 def make_notifier(name: str):
     if name == "log":
         return H.LogNotifier()
+    if name == "telegram":
+        from trader_core import telegram as T
+        n = T.notifier_from_env(os.environ)
+        if n is None:
+            raise ValueError("telegram yapilandirilmamis")
+        return n
     raise ValueError("bilinmeyen NOTIFIER")
 
 

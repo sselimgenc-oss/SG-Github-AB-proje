@@ -1,0 +1,27 @@
+[Unit]
+Description=Trader Telegram komut dinleyici ve outbox bosaltici (tek daemon)
+Documentation=file:///opt/trader/docs/telegram-spec.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Type=simple
+User=trader
+SupplementaryGroups=trader-tg
+EnvironmentFile=/etc/trader-telegram.env
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/telegram_run.py daemon
+Restart=always
+RestartSec=5
+MemoryMax=96M
+CPUQuota=10%
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# Daemon ders defterini kendisi acmaz; ders/ogrenen defteri ve lesson.lock yazma izni `lesson_run.py --resolve` alt sureci icindir
+# ('-' oneki: dosya yoksa birim yine baslar). Bunlar ders birimiyle ayni listedir. Butce: olay ack.
+ReadWritePaths=/opt/trader/var/telegram /opt/trader/shared -/opt/trader/user_data/lesson.sqlite -/opt/trader/user_data/lesson.sqlite-wal -/opt/trader/user_data/lesson.sqlite-shm -/opt/trader/user_data/lesson.sqlite.fallback.jsonl -/opt/trader/user_data/ledger_learner.sqlite -/opt/trader/user_data/ledger_learner.sqlite-wal -/opt/trader/user_data/ledger_learner.sqlite-shm -/opt/trader/user_data/lesson.lock -/opt/trader/user_data/budget.sqlite -/opt/trader/user_data/budget.sqlite-wal -/opt/trader/user_data/budget.sqlite-shm
+ReadOnlyPaths=-/opt/trader/user_data/ledger_twin.sqlite -/opt/trader/user_data/ledger_twin.sqlite-wal -/opt/trader/user_data/ledger_twin.sqlite-shm
+# Kurulum: groupadd trader-tg; usermod -aG trader-tg trader; install -d -m 2770 -o trader -g trader-tg /opt/trader/var/telegram/outbox

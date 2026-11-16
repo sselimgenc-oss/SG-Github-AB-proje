@@ -1,0 +1,17 @@
+[Unit]
+Description=Trader gunluk Telegram raporu (tek seferlik; gecikme kesimini betik uygular)
+After=network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Type=oneshot
+User=trader
+SupplementaryGroups=trader-tg
+EnvironmentFile=/etc/trader-telegram.env
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/telegram_run.py report
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var/telegram
