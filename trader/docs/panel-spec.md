@@ -158,3 +158,11 @@ Veri: özsermaye geçmişi ve günlük K/Z defterin kapanmış işlemlerinden (`
 - **Yazar kapalı (temiz kapanış `-wal`/`-shm`'i siler), dizin salt okunur: AÇILAMAZ** (`attempt to write a readonly database`; `mode=ro` yine de `-shm` oluşturmak ister). Panel bunu çökmeden `veri yok: wal_yok_salt_okunur` olarak gösterir. Yani bot durmuşken Defter/Eğri/Risk/Özet defter kısımları görünmez; Bütçe/Ders/Sağlık/Durum etkilenmez (bütçe rollback-journal; ders deposu WAL olduğundan aynı kural).
 - Dizin **yazılabilir** ve yazar kapalıysa `mode=ro` açılır ama SQLite `-wal`/`-shm` oluşturur (ana DB dosyası aynı kalır). Üretimde `ReadOnlyPaths` bunu engeller; geliştirme/test dizinlerinde bu yan etki beklenir.
 - Karar: `immutable=1` ile yedek açma eklenmedi (yazar başlarsa tutarsız okuma riski; fail-closed seçildi). Bot hep çalıştığı için üretimde ilk durum geçerlidir; bot bakım için durdurulursa panel "veri yok" der (istenirse kararlı bir alternatif: motor kapanışta `-wal`'i bırakmaz → `gate_status_readonly()` bekleniyor, soru §9.6).
+
+## 13. PC + iPhone erişimi (mentor kararı, 16 Kasım 2026)
+Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı canlı veriyle. Karar: **Tailscale + `tailscale serve`**.
+- Sunucu: Tailscale kurulur, `tailscale serve --bg 8787`. Panel 127.0.0.1:8787'de, salt okunur, parolasız kalır. Host izin listesine `*.ts.net` adı eklenir (yapılandırmadan); CSP değişmez. **`tailscale funnel` asla kullanılmaz** (genel internete açar).
+- Kullanıcı: iPhone ve PC'ye Tailscale uygulaması, ikisinde aynı hesapla giriş, tek adres yer imi (cihaz başına ~3 adım, bir kez). Hesapta iki adımlı doğrulama açık olmalı.
+- Risk: düşük — açık port yok, WireGuard + HTTPS. Kalan açık nokta hesabın kendisi.
+- Reddedilen: SSH uygulamasıyla port yönlendirme (iOS arka planda kapatıyor, zahmetli); herkese açık HTTPS + parola (paylaşılan sunucuda açık port).
+- Zamanlama: 30 Kasım için engel değil (uyarılar Telegram'da); kağıt döneminin ilk haftasında (~15 dk).
