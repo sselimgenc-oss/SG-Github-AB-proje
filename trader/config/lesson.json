@@ -6,7 +6,11 @@
   "mode": "llm",
   "model": "claude-sonnet-5-5",
   "max_output_tokens": 1500,
-  "checkpoints": [30, 45, 60],
+  "checkpoints": [
+    30,
+    45,
+    60
+  ],
   "checkpoint_valid_days": 7,
   "min_affected": 8,
   "min_gap_r": 0.5,
@@ -44,5 +48,7 @@
   "max_steps_from_twin": 2,
   "blind_days": 3,
   "calibration": null,
-  "report_show_twin": false
+  "report_show_twin": false,
+  "notifier": null,
+  "reject_cooldown_days": 7
 }

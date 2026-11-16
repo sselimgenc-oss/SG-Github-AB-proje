@@ -813,7 +813,7 @@ def test_menu_vol_ratio_max_up_extrapolated_spec_14_4(env):
     assert get(e, "to") == pytest.approx(1.7) and get(e, "evidence_class") == "extrapolated"
     assert get(e, "semantics") == "loosen"
     assert f["menu.vol_ratio_max:up.gap"] == pytest.approx(0.65, abs=1e-4)
-    assert f["menu.vol_ratio_max:up.z"] == pytest.approx(2.0382, abs=1e-3)
+    assert f["menu.vol_ratio_max:up.z"] == pytest.approx(2.25, abs=1e-3)
     assert not get(e, "auto_capable", default=False)
 
 

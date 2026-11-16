@@ -11,7 +11,8 @@ User=trader
 EnvironmentFile=/etc/trader-lesson.env
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/lesson_run.py --once
 TimeoutStartSec=300
-# 2: calisma `failed` (beklenen; bildirim ders servisinden gider); cokus ya da 1 (yapilandirma) OnFailure tetikler
+# 2: calisma `failed` (beklenen; bildirim ders servisinden gider). 1 (yapilandirma, bildirimci yok), 3 (bozulmus:
+# ledger_only/yedek yazilamadi/saat kilidi/defter yok) ve cokus OnFailure tetikler: 3 BILEREK SuccessExitStatus disinda (Revizyon 3)
 SuccessExitStatus=2
 MemoryMax=256M
 CPUQuota=30%

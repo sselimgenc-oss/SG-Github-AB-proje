@@ -1099,7 +1099,8 @@ def test_runner_dry_run_and_once_rule_proxy(env, tmp_path, capsys):
                                 "paper_start_day": "2026-11-30"}))
     sys.path.insert(0, str(ROOT / "scripts"))
     import lesson_run
-    rc = lesson_run.main(["--once", "--dry-run", "--day", RUN_DAY, "--config", str(cfgp)], env={})
+    rc = lesson_run.main(["--once", "--dry-run", "--day", RUN_DAY, "--config", str(cfgp)], env={},
+                         now_fn=lambda: RUN_NOW)
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
     assert out["menu"] and "prompt_user" in out and not (tmp_path / "lesson.sqlite").exists()
@@ -1321,7 +1322,7 @@ def test_rule_vol_ratio_up_extrapolated_14_4():
     res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig())
     assert res["passed"], res
     assert res["n_a"] == 9 and res["n_b"] == 27 and res["gap"] == pytest.approx(0.65, abs=1e-3)
-    assert res["z"] == pytest.approx(2.0382, abs=1e-3)
+    assert res["z"] == pytest.approx(2.25, abs=1e-3)
     assert rule.evidence_class == "extrapolated"
 
 
@@ -1514,3 +1515,183 @@ def test_calibration_with_twin_pair(tmp_path):
         assert LS.calibrate(e.led, e.twin, cfg, seed=6, B=20, today="2026-12-09").to_dict() != d
     finally:
         e.close()
+
+
+# ---------------------------------------------------------------------------
+# Revizyon 3 (mentor kod incelemesi)
+# ---------------------------------------------------------------------------
+
+def test_r3_log_notifier_never_counts_as_delivered(env, tmp_path):
+    n = LS.LogNotifier()
+    notice = LS.LessonNotice("info", "x", "t", "b", "fp", RUN_NOW)
+    assert n.notify(notice) is False
+    r1_scenario(env)
+    cfg = mk_cfg(tmp_path, paper_start_day="2026-10-01")
+    svc, store = mk_service(env, cfg, notifier=LS.LogNotifier())
+    res = svc.run_tick(RUN_NOW)
+    assert res.status == "needs_user"
+    rid = store.open_requests()[0]["request_id"]
+    assert [e["event"] for e in store.request_events(rid)].count("delivery_failed") >= 1
+    assert not any(e["event"] == "delivered" for e in store.request_events(rid))
+    store.close()
+
+
+def _runner_cfg(env, tmp_path):
+    r1_scenario(env)
+    cfgp = tmp_path / "l.json"
+    cfgp.write_text(json.dumps({"ledger_path": str(tmp_path / "learner.sqlite"),
+                                "store_path": str(tmp_path / "lesson.sqlite"),
+                                "twin_ledger_path": str(tmp_path / "twin.sqlite"), "mode": "rule_proxy",
+                                "paper_start_day": "2026-11-30"}))
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import lesson_run
+    return lesson_run, cfgp
+
+
+def test_r3_runner_requires_notifier_and_rejects_future_day(env, tmp_path, capsys):
+    lesson_run, cfgp = _runner_cfg(env, tmp_path)
+    base = ["--once", "--day", RUN_DAY, "--config", str(cfgp)]
+    rc = lesson_run.main(base, env={}, now_fn=lambda: RUN_NOW)
+    assert rc == 1 and "bildirimci" in capsys.readouterr().err      # yapilandirilmamis => basarisiz cikis
+    assert not (tmp_path / "lesson.sqlite").exists()
+    assert lesson_run.main(["--once", "--day", "2027-01-01", "--config", str(cfgp)], env={},
+                           notifier=LS.NullNotifier(), now_fn=lambda: RUN_NOW) == 1
+    rc = lesson_run.main(base + ["--allow-log-notifier"], env={}, now_fn=lambda: RUN_NOW)
+    assert rc == 0
+    assert (tmp_path / "lesson.sqlite").exists()
+    # sistem birimi: 1 ve 3 basari sayilmaz
+    unit = (ROOT / "deploy" / "trader-lesson.service").read_text()
+    assert "SuccessExitStatus=2\n" in unit and "OnFailure=" in unit
+
+
+def test_r3_ledger_only_monitor_runs_first_and_fallback_error_is_failsafe(env, tmp_path):
+    svc, store, cfg = applied_env(env, tmp_path, 20, [-1.0, 0.3] * 10)
+    store.close()
+    bad_store = tmp_path / "dir_as_store"
+    bad_store.mkdir()
+    (tmp_path / "dir_as_store.fallback.jsonl").mkdir()       # yedek dosyasi yazilamaz (OSError)
+    cfg2 = dataclasses.replace(cfg, store_path=str(bad_store))
+    notifier = LS.NullNotifier()
+    svc2 = LS.LessonService(cfg2, ledger=env.led, twin=env.twin, clock=env.clock, notifier=notifier, lock_path=None)
+    res = svc2.run_tick(RUN_NOW)
+    assert res.status == "rolled_back", res
+    assert env.led.get_active_params().version_id == 1             # izleyici yine de calisti
+    assert res.exit_code == LS.EXIT_DEGRADED == 3                    # gorunur ariza (SuccessExitStatus disi)
+    assert res.detail.get("fallback_write_failed") is True
+    assert any(n.code == "run_failed" for n in notifier.notices)
+
+
+def test_r3_ledger_only_quiet_day_is_degraded_exit(env, tmp_path):
+    r1_scenario(env)
+    bad_store = tmp_path / "dir_as_store"
+    bad_store.mkdir()
+    cfg = mk_cfg(tmp_path, store_path=str(bad_store))
+    svc = LS.LessonService(cfg, ledger=env.led, twin=env.twin, clock=env.clock, notifier=LS.NullNotifier(),
+                           lock_path=None)
+    res = svc.run_tick(RUN_NOW)
+    assert res.status == "ledger_only" and res.exit_code == 3
+
+
+def test_r3_clock_jump_ahead_alerts_and_fails(env, tmp_path):
+    r1_scenario(env)
+    cfg = mk_cfg(tmp_path, paper_start_day="2026-10-01")
+    future = RUN_NOW + timedelta(days=10)
+    st0 = LS.LessonStore(env.store_path, clock=Clock(future))
+    run = st0.create_run(cfg, future.date().isoformat())
+    st0.add_event(run.id, "no_change", "llm_no_change", {})
+    st0.close()
+    notifier = LS.NullNotifier()
+    svc, store = mk_service(env, cfg, notifier=notifier)
+    res = svc.run_tick(RUN_NOW)
+    assert res.status == "idle" and res.code == "already_ran"
+    assert res.exit_code == LS.EXIT_DEGRADED and "clock_ahead" in res.detail
+    assert any(n.code == "clock_ahead" for n in notifier.notices)
+    store.close()
+
+
+def test_r3_twin_report_attributes_only_monitored_version(env):
+    for i in range(24):
+        env.add_pair(i, 0.1 + (i % 3) * 0.1, ver=1)
+    env.clock.t = datetime(2026, 10, 26, 12, tzinfo=UTC)
+    pid = env.led.propose_change(base_version_id=1, changes={"rr_min": 1.75}, rationale="x", claimed_evidence={},
+                                 source="t").proposal_id
+    assert env.led.apply_proposal(pid, actor="user", reason="x").ok
+    for i in range(12):
+        env.add_pair(i, 0.2, ver=2, base=datetime(2026, 10, 27, tzinfo=UTC))
+    cfg = LS.LessonConfig()
+    window = (D0, datetime(2027, 1, 1, tzinfo=UTC))
+    allv = LS.build_twin_report(env.led, env.twin, window, cfg)
+    only2 = LS.build_twin_report(env.led, env.twin, window, cfg, version_id=2)
+    assert allv.available and allv.n_both == 36
+    assert only2.n_both == 12 and only2.n_keys == 12
+
+
+def test_r3_loosening_uses_missed_trades_mean_test_not_half_r_gap():
+    rule = LS.RULES_BY_ID["vol_ratio_max:up"]
+    a = synth(9, 0.60, 0.80, "a")
+    b = synth(27, 0.30, 1.00, "b")                       # gap = 0.30 < 0.50 (eskiden gap_low)
+    rows = [trow(i, v, atr=1.4) for i, (v, _) in enumerate(a)] + [trow(100 + i, v, atr=1.1) for i, (v, _) in enumerate(b)]
+    res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig())
+    assert res["passed"], res
+    assert res["gap"] == pytest.approx(0.30, abs=1e-3)
+    neg = [trow(i, v - 0.45, atr=1.4) for i, (v, _) in enumerate(a)] + \
+          [trow(100 + i, v, atr=1.1) for i, (v, _) in enumerate(b)]
+    res2 = LS.eval_rule(rule, neg, 1.5, 1.7, LS.LessonConfig())
+    assert not res2["passed"] and "sign" in res2["fails"]
+
+
+def test_r3_shadow_measured_from_first_actual_decision(env, tmp_path):
+    r1_scenario(env)
+    cfg = mk_cfg(tmp_path, paper_start_day="2020-01-01")
+    start = LS.resolve_shadow_start(cfg, env.led, RUN_DAY)
+    assert start == "2026-10-01" == LS.day_of(env.led.list_decisions(limit=1)[0].bar_close_ts)
+    assert LS.resolve_shadow_start(mk_cfg(tmp_path, paper_start_day="2026-11-30"), env.led, RUN_DAY) == "2026-11-30"
+    svc, store = mk_service(env, cfg)
+    svc.run_tick(RUN_NOW)
+    assert store.get_state("shadow_start_day") == "2026-10-01"
+    store.close()
+
+
+def test_r3_llm_errors_notify(env, tmp_path):
+    r1_scenario(env)
+    cfg = mk_cfg(tmp_path, mode="llm", calibration=good_cal(), paper_start_day="2026-10-01")
+    notifier = LS.NullNotifier()
+    svc, store = mk_service(env, cfg, llm=None, notifier=notifier)
+    res = svc.run_tick(RUN_NOW)
+    assert res.status == "failed" and res.code == "llm_unavailable"
+    assert any(n.code == "llm_error" for n in notifier.notices)
+    store.close()
+
+
+def test_r3_calibration_file_guard(tmp_path):
+    f = tmp_path / "lesson.json"
+    cfg = mk_cfg(tmp_path, calibration=good_cal(), calibration_file=str(f))
+    assert LS.calibration_status(cfg, RUN_DAY) == (False, "calibration_file_missing")
+    f.write_text("{}")
+    assert LS.calibration_status(cfg, RUN_DAY) == (True, "ok")
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"calibration": good_cal(), "mode": "rule_proxy"}))
+    assert LS.load_config(p).calibration_file == str(p.resolve())
+
+
+def test_r3_reject_cooldown_blacklists_same_direction_only(env, tmp_path):
+    r1_scenario(env)
+    cfg = mk_cfg(tmp_path, paper_start_day="2026-10-01")
+    svc, store = mk_service(env, cfg)
+    assert svc.run_tick(RUN_NOW).status == "needs_user"
+    rid = store.open_requests()[0]["request_id"]
+    res = svc.resolve_request(rid, False, "t")
+    assert res.status == "rejected"
+    cd = store.rejection_cooldowns(7)
+    assert list(cd) == [("rr_min", "up")]
+    assert LS.parse_ts(cd[("rr_min", "up")]) > env.clock.t + timedelta(days=6)
+    assert store.rejection_cooldowns(0) == {}
+    assert ("rr_min", "up") in svc._blacklist_with_cooldown(store)
+    store.close()
+
+
+def test_r3_checkpoint_cap_and_number_stripping():
+    with pytest.raises(LS.LessonConfigError):
+        LS.LessonConfig(checkpoints=tuple(range(30, 40)))
+    txt = LS._strip_numbers("kazanc 3.2R, %40 dusus, 12 islem, 0,5")
+    assert not any(ch.isdigit() for ch in txt) and "[sayi]" in txt
