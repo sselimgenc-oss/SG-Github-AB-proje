@@ -1,0 +1,11 @@
+{"timezone": "UTC", "symbols": [
+ {"symbol": "BTCUSDT", "status": "TRADING", "contractType": "PERPETUAL", "filters": [
+  {"filterType": "PRICE_FILTER", "tickSize": "0.10", "minPrice": "556.80", "maxPrice": "4529764"},
+  {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "1000"},
+  {"filterType": "MARKET_LOT_SIZE", "stepSize": "0.01", "minQty": "0.01", "maxQty": "100"},
+  {"filterType": "MIN_NOTIONAL", "notional": "100"}]},
+ {"symbol": "ETHUSDT", "status": "TRADING", "contractType": "PERPETUAL", "filters": [
+  {"filterType": "PRICE_FILTER", "tickSize": "0.01"},
+  {"filterType": "LOT_SIZE", "stepSize": "0.001", "minQty": "0.001", "maxQty": "10000"},
+  {"filterType": "NOTIONAL", "minNotional": "20"}]}
+]}
