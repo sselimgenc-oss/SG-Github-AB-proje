@@ -1,4 +1,6 @@
-# İşlem defteri ve parametre değişiklik günlüğü — arayüz ve kurallar (spesifikasyon v1, 16 Kasım 2026)
+# İşlem defteri ve parametre değişiklik günlüğü — arayüz ve kurallar (spesifikasyon v1 + Revizyon 2, 16 Kasım 2026)
+
+**Revizyon 2 (mentor incelemesi, ders-spec Revizyon 2 ile birlikte; şema sürüm 1 → 2):** (1) `trade_exits`'e `mfe_r`, `mae_r`, `bars_held`, `excursion_tf` eklendi (3.4, 3.4.1); (2) kanıt sayımı artık parametreye göre **havuzlanır**: ilgili parametrenin kapsamını etkilemeyen sürüm değişiklikleri kanıtı sıfırlamaz (5.4, `pool_version_ids`); (3) `propose_change(..., require_user=True)` ile herhangi bir öneri `needs_user` durumuna alınabilir (5.3 madde 11, 6.2); (4) yeni okuma yöntemleri: `pool_version_ids`, `trades_for_versions`, `aggregate_trades(version_ids=...)` (7.1); (5) `TradeRecord`'a `mfe_r`, `mae_r`, `bars_held` (7.1); (6) `SCHEMA_VERSION = 2` ve göç 1 → 2 (10.1); (7) ikiz defteri ders servisi tarafından **salt okunur** açılabilir (10.2). Mevcut `ledger.py` (şema 1) bu değişiklikler için güncellenmelidir.
 
 Kaynak kurallar: `otonom-trading-arastirma/mimari-taslak.md` (parça 7, 8, 9), `strateji-v1.md` (Bölüm 4–6: T1/R1, parametreler, ders servisi sınırları), `tasarim-kararlari.md` (15–16 Kasım bölümü: öğrenme ilk günden açık, ≥20–30 işlem kanıtı, değişiklik günlüğü, geri alma). Şekil uyumu: `risk-kilidi-spec.md` (`Decision`, `Candidate`, `SizeResult`) ve `rejim-spec.md` (`RegimeResult`, `Regime`). Bu belge kod ve test içermez; testler bu belgeden yazılır. Sayılar kârlılık kanıtı değildir.
 
@@ -26,7 +28,7 @@ Modül: `src/trader_core/ledger.py`. Yalnızca standart kütüphane (`sqlite3`, 
 
 Ders servisinin **politika ret'leri** (sınır dışı, kanıt yetersiz vb.) istisna değil, `ProposalResult`/`ActivationResult` içinde `ok=False` + `code` olarak döner (Bölüm 5). Sistem hataları (`LedgerWriteError` vb.) her zaman istisnadır.
 
-## 3. Şema (sürüm 1)
+## 3. Şema (sürüm 2; sürüm 1'den göç için 10.1)
 
 ### 3.1 Zaman ve kimlik kuralları (tüm tablolar)
 
@@ -129,12 +131,27 @@ Eksik zorunlu anahtar → `LedgerValidationError`. Değerler sonlu sayı.
 | `realized_pnl` | REAL | **net** = `gross_pnl − fee_entry − fee_exit − funding_paid` |
 | `r_multiple` | REAL | `realized_pnl / planned_risk` |
 | `slippage_exit` | REAL NULL | `planned_exit` NULL ise NULL |
+| `mfe_r` | REAL NULL | **(şema 2)** işlem süresince azami lehte sapma, R cinsinden, ≥ 0 (3.4.1) |
+| `mae_r` | REAL NULL | **(şema 2)** işlem süresince azami aleyhe sapma, R cinsinden, ≥ 0 (3.4.1) |
+| `bars_held` | INTEGER NULL | **(şema 2)** işlemde geçen 15 dk'lık mum kapanışı sayısı (3.4.1) |
+| `excursion_tf` | TEXT NULL | **(şema 2)** sapmanın hesaplandığı mum dilimi: `1m` / `5m` / `15m` |
 | `supersedes_id` | INTEGER NULL | |
 | `recorded_at` | TEXT | |
 
-`UNIQUE (bot, trade_id) WHERE supersedes_id IS NULL`.
+`UNIQUE (bot, trade_id) WHERE supersedes_id IS NULL`. CHECK: `mfe_r`, `mae_r`, `excursion_tf` ya üçü birden NULL ya üçü birden dolu; `mfe_r ≥ 0`, `mae_r ≥ 0`; `bars_held ≥ 0` (NULL olabilir).
 
 **Türetilen alanlar defter tarafından hesaplanır, çağıran vermez** (tutarsızlık imkânsız olsun): `gross_pnl`, `realized_pnl`, `r_multiple`, `slippage_*`. Çağıran ham fiyat, miktar, komisyon, funding verir. `fee_entry` giriş kaydında, `fee_exit`/`funding_paid` çıkış kaydındadır.
+
+#### 3.4.1 MFE / MAE ve `bars_held` (şema 2)
+
+Çıkış kaydında çağıran **ham uç fiyatları** verir (`TradeExit.max_favorable_price`, `max_adverse_price`, `excursion_tf`); defter `mfe_r`, `mae_r`, `bars_held` değerlerini kendisi hesaplar (diğer türetilen alanlarla aynı ilke).
+
+- **Uç fiyatlar (çağıranın işi):** `entry_ts` ile `exit_ts` arasındaki mumlardan alınır. `excursion_tf` ayrıntı varsa `1m`, yoksa `5m`, yoksa `15m`. Dahil mumlar: `[entry_ts, exit_ts]` aralığıyla kesişen tüm mumlar (dolum anını ve çıkış anını içeren mumlar dahil; bunlar dolumdan önceki/çıkıştan sonraki kısmı da kapsayabilir, dilim inceldikçe bu yanlılık küçülür; `15m` diliminde sapma hafifçe abartılır ve bu `excursion_tf` ile kaydedilir). Long: `max_favorable_price` = dahil mumların en yüksek `high`'ı, `max_adverse_price` = en düşük `low`'u. Short: tersi (`max_favorable_price` = en düşük `low`, `max_adverse_price` = en yüksek `high`).
+- **Hesap (defter):** `sgn = +1` (long), `−1` (short). `mfe_r = max(0, sgn·(max_favorable_price − entry_price)·qty / planned_risk)`; `mae_r = max(0, sgn·(entry_price − max_adverse_price)·qty / planned_risk)`. Pay brüt fiyat hareketidir (komisyon/funding hariç), payda `r_multiple` ile **aynı** `planned_risk`'tir (R birimi tutarlı; `gross_pnl/planned_risk ≤ mfe_r` karşılaştırılabilir). 6 ondalığa yuvarlanır.
+- **`bars_held`** = `entry_ts < c ≤ exit_ts` koşulunu sağlayan 15 dk mum **kapanış** zamanı `c` sayısı = `floor(exit_ts / 15dk) − floor(entry_ts / 15dk)` (UTC epoch dakikası tam bölme). Tetik dilimi 1s olsa da birim sabit 15 dk'dır.
+- **Doğrulama (`LedgerValidationError`):** üç uç alan ya birlikte verilir ya birlikte `None` (o zaman `mfe_r/mae_r/bars_held/excursion_tf` NULL kalır; **`bars_held` yine hesaplanır**, bu durumda `excursion_tf` NULL, `bars_held` dolu olabilir: CHECK yalnızca `mfe_r/mae_r/excursion_tf` üçlüsünü bağlar); fiyatlar > 0; long için `max_favorable_price ≥ max(entry_price, exit_price)` ve `max_adverse_price ≤ min(entry_price, exit_price)`, short için tersi. İhlal: kayıt reddedilir (uç fiyat, gerçekleşen fiyatlardan daha ılımlı olamaz).
+- **Eksik veri:** mum verisi alınamazsa çağıran `None` verir; işlem yine kaydedilir (`mfe_r` NULL). Ders servisi NULL olanları ilgili kural için dışarıda bırakır (`excluded_missing_excursion`). Şema 1'den göçen eski işlemler NULL kalır (append-only; geriye dönük doldurma yok; 10.1).
+- Sonradan düzeltme gerekirse yeni çıkış satırı (`supersedes_id`); eski satır değişmez.
 
 **Kayma işareti:** pozitif = olumsuz (aleyhe). Giriş: long `(entry_price − planned_entry)/planned_entry`, short `(planned_entry − entry_price)/planned_entry`. Çıkış: long `(planned_exit − exit_price)/planned_exit`, short `(exit_price − planned_exit)/planned_exit`. Göreli oran (kesir), yüzde değil.
 
@@ -210,7 +227,7 @@ Geçerli durum = o `proposal_id`'nin en yüksek `id`'li olayı. İzinli geçişl
 ### 3.8 Görünümler (salt okunur, `CREATE VIEW`)
 
 - `v_decisions`: `supersedes_id` zincirinin geçerli (kendisini kimse yerine geçirmemiş) kararları.
-- `v_trades`: geçerli giriş + geçerli çıkış birleşimi (`LEFT JOIN`; çıkışı yoksa açık işlem), karar ve `regime`, `atr_ratio` ile birleşik.
+- `v_trades`: geçerli giriş + geçerli çıkış birleşimi (`LEFT JOIN`; çıkışı yoksa açık işlem), karar ve `regime`, `atr_ratio` ile birleşik; şema 2'den itibaren `mfe_r`, `mae_r`, `bars_held`, `excursion_tf` de dahildir (göçte görünümler yeniden kurulur, 10.1).
 - `v_closed_trades`: `v_trades` içinde çıkışı olanlar. **Bütün okuma ve toplulaştırma fonksiyonları yalnızca bu görünümleri kullanır**, ham tabloları değil.
 - `v_proposals`: öneri + geçerli durum.
 
@@ -280,11 +297,11 @@ Kaynak: `strateji-v1.md` Bölüm 2 ve 6.1 (ve `rejim-spec.md` `RegimeParams` ara
 | 8 | `out_of_bounds` | yeni değer, **ana sürümün `lesson_bounds`** aralığı dışında (uçlar dahil) |
 | 9 | `step_too_large` | `\|yeni − eski\| > STEP[param]` (kayan nokta için `1e-9` toleransı) |
 | 10 | `no_change` | yeni değer = eski değer |
-| 11 | `needs_user` (durum, ret değil) | `vol_ratio_max` **artırılıyorsa** (gevşetme, `strateji-v1.md` 6.1) |
+| 11 | `needs_user` (durum, ret değil) | `vol_ratio_max` **artırılıyorsa** (gevşetme, `strateji-v1.md` 6.1) **veya** çağıran `require_user=True` verdiyse (ders servisi bunu gölge dönemde her öneri için, ayrıca `stop_buffer_atr` artışı ve diğer kullanıcıya-sorulur sınıflar için verir; ders-spec 8.3). 1–10. kurallardan biri ihlal edilmişse yine `rejected` |
 
 "Bir adım" bu belgede **"tek öneride değişim ≤ tarama adımı"** olarak okunur (tam kat zorunlu değil): `vol_ratio_max` tarama adımı 0.25 iken ders sınırı genişliği 0.4 olduğundan, kat zorunluluğu 1.5 → 1.3'ü bile engellerdi.
 
-`needs_user` durumundaki öneri, kullanıcı `apply_proposal(..., actor="user")` çağırana kadar bekler; `actor="lesson"` ile uygulanamaz (`code="user_approval_required"`). Kullanıcı onayı da 2–9. kuralları ve kanıt şartını **yeniden** denetler (kullanıcı onayı sınırları genişletmez; sınır değişikliği `author="user"` sürümüyle yapılır).
+`needs_user` durumundaki öneri (kural 11 ister `vol_ratio_max` artışı ister `require_user` yüzünden), kullanıcı `apply_proposal(..., actor="user")` çağırana kadar bekler; `actor="lesson"` ile uygulanamaz (`code="user_approval_required"`). `needs_user` kodu, `require_user` yüzündense `code="user_approval_required"`, `vol_ratio_max` yüzündense `code="needs_user"` yazılır (ikisi birlikteyse `needs_user`). Böylece gölge dönem ve "her zaman kullanıcıya" kuralları, ders servisinde bir hata olsa bile defter düzeyinde zorlanır. Kullanıcı onayı da 2–9. kuralları ve kanıt şartını **yeniden** denetler (kullanıcı onayı sınırları genişletmez; sınır değişikliği `author="user"` sürümüyle yapılır).
 
 ### 5.4 Uygulama (apply) kuralları
 
@@ -293,11 +310,13 @@ Kaynak: `strateji-v1.md` Bölüm 2 ve 6.1 (ve `rejim-spec.md` `RegimeParams` ara
 1. Durum `proposed` veya (`needs_user` ve `actor="user"`); aksi `LedgerStateError`.
 2. `base_version_id` hâlâ etkin değil → `stale_base` (terminal `rejected`).
 3. 5.3'ün 2–10. kuralları yeniden (etkin sürüm değişmiş olabilir) → ilgili kod (terminal).
-4. **Kanıt:** defterin kendi sayımı `n_closed` ≥ `min_evidence_trades`. `n_closed` = `v_closed_trades` içinde `param_version_id == base_version_id` olan ve kapsamı (Bölüm 5.1 "Kanıt kapsamı") parametreye uyan kapanmış işlem sayısı. Kapsam `T1` ise yalnızca `setup='T1'`, `R1` ise yalnızca `R1`, `T1+R1` ise ikisi. Eksikse `insufficient_evidence` (**geçici**: durum `proposed` kalır, olay yazılmaz, ertesi gün tekrar denenir). Beyan edilen `claimed_evidence.n_closed` yok sayılır; fark varsa `evidence` içine `claimed_mismatch: true` yazılır.
+4. **Kanıt (havuzlu, Revizyon 2):** defterin kendi sayımı `n_closed` ≥ `min_evidence_trades`. `n_closed` = `v_closed_trades` içinde `param_version_id ∈ POOL(base_version_id, key)` olan ve kapsamı (Bölüm 5.1 "Kanıt kapsamı") parametreye uyan kapanmış işlem sayısı. Kapsam `T1` ise yalnızca `setup='T1'`, `R1` ise yalnızca `R1`, `T1+R1` ise ikisi. Eksikse `insufficient_evidence` (**geçici**: durum `proposed` kalır, olay yazılmaz, ertesi gün tekrar denenir). Beyan edilen `claimed_evidence.n_closed` yok sayılır; fark varsa `evidence` içine `claimed_mismatch: true` yazılır.
+
+   **Havuz tanımı (`POOL`):** `key` önerilen parametre, `S = LESSON_SCOPE[key]` (setup kümesi). Bir parametre `q`, `key`'in kapsamını **etkiler** (`affects(q, key)`) ancak: `q` ders servisine kapalı bir parametre ise (`range_width_atr`, `edge_zone_atr`, `pullback_ema`, `trigger_tf`: giriş kümesini şekillendirirler) **ya da** `LESSON_SCOPE[q] ∩ S ≠ ∅` ise. `POOL(base, key)` = bu botun `param_versions` kayıtlarında, `params[q]` değeri `base` sürümünün `params[q]` değerine **eşit** olan sürümlerin kümesi, **her** `q` için `affects(q, key)` doğruysa (`q = key` dahil; `base` kendisi havuzdadır). Yani yalnızca kapsamı ayrık parametreler (örn. `key = trail_atr` (T1) iken `rr_min` (R1) farkı) farklı olan sürümler **havuzlanır**; kapsamı kesişen herhangi bir parametre farklıysa o sürüm havuz dışıdır. Sonuç: bir R1 parametresinin değişmesi T1 kanıt akışını sıfırlamaz; `T1+R1` parametreleri (`vol_ratio_max`, `stop_buffer_atr`) değiştiğinde her iki kapsam sıfırlanır. `LESSON_SCOPE`/`affects` bir sabit tablodur, veri-bağımlı değildir. Rollback sonrası bir önceki sürüme dönüşte havuz doğal olarak yeniden birleşir (sürüm kimliği aynıdır).
 5. **Haftalık sınır:** `actor="lesson"` ise son 7 günde (`activated_at ≥ şimdi − 7 gün`) `kind='apply'` ve `actor='lesson'` olan etkinleştirme varsa `weekly_limit` (**geçici**). Geri almalar ve kullanıcı etkinleştirmeleri sayılmaz. (Kaynak: `mimari-taslak.md` Bölüm 5 "haftada en fazla bir değişiklik".)
 6. Hepsi geçerse tek işlemde (`BEGIN IMMEDIATE`): yeni `param_versions` satırı (`author="lesson"` — kullanıcı onaylı olsa da; onaylayan `param_activations.actor`'da yazılır), `param_activations` (`kind="apply"`), `proposal_status_events(applied, version_id=…)`. Üçü birlikte yazılır ya da hiçbiri.
 
-`evidence` (sürüm satırında): `{"n_closed": 23, "scope": "R1", "base_version_id": 1, "first_exit_ts": "...", "last_exit_ts": "...", "mean_r": 0.31, "sum_r": 7.13, "win_rate": 0.52, "claimed_mismatch": false}`. `n_closed` zorunlu ve `≥ min_evidence_trades`; sayılar defterin kendi hesabıdır.
+`evidence` (sürüm satırında): `{"n_closed": 23, "scope": "R1", "base_version_id": 1, "pooled_version_ids": [1], "n_by_version": {"1": 23}, "first_exit_ts": "...", "last_exit_ts": "...", "mean_r": 0.31, "sum_r": 7.13, "win_rate": 0.52, "claimed_mismatch": false}`. `n_closed` zorunlu ve `≥ min_evidence_trades`; sayılar defterin kendi hesabıdır.
 
 ### 5.5 Geri alma (rollback) kuralları
 
@@ -366,6 +385,9 @@ class TradeExit:
     fee_exit: float
     funding_paid: float
     supersedes_id: int | None = None
+    max_favorable_price: float | None = None   # şema 2 (3.4.1); üçlü birlikte verilir ya da birlikte None
+    max_adverse_price: float | None = None
+    excursion_tf: str | None = None            # "1m" | "5m" | "15m"
 ```
 
 Kolaylık: `decision_from_results(*, regime_result, risk_decision, ...)` **yok** (defter `rejim`/`risk` modüllerini import etmez; çağıran alanları kendisi aktarır). `RegimeResult.regime.value` metni, `Decision.reason` ve `Decision.size` alanları aynen kopyalanır.
@@ -382,7 +404,8 @@ Ledger.create_user_version(params: Mapping[str, Any], *, reason: str,
                    lesson_bounds: Mapping[str, tuple[float, float]] | None = None) -> int
 Ledger.activate_version(version_id: int, *, actor: str, reason: str) -> ActivationResult
 Ledger.propose_change(*, base_version_id: int, changes: Mapping[str, Any],
-                   rationale: str, claimed_evidence: Mapping[str, Any], source: str) -> ProposalResult
+                   rationale: str, claimed_evidence: Mapping[str, Any], source: str,
+                   require_user: bool = False) -> ProposalResult      # require_user: 5.3 madde 11
 Ledger.apply_proposal(proposal_id: int, *, actor: str, reason: str) -> ActivationResult
 Ledger.reject_proposal(proposal_id: int, *, actor: str, reason: str) -> None
 Ledger.rollback(to_version_id: int | None = None, *, actor: str, reason: str) -> ActivationResult
@@ -393,7 +416,7 @@ Ledger.rollback(to_version_id: int | None = None, *, actor: str, reason: str) ->
 
 - `record_decision`: doğrulama Bölüm 3.3; dönen değer `id` (idempotent tekrar: mevcut `id`). `param_version_id` var olmalı. `pair`/`side` normalleştirilir (`risk-kilidi-spec.md` kuralı).
 - `record_trade_entry`: `decision_id` mevcut, `final_action='entered'`, aynı `bot`; `trade_id` daha önce aynı karara bağlanmış olmalı (farklı kararla çakışma → `LedgerConflictError`). `planned_*`, `pair`, `side`, `setup`, `param_version_id`, `planned_risk` karardan alınır. `planned_risk = size_risk_amount`. `qty > 0`, `entry_price > 0`, `leverage` tam sayı ≥ 1, `fee_entry ≥ 0`.
-- `record_trade_exit`: Bölüm 3.4. `exit_price > 0`; `exit_reason` listede; `fee_exit ≥ 0`; `funding_paid` sonlu (negatif olabilir).
+- `record_trade_exit`: Bölüm 3.4 ve 3.4.1. `exit_price > 0`; `exit_reason` listede; `fee_exit ≥ 0`; `funding_paid` sonlu (negatif olabilir); `mfe_r`, `mae_r`, `bars_held` defter tarafından hesaplanır (3.4.1). Aynı içerikle tekrar yazma idempotenttir (karşılaştırmaya yeni alanlar da girer).
 - `init_params`: yalnızca ilk çağrı; ikinci çağrı `LedgerStateError`. Sürüm + `initial` etkinleştirmesi tek işlemde.
 - `create_user_version`: sürümü yaratır, **etkinleştirmez**; ayrı `activate_version(actor="user")`. (İki adım: kullanıcı backtest sonucunu görüp onaylar.)
 - `activate_version`: yalnızca `author in {initial, user}` sürümleri için (lesson sürümleri yalnızca `apply_proposal` ile etkinleşir; eski lesson sürümüne dönüş `rollback` ile). `kind="apply"`, `actor="user"`.
@@ -421,16 +444,21 @@ Ledger.trades_since_version(version_id: int, *, closed_only: bool = True, exact:
                       setup: str | None = None) -> list[TradeRecord]
 Ledger.aggregate_trades(group_by: Sequence[str], *, version_id: int | None = None,
                       exact_version: bool = True, since_ts: datetime | None = None,
-                      until_ts: datetime | None = None) -> list[AggregateRow]
+                      until_ts: datetime | None = None,
+                      version_ids: Sequence[int] | None = None) -> list[AggregateRow]   # version_ids verilirse version_id/exact_version verilemez
 Ledger.count_closed_trades(*, version_id: int, setup: str | None = None) -> int
+Ledger.pool_version_ids(base_version_id: int, param: str) -> tuple[int, ...]        # 5.4 havuz tanımı; artan sıralı, base dahil
+Ledger.trades_for_versions(version_ids: Sequence[int], *, closed_only: bool = True,
+                      setup: str | None = None, until_ts: datetime | None = None) -> list[TradeRecord]   # exit_ts (kapalıysa) artan, eşitlikte trade_id
 Ledger.get_proposal(proposal_id: int) -> ProposalRecord
 Ledger.list_proposals(*, status: str | None = None, limit: int | None = None) -> list[ProposalRecord]
 ```
 
 - `ActiveParams` (frozen): `version_id`, `activation_id`, `params: Mapping[str, float|int|str]` (salt okunur kopya), `lesson_bounds`, `params_hash`, `activated_at`. Etkin sürüm yoksa `LedgerStateError`. Strateji bunu **her mum kapanışında bir kez** çağırır; ucuz yoldan `Ledger.active_activation_id() -> int | None` ile değişim denetlenebilir. Değişiklik, mevcut mumun içinde yaşanmaz: karar kaydı, o mumun başında okunan `version_id`'yi taşır.
-- `TradeRecord` (frozen): giriş + çıkış + karar alanları düzleştirilmiş (`trade_id`, `pair`, `side`, `setup`, `regime`, `atr_ratio`, `param_version_id`, `entry_ts`, `exit_ts|None`, fiyatlar, `qty`, `leverage`, `fee_entry`, `fee_exit|None`, `funding_paid|None`, `exit_reason|None`, `gross_pnl|None`, `realized_pnl|None`, `r_multiple|None`, `planned_risk`, `slippage_entry`, `slippage_exit|None`, `decision_id`).
+- `TradeRecord` (frozen): giriş + çıkış + karar alanları düzleştirilmiş (`trade_id`, `pair`, `side`, `setup`, `regime`, `atr_ratio`, `param_version_id`, `entry_ts`, `exit_ts|None`, fiyatlar, `qty`, `leverage`, `fee_entry`, `fee_exit|None`, `funding_paid|None`, `exit_reason|None`, `gross_pnl|None`, `realized_pnl|None`, `r_multiple|None`, `planned_risk`, `slippage_entry`, `slippage_exit|None`, `decision_id`, ve şema 2'den itibaren `mfe_r|None`, `mae_r|None`, `bars_held|None`, `excursion_tf|None`).
 - `trades_since_version(X)`: `exact=False` ⇒ girişin `param_activations` olay `id`'si, X'in **en son** etkinleştirme olayının `id`'sinden büyük/eşit olanlar (rollback sonrası X'e dönüşte yalnızca dönüşten sonrası); bu, X'ten sonra gelen sürümler altında açılanları da içerir. `exact=True` ⇒ yalnızca `param_version_id == X`. Bunun için `decision_events` ve `trade_entries` tablolarına `activation_id` sütunu (karar anında etkin `param_activations.id`) eklenir; `record_decision` bunu kendisi okuyup yazar, `DecisionEvent` alanı değildir.
-- Sıralama: `trade` listeleri `entry_ts` artan, eşitlikte `trade_id` artan.
+- `pool_version_ids(base, param)`: 5.4'teki `POOL` kümesi; `param` bilinmiyorsa `LedgerValidationError`; `param` `LESSON_PARAMS` dışındaysa da geçerlidir (yalnızca `LESSON_SCOPE` yerine tüm setup kümesi `T1+R1` kabul edilir, yani yalnızca birebir aynı parametreli sürümler). `trades_for_versions` `version_ids` boşsa boş liste döner; var olmayan sürüm `LedgerValidationError`.
+- Sıralama: `trade` listeleri `entry_ts` artan, eşitlikte `trade_id` artan (`trades_for_versions` hariç, yukarıda belirtildi).
 - `aggregate_trades`: `group_by` ⊆ `{"setup", "regime", "side", "param_version_id", "pair"}`, boş olamaz, tekrarsız; aksi `LedgerValidationError`. Yalnızca kapanmış işlemler, pencere `exit_ts` üzerinden (`since_ts` dahil, `until_ts` hariç). `version_id` verilirse `exact_version` ile Bölüm yukarıdaki iki anlam.
 
 ```
@@ -497,11 +525,27 @@ Ders servisi, defter yazımı başarısız olursa hiçbir parametre uygulamaz; `
 
 ## 10. Şema sürümü ve göçler
 
-- `PRAGMA user_version` = şema sürümü (şimdiki: 1). Modülde `SCHEMA_VERSION = 1` ve sıralı `MIGRATIONS` listesi (`n → n+1`, her biri tek işlemde tablolar + tetikleyiciler + görünümler).
-- Açılışta: dosya yeni ve `create=True` ⇒ sürüm 1 kurulur. `user_version == SCHEMA_VERSION` ⇒ devam. `user_version > SCHEMA_VERSION` ⇒ `LedgerSchemaError` (eski kod yeni şemaya yazamaz). `user_version < SCHEMA_VERSION` ⇒ `migrate=True` ise önce `backup(<db>.premigrate-v<n>)`, sonra göçler sırayla `BEGIN IMMEDIATE` içinde; her göç sonrası `user_version` güncellenir ve `meta.schema_version` için **yeni** bir `schema_migrations` olayı yazılır; `migrate=False` ise `LedgerSchemaError`. Salt okunur bağlantı hiçbir zaman göç etmez.
+- `PRAGMA user_version` = şema sürümü (şimdiki: **2**). Modülde `SCHEMA_VERSION = 2` ve sıralı `MIGRATIONS` listesi (`n → n+1`, her biri tek işlemde tablolar + tetikleyiciler + görünümler).
+- Açılışta: dosya yeni ve `create=True` ⇒ göçler 0 → 1 → 2 sırayla kurulur (sonuç sürüm 2). `user_version == SCHEMA_VERSION` ⇒ devam. `user_version > SCHEMA_VERSION` ⇒ `LedgerSchemaError` (eski kod yeni şemaya yazamaz). `user_version < SCHEMA_VERSION` ⇒ `migrate=True` ise önce `backup(<db>.premigrate-v<n>)`, sonra göçler sırayla `BEGIN IMMEDIATE` içinde; her göç sonrası `user_version` güncellenir ve `meta.schema_version` için **yeni** bir `schema_migrations` olayı yazılır; `migrate=False` ise `LedgerSchemaError`. Salt okunur bağlantı hiçbir zaman göç etmez.
 - Göçler yalnızca **ekleyicidir** (yeni tablo/sütun/görünüm); mevcut satır silinmez ya da yeniden yazılmaz. Yeni sütunlar `NULL` ya da `DEFAULT` ile eklenir, tetikleyiciler yeniden kurulur.
 - Göç sırasında ders servisi aynı dosyayı salt okunur açmış olabilir; WAL buna izin verir. Göç, bot durmuşken yapılması önerilen bir operasyondur (docker compose yeniden başlatma).
 - `schema_migrations(id, from_version, to_version, applied_at)` tablosu, append-only.
+
+### 10.1 Göç 1 → 2 (MFE/MAE; Revizyon 2)
+
+Tek `BEGIN IMMEDIATE` işleminde, `migrate=True` ve bot durmuşken (10. bölüm önerisi), önceden `backup(<db>.premigrate-v1)`:
+
+1. `ALTER TABLE trade_exits ADD COLUMN mfe_r REAL`, `... mae_r REAL`, `... bars_held INTEGER`, `... excursion_tf TEXT` (hepsi NULL varsayılan; mevcut satırlara dokunulmaz; append-only tetikleyicileri `ALTER`'dan etkilenmez ama göç sonunda yine yeniden kurulur ve varlıkları doğrulanır). Yeni sütunlar için tutarlılık kontrolü (`mfe_r/mae_r/excursion_tf` üçlüsü; `≥ 0`) yazma yolunda doğrulanır; SQLite `ADD COLUMN` ile eklenen CHECK, tablo bütünü için ek `CREATE TRIGGER trg_trade_exits_excursion_check BEFORE INSERT` ile sağlanır (`RAISE(ABORT, 'excursion_check')`).
+2. `DROP VIEW v_closed_trades; DROP VIEW v_trades;` sonra yeni sütunları içeren `v_trades` ve `v_closed_trades` yeniden kurulur (görünümler veri değildir; silinebilir). `v_decisions` ve `v_proposals` değişmez.
+3. `PRAGMA user_version = 2`; `meta.schema_version` aynası için yeni bir `schema_migrations(1, 2)` satırı. (`meta` satırı güncellenemez; asıl kaynak `user_version`, 3.2.)
+4. Mevcut kapanmış işlemlerin `mfe_r/mae_r/excursion_tf` değerleri NULL kalır; `bars_held` de NULL kalır (append-only: geriye dönük doldurma yok). İsteğe bağlı geriye doldurma yalnızca yeni çıkış satırı (`supersedes_id`) ile olur ve bu sürümün kapsamı dışındadır.
+5. Göç sonrası `entries_allowed()` normal; yeni kod şema 1 dosyasını `migrate=False` ile açarsa `LedgerSchemaError` (açıkça göç gerekir). Salt okunur bağlantı göç etmez (10.2).
+
+Geri alma: göç ileri yönlüdür; sorun olursa `premigrate-v1` yedeğine dönülür (eski kod şema 2 dosyasına yazamaz: `user_version > SCHEMA_VERSION`).
+
+### 10.2 İkiz defterini salt okunur açma (ders servisi)
+
+Ders servisi ikiz defterini `open_ledger(twin_path, "twin", create=False, read_only=True, migrate=False)` ile açar; ikiz botun kendisi dosyayı yazan tek süreçtir. Şema uyuşmazlığı (ikiz dosyası hâlâ şema 1, ders servisi kodu şema 2) `LedgerSchemaError` verir: ders servisi bunu "ikiz yok" kabul eder (ders-spec 4.5.5), hata değildir. Bu yüzden her iki bot dosyası aynı kod sürümüyle ve aynı gün göç edilmelidir (operasyon notu). Okuma, WAL anlık görüntüsüyle tutarlıdır; ikiz yazarken bloklanmaz.
 
 ## 11. Belirsizlikler ve bu belgedeki çözümleri
 
@@ -520,6 +564,10 @@ Ders servisi, defter yazımı başarısız olursa hiçbir parametre uygulamaz; `
 | 11 | Mum zaman damgası | Kapanış zamanı; `rejim-spec.md` açılış zamanı kullanır, dönüşüm çağıranın |
 | 12 | İkiz | Parametre ve öneri yazımı yasak; yalnızca karar/işlem |
 | 13 | 15dk tetik kolu | `trigger_tf` hem karar sütunu hem parametre; ders servisine kapalı |
+| 14 | Kanıt sürümler arası sıfırlansın mı (mentor) | Hayır: kapsamı kesişen parametreleri eşit olan sürümler havuzlanır (5.4); yalnızca ilgili kapsamı etkileyen değişiklik sayacı sıfırlar |
+| 15 | MFE/MAE ve R | `planned_risk` paydalı brüt sapma; uç fiyatlar çağıranda, hesap defterde (3.4.1); eski işlemler NULL |
+| 16 | Gölge dönemde ve `stop_buffer_atr` artışında kullanıcıya sorma | `propose_change(require_user=True)` → `needs_user`; defter düzeyinde `actor="lesson"` ile uygulanamaz |
+| 17 | İkiz defteri ders servisine açık mı | Yalnızca salt okunur (10.2); ikizde yazma yasağı (5.6) aynen sürer |
 
 ## 12. Elle doğrulanabilir örnekler (test yazarı için)
 
@@ -561,6 +609,14 @@ Düzeltme: `final_action=skipped`, `skip_reason=order_failed`, `supersedes_id=1`
 - `realized_pnl = 23.4 − 0.30015 − 0.31185 − 0.1 = 22.688`.
 - `r_multiple = 22.688 / 13.188 ≈ 1.7204` (4 hane; test `pytest.approx(1.720352, abs=1e-5)`).
 - `slippage_exit = (2100 − 2079)/2100 = 0.01`.
+
+**MFE/MAE (şema 2):** aynı işlem için çağıran `max_favorable_price=2085` (işlem süresince en yüksek `high`), `max_adverse_price=1992` (en düşük `low`), `excursion_tf="1m"` verir.
+
+- `mfe_r = 0.3·(2085 − 2001)/13.188 = 25.2/13.188 ≈ 1.9109`.
+- `mae_r = 0.3·(2001 − 1992)/13.188 = 2.7/13.188 ≈ 0.2047`.
+- `bars_held = floor(exit_ts/15dk) − floor(entry_ts/15dk)`: `2026-12-02T09:00:00Z` ve `2026-12-01T10:00:03Z` → `09:00` ile `10:00` arası 23 sa = **92** mum.
+- Doğrulama: `gross_pnl/planned_risk = 23.4/13.188 ≈ 1.7743 ≤ mfe_r (1.9109)` ✓. `max_favorable_price=2050` verilirse (çıkış fiyatı 2079'dan küçük) ⇒ `LedgerValidationError`. `max_favorable_price` verilip `excursion_tf=None` ⇒ `LedgerValidationError`. Üçü de `None` ⇒ kayıt geçerli, `mfe_r=mae_r=None`, `bars_held=92`.
+- Short örneği (12.4, `trade_id=8`): `max_favorable_price` = en düşük `low` = 99.2, `max_adverse_price` = en yüksek `high` = 101.0 ⇒ `mfe_r = 10·(100 − 99.2)/12.01 ≈ 0.6661`; `mae_r = 10·(101 − 100)/12.01 ≈ 0.8326`.
 
 `exit_ts` < `entry_ts` ⇒ `LedgerValidationError`. İkinci farklı çıkış (`supersedes_id` yok) ⇒ `LedgerConflictError`; birebir aynısı ⇒ aynı `id`. `planned_exit=None` (`exit_reason=time_stop`) ⇒ `slippage_exit=None`.
 
@@ -611,6 +667,12 @@ Her ret satırı `lesson_proposals`'a yine yazılır (+ `proposal_status_events(
 - `Ledger(min_evidence_trades=10)` ⇒ `LedgerValidationError`; `=25` geçerli ve R1 için 25 gerekir.
 - `{"vol_ratio_max": 1.3}` (kapsam T1+R1): 30 T1 + 15 R1 = 45 ≥ 20 ⇒ kanıt tamam.
 
+**Havuzlu kanıt (Revizyon 2):** sürüm 1 altında 15 R1 + 30 T1 kapanmış; `{"rr_min": 1.25}` 20. R1 kapanışıyla uygulandı (sürüm 2: yalnızca `rr_min` farklı). Sürüm 2 altında 8 T1 kapandı.
+- `{"trail_atr": 3.5}` (taban sürüm 2, kapsam T1): `affects(rr_min, trail_atr)` = yanlış (R1 ∩ T1 = ∅) ⇒ `POOL(2, "trail_atr") = [1, 2]` ⇒ `n_closed = 30 + 8 = 38 ≥ 20` ⇒ kanıt tamam (havuzsuz sayım 8 olurdu). `evidence.pooled_version_ids=[1,2]`, `n_by_version={"1":30,"2":8}`.
+- `{"rr_min": 1.5}` ya da `range_target_frac` önerisi (taban sürüm 2, kapsam R1): `rr_min` (kendisi) sürüm 1 ile farklı ⇒ `POOL(2, "rr_min") = [2]` ⇒ yalnızca sürüm 2 altındaki R1 işlemleri sayılır (0) ⇒ `insufficient_evidence`.
+- `{"vol_ratio_max": 1.3}` (T1+R1, taban 2): `rr_min` kapsamı kesişir ⇒ sürüm 1 havuz dışı ⇒ yalnızca sürüm 2 işlemleri.
+- Rollback ile sürüm 1'e dönüldükten sonra `POOL(1, "rr_min") = [1]` (sürüm 2 `rr_min`'i farklı); T1 için `POOL(1, "trail_atr") = [1, 2]`.
+
 ### 12.8 Haftalık sınır ve rollback
 
 Sürüm 2, `2026-12-10T12:00:00Z`'de lesson tarafından etkinleştirildi. `2026-12-14`'te yeni, kanıtı yeterli `{"trail_atr": 3.5}` (taban sürüm 2; o sürümle 20 kapanmış T1 işlemi var) ⇒ `weekly_limit` (4 gün < 7), `proposed` kalır. `2026-12-17T12:00:00.000Z` ⇒ uygulanır (tam 7 gün dahil). `actor="user"` ile uygulanırsa haftalık sınır yok.
@@ -627,7 +689,9 @@ Sürüm 2, `2026-12-10T12:00:00Z`'de lesson tarafından etkinleştirildi. `2026-
 
 ### 12.10 Şema
 
-Yeni dosyada `PRAGMA user_version == 1`. Elle `user_version=2` yapılmış dosya, kod `SCHEMA_VERSION=1` ⇒ `LedgerSchemaError`. Elle `user_version=0` ve `migrate=False` ⇒ `LedgerSchemaError`; `migrate=True` ve gerçek göç yoksa (v1 tek sürüm) yalnızca yeni dosya kurulumu geçerlidir. `bot="twin"` ile açılan, `meta.bot="learner"` dosya ⇒ `LedgerSchemaError`. Bir tetikleyiciyi düşürülmüş dosya ⇒ açılışta `LedgerSchemaError`. `read_only=True` bağlantıda `record_decision` ⇒ `LedgerStateError`.
+Yeni dosyada `PRAGMA user_version == 2` (`SCHEMA_VERSION == 2`; göçler 0→1→2). Elle `user_version=3` yapılmış dosya, kod `SCHEMA_VERSION=2` ⇒ `LedgerSchemaError`. Elle `user_version=0` ve `migrate=False` ⇒ `LedgerSchemaError`.
+
+**Göç 1 → 2:** sürüm 1 şemalı bir dosya (testte, 0→1 göçüyle kurulup `ALTER`/görünüm değişiklikleri geri alınmadan, ya da saklı v1 fikstürü) bir kapanmış işlemle hazırlanır. `open_ledger(migrate=False)` ⇒ `LedgerSchemaError`; `migrate=True` ⇒ `<db>.premigrate-v1` oluşur, `user_version == 2`, `trade_exits`'te dört yeni sütun var, eski işlemin `mfe_r/mae_r/bars_held/excursion_tf` değerleri NULL, `v_closed_trades` yeni sütunları gösterir, eski `r_multiple` değişmedi, tetikleyiciler yerinde (`UPDATE trade_exits` ⇒ `append-only`), `schema_migrations`'a `(1, 2)` satırı. `read_only=True` ile şema 1 dosyası ⇒ `LedgerSchemaError` (salt okunur göç etmez). İkinci `migrate=True` açılışı yan etkisizdir. `bot="twin"` ile açılan, `meta.bot="learner"` dosya ⇒ `LedgerSchemaError`. Bir tetikleyiciyi düşürülmüş dosya ⇒ açılışta `LedgerSchemaError`. `read_only=True` bağlantıda `record_decision` ⇒ `LedgerStateError`.
 
 ## 13. Kapsam dışı (bu sürümde yok)
 

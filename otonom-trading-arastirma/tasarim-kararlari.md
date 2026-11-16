@@ -46,4 +46,4 @@ Ek notlar: Claude kredisi/harcama limiti dolarsa bot yeni işlem açmaz (açık 
 - **Canlı sermaye:** 1000 $. Hedef: aylık %4 (uzun vadeli hedef, kanıt ölçütü değil).
 - **Ayrıntılı faz planı:** faz-plani.md.
 - **Sonraki fazlar:** FreqAI, haber verisi, ABD hisse + emtia, üç projeyi (copytrade/Hyperliquid, 1l3a/Binance, bu bot) tek ekrandan yönetme — zorsa yapılmaz.
-
+- **16 Kasım 2026 — Öğrenme gölge dönemi (kullanıcı kararı):** Öğrenme sahte para döneminin 1. gününden açıktır (istatistik, geri alma izleyicisi ve öneriler her gün çalışır), ancak ilk 4–6 hafta (yapılandırma `shadow_weeks`, varsayılan 4, izinli 4–6) **hiçbir değişiklik otomatik uygulanmaz**: her öneri `needs_user` durumuna alınır ve onay için kullanıcıya gönderilir (Telegram bildirim arayüzü; kullanıcı `apply_proposal(actor="user")` ile onaylar). Gölge dönem bitince otomatik uygulama kuralları geçerlidir (eşikler `ders-spec.md` Bölüm 7.3 kalibrasyonunu geçmişse). Ayrıntı: `trader/docs/ders-spec.md` Revizyon 2.
