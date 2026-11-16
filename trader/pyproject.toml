@@ -3,7 +3,7 @@ name = "trader-core"
 version = "0.1.0"
 description = "Freqtrade tabanli vadeli islem botu iskeleti - cekirdek paket"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["pandas>=2.2", "numpy>=1.26"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pyyaml"]
