@@ -46,3 +46,12 @@ Metrikler yan yana (referans `research/runs`, motor `summary.json`):
 - A düzeyi geçti, açıklanamayan 0; B/C/D toleransları hâlâ geçmedi → §4.3 kapısı **açılmaz**. Tick düzeltmesi C'yi %80-95 → %86-96'ya taşıdı, `price_rounding`'in SOL/tick kaynaklı kısmını kapattı.
 - Sıradaki kök neden: **aynı adımda çıkış → özsermaye gerçekleşmesi → giriş boyutlandırma sırası** (`exit_before_entry`); sonra `qty_rounding` (stake→amount kesmesi) ve iz-stop ham değer sapması.
 - Model farkı raporu yalnız 1h_IS için üretildi (yukarıdaki tablo tick düzeltmesinden önceki koşulara aittir; yenilenmedi).
+
+## Mentor kararı (17 Kasım 2026) — sınırlı ek uyum çalışması
+Kapı kapalı kalır; freqtrade silme en sonda (e2e + mentor onayı). "Açıklanamayan = 0" yetmez: `chained_after_first` 665–5193 satır ve B %6–34; zincir kovası gerçek motor hatalarını saklayabilir; §7.2 A–D'nin geçmesini ister.
+Sıra (motor A düzeltmeleri birleşip yeşil olduktan sonra; yalnız compat, native defter bayt bayt aynı kalır):
+1. `exit_before_entry`: compat'ta aynı adımdaki çıkış K/Z'si giriş boyutlandırmadan önce özsermayeye yansır. 4 koşu yeniden. Kağıt/native'in bu durumda ne yaptığı ayrıca raporlanır; native mentora sorulmadan değişmez.
+2. `qty_rounding`: freqtrade stake→miktar kesmesi uygulanır (önceki "uygulama" kararı geri alındı). Yeniden koşu.
+3. İz süren stop ham değeri: kural değil, inceleme. 5 satır (önce BTC 96828.0 / 96823.6) iki tarafın ATR/uç girdileriyle adım adım. Motor yanlışsa gerçek hata (native'i de etkiler) — düzeltmeden önce rapor.
+4. B hâlâ <%99 ise: zincirsiz tanı (boyut referans `equity_entry_est`'ten) ile kalan satırların saf zincir olduğu kanıtlanır.
+4. adımdan sonra dur ve raporla; HOLDOUT yok. §7.4 model-fark tablosu yeniden üretilir (tick öncesinden kalma). f2_s5 funding hatası A düzeltmesindeki funding değişikliğinden sonra yeniden kontrol edilir.
