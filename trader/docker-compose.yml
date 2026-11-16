@@ -21,6 +21,9 @@ services:
       - ./user_data/strategies:/freqtrade/user_data/strategies:ro
       - ./config:/freqtrade/config:ro
       - ./shared:/freqtrade/shared:ro
+      - ./src:/freqtrade/trader_src:ro
+    environment:
+      - PYTHONPATH=/freqtrade/trader_src
     command: >
       trade
       --config /freqtrade/config/base.json
@@ -38,6 +41,9 @@ services:
       - ./user_data/strategies:/freqtrade/user_data/strategies:ro
       - ./config:/freqtrade/config:ro
       - ./shared:/freqtrade/shared:ro
+      - ./src:/freqtrade/trader_src:ro
+    environment:
+      - PYTHONPATH=/freqtrade/trader_src
     command: >
       trade
       --config /freqtrade/config/base.json
