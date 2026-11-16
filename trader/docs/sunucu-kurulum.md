@@ -45,5 +45,5 @@ Yalniz `trader-*` birimlerini durdurur ve siler; veri, ayar dosyalari ve kullani
 
 ## Notlar (16 Kasım 2026)
 - Veto ayarlanmadan öğrenen bot işlem açmaz (`veto_mode: required`, güvenli taraf). Bu beklenen davranıştır.
-- `scripts/veto_run.py` piyasa verisini hâlâ ccxt ile çekiyor; bu, "vetonun motora bağlanması" işinde kendi `marketdata/rest_public.py` kodumuzla değiştirilecek. Kurulum ccxt kurmaz; o iş bitene kadar veto zamanlayıcısı açılmaz.
+- Veto artık piyasa verisini motorun ortak `var/market.sqlite` deposundan okur (ağ yok, ccxt yok).
 - Sunucuya geçmiş veri olarak 15m/1h/4h/1d indirilir; 1m verisi yalnız geçmiş test aracı için gerekir, sunucuda gerekmez.

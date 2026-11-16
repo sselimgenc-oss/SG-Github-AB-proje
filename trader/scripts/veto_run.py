@@ -16,11 +16,11 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE.parent / "src"))
+sys.path.insert(0, str(_HERE.parent / "src"))  # trader_engine de buradan (yalniz marketdata okuma)
 
 from trader_core import veto as V  # noqa: E402
 from trader_core.budget import Usage as _BudgetUsage  # noqa: E402
@@ -244,7 +244,7 @@ def _locked(cfg, pairs, veto_path, hmac_key, api_key, root, client, market, budg
             sleep_fn) -> int:
     # 1. piyasa verisi
     try:
-        market = market or BinanceMarketSource()
+        market = market or StoreMarketSource(root=root)
         snap = market.fetch(cfg, pairs, now_fn())
         ctx = V.build_context(snap)
         parts = V.build_prompt(cfg, ctx, pairs)
@@ -324,32 +324,51 @@ def _locked(cfg, pairs, veto_path, hmac_key, api_key, root, client, market, budg
     return EXIT_OK
 
 
-# --------------------------------------------------------------------------- piyasa kaynagi (ag)
-class BinanceMarketSource:
-    """ccxt kamuya acik Binance USDM uclari (anahtarsiz). Testte kullanilmaz; sahte kaynak enjekte edilir."""
+# --------------------------------------------------------------------------- piyasa kaynagi (salt okunur)
+MAX_STALE_1H_S = 2 * 3600 + 600  # son kapanmis 1s mum bundan eskiyse (feed durmus) -> hata
+FUNDING_LOOKBACK_S = 3 * 86400
+
+
+class StoreMarketSource:
+    """Motorun paylasimli market.sqlite deposundan (StoreSource, salt okunur) KAPANMIS mumlar. Ag yok.
+    Depo yok/bayat/kisa ise istisna firlatir; veto_run bu turu cikis 10 ile bitirir (fail-closed)."""
+
+    def __init__(self, db_path=None, root=None):
+        self.db_path, self.root = db_path, root
+
+    def _path(self, cfg):
+        p = Path(self.db_path or cfg.market_db)
+        return p if p.is_absolute() else Path(self.root or _HERE.parent) / p
 
     def fetch(self, cfg, pairs, now):
-        import ccxt  # noqa: PLC0415
         import pandas as pd  # noqa: PLC0415
         from trader_core import regime as R  # noqa: PLC0415
         from trader_core import signals as S  # noqa: PLC0415
+        from trader_engine.marketdata.sources import StoreSource  # noqa: PLC0415
 
-        ex = ccxt.binanceusdm({"enableRateLimit": True, "timeout": 15000})
-        now_ms = int(now.timestamp() * 1000)
+        path = self._path(cfg)
+        if not path.exists():
+            raise RuntimeError(f"market.sqlite yok: {path}")
+        src = StoreSource(path)
+        try:
+            return self._build(cfg, pairs, now, src, pd, R, S)
+        finally:
+            src.close()
 
-        def candles(sym, tf, n, tf_ms):
-            raw = ex.fetch_ohlcv(sym, tf, limit=n + 1)
-            raw = [c for c in raw if c[0] + tf_ms <= now_ms]  # yalniz kapanmis mumlar
-            if len(raw) < n // 2 or not raw:
-                raise RuntimeError(f"{sym} {tf} mum eksik")
-            df = pd.DataFrame(raw, columns=["ts", "open", "high", "low", "close", "volume"])
-            df.index = pd.to_datetime(df.pop("ts"), unit="ms", utc=True)
-            return df.astype("float64")
+    @staticmethod
+    def _build(cfg, pairs, now, src, pd, R, S):
+        def candles(pair, tf, n):
+            df = src.bars(pair, tf, now, n)  # yalniz close_ts <= now (kapanmis)
+            if df.empty or len(df) < n // 2:
+                raise RuntimeError(f"{pair} {tf} mum eksik ({len(df)}/{n})")
+            return df
 
         def ctx_for(key):
-            sym = f"{key}:{key.split('/')[1]}"
-            d4 = candles(sym, "4h", cfg.context["candles_4h"], 4 * 3600_000)
-            d1 = candles(sym, "1h", max(cfg.context["candles_1h"], 72), 3600_000)
+            d4 = candles(key, "4h", cfg.context["candles_4h"])
+            d1 = candles(key, "1h", max(cfg.context["candles_1h"], 72))
+            last_close = d1.index[-1] + pd.Timedelta(hours=1)
+            if (now - last_close.to_pydatetime()).total_seconds() > MAX_STALE_1H_S:
+                raise RuntimeError(f"{key} depo bayat: son kapanmis 1s mum {last_close}")
             res = R.classify_last(d4)
             reg_df = R.classify_series(d4)
             sig = S.compute_signals(d1, R.align_to_base(reg_df, d1.index)).iloc[-1]
@@ -361,9 +380,10 @@ class BinanceMarketSource:
             for h in cfg.context["return_hours"]:
                 rets[h] = float((closes.iloc[-1] / closes.iloc[-1 - h] - 1) * 100) \
                     if len(closes) > h else None
-            f = ex.fetch_funding_rate(sym).get("fundingRate")
+            fr = src.funding(key, now - timedelta(seconds=FUNDING_LOOKBACK_S), now)
+            f = fr[-1].rate if fr else None
             return V.PairContext(key, res.regime.value, res.atr_ratio, rets,
-                                 None if f is None else float(f), cand), d1.index[-1] + pd.Timedelta(hours=1)
+                                 None if f is None else float(f), cand), last_close
 
         out, as_of = [], None
         for p in pairs:
