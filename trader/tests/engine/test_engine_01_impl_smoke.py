@@ -255,8 +255,9 @@ def test_historical_real_files_and_store_equivalence(tmp_path):
     assert h.bars(P, "4h", u + timedelta(seconds=1), 1).index[-1] == datetime(2026, 11, 15, 8, tzinfo=timezone.utc)
     with pytest.raises(DataError):
         h.bars(P, "1h", u, 1, kind="mark")
-    with pytest.raises(DataError):
-        HistoricalSource(HIST).minute_steps([P], u, u + timedelta(hours=1))       # 1m dosyasi yok
+    if not (HIST / "BTC_USDT_USDT-1m-futures.feather").exists():      # 1m verisi indirilmemisse
+        with pytest.raises(DataError):
+            HistoricalSource(HIST).minute_steps([P], u, u + timedelta(hours=1))
     pts = h.funding(P, datetime(2026, 10, 31, 8, tzinfo=timezone.utc), datetime(2026, 10, 31, 16, tzinfo=timezone.utc))
     assert [p.ts.hour for p in pts] == [16] and pts[0].mark is not None
     with pytest.raises(DataError):
