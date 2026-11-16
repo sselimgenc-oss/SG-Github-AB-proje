@@ -108,6 +108,21 @@ as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-ve
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
   "requests>=2.31" "pandas>=2.2" "numpy>=1.26" "pyarrow>=15" "anthropic"
 
+# ---- 5b. Node + wrangler (yalniz panel yayini icin; yalniz eksikse kurulur, global degil) ------------------
+say "Node/npm ve wrangler (Cloudflare yayini)"
+WRANGLER_VERSION="3.114.0"      # sabit surum (kayan 'latest' yok)
+WRANGLER_DIR="$TRADER_DIR/var/wrangler"
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  apt-get install -y -qq nodejs npm
+fi
+install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$WRANGLER_DIR"
+if [ "$(as_trader cat "$WRANGLER_DIR/node_modules/wrangler/package.json" 2>/dev/null | grep -o '"version": *"[^"]*"' | head -1 | grep -o '[0-9][0-9.]*')" != "$WRANGLER_VERSION" ]; then
+  ( cd "$WRANGLER_DIR" && as_trader env HOME="$HOME_DIR" npm install --no-audit --no-fund --silent --prefix "$WRANGLER_DIR" "wrangler@${WRANGLER_VERSION}" ) \
+    || echo "UYARI: wrangler kurulamadi; install.sh'i yeniden calistirin (panel yayini bu olmadan calismaz)."
+else
+  echo "wrangler ${WRANGLER_VERSION} zaten kurulu."
+fi
+
 # ---- 6. dizinler -------------------------------------------------------------------
 say "Dizinler"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADER_DIR/shared" "$TRADER_DIR/shared/veto" \
@@ -128,6 +143,7 @@ copy_env "$TRADER_DIR/deploy/trader-health.env.example"   /etc/trader-health.env
 copy_env "$TRADER_DIR/deploy/trader-lesson.env.example"   /etc/trader-lesson.env   "root:${TRADER_USER}" 0640
 copy_env "$TRADER_DIR/deploy/trader-telegram.env.example" /etc/trader-telegram.env "root:${TG_GROUP}"    0640
 copy_env "$TRADER_DIR/deploy/trader-veto.env.example"     /etc/trader-veto.env     "root:root"           0600
+copy_env "$TRADER_DIR/deploy/trader-panel-cf.env.example" /etc/trader-panel-cf.env "root:root"           0600
 # yol alanlarini bu sunucunun gercek yoluna cevir (yalniz /opt/trader on eki ve bos ENGINE_VAR_DIR)
 for f in /etc/trader-health.env /etc/trader-lesson.env /etc/trader-telegram.env; do
   sed -i "s#/opt/trader/#${TRADER_DIR}/#g" "$f"
@@ -184,6 +200,17 @@ if has_value /etc/trader-telegram.env TELEGRAM_BOT_TOKEN && has_value /etc/trade
   enable_now trader-telegram-report.timer
 else MISSING+=("/etc/trader-telegram.env -> TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID (Telegram)"); fi
 
+# Panel yayini: Cloudflare anahtarlari yer tutucuyken zamanlayici ACILMAZ
+CF_TODO=()
+if has_value /etc/trader-panel-cf.env CLOUDFLARE_API_TOKEN && has_value /etc/trader-panel-cf.env CLOUDFLARE_ACCOUNT_ID; then
+  enable_now trader-panel-publish.timer
+else
+  CF_TODO+=("Cloudflare'da API token olusturun (Workers duzenleme yetkisi: 'Edit Cloudflare Workers' sablonu); token ve hesap kimligini /etc/trader-panel-cf.env dosyasina nano ile yazin (sohbete yazmayin)")
+  CF_TODO+=("Worker'i bir kez olusturun (parola yokken HER istek 401 doner, guvenli): systemctl start trader-panel-publish.service")
+  CF_TODO+=("Worker parolasi (en az 32 karakter rastgele): cd $TRADER_DIR/var/wrangler && set -a && . /etc/trader-panel-cf.env && set +a && ./node_modules/.bin/wrangler secret put PANEL_SIFRE --name trader-pano   (parola istenince yapistirin; ekrana yazilmaz, Cloudflare'da Worker sirri olarak saklanir)")
+  CF_TODO+=("Yayini acin: systemctl enable --now trader-panel-publish.timer (ya da install.sh'i yeniden calistirin); workers.dev adresini yer imine ekleyin")
+fi
+
 # ---- 11. ozet ---------------------------------------------------------------------
 say "OZET"
 echo "Calisan Trader birimleri:"
@@ -197,6 +224,12 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
   for m in "${MISSING[@]}"; do echo "  - $m"; done
   echo "  Doldurduktan sonra bu komutu tekrar calistirin: bash $TRADER_DIR/deploy/install.sh"
   echo "  (Anahtarlari sohbete yazmayin; dosyayi nano ile acip degeri yapistirin.)"
+fi
+if [ "${#CF_TODO[@]}" -gt 0 ]; then
+  echo
+  echo "PANO YAYINI (Cloudflare) icin siradaki adimlar (zamanlayici bunlar bitene kadar KAPALI):"
+  for m in "${CF_TODO[@]}"; do echo "  - $m"; done
+  echo "  Sonra: bash $TRADER_DIR/deploy/install.sh   (zamanlayiciyi kendisi acar)"
 fi
 echo
 echo "Pano (telefon/bilgisayar): ssh -L 8787:127.0.0.1:8787 <kullanici>@<sunucu>  sonra tarayicida http://127.0.0.1:8787"

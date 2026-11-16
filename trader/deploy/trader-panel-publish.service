@@ -1,0 +1,23 @@
+[Unit]
+Description=Trader panosu anlik goruntusu -> Cloudflare Worker (5 dk'da bir; zamanlayici ile)
+Documentation=file:///opt/trader/docs/panel-spec.md
+
+[Service]
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONPATH=/opt/trader/src
+Environment=HOME=/var/lib/trader-panel-publish
+StateDirectory=trader-panel-publish
+# Yalniz Cloudflare anahtarlari (panel/telegram/veto anahtarlari yok)
+EnvironmentFile=/etc/trader-panel-cf.env
+ExecStart=/bin/bash /opt/trader/deploy/panel_yayinla.sh
+TimeoutStartSec=240
+MemoryMax=400M
+Nice=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/trader

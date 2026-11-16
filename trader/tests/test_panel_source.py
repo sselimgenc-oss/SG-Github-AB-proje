@@ -29,8 +29,19 @@ def test_no_engine_or_telegram_import_no_network_client():
         assert not re.search(r"\b(requests|urllib\.request|http\.client|socket\.create_connection|smtplib|websockets)\b", t), p.name
 
 
+def test_snapshot_writes_only_out_file():
+    # anlik goruntu tek istisnadir: yalniz --out yoluna, yalniz write_atomic icinde yazar
+    t = code(ROOT / "src/trader_panel/snapshot.py")
+    body = t.split("def write_atomic", 1)[1].split("\ndef run", 1)[0]
+    rest = t.replace(body, "")
+    assert not re.search(r"write_text|write_bytes|os\.(remove|replace|rename|makedirs|mkdir)|shutil\.|fdopen|mkstemp", rest)
+    assert "ledger" not in body and "STATIC_DIR" not in body
+
+
 def test_no_writes_to_data():
     for p in FILES:
+        if p.name == "snapshot.py":
+            continue
         t = code(p)
         assert not re.search(r"write_text|write_bytes|os\.(remove|unlink|rename|replace|makedirs|mkdir)|shutil\.|"
                              r"open\([^)]*(,\s*|mode=)['\"][wax+]", t), p.name

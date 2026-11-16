@@ -71,7 +71,8 @@ def test_every_unit_handled_by_install():
     # etkinlestirme politikasi: her zamanlayici ve servis ya acikca etkinlestirilir ya da bilincli olarak etkinlestirilmez
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
-                        "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service"}  # tetikleyici/sablon birimler
+                        "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
+                        "trader-panel-publish.service"}  # tetikleyici/sablon birimler
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled
@@ -152,3 +153,77 @@ def test_panel_unit_systemd_verify():
     bad = [ln for ln in (r.stdout + r.stderr).splitlines()
            if "trader-panel" in ln and not re.search(r"Failed to (create|connect)|not found|Executable|User|Group", ln)]
     assert not bad, bad
+
+
+# ---- panel yayini (Cloudflare Worker, spec §13) ----
+def test_publish_script_static():
+    p = DEPLOY / "panel_yayinla.sh"
+    assert subprocess.run(["bash", "-n", str(p)], capture_output=True).returncode == 0
+    t = p.read_text(encoding="utf-8")
+    code = re.sub(r"^\s*#.*$", "", t, flags=re.M)
+    assert "set -euo pipefail" in t
+    assert "set -x" not in t and "xtrace" not in t
+    for line in code.splitlines():
+        if re.search(r"\b(echo|printf|cat)\b", line):
+            assert "CLOUDFLARE_API_TOKEN" not in line and "CLOUDFLARE_ACCOUNT_ID" not in line, line
+    assert "trader-pano" in t and "TRADER_PANEL_WORKER" in t
+    assert "snapshot --out" in t and "wrangler" in t and " deploy " in t
+    assert "exit 1" in t and "/etc/trader-panel-cf.env" in t
+    assert "PANO_KILITSIZ" not in t
+
+
+def test_publish_units_and_env_example():
+    s = (DEPLOY / "trader-panel-publish.service").read_text(encoding="utf-8")
+    assert "Type=oneshot" in s and re.search(r"^MemoryMax=\d+M", s, re.M) and re.search(r"^Nice=\d+", s, re.M)
+    assert "EnvironmentFile=/etc/trader-panel-cf.env" in s
+    tm = (DEPLOY / "trader-panel-publish.timer").read_text(encoding="utf-8")
+    assert "OnUnitActiveSec=5min" in tm and "Persistent=true" in tm
+    ex = (DEPLOY / "trader-panel-cf.env.example").read_text(encoding="utf-8")
+    for line in ex.splitlines():
+        if line and not line.startswith("#"):
+            k, _, v = line.partition("=")
+            assert v == "", line   # yalniz yer tutucu
+
+
+def test_publish_timer_gated_and_wrangler_pinned():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_API_TOKEN", t)
+    assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_ACCOUNT_ID", t)
+    assert "enable_now trader-panel-publish.timer" in t
+    assert "wrangler secret put PANEL_SIFRE" in t
+    assert re.search(r'^WRANGLER_VERSION="\d+\.\d+\.\d+"', t, re.M)
+    code = re.sub(r"#.*", "", t)
+    assert "npm install -g" not in code and "npm i -g" not in code
+    assert not re.search(r"curl[^\n|]*\|\s*(ba)?sh", code)
+    assert "command -v node" in t
+    assert "trader-panel-cf.env.example" in t
+
+
+def test_worker_js_static():
+    t = (DEPLOY / "panel_worker.js").read_text(encoding="utf-8")
+    assert "PANEL_SIFRE" in t and "typeof sifre !== \"string\" || sifre.length === 0) return red()" in t   # fail-closed
+    assert "crypto.subtle.digest" in t and "fark |=" in t                                                  # sabit zamanli
+    assert re.search(r'"Cache-Control", "no-store"', t)
+    for h in ("X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy", "X-Frame-Options"):
+        assert h in t
+    assert not re.search(r"KILITSIZ|UNLOCK|unlock|kilitsiz", t, re.I)
+    assert "pano_worker.js" in t       # kaynak notu
+    n = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+    assert "pano_worker.js" in n
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
+def test_worker_js_fail_closed_behaviour(tmp_path):
+    js = tmp_path / "t.mjs"
+    js.write_text(f"""import w from {str(DEPLOY / 'panel_worker.js')!r};
+const env0 = {{ASSETS: {{fetch: async () => new Response('ok')}}}};
+const rq = (a) => new Request('https://x/', a ? {{headers: {{Authorization: a}}}} : {{}});
+const ok = 'Basic ' + btoa('trader:pw');
+let r = await w.fetch(rq(ok), env0); if (r.status !== 401) throw new Error('fail-open');
+r = await w.fetch(rq(ok), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 200 || r.headers.get('Cache-Control') !== 'no-store') throw new Error('ok yolu');
+r = await w.fetch(rq('Basic ' + btoa('trader:x')), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 401) throw new Error('yanlis parola');
+r = await w.fetch(rq(), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 401) throw new Error('baslik yok');
+""", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"type":"module"}')
+    r = subprocess.run(["node", str(js)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

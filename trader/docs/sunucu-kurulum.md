@@ -45,6 +45,19 @@ journalctl -u trader-panel -n 50 --no-pager
 systemctl disable --now trader-panel                  # geri alma
 ```
 
+## Telefondan/bilgisayardan pano (Cloudflare Worker, Basic Auth)
+
+Sunucu her 5 dakikada panonun tek dosyalik anlik goruntusunu Cloudflare Worker'a yukler (`trader-panel-publish.timer`); sayfada "Olusturulma: ..." damgasi ve 10 dk'dan eskiyse kirmizi bayat seridi vardir. Cihazlariniza kurulum gerekmez. Canli pano yine yalniz `127.0.0.1:8787`'de kalir.
+
+Sizin yapacaklariniz:
+1. Cloudflare'da bir API token olusturun ("Edit Cloudflare Workers" sablonu). Token'i sohbete YAZMAYIN; size verecegimiz guvenli yolla (ya da sunucuda `nano /etc/trader-panel-cf.env`) girin. Hesap kimligini (Account ID) de ayni dosyaya yazin.
+2. En az 32 karakterlik rastgele bir parola uretin (parola yoneticisi) ve `install.sh` ozetindeki `wrangler secret put PANEL_SIFRE` adimiyla Worker sirri olarak girin. Kullanici adi: `trader`. Parola Worker'da saklanir, depoda/sunucu dosyasinda durmaz. Parola yoksa Worker her istege 401 doner (kapali-guvenli).
+3. `https://trader-pano.<hesap>.workers.dev` adresini yer imine ekleyin (telefon + bilgisayar). Hiz siniri yoktur; bu yuzden parola uzun ve rastgele olmali.
+
+RISK (karariniz): Workers duzenleme token'i tek Worker'a daraltilamaz, hesap capindadir. Sunucu ele gecirilirse ayni hesaptaki diger Worker'lariniz (1L3A, CT) da uzerine yazilabilir. Oneri: bu pano icin AYRI bir Cloudflare hesabi acin; ya da riski bilerek kabul edin. Karar sizindir.
+
+Geri alma: `systemctl disable --now trader-panel-publish.timer`; Worker'i Cloudflare panelinden silin.
+
 ## Kaldirma
 
 ```

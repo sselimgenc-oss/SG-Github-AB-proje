@@ -25,6 +25,20 @@ SECURITY_HEADERS = {"Content-Security-Policy": CSP, "X-Content-Type-Options": "n
 ACQUIRE_WAIT_S = 1.0
 
 
+def build_api(data: PanelData) -> dict:
+    """Uc nokta haritasi (canli sunucu ve anlik goruntu ayni mantigi kullanir)."""
+    return {"/api/status": lambda q: data.status(),
+           "/api/ledger": lambda q: data.cached(("ledger", q.get("bot"), q.get("day")), lambda: data.ledger(q.get("bot"), q.get("day"))),
+           "/api/curve": lambda q: data.cached(("curve", q.get("bot")), lambda: data.curve(q.get("bot"))),
+           "/api/risk": lambda q: data.cached(("risk", q.get("bot")), lambda: data.risk(q.get("bot"))),
+           "/api/compare": lambda q: data.cached(("compare", q.get("day")), lambda: data.compare(q.get("day"))),
+           "/api/budget": lambda q: data.cached(("budget",), data.budget),
+           "/api/lesson": lambda q: data.cached(("lesson",), data.lesson),
+           "/api/health": lambda q: data.cached(("health",), data.health),
+           "/api/system": lambda q: data.cached(("system",), data.system),
+           "/healthz": lambda q: {"ok": True}}
+
+
 def _load_static() -> dict[str, tuple[bytes, str]]:
     return {url: ((STATIC_DIR / name).read_bytes(), ctype) for url, (name, ctype) in STATIC_FILES.items()}
 
@@ -36,16 +50,7 @@ def make_server(cfg: PanelConfig, data: PanelData) -> ThreadingHTTPServer:
     timeout_s = float(cfg.request_timeout_s)
     max_bytes = int(cfg.max_response_bytes)
 
-    api = {"/api/status": lambda q: data.status(),
-           "/api/ledger": lambda q: data.cached(("ledger", q.get("bot"), q.get("day")), lambda: data.ledger(q.get("bot"), q.get("day"))),
-           "/api/curve": lambda q: data.cached(("curve", q.get("bot")), lambda: data.curve(q.get("bot"))),
-           "/api/risk": lambda q: data.cached(("risk", q.get("bot")), lambda: data.risk(q.get("bot"))),
-           "/api/compare": lambda q: data.cached(("compare", q.get("day")), lambda: data.compare(q.get("day"))),
-           "/api/budget": lambda q: data.cached(("budget",), data.budget),
-           "/api/lesson": lambda q: data.cached(("lesson",), data.lesson),
-           "/api/health": lambda q: data.cached(("health",), data.health),
-           "/api/system": lambda q: data.cached(("system",), data.system),
-           "/healthz": lambda q: {"ok": True}}
+    api = build_api(data)
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "trader-panel"
