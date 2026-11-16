@@ -1,6 +1,6 @@
 # 05 — Engine, StrategyRunner, giriş kapısı, mutabakat, kill, status (spesifikasyon v1, 16 Kasım 2026)
 
-Kaynak kararlar: `motor-tasarimi.md` §2.1 (veri akışı), §2.2 (`strategy_runner`, `gates`, `engine`, `reconcile`, `killswitch`, `status`, `cli`), §2.6 (mutabakat tablosu), §2.7 (ana döngü), §2.8 (TraderV1 karşılık tablosu — **hiçbir davranış kaybolmamalı**), §3.1 (P4, P7). TraderV1 davranışı (referans): `populate_indicators`, `_gate`, `_stale`, `_bar_final`/`_decided`, `veto_check` (stub), `leverage`, `custom_stake_amount` + `confirm_trade_entry`, `_account_state`, `_event`/`_features`, `_write_once`, `_record_gate_closed`/`_record_skipped_last`/`_write_risk_denied`/`_record_veto`, `order_filled`, `bot_loop_start`. Bağımlılıklar: `02` (tipler, saat, config), `01` (`MarketView`), `03` (`Broker`/`SimBroker`/`PaperBroker`), `04` (`StateStore`, `OrderManager`, `PositionManager`), `trader_core` (`signals`, `regime`, `risk`, `ledger`, `veto`). Bu belge kod, test ve commit içermez.
+Kaynak kararlar: `motor-tasarimi.md` §2.1 (veri akışı), §2.2 (`strategy_runner`, `gates`, `engine`, `reconcile`, `killswitch`, `status`, `cli`), §2.6 (mutabakat tablosu), §2.7 (ana döngü), §2.8 (TraderV1 karşılık tablosu — **hiçbir davranış kaybolmamalı**), §3.1 (P4, P7). TraderV1 davranışı (referans): `populate_indicators`, `_gate`, `_stale`, `_bar_final`/`_decided`, `veto_check` (stub), `leverage`, `custom_stake_amount` + `confirm_trade_entry`, `_account_state`, `_event`/`_features`, `_write_once`, `_record_gate_closed`/`_record_skipped_last`/`_write_risk_denied`/`_record_veto`, `order_filled`, `bot_loop_start`. Bağımlılıklar: `02` (tipler, saat, config), `01` (`MarketView`), `03` (`Broker`/`SimBroker`/`PaperBroker`), `04` (`StateStore`, `OrderManager`, `PositionManager`), `trader_core` (`signals`, `regime`, `risk`, `ledger`, `veto`). Strateji takılabilirliği: `otonom-trading-arastirma/tasarim-kararlari.md` (16 Kasım, "Öncelik"), bkz. **§13**. Bu belge kod, test ve commit içermez.
 
 ## 1. Kararlar (özet) ve tasarımla çakışmalar
 
@@ -15,6 +15,7 @@ Kaynak kararlar: `motor-tasarimi.md` §2.1 (veri akışı), §2.2 (`strategy_run
 | Atomiklik | Paper/backtest'te her adım (dakika ya da karar) **tek** `state.tx()`; `broker.snapshot()` aynı işlemde yazılır |
 | Kalıcı "mum başına tek karar" | `state.decided(pair, bar_close_ts)` |
 | Kaba kip / uyum kipi | Aynı `Engine`, yalnız `CostModel`/`MarketView` farkı (06) |
+| Strateji | Takılabilir parça (§13): `Strategy` protokolü + statik kayıt defteri; v1b = `PriceActionV1` adaptörü. Kapı zinciri (§4.1), risk kilidi, çıkış güvenliği ve ledger sözleşmesi **değişmez**; strateji yalnız aday tablosu (`SIGNAL_COLUMNS`) üretir, boyut/risk/kapı kararı vermez |
 
 **Tasarım ↔ mevcut kod çakışmaları ve çözümleri (mentor kararı gerekebilir):**
 
@@ -32,8 +33,9 @@ Kaynak kararlar: `motor-tasarimi.md` §2.1 (veri akışı), §2.2 (`strategy_run
 
 Bu birim yalnızca şunlara dokunur:
 
+- `src/trader_engine/strategies/{__init__,base,registry,price_action_v1}.py` (§13; **yeni paket, 05'e aittir**; `_1l3a_adapter.py` Faz A dışı, aynı paket, sonradan eklenir)
 - `src/trader_engine/strategy_runner.py`, `gates.py`, `engine.py`, `reconcile.py`, `killswitch.py`, `status.py`, `cli.py`, `__main__.py`
-- `tests/engine/test_engine_strategy_runner_spec.py`, `test_engine_gates_spec.py`, `test_engine_engine_spec.py`, `test_engine_reconcile_spec.py`, `test_engine_killswitch_status_spec.py` (bağımsız test ajanı); `test_engine_runner_impl_smoke.py` (gerçekleme ajanı)
+- `tests/engine/test_engine_strategy_runner_spec.py`, `test_engine_gates_spec.py`, `test_engine_engine_spec.py`, `test_engine_reconcile_spec.py`, `test_engine_killswitch_status_spec.py`, `test_engine_strategies_spec.py` (bağımsız test ajanı); `test_engine_runner_impl_smoke.py` (gerçekleme ajanı)
 
 Dokunulmaz: tüm `trader_core`, `02`/`01`/`03`/`04`/`06`/`07` dosyaları. `backtest.py` ve `metrics.py` (06), `fileio.py` (07), `marketdata/*` (01). `scripts/health_run.py` uyarlaması bu işin **dışındadır** (ayrı iş; status.json sözleşmesi §8'de verilir).
 
@@ -66,10 +68,12 @@ class SignalSource(Protocol):
         # ok kareden E..son bar dilimi; frame status != "ok" ise None DEĞİL, çağıran 'veri yok' dalına gider (§6.3)
 
 class WindowedSignalSource:
-    def __init__(self, view: MarketView, *, strict: bool = False)        # strict=True: hatalar yayılır (backtest/test)
+    def __init__(self, view: MarketView, strategy: Strategy, *, strict: bool = False)        # strict=True: hatalar yayılır (backtest/test)
 ```
 
 ### 3.1 `WindowedSignalSource.frame` (TraderV1.`populate_indicators` karşılığı; referans uygulama)
+
+**Strateji genellemesi (§13):** aşağıdaki adım 1–3 `PriceActionV1`'in (v1b) davranışını tarif eder. Genel kural: pencereler, `STARTUP`/süreklilik eşikleri ve `compute` çağrısı `strategy.info` ve `strategy.compute(ctx)` üzerinden gelir; v1 sabitleri (`WINDOW_*`, `STARTUP_*`, 20/150) `PriceActionV1.info`'nun değerleridir. Adım 3'teki `compute_signals` çağrısı `strategy.compute` olur; sonucun şema doğrulaması §13.3'tedir.
 
 1. `tf = params.trigger_tf`; `trig = view.bars(pair, tf, D, WINDOW_TRIGGER[tf])`, `h4 = view.bars(pair, "4h", D, WINDOW_4H)`. (`until=D` zorunlu; D'den sonra bar yok.)
 2. Kontroller (sırayla; ihlal → `SignalFrame(status=…, last=None)` ve `strict` değilse sayaç+log): `len(trig) < STARTUP_BARS[tf]` ya da `len(h4) < STARTUP_BARS_4H` → `no_history`; son tetik barının açılışı `≠ D − tf` → `data_gap` (`detail="trigger_bar_missing"`); `view.contiguous_tail(pair, tf, D) < 20` ya da `contiguous_tail(pair, "4h", D) < 150` → `data_gap` (`detail="hole"`).
@@ -160,7 +164,7 @@ class RunSummary: steps: int; decisions: int; trades_opened: int; trades_closed:
 
 class Engine:
     def __init__(self, cfg: EngineConfig, *, clock: Clock, view: MarketView, broker: Broker, ledger: L.Ledger,
-                 state: StateStore, signals: SignalSource, veto: VetoSource, kill: Killswitch,
+                 state: StateStore, signals: SignalSource, strategy: Strategy, veto: VetoSource, kill: Killswitch,
                  status: StatusWriter | None, orders: OrderManager | None = None,
                  entry_ref_fn=None, strict: bool = False)
     def start(self) -> RecoveryReport
@@ -175,7 +179,7 @@ class Engine:
 
 def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketView | None = None,
                  broker: Broker | None = None, env: Mapping[str,str] | None = None) -> Engine
-        # paper: StoreSource(cfg.market_db) + PaperBroker + SystemClock + FileVeto + gerçek ledger/state; backtest sürücüsü (06) kendi bileşenleriyle çağırır
+        # paper: `registry.get_strategy(cfg.strategy)` + StoreSource(cfg.market_db) + PaperBroker + SystemClock + FileVeto + gerçek ledger/state; backtest sürücüsü (06) kendi bileşenleriyle çağırır
 ```
 
 ### 5.1 Başlatma (`start`)
@@ -223,7 +227,7 @@ Tek `with state.tx():` (simüle broker).
    - `enter` → `trade_id = state.next_trade_id()`; `did = ledger.record_decision(out.event)` (**zorunlu**; `LedgerError`/herhangi bir istisna → giriş yok, `CRITICAL`, `mark_decided` **yazılmaz** (yeniden başlatmada aynı bar tekrar denenebilir; içerik farklıysa `LedgerConflictError` → giriş yok, TraderV1 ile aynı)); başarılıysa `Position(status="opening", …)` ve `Intent` kurulur: `insert_position` + `mark_decided(pair, D, "entered")` aynı tx; `orders.submit_entry(intent, trade_id)`. Sonuç `failed`/`rejected` ise pozisyon silinir/`closed`, `record_decision(supersedes_id=did, final_action="skipped", skip_reason="order_failed")` **best-effort**.
 6. `state.set_cursor(pair, "decision", D)` (her çift); `kv["broker_snapshot"]`; commit; `outbox` boşalt; `status.write()`.
 
-**Pozisyon dondurulmuş alanlar** (giriş anında, TraderV1 `_on_entry_fill` `data` sözlüğü): `initial_stop = row.planned_stop`, `planned_target = row.planned_target`, `rh/rl`, `setup`, `trail_atr = params.trail_atr`, `param_version_id`, `trigger_tf`, `risk_amount = size.risk_amount`, `decision_id = did`, `signal_bar_close_ts = row.bar_close_ts`.
+**Pozisyon dondurulmuş alanlar** (giriş anında, TraderV1 `_on_entry_fill` `data` sözlüğü): `initial_stop = row.planned_stop`, `planned_target = row.planned_target`, `rh/rl`, `setup`, `trail_atr = params.trail_atr`, `param_version_id`, `trigger_tf`, `risk_amount = size.risk_amount`, `decision_id = did`, `signal_bar_close_ts = row.bar_close_ts`, `strategy_name`, `strategy_version` (§13.6).
 
 ### 5.4 `run_range(start, end)` — backtest ve çevrimdışı sürücü
 
@@ -302,7 +306,7 @@ Engine davranışı: `kill.active()` ilk gözlemde `kv["kill_seen_at"]` yazılı
 ```json
 {"schema":"engine-status/1","bot":"learner","mode":"paper","pid":1234,"started_at":"...Z","loop_at":"...Z",
  "last_minute_ts":"...Z","last_decision_bar_close":"...Z","last_candle_open":"...Z","trigger_tf":"1h",
- "param_version_id":1,"entries_open":true,"gate":{"ok":true,"code":"ok"},"kill":false,"kill_state":null,
+ "param_version_id":1,"strategy":{"name":"price_action_v1","version":"1b.0"},"entries_open":true,"gate":{"ok":true,"code":"ok"},"kill":false,"kill_state":null,
  "entries_blocked_reason":null,"dry_run":true,
  "wallet":1000.0,"equity":1000.0,"day_start_equity":1000.0,
  "open_positions":[{"trade_id":1,"pair":"BTC/USDT","side":"long","qty":6.369,"entry_price":100.02,"stop":98.0}],
@@ -319,7 +323,7 @@ Engine davranışı: `kill.active()` ilk gözlemde `kv["kill_seen_at"]` yazılı
 |---|---|---|
 | `feed [--config]` | 01 `Feed.run_forever` | 0, 3 (tekrarlayan hata) |
 | `run --bot <learner veya twin> [--config-dir config]` | `build_engine` + `start` + `run_forever` | 0, 3 |
-| `init-ledger --bot X [--reason paper_start]` | Defter yoksa oluşturur, `init_params(DEFAULT_SIGNAL_PARAMS)`; `twin` için öğrenen defterinin **aynı** `params_hash`'i doğrulanır (uyuşmazlık → çıkış 4); var olan etkin parametreye dokunmaz | 0, 4 |
+| `init-ledger --bot X [--reason paper_start] [--strategy NAME]` | Defter yoksa oluşturur, `init_params(DEFAULT_SIGNAL_PARAMS, reason="strategy:<ad>@<sürüm>")` (§13.6); `twin` için öğrenen defterinin **aynı** `params_hash`'i doğrulanır (uyuşmazlık → çıkış 4); var olan etkin parametreye dokunmaz | 0, 4 |
 | `backtest …` | 06 | 06'da |
 | `reconcile --bot X` | tek seferlik mutabakat raporu (salt okunur broker durumu) | 0, 5 (bulgu var) |
 | `kill [--clear] [--by X] [--reason Y]` | `Killswitch.set/clear` | 0 |
@@ -337,10 +341,15 @@ Engine davranışı: `kill.active()` ilk gözlemde `kv["kill_seen_at"]` yazılı
 7. **Çıkış önceliği (aynı adımda):** T1 long, `regime_last="trend_down"` ve iz-stop yükselişi birlikte ⇒ yalnız `regime_flip` çıkışı (stop güncellemesi **yapılmaz**).
 8. **Çökme sonrası oynatma (1h tf):** (a) imleç `10:00Z`, `now=10:07Z` ⇒ dakikalar `10:01…10:06` işlenir, tf kapanışı olmadığından karar adımı yok. (b) imleç `10:58Z`, `now=11:03Z` ⇒ `10:59` dakikası işlenir, sonra `decision_step(11:00Z)` (bayat değil: `11:03 − 11:00 = 3 dk ≤ 1 sa`), ardından `11:00…11:02` dakikaları işlenir (D'de verilen emirler `11:00` adımında dolar). (c) imleç `10:58Z`, `now=13:05Z` ⇒ `11:00`, `12:00`, `13:00` karar adımları sırayla oynatılır; `11:00` ve `12:00` için girişler `stale_data` ile engellenir (çıkışlar o `D`'nin verisiyle değerlendirilir), `13:00` bayat değildir.
 9. **Eş zamanlı iki giriş:** aynı karar adımında BTC ve ETH sinyali; BTC önce `enter` (risk 13.999, teminat 212.3) ⇒ ETH `check_entry` açık risk toplamını (`13.999 + yeni`) ve teminatı görür; `max_open_risk 60`, `max_same_dir_risk 40` içinde ⇒ ikisi de girer; üçüncü long için aynı yön riski `3×14 = 42 > 40` ⇒ `risk_denied`.
+10. **Strateji kayıt defteri / yükleyici (§13.2):** (a) `get_strategy("price_action_v1")` ⇒ `info.name == "price_action_v1"`, `info.version == "1b.0"`, `info.setups == ("T1",)`. (b) `get_strategy("../../evil")`, `get_strategy("a.b")`, `get_strategy("")`, `get_strategy("PriceAction")` ⇒ `StrategyError(code="bad_name")`; hiçbir `import` çalışmaz (`sys.modules` aynı kalır). (c) `get_strategy("price_action_v2")` ⇒ `StrategyError(code="unknown_strategy")`, mesajda `("price_action_v1", "price_action_v1_full")`. (d) `cfg.strategy` verilmemiş ⇒ `"price_action_v1"`. (e) `mode="paper"` ve `cfg.strategy="price_action_v1_full"` ⇒ `StrategyError(code="paper_not_allowed")` (`info.paper_allowed=False`; yalnız backtest/çapraz doğrulama).
+11. **`PriceActionV1` (v1b) adaptörü (§13.4), `D = 2026-12-01T09:00Z`, BTC/USDT:** ham `compute_signals` son satırı (a) T1 long, `signal=True`, `planned_entry=100.00`, `planned_stop=98.00` ⇒ adaptör çıktısı **birebir aynı satır**; §10 örnek A akışı aynen sürer. (b) R1 short, `signal=True`, `planned_entry=105`, `planned_stop=106.5`, `planned_target=101` ⇒ `signal=False`, `skip_reason=None`, `setup="R1"` korunur, `reasons` `"v1b:r1_disabled|"` ile başlar; kapı satır 1b ⇒ `ignore` (kayıt yok); sayaç `shadow_r1 += 1`. (c) R1 satırı `skip_reason="stop_width"` ise de aynı (kapı satır 1'e **girmez**). (d) `validate_params({... "trigger_tf":"15m"})` ⇒ `ValueError` (v1b yalnız `"1h"`); etkin parametrede `15m` ise `params_ok=False`, kapı satır 4 (`gate:params_unavailable`). (e) **Aynı mumda yeniden giriş:** ham T1 long `signal=True`, sinyal barı `[10:00, 11:00)`; `ctx.last_exit = (10:20Z, "stop")` ⇒ satır nötrlenir (`reasons` `"v1b:same_bar_reentry|"`, sayaç `shadow_reentry += 1`); `(09:55Z, "stop")` ⇒ geçer (bar dışı); `(10:20Z, "target")` ⇒ geçer (yalnız `stop`/`trail_stop` engeller); `last_exit=None` ⇒ geçer.
+12. **1l3a adaptör eşlemesi (taslak, Faz A dışı; §13.5):** 1l3a satırı `yon=1`, `stop=98.5`, `hedef=103`, kapanış `100.0`, `atr14=1.0` ⇒ `side="long"`, `planned_entry=100.0`, `planned_stop=98.5`, `stop_dist_atr=|100−98.5|/1.0=1.5` (`[0.5, 2.0]` içinde), `planned_target=103`, `rr=(103−100)/1.5=2.0`. Boyut: stratejinin kendi risk kuralı (ör. `%5`) **yok sayılır**; qty §10 örnek A ile aynı yoldan (`risk.check_entry`) çıkar. `yon=1` ve `stop=NaN` ya da `stop=101` (yanlış taraf) ⇒ satır nötr (`signal=False`, `skip_reason=None`), sayaç `adapter_invalid_stop`; `stop_dist_atr=2.4` ⇒ `signal=False`, `skip_reason="stop_width"` (v1 sabitleri; kapı satır 1).
 
 ## 11. Kabul senaryoları (test ajanı için)
 
 Kapı zinciri: §4.1 tablosunun **her satırı** için bir test (kayıt alanları ve `mark_decided` davranışı dahil); `entered` kaydı yazılamazsa emir yok; `LedgerConflictError` yolu; çıkış kapıdan bağımsızlığı (ledger `degraded`, veto yok, kill, bayat iken çıkış çalışır); karar adımı sırası (exit → stop_update → entry) ve aynı adımda rezerve risk; `FileVeto` bayat/imzasız/anahtarsız ⇒ giriş yok; `SignalFrame` durumları (`no_history`, `data_gap`, `error`; backtest `strict` yayılır); `WindowedSignalSource` ≡ doğrudan `compute_signals` (kesilmiş veriyle: aynı satır); `run_range` flat optimizasyonu ≡ tam adım adım (06 ile ortak); `process_step` iki aşama sırası (giriş dolumu → stop → aynı adımda tetik); yeniden başlatma oynatması (her adımda öldürme: dakika ortası, karar ortası, `orders.pending` sonrası — kod yolları `FaultPlan` ve state tx geri alma ile; sonuç kesintisiz çalışmayla **bit-bit aynı** ledger+state); tek karar anahtarı kalıcılığı; kill (set, idempotent yeniden başlatma, clear, okunamayan dosya ⇒ aktif); mutabakat tablosunun her satırı; `status.json` şeması ve atomikliği (yarım dosya okunmaz); `ensure_day_start` (gün sınırı, yeniden başlatma, `day_start_missing`); TraderV1 §2.8 eşleme tablosunun her satırı için "karşılık var" testi (eksik davranış listesi).
+
+Strateji arayüzü (§13): yükleyici örnekleri (§10.10) ve `bad_name` yolunda hiçbir dinamik import olmadığı (kaynak taraması: `strategies/` dışında ve `registry.py` içinde `importlib`/`__import__`/`exec`/`eval`/`getattr`-ile-modül-yükleme yok); `PriceActionV1` v1b nötrleme kuralları (§10.11 a–e); `price_action_v1_full` çıktısı `WindowedSignalSource` ≡ doğrudan `compute_signals` (§11 ilk eşitlik testinin v1 koşulu); `PriceActionV1.info.param_specs` ≡ `ledger.PARAM_SPECS`/`LESSON_*` (ad, aralık, adım, kapsam, `lesson_adjustable`); `validate_table` her ihlal sınıfı için (fazla/eksik sütun, `side` geçersiz, long'da `stop ≥ entry`, `setup ∉ info.setups`, `signal=True` iken sonlu olmayan fiyat) ⇒ `SignalFrame(status="error")`, çift için giriş yok, çıkışlar etkilenmez; strateji `compute`'u lookahead'li (kesme testi, 06 §6) ⇒ kırılır; kapı zinciri (§4.1) farklı bir strateji (sahte `FakeStrategy`) ile **aynı** sonuçları verir (strateji kapı kararını etkileyemez); ledger uyumsuzluğu (`ledger_incompatible`) ve strateji/sürüm uyuşmazlığı (`strategy_mismatch`) başlatmayı reddeder; açık pozisyon varken strateji değişikliği ⇒ başlatma reddi.
 
 ## 12. Belirsizlikler ve çözümleri
 
@@ -348,3 +357,150 @@ Kapı zinciri: §4.1 tablosunun **her satırı** için bir test (kayıt alanlar�
 - **Karar anı gecikmesi:** feed `grace_s=3` + yoklama; tipik karar `D + ~5 sn`. `stale_factor=1` ⇒ 1 tf tolerans (TraderV1 `_stale` ile eşdeğer).
 - **Twin:** aynı süreç türü, farklı `--bot`; her zaman `PaperBroker`; gecikmeli başlar (`start_delay_s`). Ledger/state/status ayrı dosyalar; `market.sqlite` ortak salt okunur.
 - **`minute_wait_s`** yeni yapılandırma alanıdır (varsayılan 20 sn; 02 `EngineConfig`).
+
+## 13. Takılabilir strateji arayüzü (kullanıcı kararı, 16 Kasım 2026)
+
+**Karar:** strateji motorun takılıp çıkarılabilir bir parçasıdır; v1b ilk takılan stratejidir; ileride 1l3a stratejileri ve başkaları aynı arayüzle denenir. **Değişmeyenler:** §4.1 kapı zinciri ve sırası, `risk.check_entry(…, LOCKED_CFG)` tek risk kaynağı, çıkışların kapısızlığı, fail-closed kuralları, `target_mode="bar_close"`, ledger yazım kuralları, kill/status. Strateji bunların **hiçbirini** göremez ya da değiştiremez; yalnızca "bu kapanmış barda şu aday var mı" sorusuna yanıt verir.
+
+### 13.1 Sorumluluk ayrımı
+
+| Strateji (takılan) | Motor (sabit) |
+|---|---|
+| Aday: `setup`, `side`, `planned_entry`, `planned_stop`, `planned_target`, `reasons` (+ rejim/özellik sütunları) | Kapı zinciri, veto, `risk.check_entry`, **boyut/kaldıraç** (her zaman `LOCKED_CFG`; stratejinin kendi boyut/kaldıraç/risk kuralı **yok sayılır**, tabloda bunun için sütun yoktur) |
+| İstek: hangi tf'ler, kaç bar ısınma, hangi parametreler (sınırlarıyla) | Veri penceresi tedariki (`MarketView`, `until=D`), `no_history`/`data_gap` kontrolü |
+| (İsteğe bağlı) çıkış politikası | Koruyucu stop, `force_exit`, kill, zaman/rejim güvenlik ağı olarak `engine_default` (04 §5.1) |
+
+### 13.2 Protokol ve kayıt defteri (`strategies/base.py`, `strategies/registry.py`)
+
+```python
+@dataclass(frozen=True)
+class ParamSpec:                          # ledger.PARAM_SPECS satırının strateji-bağımsız biçimi
+    name: str; kind: Literal["float","int","choice"]
+    lo: float | None; hi: float | None; choices: tuple | None; default: object
+    lesson_adjustable: bool               # ders servisi yalnız True olanları önerebilir
+    lesson_bounds: tuple[float, float] | None    # ders sınırı (lo/hi içinde); lesson_adjustable ise zorunlu
+    step: float | None                    # ders adımı
+    scope: tuple[str, ...] | None         # parametrenin etkilediği setup'lar
+
+@dataclass(frozen=True)
+class StrategyInfo:
+    name: str                             # kayıt anahtarı, ^[a-z][a-z0-9_]{0,39}$
+    version: str                          # ör. "1b.0"; mantık değişince artar
+    setups: tuple[str, ...]               # üretebileceği setup adları ("T1",)
+    timeframes: tuple[str, ...]           # gereken tf'ler; "trigger" = params.trigger_tf (ör. ("trigger","4h"))
+    allowed_trigger_tfs: tuple[str, ...]  # ("1h",) v1b
+    warmup_bars: Mapping[str, int]        # no_history eşiği (ör. {"1h":1200,"15m":4800,"4h":300})
+    window_bars: Mapping[str, int]        # çekilecek bar sayısı (≥ warmup)
+    min_contiguous: Mapping[str, int]     # data_gap eşiği (ör. {"trigger":20,"4h":150})
+    param_specs: tuple[ParamSpec, ...]
+    paper_allowed: bool                   # False: yalnız backtest/çapraz doğrulama
+
+@dataclass(frozen=True)
+class StrategyContext:
+    pair: str; D: datetime                # D = karar anı (son kapanmış tetik barının kapanışı)
+    tf: str                               # çözülmüş tetik tf
+    params: Mapping[str, object]          # etkin parametre sürümü (validate_params'tan geçmiş)
+    bars: Mapping[str, pd.DataFrame]      # tf -> OHLC (indeks = bar açılışı, UTC, yalnız kapanmış, <= D)
+    last_exit: tuple[datetime, str] | None   # bu çiftteki son kapanışın (çıkış zamanı, ExitReason); yalnız post_filter kullanır; state'ten, saf veri
+
+class ExitPolicy(Protocol):               # saf; aynı girdi ⇒ aynı ExitDecision; defter/veto/kill/saat yok
+    def evaluate(self, pos: Position, ctx: ExitContext | None) -> ExitDecision    # 04 tipleri; reason ∈ ExitReason
+
+class Strategy(Protocol):
+    info: StrategyInfo
+    def validate_params(self, m: Mapping) -> Mapping                # ValueError; ledger doğrulamasına EK, onu gevşetmez
+    def compute(self, ctx: StrategyContext) -> pd.DataFrame         # SIGNAL_COLUMNS (tablo §13.3); yalnız ctx.bars/params'a bağlı
+    def post_filter(self, row: pd.Series, ctx: StrategyContext) -> pd.Series   # yalnız KARAR barının satırı; durum (ctx.last_exit) gerektiren nötrleme; varsayılan: row
+    def exit_policy(self) -> ExitPolicy | None                      # None = engine_default (04 evaluate_exit)
+```
+
+**Çıkış kancası:** `exit_policy() is None` ⇒ motor 04 `evaluate_exit`'i (trail / hedef / zaman / rejim) kullanır (`PriceActionV1` böyledir). Dönerse `ExitPolicy.evaluate` kullanılır; **yine** (a) başlangıç stopu borsada/PaperBroker'da durur, (b) çıkış verisi eksikse `force_exit`, (c) çıkış kapısızdır, (d) `reason` yalnız `ExitReason` sözlüğünden olabilir (başka ⇒ `force_exit` ve `CRITICAL`), (e) `stop_update` yalnız stopu **sıkılaştırabilir** (long: yükselen; short: alçalan; gevşetme ⇒ yok sayılır, sayaç `exit_policy_loosen`).
+
+**Kayıt defteri (`registry.py`):**
+
+```python
+class StrategyError(Exception): code: Literal["bad_name","unknown_strategy","paper_not_allowed","ledger_incompatible", ...]
+def list_strategies() -> tuple[str, ...]
+def get_strategy(name: str) -> Strategy
+```
+- **Statik:** kayıt `registry.py` içinde elle yazılmış `_FACTORIES: dict[str, Callable[[], Strategy]]` sözlüğüdür; `strategies/__init__.py` yalnız bu pakette bulunan modülleri **kod içinde açıkça** import eder. Yapılandırmadan, CLI'dan, ortamdan ya da ledger'dan gelen **hiçbir dize** `importlib`/`__import__`/`exec`/`eval`/`getattr` ile modül yüklemek için kullanılmaz; dosya yolu, nokta içeren ad, eklenti dizini, `entry_points` taraması yoktur.
+- `get_strategy(name)`: `re.fullmatch(r"[a-z][a-z0-9_]{0,39}", name)` değilse `bad_name`; sözlükte yoksa `unknown_strategy` (mesaj izinli adları listeler); fabrika her çağrıda **yeni** örnek verir (durumsuz).
+- Yeni strateji eklemek = pakete bir modül + `_FACTORIES`'e bir satır + inceleme/test; çalışma zamanında ekleme yoktur. Üçüncü taraf/1l3a kodu **kopyalanıp** (07 kopya deseni: başlık, kesinti listesi) `strategies/` altına alınır ve incelemeden geçer; yolu gösterip import edilmez.
+- Seçim: `EngineConfig.strategy: str = "price_action_v1"` (`config/engine*.json:strategy`; **02'ye eklenecek alan**, §13.9). Backtest: `--strategy NAME` (06).
+- **Yaşam döngüsü:** strateji **süreç başına bir** ve başlatmada seçilir; çalışırken değişmez. Açık/bekleyen pozisyon varken farklı strateji ile başlatma ⇒ **ret** (çıkış kodu 4, `strategy_change_with_open_positions`); önce pozisyonlar kapanmalı (ya da `kill`).
+
+### 13.3 `compute` sözleşmesi ve doğrulama
+
+- **Çıktı:** `SIGNAL_COLUMNS` (`trader_core.signals`) sütunlarının **tam** kümesi, indeks = tetik tf bar açılışı, `ctx.bars` ile aynı uzunluk. Fazla ya da eksik sütun yasaktır; bu yüzden strateji qty/kaldıraç/risk taşıyamaz.
+- **Nedensellik:** satır `t`, yalnız açılışı `≤ t` olan kapanmış barlardan hesaplanır (lookahead yasağı). Doğrulama: 06 §6 kesme testi **her kayıtlı strateji** için koşar (`--strategy`).
+- **Şema doğrulaması (`validate_table`, runner çağırır; ihlal ⇒ `SignalFrame(status="error")`, `callback_errors += 1`, `CRITICAL`, o çifte giriş yok):** `side ∈ {"long","short",None}`; `signal=True` ⇒ `setup ∈ info.setups`, `planned_entry/planned_stop` sonlu ve pozitif, long'da `stop < entry`, short'ta `stop > entry`, `planned_target` NaN ya da doğru tarafta; `skip_reason ∈ {None, "stop_width", "rr_below_min"}` (başka kodu strateji üretemez; kapı kodları motorundur, §1 madde 3); `signal=False` satırlar kapıda yalnız satır 1/1b'ye girer.
+- **`post_filter`:** runner `compute` tablosunun **son** (karar barı) satırına uygular (`SignalRow` bundan kurulur); şema doğrulaması **sonra** yeniden yapılır; `post_filter` yalnız `signal=True → False` nötrleyebilir (aday ekleyemez, fiyat değiştiremez; aksi `error`). `compute` önhesaplanıp önbelleklenebilir (backtest), `post_filter` her karar adımında çalışır.
+- **Saflık:** `compute` yan etkisiz (dosya/ağ/saat/rastgelelik yok), aynı `ctx` ⇒ aynı tablo. Aynı `(pair, D, version_id)` için tek tur önbellek §3.1 madde 5 ile aynıdır.
+- `row.setup`/`side`/`planned_*` kapıya ve `Candidate`'a §4.2 ile **aynı** biçimde geçer; `SignalRow`, `build_decision_event`, `Position` dondurulmuş alanları (§5.3) değişmez.
+
+### 13.4 Adaptör `PriceActionV1` (`strategies/price_action_v1.py`)
+
+`trader_core.signals` + `regime` çağrılarını sarar; **yeni mantık yoktur** (ham satır = `compute_signals` çıktısı). Kurucu: `PriceActionV1(setups_enabled, allowed_trigger_tfs, block_same_bar_reentry)`; kayıt defterinde iki yapılandırma:
+
+| Kayıt adı | Yapılandırma | Kullanım |
+|---|---|---|
+| `price_action_v1` (**varsayılan; v1b**) | `("T1",)`, `("1h",)`, `True`; `paper_allowed=True`; `version="1b.0"` | sahte para ve canlı v1 |
+| `price_action_v1_full` | `("T1","R1")`, `("1h","15m")`, `False`; `paper_allowed=False`; `version="1.0"` | yalnız backtest/çapraz doğrulama (06 §7; TraderV1 eşdeğeri) |
+
+- `info`: `setups`, `timeframes=("trigger","4h")`, `warmup_bars={"1h":STARTUP_BARS["1h"],"15m":STARTUP_BARS["15m"],"4h":STARTUP_BARS_4H}`, `window_bars` = `WINDOW_TRIGGER`/`WINDOW_4H`, `min_contiguous={"trigger":20,"4h":150}`; `param_specs` **`trader_core.ledger.PARAM_SPECS`, `LESSON_PARAMS`, `LESSON_BOUNDS_DEFAULT`, `LESSON_STEP`, `LESSON_SCOPE`'tan türetilir** (kopya değer yok; tek doğruluk kaynağı ledger). `lesson_adjustable`: `vol_ratio_max, stop_buffer_atr, trail_atr, range_target_frac, rr_min`; kalan dördü (`range_width_atr, edge_zone_atr, pullback_ema, trigger_tf`) değil.
+- `compute` = §3.1 adım 3 (`classify_series` → `align_to_base` → `compute_signals`) + **v1b nötrleme** 1 (satır düzeyi, hesap değişmez); `post_filter` = nötrleme 2:
+  1. `setup ∉ setups_enabled` (v1b: R1) olan **her** satır (sinyal ya da süzülmüş aday): `signal=False`, `skip_reason=None`; `setup`/`side`/`planned_*` korunur; `reasons = "v1b:r1_disabled|" + reasons`; sayaç `shadow_r1`. (Kapı satır 1b `ignore`; defterde kayıt yok.)
+  2. (`post_filter` içinde, `compute`'ta değil) `block_same_bar_reentry` ve `ctx.last_exit = (ts, reason)`, `reason ∈ {"stop","trail_stop"}`, `bar_open ≤ ts < bar_close` (sinyal barı) ise `signal=True` satırı nötrlenir: `signal=False`, `skip_reason=None`, `reasons = "v1b:same_bar_reentry|" + …`; sayaç `shadow_reentry`.
+  3. Diğer satırlar **değişmeden** geçer.
+- `validate_params(m)` = `SignalParams.from_mapping(m)` + `trigger_tf ∈ allowed_trigger_tfs` (15m v1b'de reddedilir).
+- `exit_policy()` = `None` (04 `evaluate_exit`: T1 `regime_flip` → `trail_stop`; R1 `target` → `time_stop`).
+- `last_exit` kaynağı: `strategy_runner` `state`'in kapanmış pozisyonlarından (çift başına en son) kurar; strateji `state`'e dokunmaz. (Yeniden girişin kendisi ayrıca kapı satır 2/3 ile engelli değildir; bu kural **yalnız** stratejinindir ve `position_manager`'a taşınmaz.)
+- Varsayım (test doğrular): `pick_candidate` rejim ayrık olduğundan aynı barda T1 ve R1 birlikte oluşmaz; R1'in nötrlenmesi T1'i gizlemez.
+- Gölge etiketler Faz A'da yalnız sayaç + `INFO` günlüğüdür; **defterde gölge kaydı** (`skip_reason`/alan) ledger sözlüğü genişlemesi ister (§13.9).
+
+### 13.5 1l3a stratejisinin uyarlanması (taslak; Faz A kapsamı dışı, arayüz bunu mümkün kılar)
+
+Kaynak şekil (`1l3a-proje/motor/strateji/temel.py`, salt okunur): `Strateji.sinyaller(mumlar)` mum kapanışında **vektörel**, aynı indeksli `yon` (1/−1/0), `stop`, `hedef` (NaN olabilir), `cikis`/`cikis_long`/`cikis_short`, `zaman_cikisi_mum` döner; `varsayilan_parametreler` + `parametre_izgarasi`; işlem sonraki mum açılışında. Adaptör deseni (`strategies/_1l3a_adapter.py`, her 1l3a stratejisi için ince alt sınıf, kopyalanmış kaynak `strategies/vendor_1l3a/` altında):
+
+| 1l3a | Bizim aday yapımız |
+|---|---|
+| `yon` 1/−1 (0 ⇒ satır boş) | `side` long/short, `signal=True` |
+| `stop` (yon≠0 için zorunlu) | `planned_stop`; NaN ya da yanlış taraf ⇒ satır nötr, sayaç `adapter_invalid_stop` |
+| `hedef` | `planned_target` (NaN ⇒ `None`); `rr = |hedef−giriş|/|giriş−stop|` |
+| (yok) | `planned_entry` = sinyal barı kapanışı (motor sözleşmesi, §4.2); 1l3a "sonraki açılış" kuralı yerine motorun dolum modeli geçerlidir |
+| (yok) | `stop_dist_atr` = `|giriş−stop| / ATR14(tetik tf)`; `[STOP_DIST_MIN_ATR, STOP_DIST_MAX_ATR]` dışı ⇒ `skip_reason="stop_width"` (v1 sabitleri; kapı satır 1) |
+| strateji/kart adı | `setup` (ledger sözlüğü genişlemesi şartıyla, §13.9); `reasons` = `kart_id` + tetikleyen koşullar |
+| `pozisyon_risk`, kaldıraç, miktar, `CikisAyarlari.yalniz_karda_cikis`… boyut/risk alanları | **Yok sayılır.** Boyut ve kaldıraç **her zaman** `risk.check_entry` + `LOCKED_CFG`; adaptör bunları taşıyacak sütun üretmez |
+| `varsayilan_parametreler` + `parametre_izgarasi` | `param_specs` (`lesson_adjustable=False` başlangıçta; ders yetkisi ayrı mentor kararı) |
+| `funding_gerekli` | `info` bayrağı (Faz A dışı); veri `MarketView.funding` ile |
+| `cikis`/`cikis_long`/`cikis_short`, `zaman_cikisi_mum`, `hedef` | `ExitPolicy`: sinyal çıkışı ⇒ `exit "other"` (sözlükte uygun ad yoksa), `zaman_cikisi_mum` ⇒ `"time_stop"`, `hedef` ⇒ `"target"` (bar_close kuralı); iz süren stop için `engine_default` ya da kendi `stop_update` (yalnız sıkılaştırma) |
+
+Çıkış sütunlarının `ExitContext`'e taşınması (`exit_long/exit_short` son bar bayrakları) 04 `ExitContext` genişlemesi ister; bu yüzden uyarlama Faz A sonrasıdır. Stratejiler 1l3a'nın `ADAY_RAPORU`/`final_set` sonuçlarına göre seçilir; her biri **önce backtest'te** (`--strategy`) ve çapraz doğrulama/lookahead kilidinden geçmeden paper'a alınmaz.
+
+### 13.6 Ledger ve ders servisi bütünleşmesi
+
+- **Her karar kaydında strateji adı + sürüm:** her `DecisionEvent`/`TradeEntry` zaten `param_version_id` taşır; Faz A'da `param_versions.reason` (`init_params`) `"strategy:<ad>@<sürüm>"` ile başlar (`init-ledger --bot X [--strategy NAME]`, §9). Karar → `param_version_id` → `reason` zinciri adı+sürümü verir. `status.json` ve `kv["strategy"]` aynı değeri taşır. Ledger'a ayrı `strategy_name/strategy_version` alanı eklemek (append-only şema) `trader_core` değişikliğidir (§13.9).
+- **Başlatma doğrulaması (fail-closed):** `ledger.get_active_params()` anahtar kümesi `{p.name for p in info.param_specs}` ile eşit ve `reason` etiketi `strategy:<ad>@<sürüm>` ile uyumlu olmalı; etiket yoksa (eski varsayılan) `price_action_v1` sayılır. Anahtar uyuşmazlığı ⇒ `StrategyError("ledger_incompatible")`, çıkış kodu 4; yalnız **sürüm** uyuşmazlığı ⇒ girişler kapalı (`entries_blocked_reason="strategy_mismatch"`), çıkışlar çalışır; `init-ledger --reason strategy_update` ile yeni parametre sürümü/etiket açılana dek.
+- **Ders servisi** yalnız **etkin stratejinin** `param_specs`'inde `lesson_adjustable=True` olan parametreleri ve `lesson_bounds`/`step`/`scope` sınırları içinde önerebilir; v1b için bu küme `ledger.LESSON_PARAMS`'tır (ledger'ın mevcut doğrulaması ayrıca zorlar; strateji sınırı **gevşetemez**, yalnız daraltır). Beyan edilmeyen parametre ⇒ öneri reddi. Dondurulmuş pozisyon alanları (§5.3) ders değişse de etkilenmez; `strategy_name/version` da giriş anında pozisyona dondurulur (**04 `Position`'a alan: §13.9**) ve çıkışı o strateji yönetir.
+
+### 13.7 Backtester (06) ile ilişki
+
+`python -m trader_engine backtest --strategy NAME` (varsayılan `price_action_v1`): `PrecomputedSignalSource` `strategy.compute`'u çift başına bir kez çalıştırır; `WindowedSignalSource` (paranoid) aynı `strategy` ile; lookahead kesme testi ve çapraz doğrulama **seçilen** strateji için koşar. `--params` `strategy.validate_params`'tan geçer. Strateji adı+sürüm `summary.json`'a ve backtest ledger `init_params` etiketine yazılır. Ledger sözlüğüyle uyumsuz strateji backtestte de `ledger_incompatible` verir (backtest ledger'ı aynı `trader_core.ledger`; sözlük genişleyene dek yalnız `price_action_v1*` çalışır).
+
+### 13.8 Değişmezler
+
+1. Kapı zinciri, `risk.check_entry`, çıkış kapısızlığı, `bar_close`, kill/stale davranışı strateji **değişse de** bit-bit aynıdır (`FakeStrategy` ile test).
+2. Strateji boyut/kaldıraç/emir/ledger/state/saat/ağ görmez; yalnız `StrategyContext` (saf veri) alır.
+3. Strateji adı yalnız statik kayıt defterinden çözülür; güvenilmeyen girdiden kod yüklenmez.
+4. Çalışma zamanında strateji değişmez; açık pozisyon varken değiştirilemez.
+5. Aynı `(strateji, sürüm, parametre sürümü, veri)` ⇒ aynı aday tablosu (paper ↔ backtest eşitliği, §3.1 açık nokta kuralları).
+
+### 13.9 Diğer birimlere etkiler (mentor onayı gerekir; bu belge onların dosyalarını değiştirmez)
+
+| Birim | Gerekli değişiklik | Faz A'da zorunlu mu |
+|---|---|---|
+| 02 `config.py`, `config/engine*.json` | `EngineConfig.strategy: str = "price_action_v1"` (+ doğrulama: `^[a-z][a-z0-9_]{0,39}$`) | Evet |
+| 04 `Position`/`state` | dondurulmuş `strategy_name`, `strategy_version` alanları (ve `ExitPolicy` için ileride `ExitContext` genişlemesi) | Alan: evet; `ExitContext` genişlemesi: hayır |
+| 06 | `--strategy` bayrağı, `PrecomputedSignalSource(strategy)`, özet/ledger etiketi (§13.7) | Evet |
+| 08 | `test_engine_module_inventory` modül listesine `strategies/{__init__,base,registry,price_action_v1}.py`; `importlib`/`__import__` taraması `strategies/` için ek korumaya (§13.2) | Evet |
+| `trader_core.ledger` (dokunulmaz; ayrı iş) | `_SETUPS` ve 9 anahtarlı `PARAM_SPECS` v1'e özgüdür; v1 dışı strateji için setup sözlüğü + parametre şeması genişlemesi, ayrı `strategy_name/version` alanları, gölge etiket kaydı | **Hayır**; 1l3a uyarlaması bunu bekler |

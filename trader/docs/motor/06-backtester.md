@@ -19,7 +19,7 @@ Kaynak kararlar: `motor-tasarimi.md` §4.1 (kendi backtester'ımız: aynı `Engi
 
 Bu birim yalnızca şunlara dokunur:
 
-- `src/trader_engine/backtest.py` (`main(argv)`, `BacktestRunner`), `precomputed.py` (`PrecomputedSignalSource`, `GuardedView`, `LedgerReplayVeto`, `LookaheadError`), `metrics.py`
+- `src/trader_engine/backtest.py` (`main(argv)`, `BacktestRunner`; `--strategy` bayrağı ve strateji adı+sürümünün `summary.json`/`meta.json`/ledger `init_params` etiketine yazılması, bkz. 05 §13.7), `precomputed.py` (`PrecomputedSignalSource`, `GuardedView`, `LedgerReplayVeto`, `LookaheadError`), `metrics.py`
 - `research/bt_crosscheck.py`, `research/run_bt_engine.py` (`run_bt.py`'nin metrik/yazım kısmının **motor sürümü**; `research/run_bt.py` dokunulmaz, §4.3 silme commit'inin işidir)
 - `scripts/fetch_binance_vision.py` (mevcut dosya; yalnız 1m last + 1m mark ekleme)
 - `tests/engine/test_engine_backtest_spec.py`, `test_engine_metrics_spec.py`, `test_engine_precomputed_spec.py`, `test_engine_lookahead_spec.py`, `test_engine_crosscheck_spec.py` (bağımsız test ajanı); `test_engine_backtest_impl_smoke.py` (gerçekleme ajanı)
@@ -35,10 +35,11 @@ Dokunulmaz: `engine.py`, `gates.py`, `strategy_runner.py` (05), `brokers/*` (03)
 |---|---|
 | `--id ID` (zorunlu) | Çıktı dizini `var/backtests/<id>/`; var ise hata |
 | `--period IS\|WF\|YYYYMMDD-YYYYMMDD` | `run_bt.PERIODS` ile aynı; HOLDOUT ile kesişen dönem → çıkış 2 ("holdout_locked") |
+| `--strategy NAME` | Kayıtlı strateji (05 §13; varsayılan `price_action_v1` = v1b). `price_action_v1_full` (R1 + 15m, yeniden giriş yasağı yok) TraderV1 eşdeğeridir ve **çapraz doğrulama (§7) yalnız onunla** koşar; ledger sözlüğüyle uyumsuz strateji ⇒ çıkış 2 (`ledger_incompatible`) |
 | `--tf 1h\|15m` | `trigger_tf` (parametre `trigger_tf` ile aynı) |
 | `--fill-model native\|legacy_compat` | `CostModel.fill_model` |
 | `--fee-mult F` (1), `--slip-bps S` (verilmezse: uyum kipinde 0, native'de 2/2/5) | **uyum kipinde** `taker_fee = fee_eff = 0.0005·F + S/1e4` (`run_bt.py` ile aynı; kayma komisyona katılır, ayrı kayma yok). **native kipte** `taker_fee = 0.0005·F`; `--slip-bps` **verilmişse** `slip_entry_bps = slip_exit_bps = S` ve `slip_stop_bps = 2.5·S` (varsayılan 2/2/5 oranı), verilmemişse `2/2/5` |
-| `--params '{"trail_atr":3.5}'` | kısmi geçersiz kılma (`SignalParams.from_mapping` doğrulaması); `trigger_tf` bayrağı ezer |
+| `--params '{"trail_atr":3.5}'` | kısmi geçersiz kılma (`strategy.validate_params` doğrulaması; v1'de `SignalParams.from_mapping`); `trigger_tf` bayrağı ezer |
 | `--granularity 1m\|15m` | `cost.granularity`; uyum kipinde zorunlu `15m` |
 | `--source history\|store` | `HistoricalSource(history_dir)` ya da `StoreSource(--market-db)` (paper ↔ backtest eşitliği) |
 | `--synthetic-rules` | `HistoricalSource(synthetic_rules=True)` (rules.json yoksa; raporda etiket) |
@@ -60,7 +61,7 @@ Akış:
 
 ### 3.1 `PrecomputedSignalSource`
 
-`SignalSource` (05) uygulaması: kurucuda her çift için (yalnız `end` öncesi barlar) `regime.classify_series` + `align_to_base` + `compute_signals` **bir kez**; `frame(pair, D, params, version_id)` → `table.index == D − tf` satırı + `status` kuralları **`WindowedSignalSource` ile aynı**: o zamana kadar mevcut tetik bar sayısı `< STARTUP_BARS[tf]` ya da 4h bar sayısı `< STARTUP_BARS_4H` → `no_history`; son 20 tetik/150 4h barda delik → `data_gap`. İlk giriş bu yüzden veri başından ~50 gün (1h) sonradır (freqtrade `startup_candle_count` ile aynı; mevcut sonuçlarda ilk işlem 2024-12-21). Parametre sürümü çalışma boyunca sabittir (ledger'da etkinleştirme olmaz); `activation_id` değişirse `PrecomputedSignalSource` hata verir ("params_changed_during_backtest") — yeniden hesap yok (ders servisi backtest'te çalışmaz). `exit_context`: dilim `index ≥ pos.entry_bar_open`.
+`SignalSource` (05) uygulaması: kurucu `(view, strategy, ...)` alır (05 §13.7); kurucuda her çift için (yalnız `end` öncesi barlar) `strategy.compute` **bir kez** (v1: `regime.classify_series` + `align_to_base` + `compute_signals` + v1b R1 nötrleme); `frame()` her karar adımında `strategy.post_filter(son satır, ctx)` uygular (`ctx.last_exit` backtest `state`'inden; v1b yeniden giriş yasağı) — sonuç `WindowedSignalSource` ile aynı olmalıdır, `--paranoid` bunu denetler; `frame(pair, D, params, version_id)` → `table.index == D − tf` satırı + `status` kuralları **`WindowedSignalSource` ile aynı**: o zamana kadar mevcut tetik bar sayısı `< STARTUP_BARS[tf]` ya da 4h bar sayısı `< STARTUP_BARS_4H` → `no_history`; son 20 tetik/150 4h barda delik → `data_gap`. İlk giriş bu yüzden veri başından ~50 gün (1h) sonradır (freqtrade `startup_candle_count` ile aynı; mevcut sonuçlarda ilk işlem 2024-12-21). Parametre sürümü çalışma boyunca sabittir (ledger'da etkinleştirme olmaz); `activation_id` değişirse `PrecomputedSignalSource` hata verir ("params_changed_during_backtest") — yeniden hesap yok (ders servisi backtest'te çalışmaz). `exit_context`: dilim `index ≥ pos.entry_bar_open`.
 
 ### 3.2 `GuardedView`
 
