@@ -38,7 +38,7 @@ Tek modül `src/trader_core/telegram.py` (yalnız standart kütüphane + `reques
 |---|---|---|
 | `TelegramClient` (ham Bot API: `send_message`, `get_updates`, `answer_callback_query`, `edit_message_text`) | kütüphane | — |
 | `TelegramNotifier` (outbound; `NOTIFIER_FACTORIES["telegram"]` ve health `Notifier` olarak kaydolur) | çağıran süreçte (ders/health/veto/bütçe tek seferlik süreçleri) | `var/telegram/outbox/` (spool) |
-| `scripts/telegram_run.py daemon` (komut dinleyici + outbox boşaltıcı) | **tek** uzun ömürlü süreç, `trader-telegram.service` | `var/telegram/{offset.json,pending.json,audit.jsonl,alive.json}`, `shared/KILL` (yalnız Bölüm 5); ders onayı için **alt süreç** (Bölüm 5.4) |
+| `scripts/telegram_run.py daemon` (komut dinleyici + outbox boşaltıcı) | **tek** uzun ömürlü süreç, `trader-telegram.service` | `var/telegram/{offset.json,pending.json,audit.jsonl,alive.json}`, `shared/KILL` (yalnız Bölüm 5); ders onayı için **alt süreç** (Bölüm 5.3) |
 | `scripts/telegram_run.py report` (günlük rapor) | tek seferlik, `trader-telegram-report.timer` 21:00 `Europe/Istanbul` | outbox, `last_report.json` |
 | `scripts/telegram_run.py send` (doğrudan tek mesaj; `trader-health-fail@` kullanır) | tek seferlik | outbox |
 
@@ -56,7 +56,7 @@ class TelegramNotifier:
     def request_approval(self, req: lesson.ApprovalRequest) -> bool   # LessonNotifier
     def send_text(self, text: str, severity: Severity, dedup_key: str) -> bool   # veto/bütçe/rapor; dedup_key ZORUNLU
 ```
-Dönüş kuralı (ders-spec Revizyon 3 ile aynı): **`True` yalnız Telegram `ok:true` ve `message_id` döndürdüyse.** Disk spool'una yazmak `False`'tur (çağıran yeniden dener / `undelivered` kalır). İstisna asla fırlatılmaz. `dedup_key` her gönderimde zorunludur: `Alert` ve `LessonNotice` için `fingerprint`, onay talebi için `request_id`, `send` CLI için `--dedup-key`; anahtarsız çağrı `ValueError` (programlama hatası, süreç yolunu etkilemez: notifier dışarıya `False` döner). `build_notifier(cfg, env)` fabrikası: token/chat eksikse `None` döner (çağıran bunu başarısızlık sayar; ders servisi çıkış 1). `ApprovalRequest` mesajı: başlık, `param from→to`, `reason_code`, kanıt özeti, `expires_at`, ve satır içi komutlar `/onayla <request_id>` / `/reddet <request_id>`; ayrıca inline düğmeler (Bölüm 5.4; `callback_data` içinde `expires_at` taşınır).
+Dönüş kuralı (ders-spec Revizyon 3 ile aynı): **`True` yalnız Telegram `ok:true` ve `message_id` döndürdüyse.** Disk spool'una yazmak `False`'tur (çağıran yeniden dener / `undelivered` kalır). İstisna asla fırlatılmaz. `dedup_key` her gönderimde zorunludur: `Alert` ve `LessonNotice` için `fingerprint`, onay talebi için `request_id`, `send` CLI için `--dedup-key`; anahtarsız çağrı `ValueError` (programlama hatası, süreç yolunu etkilemez: notifier dışarıya `False` döner). `build_notifier(cfg, env)` fabrikası: token/chat eksikse `None` döner (çağıran bunu başarısızlık sayar; ders servisi çıkış 1). `ApprovalRequest` mesajı: başlık, `param from→to`, `reason_code`, kanıt özeti, `expires_at`, ve satır içi komutlar `/onayla <request_id>` / `/reddet <request_id>`; ayrıca inline düğmeler (Bölüm 5.3; `callback_data` içinde `expires_at` taşınır).
 
 ### 2.2 Gönderim kuralları
 
@@ -104,7 +104,7 @@ Komut adı = ilk sözcük (küçük harf, `@botadı` eki atılır); bilinmeyen k
 | `/rapor` | günlük raporu şimdi üretir (Bölüm 6) | yok |
 | `/hepsini_kapat` | killswitch'i **kurar** (Bölüm 5.1) | 2 adım (4 haneli kod) |
 | `/devam` | `shared/KILL`'i **kaldırır** (Bölüm 5.2) | 2 adım (`/devam` → kod); `exiting`'de reddedilir |
-| `/onayla <id>` · `/reddet <id>` | `lesson_run.py --resolve <id> --approve|--reject` alt süreci (5.4) | id doğrulaması |
+| `/onayla <id>` · `/reddet <id>` | `lesson_run.py --resolve <id> --approve|--reject` alt süreci (5.3) | id doğrulaması |
 | `/durdur` | **"desteklenmiyor"** (aşağı) | — |
 
 **`/durdur`:** mevcut `Killswitch` yalnız `set/clear` sunar ve etkin iken motor açık pozisyonları da `force_exit` eder (05 §8.1). "Girişleri durdur ama pozisyonları tut" yeni bir mekanizma (`PAUSE`) gerektirir; **karar 1: Faz A'da yalnız KILL**, `/durdur` "desteklenmiyor, tam kapatma için /hepsini_kapat" yanıtı verir; canlıya geçmeden önce yeniden ele alınır.
@@ -126,7 +126,7 @@ Komut adı = ilk sözcük (küçük harf, `@botadı` eki atılır); bilinmeyen k
 
 Ön koşullar (hepsi sağlanmalı, aksi halde reddedilir; `status.json` okunamıyorsa fail-closed reddedilir): KILL etkin olmalı (değilse "KILL etkin değil" no-op yanıtı); `kill_state != "exiting"` (**pozisyonlar kapanırken reddedilir**, "kapanış sürüyor, bekleyin"); **canlı kipte** (`status.json.mode == "live"` ya da bilinmiyor) ek olarak: `KILL` içeriği `by` `telegram:` ile başlar **ve** `reason == "user_cmd"` **ve** `kill_state == "flat"` olmalı; başka kökenli KILL için yanıt: "Bu KILL Telegram'dan kurulmadı; yalnız sunucuda kaldırılır" (karar 9). Paper kipinde köken sınırı yoktur (yalnız `exiting` reddi).
 
-### 5.4 Ders önerileri (alt süreç; karar 3)
+### 5.3 Ders önerileri (alt süreç; karar 3)
 
 `ApprovalRequest.request_id` (`lr-<gün>-<proposal_id>`) mesajda görünür. `/onayla <id>`/`/reddet <id>`: id biçimi `^lr-\d{4}-\d{2}-\d{2}-\d+$` değilse reddedilir. **Daemon ders defterini açmaz**: `python -I scripts/lesson_run.py --resolve <id> --approve|--reject` alt süreci başlatılır (zaman aşımı 60 sn; ortamdan `TELEGRAM_BOT_TOKEN` çıkarılır). `--resolve` `lesson.lock`'u alır, `LessonService.resolve_request(id, approve, actor_ref="telegram")` çağırır, tek satır JSON yazar (`{"status","code","message","request_id"}`; çıkış 0 = çözüldü/bilinen durum, 1 = kullanım/yapılandırma, 2 = hata/kilit alınamadı). Daemon `status`'u ayrı yanıtla bildirir (süresi dolmuş/bayat/bilinmeyen; çift onay idempotent).
 
@@ -185,3 +185,9 @@ Sahte Telegram sunucusu: `http_post` enjeksiyonu ya da yerel `http.server` (`127
 ## 11. Açık sorular
 
 Mentor kararlarıyla kapandı (başa bakın): önceki 1–10. Kalan: `/durdur`/PAUSE canlıya geçmeden önce yeniden ele alınacak (karar 1); `telegram_daemon_stale` sağlık kontrolü ayrı iş.
+
+## 12. Gerçekleme notları (sapmalar)
+
+- Rapor: motor (`status.json`), sağlık durumu ve spool bölümleri gerçeklendi; defter/bütçe/ders bölümleri `build_report(..., sections=)` kancasıyla bağlanır (varsayılan boş; ayrı iş).
+- `kill` sonuç doğrulaması yalnız 5 dk sonraki `CRIT` denetimidir (10 sn ara denetim yok).
+- `trader-health-fail@` gönderimi `ExecStartPre=-` ile yapılır (başarısız olsa da dış nabız betiği çalışır).

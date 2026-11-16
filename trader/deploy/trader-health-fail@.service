@@ -4,6 +4,14 @@ Description=Trader saglik alarmi: %i basarisiz
 [Service]
 Type=oneshot
 EnvironmentFile=-/etc/trader-health.env
+# Telegram daemon'una bagimli DEGIL: dogrudan tek seferlik gonderim (basarisizsa spool); '-' oneki: Telegram yoksa zincir hata uretmesin
+EnvironmentFile=-/etc/trader-telegram.env
+SupplementaryGroups=trader-tg
+User=trader
+ExecStartPre=-/usr/bin/python3 -I /opt/trader/scripts/telegram_run.py send --severity CRIT --dedup-key health-fail:%i "Birim basarisiz: %i"
+# Bagimsiz dis nabiz (Telegram'dan bagimsiz kalir)
 ExecStart=/bin/bash /opt/trader/scripts/health_fail.sh %i
 NoNewPrivileges=true
 PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/trader/var/telegram
