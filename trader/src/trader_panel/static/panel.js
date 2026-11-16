@@ -2,7 +2,7 @@
  * KOPYA/UYARLAMA kaynagi: /home/user/sselimgenc-oss/1l3a-proje/motor/canli/pano.py, JS dizgisi (satir 329-380; 1L3A kullanicinin kendi projesi,
  * 2026-11-16): tema dugmesi (K tema anahtari), tablo siralama (th tiklama, data-v), yenile/yazdir dugmesi.
  * Bu depoya ozgu: fetch ile kismi yenileme, sekmeler, tum cizimler. Her metin textContent ile basilir; innerHTML yok.
- * Istemci kendi saatine guvenmez: bayatlik sunucudan gelir (docs/panel-spec.md §5). Dis URL yok.
+ * Canli kipte bayatlik sunucudan gelir (§5); anlik goruntu kipinde ek olarak uretim damgasindan istemci tarafinda hesaplanir (§13). Dis URL yok.
  */
 (function () {
   'use strict';
@@ -53,7 +53,23 @@
   function bytes(b) { return num(b) ? (b / 1048576 >= 1024 ? (b / 1073741824).toFixed(2) + ' GiB' : Math.round(b / 1048576) + ' MiB') : '—'; }
 
   /* ---------- ag ---------- */
+  var SNAP = window.__SNAPSHOT__ || null;                      // anlik goruntu kipi: veri gomulu, ag yok
+  var SNAP_STALE_S = 600;                                      // gorunumun kendisi 10 dk'dan eskiyse bayat
+  function snapBanner() {
+    var b = $('snap-bant');
+    if (!SNAP || !b) return;
+    var age = (Date.now() - Date.parse(SNAP.generated_at)) / 1000;
+    if (!isFinite(age) || age > SNAP_STALE_S) {
+      b.textContent = 'BAYAT GÖRÜNÜM: bu sayfa ' + (isFinite(age) ? ago(age) : 'bilinmeyen süre') + ' önce üretildi (yayın durmuş olabilir); Yenile ile tekrar yükleyin.';
+      b.style.display = '';
+    } else { b.style.display = 'none'; }
+  }
   function get(path) {
+    if (SNAP) {
+      var v = SNAP.data[path];
+      S.conn = true;
+      return Promise.resolve(v === undefined ? {ok: false, code: 'anlik_goruntude_yok'} : v);
+    }
     return fetch(path, {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (j) { S.conn = true; return j; },
       function () { S.conn = false; return {ok: false, code: 'baglanti'}; });
   }
@@ -491,7 +507,8 @@
     });
     $('bot-learner').addEventListener('click', function () { setBot('learner'); });
     $('bot-twin').addEventListener('click', function () { setBot('twin'); });
-    $('yenile').addEventListener('click', function () { refreshTop(); refreshTab(); });
+    $('yenile').addEventListener('click', function () { if (SNAP) { location.reload(); return; } refreshTop(); refreshTab(); });
+    snapBanner(); setInterval(snapBanner, 30000);
     // pano.py JS: tema dugmesi (uyarlandi)
     (function () {
       var k = 'trader-tema', h = document.documentElement;

@@ -13,7 +13,17 @@ from .server import make_server
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="trader_panel")
     ap.add_argument("--config", default="config/panel.json")
+    sub = ap.add_subparsers(dest="cmd")
+    sn = sub.add_parser("snapshot", help="verisi gomulu tek HTML uret (ag yok; Worker yayini icin)")
+    sn.add_argument("--out", required=True)
     a = ap.parse_args(argv)
+    if a.cmd == "snapshot":
+        try:
+            from .snapshot import run
+            return run(load_config(a.config), a.out)
+        except (ConfigError, OSError, RuntimeError) as e:
+            print(f"trader_panel: anlik goruntu uretilemedi: {e}", file=sys.stderr)
+            return 2
     try:
         cfg = load_config(a.config)
         srv = make_server(cfg, PanelData(cfg))
