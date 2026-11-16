@@ -632,3 +632,9 @@ Yeni dosyada `PRAGMA user_version == 1`. Elle `user_version=2` yapılmış dosya
 ## 13. Kapsam dışı (bu sürümde yok)
 
 Hash zinciri / imza; ders servisinin istatistik hesapları (yalnızca ham okuma ve toplulaştırma burada); al-tut/rastgele giriş kontrolleri (`null.py`); DSR; rapor biçimi; freqtrade `Trade` ile otomatik uzlaştırma (yalnızca `find_unledgered_trades` ve `find_orphan_decisions` yardımcıları); haber ve FreqAI alanları; çok bot (ikiden fazla) desteği.
+
+## 14. Netleştirmeler
+
+- Haftalık sınır (5.4/12.8): kural metni `activated_at ≥ şimdi − 7 gün` uygulamayı sayar; tam 7. gün anında (örn. 12-10T12:00:00.000 → 12-17T12:00:00.000) hâlâ engellenir (fail-closed), uygulama 7 günden **sonra** mümkündür; 12.8'deki "tam 7 gün dahil" bu şekilde okunur.
+- Yazma hatası sonrası kapı (8.1/12.9): başarısız `record_decision`/`record_trade_entry` `degraded` yapar ve bu an son sağlık denemesi sayılır; `entries_allowed()` en erken 30 sn sonra yeniden `check_writable` dener, o zamana kadar `degraded` döner (kısa süreli kilit/hata kapıyı hemen açmaz).
+- Düzeltme kararında (`supersedes_id`) `risk_allowed=1` ise `size_*` ve `leverage` yine dolu olmak zorundadır (3.3 tutarlılık kuralları); `order_failed` düzeltmesi bu alanları korur.
