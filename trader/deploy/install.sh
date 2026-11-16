@@ -171,6 +171,7 @@ enable_now trader-engine@learner.service
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali: sonra 'bash $TRADER_DIR/deploy/install.sh --with-twin'."; fi
 enable_now trader-health.timer
 enable_now trader-backup.timer
+enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
 if has_value /etc/trader-lesson.env ANTHROPIC_API_KEY_LESSON; then
   enable_now trader-lesson.timer
@@ -198,5 +199,6 @@ if [ "${#MISSING[@]}" -gt 0 ]; then
   echo "  (Anahtarlari sohbete yazmayin; dosyayi nano ile acip degeri yapistirin.)"
 fi
 echo
+echo "Pano (telefon/bilgisayar): ssh -L 8787:127.0.0.1:8787 <kullanici>@<sunucu>  sonra tarayicida http://127.0.0.1:8787"
 echo "Durum: systemctl status trader-engine@learner   |   Kayit: journalctl -u trader-engine@learner -n 50"
 echo "Kurulum bitti."

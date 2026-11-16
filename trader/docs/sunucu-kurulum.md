@@ -35,6 +35,16 @@ free -m
 
 Ikiz motoru sonradan acmak: `bash /home/trader/SG-Github-AB-proje/trader/deploy/install.sh --with-twin`
 
+## Pano (salt okunur)
+
+`install.sh` panoyu da kurar ve baslatir (`trader-panel.service`, en fazla 64 MB, yalniz `127.0.0.1:8787`, anahtar gerekmez). Disariya acik port yoktur; erisim SSH tuneli ile:
+
+```
+ssh -L 8787:127.0.0.1:8787 <kullanici>@<sunucu>     # sonra tarayicida http://127.0.0.1:8787
+journalctl -u trader-panel -n 50 --no-pager
+systemctl disable --now trader-panel                  # geri alma
+```
+
 ## Kaldirma
 
 ```
