@@ -20,3 +20,6 @@
 - Kaynak: Aurum v2 `aurum/research/stats.py` ve `aurum/research/splits.py`, commit 49f073dfdb2f8831e2fcb39b321c1a02bc4bba5f (yerel klon `sselimgenc-oss/inceleme/tradingbot`; yalnız okunarak kopyalandı, çalıştırılmadı/kurulmadı), 2026-11-16.
 - Kopyalanan: `src/trader_core/stats/stats.py` (PSR/DSR, MinTRL, Holm/BH düzeltmeleri, PBO/CSCV, durağan bootstrap) ve `src/trader_core/stats/splits.py` (purged/anchored walk-forward, purged K-fold, CPCV). Değişiklik: `scipy` kaldırıldı (normal dağılım cdf/sf/ppf/isf ve çarpıklık/basıklık `math`/`numpy` ile yeniden yazıldı); yeni bağımlılık eklenmedi. Dosya başlarında MIT başlığı vardır.
 - Copyright (c) 2025 zero-was-here. MIT lisans metni ilgili dosyaların başındaki başlıkta atıf olarak yer alır.
+
+## LightGBM (MIT) — yalnız ML eğitim/araştırma tarafı
+- Kod kopyalanmadı; `requirements-ml.txt` içinde tam sürüm (4.6.0) + hash sabitli isteğe bağlı bağımlılık. Motor ve bot süreci yüklemez; motor tarafı kendi ağaç okuyucumuzu (`src/trader_ml/treeeval.py`) kullanır. scipy yalnız lightgbm'in dolaylı bağımlılığıdır.

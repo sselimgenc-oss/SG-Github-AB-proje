@@ -1,0 +1,12 @@
+# ML egitim/arastirma bagimliliklari (ml-faz-tasarimi.md §5). Motor ve bot sureci bunlari YUKLEMEZ.
+# Kurulum (yalniz egitim isi / gelistirme makinesi):
+#   .venv/bin/pip install --require-hashes -r requirements-ml.txt
+# lightgbm (MIT) tam surum + hash sabit; scipy lightgbm'in dolayli bagimliligidir (yalniz o kullanir;
+# trader_core/trader_engine scipy/sklearn/lightgbm'i ice aktarmaz -- tests/ml/test_import_guard.py).
+# numpy pyproject.toml'dan gelir. Not: pyproject'te `ml` isteğe bagli grubu EKLENMEDI, cunku
+# tests/engine/test_no_framework_imports.py optional-dependencies'i {dev, live} ile birebir kilitler.
+lightgbm==4.6.0 \
+    --hash=sha256:cb19b5afea55b5b61cbb2131095f50538bd608a00655f23ad5d25ae3e3bf1c8d
+scipy==1.18.1 \
+    --hash=sha256:fdaf5ea890a6183d0565f51a61799d67081bd5b1cf03c5f4b3fd3732108625c9
+numpy==2.5.5
