@@ -1,18 +1,63 @@
-"""Risk kilidi: saf Python (stdlib) risk kuralları. Bkz. docs/risk-kilidi-spec.md.
+"""Risk kilidi: saf Python (stdlib) risk kuralları. Bkz. docs/risk-kilidi-spec.md (v2).
 
-Sabitler `RiskConfig` varsayılanlarındadır; bot ve ders servisi bunları değiştiremez.
+Sabitler `RiskConfig` varsayılanlarındadır; bot `LOCKED_CFG` kullanır. `HARD_LIMITS`
+bu sınırlardan daha gevşek bir yapılandırma oluşturulmasını engeller.
 """
 from __future__ import annotations
 
 import math
+import numbers
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 _SIDES = ("long", "short")
-_TOL = 1e-9
+
+# Kilitli üst/alt sınırlar. *_min anahtarları alt sınırdır.
+HARD_LIMITS = {
+    "max_trade_risk": 0.02,
+    "target_trade_risk": 0.014,
+    "daily_max_loss": 0.05,
+    "max_open_risk": 0.06,
+    "max_same_dir_risk": 0.04,
+    "max_leverage": 5,
+    "min_leverage": 1,
+    "max_notional_ratio": 1.0,
+}
 
 
-def _finite(x) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+def _num(x, name: str = "değer") -> float:
+    """int/float/numbers.Real -> float; bool, None, metin, NaN, inf geçersiz."""
+    if isinstance(x, bool) or not isinstance(x, numbers.Real):
+        raise ValueError(f"{name} sayı olmalı")
+    v = float(x)
+    if not math.isfinite(v):
+        raise ValueError(f"{name} sonlu olmalı")
+    return v
+
+
+def _whole(x, name: str) -> int:
+    v = _num(x, name)
+    if v != int(v):
+        raise ValueError(f"{name} tam sayı olmalı")
+    return int(v)
+
+
+def _norm_side(side) -> str:
+    if not isinstance(side, str):
+        raise ValueError("yön metin olmalı")
+    s = side.strip().lower()
+    if s not in _SIDES:
+        raise ValueError("yön 'long' veya 'short' olmalı")
+    return s
+
+
+def _norm_pair(pair) -> str:
+    if not isinstance(pair, str):
+        raise ValueError("çift metin olmalı")
+    p = pair.strip().upper().split(":", 1)[0].strip()
+    if not p:
+        raise ValueError("çift boş olamaz")
+    return p
 
 
 @dataclass(frozen=True)
@@ -28,26 +73,36 @@ class RiskConfig:
     max_leverage: int = 5
     maint_margin_rate: float = 0.004
     liq_safety_factor: float = 1.5
+    max_notional_ratio: float = 1.0
 
     def __post_init__(self) -> None:
         pos = ("max_trade_risk", "target_trade_risk", "daily_max_loss", "max_open_risk",
-               "max_same_dir_risk", "liq_safety_factor")
+               "max_same_dir_risk", "liq_safety_factor", "max_notional_ratio")
         nonneg = ("fee_rate", "slippage_rate", "maint_margin_rate")
-        for n in pos + nonneg + ("min_leverage", "max_leverage"):
-            if not _finite(getattr(self, n)):
-                raise ValueError(f"{n} sonlu bir sayı olmalı")
-        for n in pos:
-            if getattr(self, n) <= 0:
+        for n in pos + nonneg:
+            v = _num(getattr(self, n), n)
+            if n in pos and v <= 0:
                 raise ValueError(f"{n} > 0 olmalı")
-        for n in nonneg:
-            if getattr(self, n) < 0:
+            if n in nonneg and v < 0:
                 raise ValueError(f"{n} negatif olamaz")
+            object.__setattr__(self, n, v)
+        for n in ("min_leverage", "max_leverage"):
+            object.__setattr__(self, n, _whole(getattr(self, n), n))
         if self.target_trade_risk > self.max_trade_risk:
             raise ValueError("target_trade_risk, max_trade_risk değerini aşamaz")
         if self.min_leverage < 1 or self.min_leverage > self.max_leverage:
             raise ValueError("kaldıraç aralığı geçersiz")
-        if self.maint_margin_rate >= 1 or self.daily_max_loss > 1:
-            raise ValueError("oran değerleri geçersiz")
+        if self.maint_margin_rate >= 1:
+            raise ValueError("maint_margin_rate < 1 olmalı")
+        for n in ("max_trade_risk", "target_trade_risk", "daily_max_loss", "max_open_risk",
+                  "max_same_dir_risk", "max_leverage", "max_notional_ratio"):
+            if getattr(self, n) > HARD_LIMITS[n]:
+                raise ValueError(f"{n} kilitli üst sınırı aşıyor ({HARD_LIMITS[n]})")
+        if self.min_leverage < HARD_LIMITS["min_leverage"]:
+            raise ValueError("min_leverage kilitli alt sınırın altında")
+
+
+LOCKED_CFG = RiskConfig()
 
 
 @dataclass(frozen=True)
@@ -63,6 +118,7 @@ class OpenPosition:
     pair: str
     side: str
     risk_amount: float
+    margin: float
 
 
 @dataclass(frozen=True)
@@ -79,6 +135,8 @@ class Candidate:
     entry: float
     stop: float
     leverage: float
+    qty_step: float | None = None
+    min_notional: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -90,11 +148,13 @@ class Decision:
 
 def liquidation_price(entry: float, side: str, leverage: float, mmr: float) -> float:
     """İzole teminat likidasyon fiyatı yaklaşığı."""
+    side = _norm_side(side)
+    entry, leverage, mmr = _num(entry, "entry"), _num(leverage, "leverage"), _num(mmr, "mmr")
+    if leverage <= 0:
+        raise ValueError("kaldıraç pozitif olmalı")
     if side == "long":
         return entry * (1 - 1 / leverage + mmr)
-    if side == "short":
-        return entry * (1 + 1 / leverage - mmr)
-    raise ValueError(f"geçersiz yön: {side!r}")
+    return entry * (1 + 1 / leverage - mmr)
 
 
 def loss_at_stop(qty: float, entry: float, stop: float, cfg: RiskConfig) -> float:
@@ -103,14 +163,29 @@ def loss_at_stop(qty: float, entry: float, stop: float, cfg: RiskConfig) -> floa
     return qty * abs(entry - stop) + qty * entry * cost + qty * stop * cost
 
 
+def _floor_to_step(qty: float, step: float) -> float:
+    """Kayan nokta hatasına karşı güvenli aşağı yuvarlama; sonuç asla qty'yi aşmaz."""
+    d = Decimal(repr(qty))
+    s = Decimal(repr(step))
+    out = float((d // s) * s)
+    while out > qty:
+        out = math.nextafter(out, 0.0)
+    return out
+
+
 def size_position(equity: float, entry: float, stop: float, side: str,
-                  leverage: float, cfg: RiskConfig) -> SizeResult:
-    """loss_at_stop(qty) = target_trade_risk*equity denklemini qty için çözer."""
-    if side not in _SIDES:
-        raise ValueError(f"geçersiz yön: {side!r}")
-    if not all(_finite(v) for v in (equity, entry, stop, leverage)):
-        raise ValueError("sonlu olmayan girdi")
-    if equity <= 0 or entry <= 0 or stop <= 0 or leverage <= 0:
+                  leverage: float, cfg: RiskConfig = LOCKED_CFG,
+                  qty_step: float | None = None, min_notional: float = 0.0) -> SizeResult:
+    """loss_at_stop(qty) = target_trade_risk*equity denklemini çözer; notional ve adım sınırlı."""
+    side = _norm_side(side)
+    equity, entry, stop = _num(equity, "equity"), _num(entry, "entry"), _num(stop, "stop")
+    leverage = _num(leverage, "leverage")
+    min_notional = _num(min_notional, "min_notional")
+    if qty_step is not None:
+        qty_step = _num(qty_step, "qty_step")
+        if qty_step <= 0:
+            raise ValueError("qty_step > 0 olmalı")
+    if equity <= 0 or entry <= 0 or stop <= 0 or leverage <= 0 or min_notional < 0:
         raise ValueError("equity, fiyat ve kaldıraç pozitif olmalı")
     if entry == stop:
         raise ValueError("stop mesafesi sıfır")
@@ -118,11 +193,21 @@ def size_position(equity: float, entry: float, stop: float, side: str,
     if not per_qty > 0:
         raise ValueError("birim kayıp hesaplanamadı")
     limit = cfg.target_trade_risk * equity
-    qty = limit / per_qty
+    qty_risk = limit / per_qty
+    if loss_at_stop(qty_risk, entry, stop, cfg) > limit:  # savunma amaçlı
+        qty_risk = math.nextafter(qty_risk, 0.0)
+    notional_cap = cfg.max_notional_ratio * equity
+    qty_cap = notional_cap / entry
+    while qty_cap * entry > notional_cap:
+        qty_cap = math.nextafter(qty_cap, 0.0)
+    qty = min(qty_risk, qty_cap)
+    if qty_step is not None:
+        qty = _floor_to_step(qty, qty_step)
+    if not qty > 0 or qty * entry < min_notional:
+        raise ValueError("miktar sıfır veya en küçük emir değerinin altında")
     risk = loss_at_stop(qty, entry, stop, cfg)
-    if risk > limit * (1 + _TOL):  # savunma amaçlı
-        qty = math.nextafter(qty, 0.0)
-        risk = loss_at_stop(qty, entry, stop, cfg)
+    if risk > cfg.max_trade_risk * equity:
+        raise ValueError("işlem riski üst sınırı aşıyor")
     notional = qty * entry
     margin = notional / leverage
     if margin > equity:
@@ -136,53 +221,95 @@ def _deny(reason: str) -> Decision:
 
 def _check_entry(state: AccountState, cand: Candidate, cfg: RiskConfig) -> Decision:
     # 1. Girdi geçerliliği
-    if cand.side not in _SIDES:
-        return _deny("geçersiz girdi: yön 'long' veya 'short' olmalı")
-    if not all(_finite(v) for v in (state.equity, state.day_start_equity,
-                                    cand.entry, cand.stop, cand.leverage)):
-        return _deny("geçersiz girdi: sonlu olmayan değer")
-    if state.equity <= 0 or state.day_start_equity <= 0:
-        return _deny("geçersiz girdi: equity > 0 olmalı")
-    if cand.entry <= 0 or cand.stop <= 0:
-        return _deny("geçersiz girdi: fiyat > 0 olmalı")
+    try:
+        equity = _num(state.equity, "equity")
+        day_start = _num(state.day_start_equity, "day_start_equity")
+        entry = _num(cand.entry, "entry")
+        stop = _num(cand.stop, "stop")
+        lev_raw = _num(cand.leverage, "leverage")
+        side = _norm_side(cand.side)
+        pair = _norm_pair(cand.pair)
+        qty_step = None if cand.qty_step is None else _num(cand.qty_step, "qty_step")
+        min_notional = _num(cand.min_notional, "min_notional")
+        if qty_step is not None and qty_step <= 0:
+            raise ValueError("qty_step > 0 olmalı")
+        if min_notional < 0:
+            raise ValueError("min_notional negatif olamaz")
+        if equity <= 0 or day_start <= 0:
+            raise ValueError("equity > 0 olmalı")
+        if entry <= 0 or stop <= 0:
+            raise ValueError("fiyat > 0 olmalı")
+        positions = state.open_positions
+        if not isinstance(positions, (list, tuple)):
+            raise ValueError("open_positions liste olmalı")
+        opens = []
+        for p in positions:
+            if not isinstance(p, OpenPosition):
+                raise ValueError("açık pozisyon geçersiz")
+            ra = _num(p.risk_amount, "risk_amount")
+            mg = _num(p.margin, "margin")
+            if ra < 0 or mg < 0:
+                raise ValueError("açık pozisyon negatif değer içeriyor")
+            opens.append((_norm_pair(p.pair), _norm_side(p.side), ra, mg))
+    except ValueError as exc:
+        return _deny(f"geçersiz girdi: {exc}")
     # 2. Stop tarafı
-    if cand.side == "long" and cand.stop >= cand.entry:
+    if side == "long" and stop >= entry:
         return _deny("stop yanlış tarafta: long için stop < entry olmalı")
-    if cand.side == "short" and cand.stop <= cand.entry:
+    if side == "short" and stop <= entry:
         return _deny("stop yanlış tarafta: short için stop > entry olmalı")
     # 3. Kaldıraç
-    lev = cand.leverage
-    if lev != int(lev) or lev < cfg.min_leverage or lev > cfg.max_leverage:
+    if lev_raw != int(lev_raw) or lev_raw < cfg.min_leverage or lev_raw > cfg.max_leverage:
         return _deny(f"kaldıraç aralık dışı: {cfg.min_leverage}-{cfg.max_leverage} tam sayı olmalı")
-    # 4. Günlük zarar
-    if (state.equity - state.day_start_equity) / state.day_start_equity <= -cfg.daily_max_loss:
+    lev = int(lev_raw)
+    # 4. Günlük zarar zaten dolmuş mu
+    if (equity - day_start) / day_start <= -cfg.daily_max_loss:
         return _deny("günlük sınır aşıldı: yeni işlem açılamaz")
     # 5. Aynı çift
-    for p in state.open_positions:
-        if p.pair == cand.pair:
-            return _deny(f"{cand.pair} için zaten açık pozisyon var")
+    if any(op[0] == pair for op in opens):
+        return _deny(f"{pair} için zaten açık pozisyon var")
     # 6. Boyut
     try:
-        size = size_position(state.equity, cand.entry, cand.stop, cand.side, lev, cfg)
+        size = size_position(equity, entry, stop, side, lev, cfg, qty_step, min_notional)
     except ValueError as exc:
         return _deny(f"boyutlandırma reddedildi: {exc}")
+    # 6b. Savunma: boyut sonucunu yeniden doğrula (bozuk sonuca asla güvenme)
+    try:
+        s_qty = _num(size.qty, "qty")
+        s_notional = _num(size.notional, "notional")
+        s_margin = _num(size.margin, "margin")
+        s_risk = _num(size.risk_amount, "risk_amount")
+    except (ValueError, TypeError, AttributeError) as exc:
+        return _deny(f"boyutlandırma reddedildi: geçersiz sonuç ({exc})")
+    if (s_qty <= 0 or s_notional <= 0 or s_margin < 0 or s_risk < 0
+            or s_risk > cfg.max_trade_risk * equity
+            or s_notional > cfg.max_notional_ratio * equity
+            or s_margin > equity):
+        return _deny("boyutlandırma reddedildi: sonuç sınır dışında")
     # 7. Likidasyon güvenliği
-    liq = liquidation_price(cand.entry, cand.side, lev, cfg.maint_margin_rate)
-    if abs(cand.entry - liq) < cfg.liq_safety_factor * abs(cand.entry - cand.stop):
+    liq = liquidation_price(entry, side, lev, cfg.maint_margin_rate)
+    if abs(entry - liq) < cfg.liq_safety_factor * abs(entry - stop):
         return _deny("likidasyon çok yakın: giriş-likidasyon mesafesi yetersiz")
     # 8. Toplam açık risk
-    total_open = sum(p.risk_amount for p in state.open_positions)
-    if total_open + size.risk_amount > cfg.max_open_risk * state.equity:
+    total_open = sum(op[2] for op in opens)
+    if total_open + size.risk_amount > cfg.max_open_risk * equity:
         return _deny("toplam açık risk sınırı aşılır")
     # 9. Aynı yön riski
-    same = sum(p.risk_amount for p in state.open_positions if p.side == cand.side)
-    if same + size.risk_amount > cfg.max_same_dir_risk * state.equity:
-        return _deny(f"aynı yön ({cand.side}) risk sınırı aşılır")
-    # 10.
+    same = sum(op[2] for op in opens if op[1] == side)
+    if same + size.risk_amount > cfg.max_same_dir_risk * equity:
+        return _deny(f"aynı yön ({side}) risk sınırı aşılır")
+    # 10. Günlük bütçe
+    loss_today = max(0.0, day_start - equity)
+    if loss_today + total_open + size.risk_amount > cfg.daily_max_loss * day_start:
+        return _deny("günlük zarar bütçesi aşılır")
+    # 11. Teminat toplamı
+    if sum(op[3] for op in opens) + size.margin > equity:
+        return _deny("toplam teminat özsermayeyi aşar")
+    # 12.
     return Decision(True, "izin verildi", size)
 
 
-def check_entry(state: AccountState, cand: Candidate, cfg: RiskConfig) -> Decision:
+def check_entry(state: AccountState, cand: Candidate, cfg: RiskConfig = LOCKED_CFG) -> Decision:
     """Giriş kurallarını sırayla uygular; beklenmeyen hatada kapalı (fail-closed)."""
     try:
         return _check_entry(state, cand, cfg)
