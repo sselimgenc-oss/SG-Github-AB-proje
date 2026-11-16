@@ -15,3 +15,8 @@
 ## 1L3A pano Worker'ı ve yayın betiği (kullanıcının kendi projesi)
 - Kaynak: `1l3a-proje/deploy/pano_worker.js` ve `deploy/pano_yayinla.sh` (kullanıcının kendi deposu; yalnız okunarak uyarlandı, çalıştırılmadı), 2026-11-16.
 - Uyarlanan: `deploy/panel_worker.js` (Basic Auth, fail-closed, sabit zamanlı karşılaştırma; kullanıcı adı/secret adı değişti, kilitsiz yayın bayrağı çıkarıldı) ve `deploy/panel_yayinla.sh` (yayın akışı; kilitsiz kip ve parola-hash dosyası çıkarıldı).
+
+## Aurum v2 (MIT)
+- Kaynak: Aurum v2 `aurum/research/stats.py` ve `aurum/research/splits.py`, commit 49f073dfdb2f8831e2fcb39b321c1a02bc4bba5f (yerel klon `sselimgenc-oss/inceleme/tradingbot`; yalnız okunarak kopyalandı, çalıştırılmadı/kurulmadı), 2026-11-16.
+- Kopyalanan: `src/trader_core/stats/stats.py` (PSR/DSR, MinTRL, Holm/BH düzeltmeleri, PBO/CSCV, durağan bootstrap) ve `src/trader_core/stats/splits.py` (purged/anchored walk-forward, purged K-fold, CPCV). Değişiklik: `scipy` kaldırıldı (normal dağılım cdf/sf/ppf/isf ve çarpıklık/basıklık `math`/`numpy` ile yeniden yazıldı); yeni bağımlılık eklenmedi. Dosya başlarında MIT başlığı vardır.
+- Copyright (c) 2025 zero-was-here. MIT lisans metni ilgili dosyaların başındaki başlıkta atıf olarak yer alır.
