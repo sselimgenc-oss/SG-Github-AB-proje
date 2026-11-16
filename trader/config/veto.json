@@ -9,6 +9,7 @@
   "cache_ttl": "1h",
   "veto_path": "shared/veto/veto.json",
   "hmac_key_env": "TRADER_VETO_HMAC_KEY",
+  "market_db": "var/market.sqlite",
   "pairs_from": "config/base.json:exchange.pair_whitelist",
   "context": {"candles_4h": 200, "candles_1h": 72, "return_hours": [1, 4, 24]}
 }

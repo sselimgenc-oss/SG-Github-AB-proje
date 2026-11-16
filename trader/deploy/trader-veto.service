@@ -19,5 +19,7 @@ Nice=10
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/opt/trader/shared/veto /opt/trader/user_data
+# market.sqlite (WAL) salt okunur acilir ama -shm dosyasi icin dizin yazilabilir olmali; uygulama yazmaz
+ReadWritePaths=/opt/trader/var
 NoNewPrivileges=true
 PrivateTmp=true

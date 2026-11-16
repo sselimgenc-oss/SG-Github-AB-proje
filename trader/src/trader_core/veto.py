@@ -130,6 +130,7 @@ class VetoConfig:
     veto_path: str = "shared/veto/veto.json"
     hmac_key_env: str = "TRADER_VETO_HMAC_KEY"
     pairs_from: str = "config/base.json:exchange.pair_whitelist"
+    market_db: str = "var/market.sqlite"
     context: dict = field(default_factory=lambda: {"candles_4h": 200, "candles_1h": 72,
                                                     "return_hours": [1, 4, 24]})
 
@@ -151,7 +152,7 @@ class VetoConfig:
         t = self.temperature
         if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t) or not 0 <= t <= 1:
             bad("temperature 0..1 olmali")
-        for k in ("veto_path", "hmac_key_env", "pairs_from"):
+        for k in ("veto_path", "hmac_key_env", "pairs_from", "market_db"):
             if not isinstance(getattr(self, k), str) or not getattr(self, k).strip():
                 bad(f"{k} bos olamaz")
         c = self.context
