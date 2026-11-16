@@ -55,7 +55,8 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
             print(T.run_report(cfg, n, now_fn()))
             return EXIT_OK
         d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner,
-                             report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat()))
+                             report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
+                                                       T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat())))
         flag = {"stop": False}
         signal.signal(signal.SIGTERM, lambda *_: flag.update(stop=True))
         d.run_forever(stop or (lambda: flag["stop"]))
