@@ -136,7 +136,7 @@ def test_token_never_leaks(tmp_path, caplog):
 def test_fit_text_pins_command():
     body = "\n".join(f"satir {i}" for i in range(2000))
     out = T.fit_text(body, "/onayla lr-2026-11-16-1")
-    assert len(out) <= T.MAX_TEXT and out.endswith("/onayla lr-2026-11-16-1") and "kisaltildi" in out
+    assert len(out) <= T.MAX_TEXT and out.endswith("/onayla lr-2026-11-16-1") and "kısaltıldı" in out
     assert " /gizli" in T.fit_text("/gizli")
 
 
@@ -302,7 +302,7 @@ def test_report_run_and_late_tag(tmp_path):
     cfg = T.TelegramConfig.from_env(env)
     n = T.notifier_from_env(env, fake, clk, lambda s: None)
     assert T.run_report(cfg, n, clk()) == "sent"
-    assert fake.sent()[0]["text"].startswith("[gecikmis]")
+    assert fake.sent()[0]["text"].startswith("[gecikmiş]")
     assert T.run_report(cfg, n, clk()) == "already"
 
 

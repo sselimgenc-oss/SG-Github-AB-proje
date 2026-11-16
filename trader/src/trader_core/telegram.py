@@ -90,7 +90,7 @@ def fit_text(body: str, pinned: str = "", limit: int = MAX_TEXT) -> str:
     if not out:
         out = [lines[0][: max(0, limit - len(tail) - note_room)]]
         dropped = len(lines) - 1
-    return "\n".join(out) + f"\n(kisaltildi, {dropped} satir)" + tail
+    return "\n".join(out) + f"\n(kısaltıldı, {dropped} satır)" + tail
 
 
 # ---------------------------------------------------------------------------
@@ -636,7 +636,7 @@ class TelegramDaemon:
     def _cmd_status(self) -> str:
         st = self._read_status()
         if not st:
-            self._reply("durum okunamadi")
+            self._reply("durum okunamadı")
             return "unreadable"
         lines = [f"kip={st.get('mode')} kill={st.get('kill')} kill_state={st.get('kill_state')} "
                  f"entries_open={st.get('entries_open')} equity={st.get('equity')} "
@@ -674,7 +674,7 @@ class TelegramDaemon:
             return "KILL etkin degil"
         st = self._read_status()
         if st is None:
-            return "durum okunamadi, reddedildi"
+            return "durum okunamadı, reddedildi"
         ks = st.get("kill_state")
         if ks == "exiting":
             return "kapanis suruyor, bekleyin"
@@ -744,7 +744,7 @@ class TelegramDaemon:
             if not isinstance(d, dict):
                 raise ValueError
         except (ValueError, IndexError):
-            d = {"status": "error", "message": "cikti okunamadi"}
+            d = {"status": "error", "message": "çıktı okunamadı"}
         d["rc"] = rc
         return d
 
@@ -888,18 +888,18 @@ def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping
         if nz:
             out.append(f"Sayaclar: {nz}")
     except Exception as e:  # noqa: BLE001
-        out.append(f"Motor: okunamadi: {type(e).__name__}")
+        out.append(f"Motor: okunamadı: {type(e).__name__}")
     if cfg.health_state:
         try:
             hs = json.loads(Path(cfg.health_state).read_text(encoding="utf-8"))
-            out.append(f"Saglik: son genel={hs.get('last_overall')}")
+            out.append(f"Sağlık: son genel={hs.get('last_overall')}")
         except Exception as e:  # noqa: BLE001
-            out.append(f"Saglik: okunamadi: {type(e).__name__}")
+            out.append(f"Sağlık: okunamadı: {type(e).__name__}")
     for name, fn in (sections or {}).items():
         try:
             out.append(f"{name}: {fn()}")
         except Exception as e:  # noqa: BLE001
-            out.append(f"{name}: okunamadi: {type(e).__name__}")
+            out.append(f"{name}: okunamadı: {type(e).__name__}")
     try:
         out.append(f"Spool bekleyen: {len(Outbox(cfg.var_dir, lambda: now).list())}")
     except Exception:  # noqa: BLE001
@@ -919,7 +919,7 @@ def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, s
         return "already" if last == day else "skipped"
     text = build_report(cfg, now, day, sections)
     if decision == "gecikmis":
-        text = "[gecikmis] " + text
+        text = "[gecikmiş] " + text
     ok = notifier.send_text(text, "INFO", f"report-{day}")
     if ok:
         try:
