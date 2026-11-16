@@ -6,6 +6,7 @@ Modül: `src/trader_core/risk.py` (saf Python, freqtrade'e bağımlı değil). H
 
 ## Kilitli üst sınırlar (modül sabiti `HARD_LIMITS`, dict)
 `max_trade_risk ≤ 0.02`, `target_trade_risk ≤ 0.014`, `daily_max_loss ≤ 0.05`, `max_open_risk ≤ 0.06`, `max_same_dir_risk ≤ 0.04`, `max_leverage ≤ 5`, `min_leverage ≥ 1`, `max_notional_ratio ≤ 1.0`.
+Alt sınırlar: `fee_rate ≥ 0.0005`, `slippage_rate ≥ 0.0005`, `maint_margin_rate ≥ 0.004`, `liq_safety_factor ≥ 1.5` (maliyet ve güvenlik varsayımları gevşetilemez).
 `RiskConfig` bu sınırlardan daha gevşek bir değerle oluşturulursa `ValueError`. Daha sıkı değerler serbest. Modül ayrıca `LOCKED_CFG = RiskConfig()` sağlar; bot bunu kullanır.
 
 ## `RiskConfig` (frozen dataclass)

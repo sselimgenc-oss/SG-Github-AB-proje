@@ -76,3 +76,13 @@ def test_daily_budget_and_margin_sum():
     # teminat toplamı equity'yi aşar
     st = AccountState(1000, 1000, [OpenPosition("B", "short", 1.0, 990.0)])
     assert not check_entry(st, Candidate("A", "long", 100, 95, 3)).allowed
+
+
+def test_cost_and_safety_floors_locked():
+    import pytest
+    from trader_core.risk import RiskConfig
+    for kw in ({"fee_rate": 0.0}, {"slippage_rate": 0.0001},
+               {"maint_margin_rate": 0.001}, {"liq_safety_factor": 1.0}):
+        with pytest.raises(ValueError):
+            RiskConfig(**kw)
+    RiskConfig(fee_rate=0.001, liq_safety_factor=2.0)  # daha sıkı: serbest
