@@ -1,12 +1,30 @@
-# Günlük ders servisi — arayüz ve kurallar (spesifikasyon v1, 16 Kasım 2026)
+# Günlük ders servisi — arayüz ve kurallar (spesifikasyon v1 + Revizyon 2, 16 Kasım 2026)
 
-Kaynak kurallar: `otonom-trading-arastirma/tasarim-kararlari.md` (15–16 Kasım bölümü: öğrenme ilk günden açık; değişiklik için en az 20–30 işlem kanıtı; küçük değişikliği kendisi uygular, büyüğü Telegram'dan sorar; değişiklik günlüğü ve geri alma), `mimari-taslak.md` (parça 8, 9; açık risk 1: gürültüden ders çıkarma), `strateji-v1.md` (Bölüm 6.1: ders servisinin dokunabildiği 5 parametre ve sınırları), `defter-spec.md` (Bölüm 5–7, 11, 14; `ledger.py` genel API'si, **değiştirilmez**), `butce-spec.md` (DONDURULMUŞ arayüz; ders günlük tavanı 0,10 $; Batch indirimi), `faz-plani.md` madde 17. Fikir kaynakları (yalnızca fikir, kod/istem metni alınmadı): astra `self_improvement_engine` → `evolution_shield` döngüsü (kapı + CAS + kanıttan sağlık yeniden hesabı, kötü dersi arşivleme), cryptobot (ders/kural enjeksiyonu; 2 işlemle değerlendirmesi **örnek alınmadı**), HydraQuant (kapanan işlemle geri besleme), TEMPEST (sonuç etiketli ders + terfi kapısı; kanıt eşiği), qrak/LLM_trader (kapanan işlem belleği), TradingAgents `as_of` süzgeci (geleceği görme engeli). Bu belge kod ve test içermez; testler bu belgeden yazılır. Sayılar kârlılık kanıtı değildir; başlangıç değerleridir.
+## Revizyon 2 (mentor incelemesi)
+
+Bu revizyon (a) kullanıcı kararını (gölge dönem) ve (b) mentor incelemesinin bulgularını işler. Karar kaydı: `otonom-trading-arastirma/tasarim-kararlari.md` ("15–16 Kasım kararları", 16 Kasım 2026 satırı). Defter tarafındaki karşılıkları `defter-spec.md` Revizyon 2'dedir (şema sürüm 2). Bu belge kod ve test içermez.
+
+**Kullanıcı kararı: gölge dönem.** Öğrenme 1. günden açıktır (istatistik, geri alma izleyicisi ve öneriler her gün çalışır); ancak ilk `shadow_weeks` hafta (varsayılan 4, izinli 4–6) **hiçbir değişiklik otomatik uygulanmaz**: her öneri `needs_user` olur ve onay için kullanıcıya gönderilir; kullanıcı `apply_proposal(actor="user")` ile onaylar. Dönem bitince otomatik uygulama kuralları (8.3) geçerlidir. → 1 madde 9, 3, 8.3, 8.4, 9, 14.2.
+
+**Mentor değişiklikleri:**
+
+1. **İkiz salt okunur kontrol olarak kullanılır (v1).** Aynı mumlarda öğrenen ve ikiz karşılaştırılır; "yalnızca ikizin aldığı" / "yalnızca öğrenenin aldığı" işlemler hem geri alma hem gevşetme için kanıt olur (sıkılaştırma çarkını ve rejim kaymasını dengeler). İkiz defteri dosyası salt okunur açılır; metrikler ve doğruluk koşulları tanımlandı. → 1 madde 1, 4.5, 5 (`twin_observed`), 8.3 (`ratchet_guard`), 10.3, 9.3, 12, 14.11.
+2. **MFE/MAE ve `bars_held` deftere eklendi** (`mfe_r`, `mae_r`, `bars_held`, `excursion_tf`; şema sürüm 2 ve göç, defter-spec 3.4.1 ve 10.1). `trail_atr:down` kuralı MFE/MAE ile yazıldı (her zaman kullanıcıya sorulur). → 4.2, 5, 14.9.
+3. **Günlük anlamlılık testi yerine sabit kontrol noktaları** (kapsamda kapanmış işlem sayısı 30 / 45 / 60; sonrası yok). İstatistik **gün-kümelenmiş standart hata** (`z_cl`) ile hesaplanır; Welch z kaldırıldı. Eşikler `7.3`'teki kalibrasyonla (backtest işlemlerinde kural vekilini yeniden oynatma; hedef yanlış pozitif ve güç, kabul ölçütleri) belirlenir; kalibrasyon yoksa gölge dönem sonrası otomatik uygulama kapalıdır. → 3, 4.3, 4.4, 7.3, 14.1, 14.8, 14.12.
+4. **Kanıt havuzlama.** İlgili parametrenin kapsamını etkilemeyen sürüm değişiklikleri kanıtı sıfırlamaz; ilgili parametre eşit olan sürümler havuzlanır (defter-spec 5.4 değişti; `ledger.pool_version_ids`). R1 vb. izleyici **veri gelmeden süresi dolarsa geri alınır** (kalıcı olmaz). → 4.1, 10.2, 10.3, 14.6.
+5. **`stop_buffer_atr:up` her zaman `needs_user`.** Günlük özete **öğrenen − ikiz işlem sayısı farkı** eklendi. → 5, 8.3, 9.3.
+6. **Güvenlik boşlukları:** (a) `lesson.sqlite` açılamazsa geri alma yine mümkündür (yalnızca defter ile çalışan "ledger_only" kipi) ve izleyici kör kalırsa bot son kullanıcı onaylı sürüme döner (10.7, `--rollback-to-user-approved`); (b) aynı gün kümelenmiş stoplar tek başına erken geri almayı tetikleyemez (en az `early_min_days` ayrı gün ve küme-dayanıklı z, ikiz çelişkisi); (c) onaylanmış değişiklikler bir sonraki kontrol noktasında yeniden denetlenir (`monitor_recheck_n`, 10.3). → 10, 12, 14.6, 14.13.
+
+Not: Bu revizyon `ledger.py`'de değişiklik gerektirir (şema 2, `pool_version_ids`, `trades_for_versions`, `require_user`); bu iş `ledger.py`'yi düzenlemez ve ders servisi o değişiklikler yokken geriye uyumlu bir yedek davranışla çalışır (13.5).
+
+
+Kaynak kurallar: `otonom-trading-arastirma/tasarim-kararlari.md` (15–16 Kasım bölümü: öğrenme ilk günden açık; değişiklik için en az 20–30 işlem kanıtı; küçük değişikliği kendisi uygular, büyüğü Telegram'dan sorar; değişiklik günlüğü ve geri alma), `mimari-taslak.md` (parça 8, 9; açık risk 1: gürültüden ders çıkarma), `strateji-v1.md` (Bölüm 6.1: ders servisinin dokunabildiği 5 parametre ve sınırları), `defter-spec.md` (Bölüm 3.4.1, 5–7, 10–11, 14; `ledger.py` API'si; Revizyon 2 şema 2 ve küçük eklemeler gerektirir, bu iş `ledger.py`'yi düzenlemez), `butce-spec.md` (DONDURULMUŞ arayüz; ders günlük tavanı 0,10 $; Batch indirimi), `faz-plani.md` madde 17. Fikir kaynakları (yalnızca fikir, kod/istem metni alınmadı): astra `self_improvement_engine` → `evolution_shield` döngüsü (kapı + CAS + kanıttan sağlık yeniden hesabı, kötü dersi arşivleme), cryptobot (ders/kural enjeksiyonu; 2 işlemle değerlendirmesi **örnek alınmadı**), HydraQuant (kapanan işlemle geri besleme), TEMPEST (sonuç etiketli ders + terfi kapısı; kanıt eşiği), qrak/LLM_trader (kapanan işlem belleği), TradingAgents `as_of` süzgeci (geleceği görme engeli). Bu belge kod ve test içermez; testler bu belgeden yazılır. Sayılar kârlılık kanıtı değildir; başlangıç değerleridir.
 
 Modül: `src/trader_core/lesson.py`; çalıştırıcı: `scripts/lesson_run.py`; systemd: `deploy/trader-lesson.service` ve `deploy/trader-lesson.timer`; yapılandırma: `config/lesson.json` (isteğe bağlı; yoksa kod varsayılanları, bkz. Bölüm 3). Standart kütüphane + `anthropic` SDK (yalnızca çalıştırıcı/`LlmClient` gerçeklemesinde); pandas/numpy ve freqtrade import edilmez. **Hata durumunda her zaman "değişiklik yok" (fail-safe):** ders servisinin başarısızlığı botun işlem akışını etkilemez (bot yalnızca etkin sürümü okur; defter-spec 8.3).
 
 ## 1. Kapsam ve değişmez ilkeler
 
-1. **Yalnızca öğrenen bot (`learner`).** İkiz (`twin`) için hiçbir şey yazılmaz, ikiz defteri v1'de açılmaz. `LessonConfig.bot != "learner"` → `LessonConfigError`. Çalıştırıcıda `--bot` seçeneği yoktur. Savunma: defter ikizde zaten `LedgerStateError` verir (defter-spec 5.6).
+1. **Yalnızca öğrenen bot (`learner`) için yazılır.** İkiz (`twin`) için hiçbir şey **yazılmaz**; ikiz defteri yalnızca **salt okunur kontrol** olarak açılır (4.5: `read_only=True`, hiçbir yazma/öneri/geri alma). `LessonConfig.bot != "learner"` → `LessonConfigError`. Çalıştırıcıda `--bot` seçeneği yoktur. Savunma: defter ikizde zaten `LedgerStateError` verir (defter-spec 5.6) ve salt okunur bağlantı her yazmayı reddeder.
 2. **En fazla bir parametre, en fazla bir adım, tek öneri.** Parametre `ledger.LESSON_PARAMS` kümesinden (5 adet), adım `ledger.LESSON_STEP`, sınır ana sürümün `lesson_bounds`'u. Bu kurallar defter tarafından da zorlanır; ders servisi onları **yeniden icat etmez**, `propose_change`/`apply_proposal` üzerinden kullanır. Risk ayarları, `range_width_atr`, `edge_zone_atr`, `pullback_ema`, `trigger_tf` ders servisine kapalıdır.
 3. **LLM karar vermez, menüden seçer.** Aday parametre yönlerini ve kanıtını Python hesaplar (Bölüm 4–5); LLM yalnızca bu **menüdeki** bir adayı seçebilir ya da "değişiklik yok" der (Bölüm 6). Menü dışı öneri varsayılan olarak reddedilir.
 4. **Uygulayan kod Python'dur**, LLM çıktısı hiçbir zaman kod, komut ya da serbest sayı olarak yürütülmez; yalnızca doğrulanmış `(menu_id)` seçimi geçer.
@@ -14,10 +32,12 @@ Modül: `src/trader_core/lesson.py`; çalıştırıcı: `scripts/lesson_run.py`;
 6. **Geleceği görme yok** (Bölüm 6.2), **istem enjeksiyonuna karşı yapısal savunma** (Bölüm 6.3), **tüm istem ve yanıtlar denetim için saklanır** (Bölüm 11).
 7. **Bütçe kapısı zorunlu** (`budget.authorize("lesson", ...)`; Bölüm 6.5). Reddedilirse o günkü ders atlanır; **deterministik adımlar (istatistik, otomatik geri alma) bütçeye bağlı değildir** ve her gün çalışır.
 8. Ders servisi sonuçları **kârlılık kanıtı değildir**: 20–30 işlem, 4–8 hafta, öğrenmeyi şanstan ayırmaya yetmez (`parca-plani-denetim.md`). Asıl koruma: dar sınırlar, tek adım, haftada en fazla bir değişiklik, aynı anda tek gözlem altındaki değişiklik, otomatik geri alma.
+9. **Gölge dönem (kullanıcı kararı).** `run_day < shadow_end_day` iken (`shadow_end_day = shadow_start_day + 7·shadow_weeks` gün; `shadow_start_day` = `paper_start_day` yapılandırması, yoksa ilk ders çalışmasının `run_day`'i; ilk çalışmada `lesson_state`'e bir kez yazılır, sonradan değişmez) **hiçbir** öneri otomatik uygulanmaz: sınıf `ask_user`, `reason_code="shadow_period"`, defterde `propose_change(require_user=True)` ⇒ `needs_user`. İstatistik, aday menüsü, LLM önerisi, geri alma izleyicisi ve kontrol noktaları gölge dönemde de **aynen** çalışır (öğrenme açıktır). Kullanıcı onayı `apply_proposal(actor="user")`'dır ve onaylanan değişiklik izlenir (10.6).
+10. **Eşikler kalibre edilmelidir** (7.3). Kalibrasyon yoksa ya da kabul ölçütlerini geçmediyse eşikler `provisional` sayılır: gölge dönemde kullanılabilir (zaten her şey kullanıcıya gider; onay isteğinde "geçici eşik" yazar), gölge dönem sonrasında **otomatik uygulama kapalıdır** (`calibration_required`).
 
 ### 1.1 Dosya sahipliği
 
-Bu işin dokunabileceği dosyalar **yalnızca**: `src/trader_core/lesson.py`, `scripts/lesson_run.py`, `deploy/trader-lesson.service`, `deploy/trader-lesson.timer` (ve gerekirse `deploy/trader-lesson.env.example`), `config/lesson.json`, `tests/test_lesson_spec.py` ve ona ait yardımcı test dosyaları. `ledger.py`, `budget.py`, `risk.py`, `regime.py`, `signals.py`, `health.py`, strateji ve compose **düzenlenmez**. Telegram (madde 18) yalnızca Bölüm 9'daki arayüzü gerçekler/çağırır.
+Bu işin dokunabileceği dosyalar **yalnızca**: `src/trader_core/lesson.py`, `scripts/lesson_run.py`, `scripts/lesson_calibrate.py` (7.3), `deploy/trader-lesson.service`, `deploy/trader-lesson.timer` (ve gerekirse `deploy/trader-lesson.env.example`), `config/lesson.json`, `tests/test_lesson_spec.py` ve ona ait yardımcı test dosyaları. `ledger.py`, `budget.py`, `risk.py`, `regime.py`, `signals.py`, `health.py`, strateji ve compose **düzenlenmez**. Telegram (madde 18) yalnızca Bölüm 9'daki arayüzü gerçekler/çağırır.
 
 ## 2. Akış ve zamanlama
 
@@ -25,17 +45,18 @@ Günde bir kez (UTC saati yapılandırılabilir, varsayılan `run_at_utc = "02:4
 
 ```
 tick:
-  0. kilit (flock lesson.lock, bloklamaz; alınamazsa çık, kod 0) + defter/mağaza açılışı
+  0. kilit (flock lesson.lock, bloklamaz; alınamazsa çık, kod 0) + defter/mağaza açılışı + ikiz defteri SALT OKUNUR (4.5; yoksa twin_unavailable);
+     mağaza açılamazsa → ledger_only kipi (10.7): yalnızca A adımı, bellekte izleyici
   1. reconcile      : monitörsüz lesson sürümü, teslim edilmemiş istekler, süresi dolan istek/öneri
   2. çalışma seçimi : bugünün (UTC run_day) çalışması yok ve şimdi ≥ run_at_utc → yeni çalışma;
                       terminal olmayan çalışma varsa → devam; aksi halde çık
   --- çalışma (run_day = UTC tarihi; as_of = run_day 00:00:00.000Z) ---
-  A. evaluate_monitor : gözlem altındaki değişiklik varsa otomatik geri alma kuralı (Bölüm 10)   [LLM/bütçe yok]
-  B. stats            : deterministik istatistik + aday menüsü (Bölüm 4–5)                        [LLM/bütçe yok]
+  A. evaluate_monitor : gözlem altındaki değişiklik varsa otomatik geri alma kuralı (Bölüm 10; ikiz kanıtı 4.5)   [LLM/bütçe yok]
+  B. stats            : deterministik istatistik + ikiz raporu + kontrol noktaları + aday menüsü (Bölüm 4–5)  [LLM/bütçe yok]
   C. pre-gates        : bugün öneri yapılabilir mi? (Bölüm 8.1) hayırsa → skipped_gate, bitir
   D. proposer         : mode=llm → Batch (rezerve→gönder→yokla→kaydet); mode=rule_proxy → Bölüm 7
   E. gate             : doğrulama kapısı (Bölüm 8.2) → ledger.propose_change
-  F. route            : küçük → apply_proposal(actor="lesson") + monitör aç; diğer → needs_user + onay isteği
+  F. route            : gölge dönem → HER ÖNERİ needs_user + onay isteği; sonra: küçük → apply_proposal(actor="lesson") + monitör aç; diğer → needs_user + onay isteği
   G. günlük özet kaydı (Telegram 21:00 raporu okur, Bölüm 9.3)
 ```
 
@@ -56,26 +77,39 @@ Geçersiz değer → `LessonConfigError(ValueError)`. Bazı alanların **kilitli
 | `mode` | `"llm"` | `llm` / `rule_proxy` / `both` | `both`: LLM birincil, proxy gölge (Bölüm 7.2) |
 | `model` | `"claude-sonnet-5-5"` | `budget.json` fiyat tablosunda olmalı | Model kimliği yapılandırmadan; kodda sabit yok |
 | `max_output_tokens` | 1500 | ≤ 3000 | Bütçe tahmininin üst sınırı |
-| `n_min_ask` | 20 | **≥ 20** | Kapsamda kapanmış işlem; kullanıcıya sorma alt eşiği (`ledger.min_evidence_trades` ile aynı; defter 20 altını reddeder) |
-| `n_min_auto` | 30 | **≥ 30** ve ≥ `n_min_ask` | Otomatik uygulama alt eşiği |
+| `checkpoints` | `[30, 45, 60]` | ilk **≥ 30**, artan, ≤ 120 | Havuzlu kapsamda kapanmış işlem sayısı kontrol noktaları (4.4.1). Aday testi **yalnızca** bu sayılarda yapılır; ilk kontrol noktası hem kullanıcıya sorma hem otomatik uygulama alt eşiğidir (defterin 20 alt sınırı yalnızca son emniyettir). `n_min_ask`/`n_min_auto` kaldırıldı |
+| `checkpoint_valid_days` | 7 | ≥ 1 | Geçen bir kontrol noktası sonucunun öneri için geçerlilik süresi |
 | `min_affected` | 8 | ≥ 8 | Aday alt kümesi ve geri kalanı için asgari işlem |
 | `min_gap_r` | 0.50 | ≥ 0.50 | Alt küme ile kalan arası ortalama R farkı |
-| `min_z` | 1.64 | ≥ 1.64 | Welch z eşiği (tek yönlü ≈ %5) |
-| `min_distinct_days` / `max_pair_share` | 5 / 0.5 | ≥ 5 / ≤ 0.5 | Kümelenme koruması (4.4) |
+| `min_z` | 2.0 | ≥ 1.64 | Gün-kümelenmiş `z_cl` eşiği (4.3); **geçici varsayılan**, kalibrasyonla (7.3) yükseltilir |
+| `min_distinct_days` / `max_pair_share` | 8 / 0.5 | ≥ 8 / ≤ 0.5 | Kümelenme koruması (4.4); `z_cl` için asgari ayrı gün (küme) sayısı |
 | `recent_trades_n` / `history_n` | 15 / 5 | | İstemdeki son işlem ve geçmiş değişiklik sayısı |
 | `monitor_k` | 20 | ≥ 15 | Geri alma değerlendirme örnek boyu |
 | `monitor_margin_r` | 0.30 | ≤ 0.50 | Geri alma için asgari ortalama R düşüşü |
-| `monitor_z` | 1.0 | ≤ 1.64 | Geri alma z eşiği (büyüklük; kural `z ≤ −monitor_z`) |
-| `early_min_n` / `early_mean_r` / `early_z` | 10 / −0.6 / 1.645 | | Erken geri alma (10.3) |
-| `monitor_max_days` | 28 | | K işleme ulaşılamazsa gözlem kapanır |
+| `monitor_z` | 1.0 | ≤ 1.64 | Geri alma `z_cl` eşiği (büyüklük; kural `z_cl ≤ −monitor_z`) |
+| `monitor_recheck_n` | 30 | ≥ `monitor_k` | Onaylanmış değişikliğin yeniden denetim örnek boyu (10.3; "bir sonraki kontrol noktası") |
+| `recheck_max_days` | 42 | ≥ `monitor_max_days` | Yeniden denetim için en geç süre (uygulamadan itibaren) |
+| `early_min_n` / `early_mean_r` / `early_z` | 10 / −0.6 / 1.645 | | Erken geri alma (10.3); `early_z` `z_cl`'ye uygulanır |
+| `early_min_days` | 4 | **≥ 3** | Erken geri alma için örnekteki asgari ayrı çıkış günü (aynı gün kümelenmiş stoplar tek başına yetmez) |
+| `monitor_max_days` | 28 | | K işleme ulaşılamazsa gözlem **geri alma ile** kapanır (`expired_rolled_back`, 10.3) |
 | `ref_max_n` | 60 | | Referans (önceki sürüm) için en son N işlem |
 | `blacklist_days` | 14 | ≥ 14 | Geri alınan (param, yön) için bekleme |
 | `user_request_ttl_days` / `pending_ttl_days` | 3 / 3 | | Onay isteği / bekleyen öneri ömrü |
-| `max_user_requests_per_week` | 1 | ≤ 2 | Kullanıcıyı yormamak için |
+| `max_user_requests_per_week` | 1 | ≤ 2 | Kullanıcıyı yormamak için; **gölge dönemde etkin değer 2**'dir (her öneri kullanıcıya gittiği için) |
 | `allow_off_menu` | `false` | | `true` ise menü dışı seçim **her zaman** `needs_user` |
 | `proxy_include_ask_user` | `false` | | Proxy yalnız otomatik uygulanabilir adayları seçer |
 | `batch_max_age_h` | 25 | ≥ 24 | Batch zaman aşımı (6.6) |
 | `prompt_max_est_tokens` | 12000 | ≤ 20000 | Girdi token üst tahmini (6.5) |
+| `shadow_weeks` | 4 | **4–6** (tam sayı) | Gölge dönem uzunluğu (hafta); dışı → `LessonConfigError` |
+| `paper_start_day` | `null` | `YYYY-MM-DD` ya da `null` | Gölge dönem başlangıcı; `null` ⇒ ilk ders çalışmasının `run_day`'i |
+| `twin_enabled` | `true` | | `false` ⇒ ikiz kontrolü yok (`twin_disabled`; otomatik uygulama kapanır, 8.3) |
+| `twin_ledger_path` | `user_data/ledger_twin.sqlite` | | İkiz defteri; yalnızca salt okunur açılır (4.5) |
+| `twin_min_keys` | 10 | ≥ 8 | İkiz karşılaştırmasında karar için asgari eşleşen sinyal sayısı |
+| `twin_z` / `twin_margin_r` | 1.0 / 0.10 | ≤ 1.64 / ≤ 0.30 | İkiz `harm`/`benefit` eşikleri (4.5.3); kalibrasyonla ayarlanır |
+| `max_steps_from_twin` | 2 | ≥ 1 | Öğrenen değerinin ikizinkinden en çok kaç adım uzaklaşabileceği (otomatik uygulamada; `ratchet_guard`, 8.3) |
+| `blind_days` | 3 | ≥ 2 | Otomatik uygulanmış sürüm etkinken ardışık bu kadar gün izleyici değerlendirilemezse son kullanıcı onaylı sürüme dönülür (10.7) |
+| `calibration` | `null` | 7.3 çıktısı | Kalibrasyon sonucu nesnesi (`ok`, eşikler, ölçütler); yok/`ok=false` ⇒ eşikler geçici (madde 10) |
+| `report_show_twin` | `false` | | Günlük özetteki `twin` bölümünün kullanıcı raporunda gösterilmesi ("ikiz kullanıcı raporlarında görünmez" kararı; 9.3, 15 madde 17) |
 
 Kilitlenmeyen/yapılandırılamayan: adım büyüklükleri, sınırlar, haftalık sınır (7 gün), günlük bütçe — hepsi defter/bütçe modüllerinden gelir.
 
@@ -85,53 +119,96 @@ Tüm hesaplar yalnızca `ledger` okuma API'si ile (`open_ledger(path, "learner",
 
 ### 4.1 Pencere
 
-- `active = ledger.get_active_params()`; `V = active.version_id`. Pencere `W` = `v_closed_trades` içinde `param_version_id == V` (**exact**, defterin kanıt sayımıyla aynı), `exit_ts < as_of`, kapsama uyan işlemler. Açık işlemler istatistiğe ve istem verisine **girmez** (yalnızca sayısı).
+- `active = ledger.get_active_params()`; `V = active.version_id`. Pencere `W(key)` (aday parametre `key` için) = `ledger.trades_for_versions(ledger.pool_version_ids(V, key), closed_only=True, setup=kapsam, until_ts=as_of)` (**havuzlu**: defter-spec 5.4; yalnızca `key`'in kapsamını etkileyen bir parametrenin değeri farklı olan sürümler havuz dışıdır; kapsamı ayrık bir parametrenin değişmesi kanıtı **sıfırlamaz**), `exit_ts < as_of`, kapsama uyan işlemler. `n_scope(key) = |W(key)|`; defterin kanıt sayımı (`apply_proposal`) aynı havuzu kullanır. Açık işlemler istatistiğe ve istem verisine **girmez** (yalnızca sayısı). `ledger` havuz API'sini sunmuyorsa yedek davranış: `V` tek başına (exact; 13.5).
 - Kapsam (`ledger.LESSON_SCOPE`): `vol_ratio_max`, `stop_buffer_atr` → `T1+R1`; `trail_atr` → `T1`; `range_target_frac`, `rr_min` → `R1`.
 - Karar özellikleri için `ledger.get_decision(trade.decision_id).features` okunur (`TradeRecord` özellik taşımaz). Eksik zorunlu özellik → o işlem o kural için dışarıda kalır ve `excluded_missing_feature` sayacına yazılır.
 - Tanım gereği `as_of` dışlayıcıdır: `exit_ts = as_of` olan işlem dahil değildir.
 
 ### 4.2 Özet istatistik (istemde ve günlükte)
 
-Her `(setup)`, `(setup, regime)`, `(setup, side)` grubu için `ledger.aggregate_trades(group_by, version_id=V, exact_version=True, until_ts=as_of)` (satır: `n, wins, win_rate, sum_r, mean_r, median_r, sum_pnl, sum_fees, sum_funding, mean_slippage_*`). Ayrıca Python'da, her `setup` için: R dağılımı (`min, q10, q25, median, q75, q90, max`; en yakın sıra yöntemi), `sd_r` (örnek, n−1), `exit_reason` payları ve her nedenin `mean_r`'ı, `cost_r_mean` (= ort. `(fee_entry+fee_exit+funding_paid)/planned_risk`), `cost_share` (= `Σ(fee+funding) / Σ|gross_pnl|`, payda 0 ise 0), `mean_slippage_entry`, `mean_slippage_exit`, `n_open`, `n_excluded_*`. Tüm sayılar 4 ondalığa yuvarlanır (tam sayılar tam sayı).
+Her `(setup)`, `(setup, regime)`, `(setup, side)` grubu için `ledger.aggregate_trades(group_by, version_ids=pool_version_ids(V, <kapsamın ilgili parametresi>), until_ts=as_of)` (havuzlu; yedek: `version_id=V, exact_version=True`) (satır: `n, wins, win_rate, sum_r, mean_r, median_r, sum_pnl, sum_fees, sum_funding, mean_slippage_*`). Ayrıca Python'da, her `setup` için: R dağılımı (`min, q10, q25, median, q75, q90, max`; en yakın sıra yöntemi), `sd_r` (örnek, n−1), `exit_reason` payları ve her nedenin `mean_r`'ı, `cost_r_mean` (= ort. `(fee_entry+fee_exit+funding_paid)/planned_risk`), `cost_share` (= `Σ(fee+funding) / Σ|gross_pnl|`, payda 0 ise 0), `mean_slippage_entry`, `mean_slippage_exit`, `n_open`, `n_excluded_*`. T1 için ayrıca (şema 2; `mfe_r`/`mae_r` NULL olanlar dışarıda kalır ve `excluded_missing_excursion` sayacına yazılır): `mfe_r`, `mae_r` dağılımı (`min, q25, median, q75, max`), `exit_gross_r = gross_pnl/planned_risk`, `giveback_r = mfe_r − exit_gross_r` ortalaması, `capture_ratio = Σ exit_gross_r / Σ mfe_r` (payda 0 ise 0) ve `bars_held` ortalaması; `exit_reason=trail_stop` ve `mfe_r ≥ 2.0` ("koşucu") alt kümeleri için aynıları. Tüm sayılar 4 ondalığa yuvarlanır (tam sayılar tam sayı).
 
 ### 4.3 Yardımcı tanımlar (hepsi elle doğrulanabilir)
 
 - `mean(x)`, `sd(x)` = `sqrt(Σ(x−m)²/(n−1))` (n ≥ 2).
-- **Welch z** (A kümesi ile B kümesi arasında): `z = (mean_B − mean_A) / sqrt(sd_A²/n_A + sd_B²/n_B)`. (Küçük örneklemde normal yaklaşım kaba; bilinen sınırlama, Bölüm 15.)
+- **Küme (cluster) = UTC çıkış günü** (`exit_ts[:10]`; ikiz karşılaştırmasında `bar_close_ts[:10]`). İlk 10 coin birlikte hareket ettiği için aynı gündeki işlemler bağımsız sayılmaz.
+- **`cluster_diff(A, B)`** (A, B: `(r, gün)` listeleri; **gün-kümelenmiş SE**, CR1): `d = mean_B − mean_A`. Her işlem için "etki": B'de `(r − mean_B)/n_B`, A'da `−(r − mean_A)/n_A`. Gün `g` için `u_g = Σ_{i∈g} etki_i`; `G` = A∪B'deki ayrı gün sayısı. `Var = G/(G−1) · Σ_g u_g²`, `SE = sqrt(Var)`, **`z_cl = d / SE`**. `G < min_distinct_days` ya da `SE = 0` ⇒ `z_cl` tanımsız ⇒ aday geçmez (`z_undefined`). (Her işlem ayrı günse: `Var = n/(n−1)·[(n_A−1)·sd_A²/n_A² + (n_B−1)·sd_B²/n_B²]`, `n = n_A + n_B`.) Alt küme ve kalan aynı günü paylaşabilir; küme toplamı bunu hesaba katar.
+- **`cluster_mean(x)`** (tek örneklem; ikiz ve MFE kuralları): `m = mean(x)`, `u_g = Σ_{i∈g}(x_i − m)/n`, `SE = sqrt(G/(G−1)·Σ_g u_g²)`, `z_cl = (m − m0)/SE` (`m0` boşsa 0).
+- Welch z (Revizyon 1) **kaldırıldı**: bağımsızlık varsayımı aynı gün kümelenmiş işlemlerde `z`'yi şişirir. Küçük `G` için normal yaklaşım yine kaba olduğundan eşik **kalibrasyonla** (7.3) ampirik olarak belirlenir; kalibrasyon gün-blok permütasyon/bootstrap kullanır (üretimde permütasyon çalıştırılmaz, tek yöntem `z_cl`'dir). Metinde bundan sonra geçen her `z`, aksi belirtilmedikçe `z_cl`'dir.
 - `gap = mean_B − mean_A`.
 - **Alt küme / kalan:** her kuralda tanımlanır; `n_A ≥ min_affected` ve `n_B ≥ min_affected` zorunlu.
 
 ### 4.4 Kapsam uygunluğu ve kümelenme koruması
 
-`n_scope = |W ∩ kapsam|`. `n_scope < n_min_ask` → o kapsam için aday üretilmez (`insufficient_scope`). Kümelenme koruması (strateji-v1 Bölüm 9 madde 4: ilk 10 coin birlikte hareket eder): `distinct_exit_days` (UTC gün sayısı) `≥ min_distinct_days` **ve** `max_pair_share` (en çok işlem yapılan çiftin payı) `≤ 0.5`; sağlanmazsa o kapsamdaki tüm adaylar `eligible=false, fail=cluster_guard`.
+`n_scope = |W(key) ∩ kapsam|` (4.1). Kümelenme koruması (strateji-v1 Bölüm 9 madde 4: ilk 10 coin birlikte hareket eder): `distinct_exit_days` (UTC gün sayısı) `≥ min_distinct_days` (8) **ve** `max_pair_share` (en çok işlem yapılan çiftin payı) `≤ 0.5`; sağlanmazsa o kapsamdaki tüm adaylar `eligible=false, fail=cluster_guard`.
+
+### 4.4.1 Sabit kontrol noktaları (günlük anlamlılık testi yok)
+
+Revizyon 1'deki "her gün yeniden test" kaldırıldı (tekrarlı bakış yanlış pozitifi şişirir). Adayı sınayan istatistik **yalnızca** kontrol noktalarında hesaplanır; B adımı her gün açıklayıcı istatistiği (4.2) yine üretir ama aday `eligible` kararı kontrol noktası sonucundan gelir.
+
+- **Akış (stream):** `stream = (param, kapsam, havuz_kimliği)`; `havuz_kimliği = min(pool_version_ids(V, param))`. `n_scope` bu akışın havuzlu kapanmış işlem sayısıdır. Havuzdaki parametre değişince (kapsamı kesişen bir değişiklik) yeni akış başlar, kapsamı ayrık değişiklik akışı bozmaz (kanıt sıfırlanmaz).
+- **Kontrol noktası** `c ∈ checkpoints` (varsayılan 30, 45, 60): `n_scope ≥ c` olduğu ilk çalışma gününde, o akış için `c` sonucu **yoksa** değerlendirilir. Örnek, akışın `(exit_ts, trade_id)` sırasındaki **ilk `c` işlemidir** (dondurulmuş örnek: isteğe bağlı durdurma yanlılığı yok; aynı örnek yeniden hesaplanırsa aynı sonuç). Kural koşulları (Bölüm 5 tablosu; `min_affected`, `min_gap_r`, `min_z`, `cluster_guard`, `cost` vb.) bu örnekte denetlenir ve sonuç (`passed`, `stats_json`, `sample_hash`) `lesson_checkpoints`'e **bir kez** yazılır; aynı `(stream, c)` bir daha **yeniden test edilmez**.
+- **Geçerlilik:** `passed` sonucu `checkpoint_valid_days` boyunca önerilebilir (ön kapılar `monitor_open`/`weekly_limit` o gün engellemiş olabilir); süre dolunca ya da akış değişince sonuç düşer ve aday yalnızca bir sonraki `c`'de yeniden sınanır. Son kontrol noktasından (60) sonra ek test yoktur: kanıt akışı, kapsamı kesişen bir parametre değişene dek kapalıdır.
+- `n_scope < checkpoints[0]` ya da hiçbir kontrol noktası geçerli değilse aday üretilmez (`not_at_checkpoint`; menüde görünür, `eligible=false`). `n_scope` bir günde iki kontrol noktasını birden aşarsa her biri kendi ilk-`c` örneğiyle sırayla değerlendirilir ve **tek hakkı** sayılır: aynı gün için en büyük geçen `c` kullanılır.
+- Çoklu bakış (3 nokta × aday) toplam yanlış pozitif bütçesi 7.3 kalibrasyonunda **ailevi** (aile içi) ölçülür; `min_z` bundan türetilir.
+
+### 4.5 İkiz kontrolü (salt okunur, Revizyon 2)
+
+İkiz bot, öğrenen botun **ilk (initial) sürüm parametreleriyle donmuş** kopyasıdır ve aynı piyasa verisini aynı kurallarla işler (defter-spec 5.6). Aynı mumlarda ikizin ne yaptığı, öğrenen botun parametre değişikliklerinin **doğal kontrolüdür**: zaman değil sinyal eşleştirmesi karşılaştırılır, bu yüzden rejim/piyasa kayması iki tarafa da eşit etki eder.
+
+**4.5.1 Okuma.** `twin = open_ledger(cfg.twin_ledger_path, "twin", create=False, read_only=True, migrate=False)`. Hiçbir yazma yok (salt okunur bağlantı yazmada `LedgerStateError`; ikizde zaten `propose/apply/rollback/yeni sürüm` yasak). Yalnızca defter okuma API'si kullanılır: `twin.get_active_params()`, `twin.list_decisions(since_ts, until_ts)`, `twin.trades_for_versions(...)`; ham SQL, dosya kopyası ve `ledger_twin.sqlite*` dosyasına yazma **yok**. Çalışma başında doğrulama: ikizin etkin sürümünün `params_hash`'i öğrenenin **ilk sürümünün** (`author="initial"`) `params_hash`'ine eşit olmalı (aksi `twin_params_mismatch`).
+`twin_unavailable` kodları: `twin_disabled`, `twin_missing` (dosya yok), `twin_schema` (`LedgerSchemaError`, örn. ikiz henüz şema 1; defter-spec 10.2), `twin_params_mismatch`, `twin_empty` (ikizin hiç kararı yok). Bu durumda tüm ikiz metrikleri `unavailable`, ikiz hükmü `insufficient` ve **otomatik uygulama kapanır** (8.3 madde 0: sıkılaştırma çarkına karşı kontrol yok). Geri alma kuralı ikizsiz de çalışır (10.3, yalnızca zaman karşılaştırması).
+
+**4.5.2 Sinyal eşleştirme.** `key = (bar_close_ts, trigger_tf, pair, side, setup)` (karar kimliği; defter `UNIQUE` anahtarı). Pencere `[t0, as_of)`: izleyici için `t0 = activated_at(izlenen sürüm)`; gevşetme adayları için `t0 = diverge_ts(param)` (öğrenenin değerinin ikizinkinden ayrıldığı ilk etkinleştirme). Her iki defterin `list_decisions` (geçerli, `supersedes_id` zincirinin sonu) çıktısı `key` ile birleştirilir; işlem sonuçları `decision_id → TradeRecord` ile bağlanır (`trades_for_versions` ile o bota ait tüm sürümler).
+- **Param-temiz taraf:** bir taraf (`D`) `None` (o botun o mumda kararı yok: örn. rejim/`vol_ratio_max` filtresi), ya da `final_action='entered'`, ya da `skip_reason ∈ {stop_width, rr_below_min}` ise temizdir. Başka her durum (`veto_*`, `risk_denied`, `entry_gate_closed`, `order_failed`, `other`) parametre farkı değildir (LLM vetosu, portföy riski, kapı); iki taraf da temiz değilse `key` dışlanır (`excluded_nonparam`).
+- **Çalışma süresi koruması:** iki defterden birinde `skip_reason='entry_gate_closed'` kaydı olan UTC günlerin tüm `key`'leri dışlanır (`excluded_gate_days`); bot kapalıyken kararsızlık "yalnızca ikiz aldı" diye sayılmaz.
+- En az bir tarafın girdiği `key` kalır; girilen işlem(ler) henüz kapanmamışsa `key` atlanır (`n_pending_keys`). Kategoriler: `both` (ikisi de girdi), `only_twin`, `only_learner`.
+
+**4.5.3 Metrikler** (`TwinReport`; kümeler gün = `bar_close_ts` günü):
+- `n_both`, `n_only_twin`, `n_only_learner`, `n_keys = n_both + n_only_twin + n_only_learner`, `G` (ayrı gün).
+- `mean_r_only_twin`, `mean_r_only_learner` (ilgili işlemlerin `r_multiple` ortalaması), `paired_mean_diff = mean_{both}(r_learner − r_twin)` (çıkış parametreleri için temiz eşleştirilmiş fark).
+- **Sinyal başına avantaj** `adv_k`: `both` ⇒ `r_L − r_T`; `only_learner` ⇒ `+r_L`; `only_twin` ⇒ `−r_T` (öğrenen o işlemi almayarak `r_T`'yi kaçırdı/engelledi). `adv_mean = mean(adv_k)`; `SE = cluster_mean(adv).SE`; `z_twin = adv_mean/SE`.
+- `trade_count_diff = n_entered_L − n_entered_T` (pencerede **tüm** girilen işlemler; dışlananlar dahil; günlük özet için, 9.3) ve `n_only_learner − n_only_twin`.
+- **Hüküm (`twin_verdict`):** `insufficient` — `unavailable`, ya da `n_keys < twin_min_keys`, ya da `G < early_min_days`, ya da (`SE = 0` ve `adv_mean ≠ 0`). `neutral` — `SE = 0` ve `adv_mean = 0` ya da aşağıdakiler değil. `harm` — `adv_mean ≤ −twin_margin_r` **ve** `z_twin ≤ −twin_z`. `benefit` — `adv_mean ≥ +twin_margin_r` **ve** `z_twin ≥ +twin_z`.
+- `twin_unavailable`/`insufficient` durumları hata değildir; sonuç yalnızca "ikiz kanıtı yok"tur.
+
+**4.5.4 İkiz gözlemli gevşetme (`twin_observed`).** Öğrenen ikizden sıkıysa (ratchet), gevşetmenin kanıtı ikizin gerçek işlemlerindedir (hesaplanmış varsayım değil). Yalnızca giriş filtresi olan, kanıtı atfedilebilen iki yön:
+- `vol_ratio_max:up`: `A` = `only_twin` işlemleri, öğrenenin kararı **yok** ve ikizin kararında `atr_ratio > learner.vol_ratio_max`; `B` = `both` anahtarlarının **ikiz** işlemleri.
+- `rr_min:down`: `A` = `only_twin` işlemleri, öğrenenin `skip_reason='rr_below_min'` ve ikizin `features.rr < learner.rr_min`; `B` aynı.
+- `to = min(from + adım, twin_değer)` (yukarı) ya da `max(from − adım, twin_değer)` (aşağı): **ikizin değerini aşmaz**; öğrenenin değeri ikizinkine eşitse girdi yoktur. Koşullar: `n_A ≥ min_affected`, `n_B ≥ min_affected`, `mean_A ≥ 0.30`, `mean_A − mean_B ≥ min_gap_r`, `z_cl ≥ min_z` (`cluster_diff(A→B yönünde)`), `cluster_guard`, kara liste dışı. `n_scope` yerine `n_twin = n_A + n_B` kontrol noktaları (4.4.1) için sayılır; akış `(param, "twin", diverge_ts)`.
+- Sınıf `twin_observed` (5): `extrapolated`'in yerini alır; `auto_capable` olabilir (8.3), ancak `vol_ratio_max` artışı defter kuralıyla yine `needs_user`'dır (defter-spec 5.3 madde 11).
+
+**4.5.5 Çarka karşı korumalar.** `steps_from_twin(param) = ceil(|öğrenen − ikiz| / LESSON_STEP[param] − 1e-9)`. Adayın uygulanması bu sayıyı **artırıp** `max_steps_from_twin`'i (2) aşıyorsa otomatik uygulanmaz (`ratchet_guard`, 8.3). İkize doğru adımlar bu sınırdan etkilenmez.
 
 ## 5. Aday kuralları (`RULES_V1`; hepsi hipotezdir, kanıt değil)
 
 Her kural bir **menü girdisi** üretir: `menu_id = "<param>:<down|up>"`, `from` (etkin değer), `to` (= `from` ± `LESSON_STEP[param]`, `lesson_bounds`'a **kırpılmış**, 6 ondalık), `semantics ∈ {tighten, loosen, reshape}`, `evidence_class ∈ {observed_subset, extrapolated, exit_mix_weak}`, kanıt sayıları, kontroller ve `eligible`. `to == from` (sınırda) → girdi üretilmez. Kırpma örneği: `vol_ratio_max` 1.5, adım 0.25, sınır 1.3–1.7 → aşağı `to=1.3` (değişim 0.2 ≤ 0.25), yukarı `to=1.7`.
 
-**Temel ilke (neden bu yönler):** gözlenen işlemlerden yalnızca *işlem kümesini daraltan* yönlerin etkisi doğrudan ölçülebilir (çıkarılacak işlemlerin sonucu defterde var). *İşlem ekleyen* yönlerin (atlanan adayların sonucu defterde yok) etkisi ancak dolaylı (sınır bandındaki işlemlerden ekstrapolasyon) tahmin edilir; **bu yönler hiçbir zaman otomatik uygulanmaz.** Çıkış davranışını değiştiren parametreler için (`trail_atr`, `range_target_frac`) defter MFE/MAE tutmaz; yalnızca çıkış nedeni payları kaba vekil olur (Bölüm 15 madde 3).
+**Temel ilke (neden bu yönler):** gözlenen işlemlerden yalnızca *işlem kümesini daraltan* yönlerin etkisi doğrudan ölçülebilir (çıkarılacak işlemlerin sonucu defterde var). *İşlem ekleyen* yönlerin (atlanan adayların sonucu defterde yok) etkisi ancak dolaylı (sınır bandındaki işlemlerden ekstrapolasyon) tahmin edilir; **bu yönler, `twin_observed` sınıfı (4.5.4: ikiz defterinde gerçekten gözlenmiş işlemler) dışında hiçbir zaman otomatik uygulanmaz.** Çıkış davranışını değiştiren parametreler için (`trail_atr`, `range_target_frac`) defter şema 2'den itibaren `mfe_r`, `mae_r`, `bars_held` tutar (defter-spec 3.4.1); `trail_atr:down` MFE/MAE ile kurallaşır (aşağıda), `range_target_frac` hâlâ yalnızca çıkış nedeni payı vekilidir (Bölüm 15 madde 3). Her hâlükârda çıkış parametresi önerileri **her zaman kullanıcıya sorulur**.
 
 | Menü girdisi | Kapsam | Sınıf | Alt küme `A` | Koşullar (hepsi) |
 |---|---|---|---|---|
 | `vol_ratio_max:down` | T1+R1 | `observed_subset`, tighten | `atr_ratio > to` (yeni eşikle elenecek işlemler); `B` = kalan | `mean_A < 0`; `gap ≥ min_gap_r`; `z ≥ min_z` |
 | `rr_min:up` | R1 | `observed_subset`, tighten | `features.rr < to` (yeni `rr_min` ile elenecek) | aynı |
-| `stop_buffer_atr:up` | T1+R1 | `observed_subset`, reshape (gerekçe: dar stop ⇒ pozisyon büyür ⇒ maliyet R'de artar) | `A` = `stop_dist_atr` en küçük üçte biri: sıra `(stop_dist_atr, trade_id)`, ilk `ceil(n/3)` | `gap ≥ min_gap_r`; `z ≥ min_z`; `cost_r_mean(A) − cost_r_mean(B) ≥ 0.10` |
+| `stop_buffer_atr:up` | T1+R1 | `observed_subset`, reshape, **her zaman `needs_user` (`always_user`; otomatik uygulanabilir değildir)** (gerekçe: dar stop ⇒ pozisyon büyür ⇒ maliyet R'de artar) | `A` = `stop_dist_atr` en küçük üçte biri: sıra `(stop_dist_atr, trade_id)`, ilk `ceil(n/3)` | `gap ≥ min_gap_r`; `z ≥ min_z`; `cost_r_mean(A) − cost_r_mean(B) ≥ 0.10` |
 | `vol_ratio_max:up` | T1+R1 | `extrapolated`, loosen | bant `A` = `atr_ratio ∈ (from − (to−from), from]`; `B` = kalan | `mean_A ≥ 0.30`; `mean_A − mean_B ≥ min_gap_r`; `z' ≥ min_z` (z, A−B yönünde) |
 | `rr_min:down` | R1 | `extrapolated`, loosen | bant `A` = `features.rr ∈ [from, from + (from−to))` | aynı |
 | `range_target_frac:down` | R1 | `exit_mix_weak` | — (çıkış payları) | `share(time_stop) ≥ 0.35`; `share(target) ≤ 0.30`; `n(time_stop) ≥ 8`; `mean_r(time_stop) ≥ −0.25` |
 | `range_target_frac:up` | R1 | `exit_mix_weak` | — | `share(target) ≥ 0.55`; `n(target) ≥ 8`; `mean_r(W_R1) ≥ 0.20` |
-| `trail_atr:*` | T1 | — | — | **v1'de kural yok**; menüde girdi üretilmez (ledger'a MFE/MAE eklenince, Bölüm 15) |
+| `trail_atr:down` | T1 | `exit_mfe_mae`, tighten | `A` = `exit_reason='trail_stop'` ve `mfe_r ≥ 1.0` olan T1 işlemleri (`mfe_r` NULL olanlar dışlanır) | `n_A ≥ min_affected`; `giveback_mean(A) = mean(mfe_r − exit_gross_r) ≥ 0.75`; `capture_ratio(A) ≤ 0.45`; `z_gb = cluster_mean(giveback; m0 = 0.5) ≥ min_z`; **koşucu koruması:** `mfe_r ≥ 2.0` olan `trail_stop` çıkışları `n_R ≥ 5` ise `capture_ratio(R) < 0.70` (koşucular da kâr geri veriyorsa; aksi halde sıkılaştırma koşucuları keser, `runner_guard`). **Her zaman `ask_user`** (`exit_proxy`): kararsız karşı-olgu (çıkış sonrası fiyat yolu defterde yok) |
+| `trail_atr:up` | T1 | — | — | v1'de kural yok (gevşetme kanıtı çıkış sonrası fiyat yolu ister; defterde yok); menüde girdi üretilmez. İkiz farkı bir `trail_atr` değişikliğinin zararını gösterirse çözüm geri almadır (10.3) |
 | `stop_buffer_atr:down` | | — | — | v1'de kural yok |
+| `vol_ratio_max:up`, `rr_min:down` (öğrenen ikizden sıkıysa) | | `twin_observed`, loosen | 4.5.4 | 4.5.4; yukarıdaki `extrapolated` satırlarının yerini alır (ikiz kullanılabilirse) |
 
-Ek kontroller (her girdi): `n_scope ≥ n_min_ask`, `cluster_guard`, `bounds_ok` (kırpma sonrası `to ≠ from`), `not_blacklisted` (Bölüm 10.5), `no_open_monitor_conflict` yok (bu Bölüm 8.1'de, çalışma düzeyinde). Başarısız kontroller `fail_reasons` listesine kodla yazılır (`n_a_low`, `n_b_low`, `gap_low`, `z_low`, `sign`, `cost_gap_low`, `cluster_guard`, `blacklisted`, `insufficient_scope`, ...). `eligible = fail_reasons boş`.
+Tablodaki `z` her yerde `z_cl`'dir (4.3); koşullar kontrol noktası örneğinde (4.4.1) denetlenir. Ek kontroller (her girdi): `checkpoint_passed` (geçerli bir kontrol noktası sonucu; yoksa `not_at_checkpoint`), `cluster_guard`, `bounds_ok` (kırpma sonrası `to ≠ from`), `not_blacklisted` (Bölüm 10.5), `no_open_monitor_conflict` yok (bu Bölüm 8.1'de, çalışma düzeyinde). Başarısız kontroller `fail_reasons` listesine kodla yazılır (`n_a_low`, `n_b_low`, `gap_low`, `z_low`, `sign`, `cost_gap_low`, `cluster_guard`, `blacklisted`, `insufficient_scope`, ...). `eligible = fail_reasons boş`.
 
-**Otomatik uygulanabilirlik (`auto_capable`)** = `eligible` **ve** `evidence_class == observed_subset` **ve** `n_scope ≥ n_min_auto` **ve** kümelenme koruması geçti. Diğer her uygun aday `ask_user` sınıfındadır (Bölüm 8.3).
+**Otomatik uygulanabilirlik (`auto_capable`)** = `eligible` **ve** `evidence_class ∈ {observed_subset, twin_observed}` **ve** menü girdisi `ALWAYS_USER = {"stop_buffer_atr:up"}` içinde değil **ve** geçerli kontrol noktası geçti (`n_scope ≥ checkpoints[0]`) **ve** kümelenme koruması geçti. `extrapolated`, `exit_mix_weak`, `exit_mfe_mae` ve `reshape` (yalnız `stop_buffer_atr:up`) hiçbir zaman `auto_capable` değildir. Bu, **sınıf** yeteneğidir; gölge dönem, ikiz, kalibrasyon ve çark koşulları 8.3'te ayrıca aranır. Diğer her uygun aday `ask_user` sınıfındadır (Bölüm 8.3).
 
 **Puan:** `observed_subset` ve `extrapolated` için `score = z`; `exit_mix_weak` için `score = 0` (yalnızca LLM seçebilir, proxy seçmez). Menü sıralaması: `menu_id` sözlük sırası (belirleyici).
 
 ### 5.1 Anlık görüntü (`Snapshot`) ve gerçekler (`facts`)
 
-`Snapshot` = `{run_day, as_of, active_version_id, params, bounds, scopes:{...özet...}, menu:[...], history:[...], recent:[...], counters}`. `facts` = düz sözlük, anahtar yolu → sayı (ör. `scope.R1.n_closed`, `scope.R1.mean_r`, `menu.rr_min:up.n_scope`, `menu.rr_min:up.n_a`, `menu.rr_min:up.mean_a`, `menu.rr_min:up.mean_b`, `menu.rr_min:up.gap`, `menu.rr_min:up.z`). LLM'in alıntıladığı her sayı bu sözlükten doğrulanır (6.4). `history` = son `history_n` ders değişikliği: `{param, from, to, class, outcome ∈ {monitoring, confirmed, rolled_back, expired_no_data, user_rejected, rejected}, age_days}` — **gerekçe metni dahil edilmez** (enjeksiyon yüzeyi, 6.3).
+`Snapshot` = `{run_day, as_of, active_version_id, params, bounds, scopes:{...özet...}, menu:[...], history:[...], recent:[...], counters, twin:{...TwinReport özeti, 4.5.3...}, checkpoints:[{stream, c, passed, valid_until}], shadow:{active, ends_on}}`. `facts` = düz sözlük, anahtar yolu → sayı (ör. `scope.R1.n_closed`, `scope.R1.mean_r`, `menu.rr_min:up.n_scope`, `menu.rr_min:up.n_a`, `menu.rr_min:up.mean_a`, `menu.rr_min:up.mean_b`, `menu.rr_min:up.gap`, `menu.rr_min:up.z`; ikiz için `twin.n_keys`, `twin.adv_mean`, `twin.z`, `twin.n_only_twin`, `twin.mean_r_only_twin`, `twin.mean_r_only_learner`, `twin.trade_count_diff`, `menu.<id>.n_only_twin`; MFE için `scope.T1.giveback_mean`, `scope.T1.capture_ratio`). LLM'in alıntıladığı her sayı bu sözlükten doğrulanır (6.4). `history` = son `history_n` ders değişikliği: `{param, from, to, class, outcome ∈ {monitoring, confirmed_pending_recheck, confirmed, rolled_back, expired_rolled_back, user_rejected, rejected}, age_days}` — **gerekçe metni dahil edilmez** (enjeksiyon yüzeyi, 6.3).
 
 ## 6. Adım D — LLM önericisi (Claude Sonnet, Batch API)
 
@@ -147,7 +224,7 @@ Tek istek/gün, Batch API ile (`client.messages.batches.create(requests=[{"custo
 1. Etkin parametreler ve ders sınırları (yalnızca 5 ders parametresi + adımları).
 2. Kapsam özetleri (Bölüm 4.2), `facts` listesi (`anahtar = değer` satırları).
 3. Menü (Bölüm 5, uygun olmayanlar `fail_reasons` ile; LLM yalnızca `eligible=true` olanı seçebilir).
-4. `history` (5.1) ve `counters` (`n_open`, dışlanan işlem sayıları).
+4. `history` (5.1), `counters` (`n_open`, dışlanan işlem sayıları) ve `twin` toplu özeti (4.5.3: yalnızca sayılar ve hüküm; çift adı/tarih/işlem kimliği yok).
 5. Son `recent_trades_n` kapanmış işlemin satırları: `idx, setup, side, regime, r, exit_reason, atr_ratio, rr|stop_dist_atr, cost_r, age_days` (`age_days = floor((as_of − exit_ts)/1 gün)`).
 
 **Sızıntı önlemleri (zorunlu, testli):** (a) `as_of` sonrası hiçbir satır okunmaz/yazılmaz; `Snapshot` oluşturulduktan sonra `assert_no_future(snapshot, as_of)` tüm kaynak zaman damgalarının `< as_of` olduğunu doğrular ve `max_source_ts` günlüğe yazılır; (b) istemde **mutlak tarih, fiyat, çift adı, `trade_id`, hash** yoktur: çiftler hiç verilmez (yalnızca `max_pair_share` gibi toplu sayı), tarih yerine `age_days`, fiyat yerine oran/R. Böylece model, eğitim bilgisinden belirli bir günün sonucunu hatırlayıp sızdıramaz (özellikle ders servisi geçmiş verilerle yeniden oynatılırsa, 7.3); (c) bu bölümdeki kalıpları tarayan test: istem metninde `\d{4}-\d{2}-\d{2}`, `/USDT`, `BTC|ETH` vb. bulunmaz; (d) Batch sonucu saatler sonra gelse de öneri o `as_of` anlık görüntüsüne aittir; uygulama anında defter kendi kanıt sayımını yeniden yapar (artış yönünde güvenli) ve `base_version_id` hâlâ etkin değilse `stale_base` ile düşer; (e) açık pozisyonların gerçekleşmemiş kârı/zararı istemde yoktur.
@@ -166,7 +243,7 @@ Yapısal savunma (istem sertleştirmesi yalnızca ikinci katmandır):
 ```json
 {"schema":"lesson_response_v1","decision":"change","menu_id":"rr_min:up",
  "param":"rr_min","to":1.75,"rationale":"…≤400 karakter…",
- "cited":[{"key":"menu.rr_min:up.n_scope","value":34},{"key":"menu.rr_min:up.gap","value":0.9},{"key":"menu.rr_min:up.z","value":2.4827}],
+ "cited":[{"key":"menu.rr_min:up.n_scope","value":34},{"key":"menu.rr_min:up.gap","value":0.9},{"key":"menu.rr_min:up.z","value":2.4095}],
  "confidence":"medium"}
 ```
 `decision="no_change"` iken `menu_id`, `param`, `to` `null`; `rationale` yine zorunlu (neden değişiklik yok). `confidence ∈ {low, medium, high}` yalnızca bilgi (karar vermez). Fazladan anahtar, yanlış tür, `NaN/inf/bool` sayı → `bad_schema`. Tüm metin tek JSON nesnesi olmak zorunda (kod çiti/önsöz → `bad_json`).
@@ -180,7 +257,7 @@ Doğrulama sırası (G0–G5; ilk ihlal `proposal_rejected` olmadan, **LLM çağ
 | G2 | `decision="no_change"` ise geçerli, biter |
 | G3 `unknown_menu_id`, `menu_mismatch`, `off_menu_not_allowed` | `menu_id` bugünün menüsünde yok; `param/to` menüdekiyle (6 ondalık) farklı; `allow_off_menu=false` iken menü dışı |
 | G4 `candidate_ineligible` | Seçilen girdi `eligible=false` |
-| G5 `cited_missing`, `cited_mismatch` | En az 3 alıntı; seçilen girdinin `n_scope`, `gap`, `z` anahtarları (veya `exit_mix_weak` için `n_scope` ve ilgili pay anahtarları) alıntılanmalı; her `key` `facts` içinde olmalı ve `|value − fact| ≤ max(5e-4, 1e-3·|fact|)`. Uydurma sayı → ret |
+| G5 `cited_missing`, `cited_mismatch` | En az 3 alıntı; seçilen girdinin `n_scope`, `gap`, `z` anahtarları (veya `exit_mix_weak` için `n_scope` ve ilgili pay anahtarları) alıntılanmalı (`twin_observed` için `n_scope` yerine `n_twin`, `n_only_twin`, `gap`, `z`; `exit_mfe_mae` için `n_scope`, `giveback_mean`, `capture_ratio`); her `key` `facts` içinde olmalı ve `|value − fact| ≤ max(5e-4, 1e-3·|fact|)`. Uydurma sayı → ret |
 
 ### 6.5 Bütçe kullanımı (butce-spec Bölüm 4, 6, 9; DONDURULMUŞ arayüz)
 
@@ -206,7 +283,40 @@ Doğrulama sırası (G0–G5; ilk ihlal `proposal_rejected` olmadan, **LLM çağ
 
 `mode="both"`: LLM birincildir (uygulanan odur); proxy aynı gün aynı menüden öneri üretir ve yalnızca `lesson_decisions(role='shadow')` satırına yazılır; **deftere öneri yazılmaz, uygulanmaz**. Günlük özet "LLM = X, proxy = Y, aynı mı" alanını taşır; zamanla uyum oranı ve "LLM'in reddettiği proxy önerileri" sonradan karşılaştırılır. `mode="rule_proxy"` tek başına çalıştırılabilir (Batch yok, bütçe yok): LLM'siz sistem testi ve LLM'siz fallback (bütçe reddi günlerinde proxy'ye geçiş **yapılmaz**; fail-safe = değişiklik yok).
 
-### 7.3 Testlerde kullanım
+### 7.3 Eşik kalibrasyonu (backtest işlemlerinde kural vekilini yeniden oynatma)
+
+`min_z`, `min_gap_r`, `min_affected`, `monitor_z`, `monitor_margin_r`, `twin_z`, `twin_margin_r` başlangıç değerleridir; **kalibre edilmeden gölge dönem sonrası otomatik uygulama yoktur** (madde 10). Kalibrasyon `scripts/lesson_calibrate.py` ile yapılır; LLM ve bütçe kullanılmaz, tüm hesap kural vekili (7.1) ve `cluster_diff`/`cluster_mean` ile deterministik (tohumlu) yapılır.
+
+**7.3.1 Girdi.** (a) Backtest işlemleri: freqtrade backtest çıktısı, ≥ 12 ay, T1+R1 birlikte ≥ 400 kapanmış işlem ve R1 ≥ 120 (aksi `calibration.ok=false`, `insufficient_backtest`); işlemler geçici bir **yeniden oynatma defterine** (şema 2, öğrenen rolü, `mfe_r/mae_r/bars_held` backtest mumlarından) aktarılır; üretim defteri kullanılmaz. (b) İkiz için aynı dönemde ikinci backtest (öğrenen yedek parametreyle: `rr_min` bir adım yukarı, `vol_ratio_max` bir adım aşağı vb.) → eşleşen sinyal anahtarları gerçek farkı verir.
+
+**7.3.2 Boş (null) yeniden oynatma: yanlış pozitif.** `B = 1000` sentetik akış: backtest işlemlerinden **gün-blok bootstrap** (blok = bir UTC günün tüm işlemleri, değiştirmeli seçim; akış uzunluğu 90 işlem = en çok 3 kontrol noktası geçer). Boş hipotez: özellik vektörleri (`atr_ratio`, `rr`, `stop_dist_atr`) işlemler arasında **ay bloğu içinde** rastgele permüte edilir; `r_multiple`, `exit_reason`, gün etiketi yerinde kalır (özellik–R ilişkisi yok, R'nin günlük kümelenmesi korunur). Her akışta kural vekili 30/45/60 kontrol noktalarında tüm `observed_subset` kuralları için çalıştırılır. **Aile içi yanlış pozitif** `FPR_aile` = herhangi bir kontrol noktasında herhangi bir aday `eligible` olan akış oranı; kural başına `FPR_kural` ayrıca raporlanır. `exit_mfe_mae` (`trail_atr:down`) için gerçek backtest akışlarında ateşleme oranı raporlanır (her zaman `ask_user` olduğu için yalnızca bilgi).
+
+**7.3.3 Güç.** Aynı akışlara, bir kuralın `A` kümesine (özellik tanımlı, akışın %25–35'i) `δ ∈ {0.50, 0.75, 1.00}` R **kötü** etki eklenir (A işlemlerinin `r_multiple`'ı `−δ` kaydırılır; gün kümeleri korunur). `Güç(δ, c)` = doğru adayın (doğru kural, doğru yön) kontrol noktası `c`'ye kadar `eligible` olduğu akış oranı.
+
+**7.3.4 Geri alma izleyicisi.** `B = 1000` deneme: zararsız değişiklik (yeni örnek `N` ile referans `P` aynı backtest dağılımından, aynı gün-blok bootstrap) ve zararlı değişiklik (`N`'nin ortalaması `−0.50` R kaydırılmış). İzleyici kuralı 10.3'ün **yalnızca zaman karşılaştırması** kolu ve **ikiz kolu** (7.3.5) ayrı ayrı ve birlikte ölçülür; erken kural için ayrıca aynı gün 5 stopluk **şok** enjekte edilen akışlarda erken geri alma oranı ölçülür (yapı gereği 0 olmalı).
+
+**7.3.5 İkiz eşikleri.** İkili backtest çiftinden (7.3.1b) `adv_k` hesaplanır. Zararlı fark: öğrenen, ortalaması ≥ +0.50 R olan bir alt kümeyi atlıyor (kaçırma). Zararsız fark: atlanan alt kümenin gerçek ortalaması `[−0.10, +0.10]` R. `n_keys = 30` iken `twin_z`, `twin_margin_r` ile hüküm sınanır.
+
+**7.3.6 Kabul ölçütleri (hepsi gerekir).**
+| Ölçüt | Hedef |
+|---|---|
+| `FPR_aile` (7.3.2) | **≤ %10**; `FPR_kural ≤ %3` |
+| Güç `δ = 0.75`, alt küme %30, `c = 60` | **≥ %60** (`c = 45`: ≥ %40) |
+| Güç `δ = 0.50`, `c = 60` | bilgi (≥ %30 beklenir; hedef değil) |
+| Zararsız değişikliğin yanlış geri alınması (yalnız zaman kolu, `K = 20`) | **≤ %15** (geri almak ucuz, asimetrik; 10.3) |
+| Zararlı değişiklik (`−0.50` R) tespiti, yeniden denetim `n_N = 30` (zaman + ikiz) | **≥ %70** |
+| Aynı gün şok enjeksiyonunda erken geri alma | **= %0** |
+| İkiz: zararsız farkta (atlanan alt küme ortalaması ∈ [−0.10, +0.10] R) `harm` hükmü, `n_keys=30` | **≤ %10** |
+| İkiz: zararlı farkta (ort. ≥ +0.50 R kaçırma) `harm` hükmü, `n_keys=30` | **≥ %70** |
+| Erken kural (şoksuz) yanlış tetik | **≤ %3** |
+
+**7.3.7 Izgara ve seçim.** `min_z ∈ {1.64, 1.8, 2.0, 2.2, 2.5}`, `min_gap_r ∈ {0.50, 0.60, 0.75}`, `min_affected ∈ {8, 10, 12}`; izleyici ve ikiz için `monitor_z`, `monitor_margin_r`, `twin_z`, `twin_margin_r` küçük ızgaralar. Tüm ölçütleri sağlayan hücreler arasından **en az sıkı** (önce en düşük `min_z`, sonra en düşük `min_gap_r`, sonra en küçük `min_affected`) seçilir. Hiçbiri sağlamazsa en sıkı hücre kaydedilir ve `calibration.ok=false` (`criteria_not_met`): otomatik uygulama kapalı kalır, tüm öneriler kullanıcıya gider; yalnızca eşik gevşetilerek ölçüt "geçirilmez".
+
+**7.3.8 Çıktı.** `config/lesson.json` içindeki `calibration` nesnesi ve `lesson_calibrations` satırı: `{ok, date, backtest_hash, n_trades, n_r1, seed, B, min_z, min_gap_r, min_affected, monitor_z, monitor_margin_r, twin_z, twin_margin_r, FPR_aile, FPR_kural, guc_75_60, guc_75_45, yanlis_geri_alma, geri_alma_tespit, sok_erken, twin_fpr, twin_guc, rule_version}`. `load_config` doğrular: `calibration.ok=true` ise yapılandırmadaki eşikler kalibre değerlerden **gevşek olamaz** (daha sıkı serbest); `rule_version ≠ RULES_V1 sürümü` ya da `date` 90 günden eski ise kalibrasyon bayat sayılır (`calibration.ok` etkisiz, madde 10). Kalibrasyon yalnızca eşik seçer; hiçbir parametreyi değiştirmez.
+
+**Sınır:** backtest ≠ canlı; gün-blok bootstrap yalnızca günlük kümelenmeyi korur, rejim kırılmalarını ve komisyon/kayma farkını korumaz. Kalibrasyon bu yüzden bir **alt sınırdır**, kârlılık ya da güvenlik kanıtı değildir; gölge dönem sonu veri (canlı sahte para işlemleri) ile yeniden kalibre edilmesi önerilir.
+
+### 7.4 Testlerde kullanım
 
 Defter yeniden oynatma (sentetik/tarihî işlem dizileri) ile proxy deterministik ve ücretsizdir; uçtan uca testler (öneri → kapı → uygulama → monitör → geri alma) proxy ile yazılır. LLM yolu `LlmClient` protokolü arkasında sahte istemciyle test edilir (Bölüm 13.3).
 
@@ -214,39 +324,41 @@ Defter yeniden oynatma (sentetik/tarihî işlem dizileri) ile proxy deterministi
 
 ### 8.1 Ön kapılar (LLM'den **önce**; ihlal → `skipped_gate`, kod aşağıdaki)
 
-1. `monitor_open`: gözlem altında (Bölüm 10) bir ders değişikliği var → yeni öneri yok (atıf karışmasın).
+1. `monitor_open`: gözlem altında (Bölüm 10; durumlar `open` ve `confirmed_pending_recheck`, yani yeniden denetim bitene ya da `recheck_max_days` dolana kadar) bir ders değişikliği var → yeni öneri yok (atıf karışmasın).
 2. `pending_proposal`: `proposed`/`needs_user` durumunda ders önerisi var (bekleyen onay ya da geçici ret) → yeni öneri yok.
 3. `weekly_limit`: `ledger.list_activations()` içinde son 7 günde (`activated_at ≥ şimdi − 7 gün`, defter-spec 14 ile aynı eşitsizlik) `kind='apply'` ve `actor='lesson'` var.
-4. `no_candidates`: menüde `eligible` girdi yok.
-5. `no_data`: hiçbir kapsamda `n_scope ≥ n_min_ask` yok (`skipped_no_data`).
-6. `user_request_quota`: son 7 günde `max_user_requests_per_week` kadar onay isteği açılmış ve menüde `auto_capable` girdi yok.
+4. `no_candidates`: menüde `eligible` girdi yok (kontrol noktası sonucu geçerli olmayan adaylar `not_at_checkpoint` ile `eligible=false`).
+5. `no_data`: hiçbir akışta `n_scope ≥ checkpoints[0]` yok ve geçerli kontrol noktası sonucu yok (`skipped_no_data`).
+6. `user_request_quota`: son 7 günde etkin `max_user_requests_per_week` (gölge dönemde 2) kadar onay isteği açılmış ve (gölge dönemde ya da menüde `auto_capable` girdi yoksa).
 
 Ön kapılar defter kurallarının kopyası değil, **maliyet tasarrufudur**; asıl zorlama `propose_change/apply_proposal` içindedir (yarış durumunda defter nihai hakemdir).
 
 ### 8.2 Kapı ve öneri kaydı
 
 LLM/proxy çıktısı 6.4 G0–G5'ten geçince:
-1. `ledger.propose_change(base_version_id=V, changes={param: to}, rationale=sanitized_rationale, claimed_evidence={"n_closed": n_scope, "scope": ..., "z": ..., "gap": ..., "menu_id": ...}, source=f"{model}-batch" | "rule-proxy")`. `claimed_evidence` bağlayıcı değildir; defter kendi sayımını yapar (fark `claimed_mismatch`). `source` boş olamaz.
+1. `ledger.propose_change(base_version_id=V, changes={param: to}, rationale=sanitized_rationale, claimed_evidence={"n_closed": n_scope, "scope": ..., "z": ..., "gap": ..., "menu_id": ...}, source=f"{model}-batch" | "rule-proxy", require_user=(sınıf != auto))`; sınıf 8.3'e göre **bu çağrıdan önce** hesaplanır (gölge dönemde `require_user=True` her öneri için). `claimed_evidence` bağlayıcı değildir; defter kendi sayımını yapar (fark `claimed_mismatch`). `source` boş olamaz.
 2. Dönen `ProposalResult`: `status="rejected"` (`stale_base`, `out_of_bounds`, `step_too_large`, `no_change`, `immutable_param`, ...) → çalışma `proposal_rejected` + kod; `lesson_proposals`'ta denetim izi zaten defterde. Sonuç **deftere yazılmış** ret olduğu için tekrar denenmez.
-3. `status="needs_user"` (defterin yalnız `vol_ratio_max` artışı için verdiği durum) → 8.4.
+3. `status="needs_user"` (`vol_ratio_max` artışı ya da `require_user=True`; defter-spec 5.3 madde 11) → 8.4.
 4. `status="proposed"` → sınıflandırma 8.3.
 
 ### 8.3 Küçük / büyük kuralı (otomatik uygulama ve kullanıcıya sorma)
 
-Bir öneri **küçük (otomatik uygula)** sayılır ancak şunların **hepsi** doğruysa:
-1. Defter `proposed` döndü (`needs_user` değil; yani `vol_ratio_max` gevşetmesi hiçbir zaman otomatik değil).
-2. Menü girdisi `auto_capable`: `observed_subset` kanıt sınıfı (işlem kümesini daraltan/ölçülebilir yön), `n_scope ≥ n_min_auto` (30), kümelenme koruması geçti, hâlâ `eligible`.
-3. Tek parametre, ≤ 1 adım, sınır içinde (defter zaten `proposed` ile doğruladı).
-4. Ön kapılar (8.1) hâlâ geçerli (yeniden kontrol; yarış).
+Sınıf, `propose_change`'den **önce** hesaplanır. Bir öneri **küçük (otomatik uygula)** sayılır ancak şunların **hepsi** doğruysa:
+0. **Gölge dönem bitmiş** (`run_day ≥ shadow_end_day`, madde 9); `calibration.ok` ve taze (7.3.8) ve yapılandırma eşikleri kalibre değerlerden gevşek değil; **ikiz kullanılabilir** (`twin_unavailable` değil, 4.5.1; otomatik değişikliğin çarka karşı kontrolü yoksa uygulanmaz).
+1. Defter `proposed` döndü (`needs_user` değil; `vol_ratio_max` gevşetmesi hiçbir zaman otomatik değil).
+2. Menü girdisi `auto_capable` (5): `observed_subset` ya da `twin_observed`, `ALWAYS_USER` (`stop_buffer_atr:up`) dışı, geçerli kontrol noktası geçti (`n_scope ≥ checkpoints[0]`), kümelenme koruması geçti, hâlâ `eligible`.
+3. **Çark koruması:** `steps_from_twin` artışı `max_steps_from_twin`'i aşmıyor (4.5.5).
+4. Tek parametre, ≤ 1 adım, sınır içinde (defter zaten `proposed` ile doğruladı).
+5. Ön kapılar (8.1) hâlâ geçerli (yeniden kontrol; yarış).
 
-**Diğer her şey `needs_user`** (kullanıcıya sorulur; otomatik uygulanmaz): `extrapolated` (`vol_ratio_max:up`, `rr_min:down`), `exit_mix_weak` (`range_target_frac`), `20 ≤ n_scope < 30` olan her aday (kanıt "20–30" aralığında), menü dışı öneri (`allow_off_menu=true` iken), defterin `needs_user` verdiği her öneri. Gerekçe kodu `ApprovalRequest.reason_code`: `ledger_needs_user`, `extrapolated`, `weak_evidence`, `evidence_below_auto`, `off_menu`.
+**Diğer her şey `needs_user`** (kullanıcıya sorulur; otomatik uygulanmaz; defterde `require_user=True` ile `needs_user`). `ApprovalRequest.reason_code`, birden çok neden varsa şu öncelikle tek kod: `shadow_period` (gölge dönem: **her** öneri), `calibration_required`, `twin_unavailable`, `always_user` (`stop_buffer_atr:up`), `ledger_needs_user` (`vol_ratio_max` artışı), `exit_proxy` (`exit_mfe_mae`: `trail_atr:down`), `weak_evidence` (`exit_mix_weak`), `extrapolated` (`vol_ratio_max:up`/`rr_min:down` ikizsiz), `ratchet_guard`, `off_menu` (`allow_off_menu=true`). `evidence_below_auto` kaldırıldı: kontrol noktası dışında test yoktur (4.4.1), 20–30 işlem bandı artık ayrı bir sınıf değildir.
 
 Kullanıcı onayı **sınırları genişletmez**: defter onayda 2–9. kuralları ve kanıtı (≥ `min_evidence_trades`=20) yeniden denetler; sınır değişikliği `author="user"` sürümüyle yapılır (defter-spec 5.3).
 
 ### 8.4 Uygulama ve onay isteği
 
 - **Otomatik:** `res = ledger.apply_proposal(pid, actor="lesson", reason=...)`. `ok` → `lesson_monitors`'a gözlem açılır (Bölüm 10; sürüm `res.version_id`), `LessonNotice(info)` gönderilir (geri alma yolu belirtilir), çalışma `applied`. `ok=False` ve **terminal** kodlar (`stale_base`, `out_of_bounds`, `step_too_large`, ...) → `proposal_rejected`. **Geçici** kodlar (`insufficient_evidence`, `weekly_limit`): öneri `proposed` kalır; `pending_ttl_days` içinde sonraki günlük çalışmada yalnız `apply` yeniden denenir (yeni LLM çağrısı yok); süre dolarsa `reject_proposal(actor="system", reason="pending_ttl")`.
-- **Kullanıcıya sorma:** öneri deftere yazılmış (`proposed` ya da `needs_user`) kalır, **uygulanmaz**; `lesson_requests` satırı + `ApprovalRequest` Telegram'a (Bölüm 9). Kullanıcı yanıtı yoksa `user_request_ttl_days` sonra `reject_proposal(actor="system", reason="user_timeout")` ve bilgi bildirimi. Not: defter `needs_user` durumunu yalnızca `vol_ratio_max` artışı için kurar; diğer "büyük" öneriler defterde `proposed` görünür, "kullanıcı bekliyor" bilgisini `lesson_requests` tutar (Bölüm 15 madde 1).
+- **Kullanıcıya sorma:** öneri deftere yazılmış (`proposed` ya da `needs_user`) kalır, **uygulanmaz**; `lesson_requests` satırı + `ApprovalRequest` Telegram'a (Bölüm 9). Kullanıcı yanıtı yoksa `user_request_ttl_days` sonra `reject_proposal(actor="system", reason="user_timeout")` ve bilgi bildirimi. Defter `needs_user` durumunu `vol_ratio_max` artışı için ve `require_user=True` verildiğinde kurar (defter-spec 5.3); bu yüzden "kullanıcıya sorulacak" her öneri defterde `needs_user`'dır ve `actor="lesson"` ile **uygulanamaz** (defter düzeyinde zorlama; gölge dönem ders servisinde bir hata olsa bile korunur). `lesson_requests` yine istek ömrünü ve teslimi tutar. Defter `require_user` sunmuyorsa yedek davranış 13.5'tedir.
 
 ## 9. Bildirim arayüzü (Telegram = madde 18; burada yalnızca arayüz)
 
@@ -256,6 +368,8 @@ Kullanıcı onayı **sınırları genişletmez**: defter onayda 2–9. kurallar�
     proposal_id: int; base_version_id: int
     param: str; from_value: float; to_value: float; scope: str      # "R1" / "T1" / "T1+R1"
     reason_code: str              # 8.3
+    shadow_period: bool           # True: gölge dönemde, onaysız uygulanmaz; shadow_ends_on gövdede
+    provisional: bool             # True: eşikler kalibre değil (madde 10)
     title: str                    # ≤ 80 karakter
     body: str                     # ≤ 700 karakter, sır içermez; sanitize edilmiş gerekçe + 3–5 kanıt sayısı
     evidence: Mapping[str, float | int]
@@ -277,10 +391,12 @@ Yerel gerçeklemeler: `LogNotifier` (varsayılan; her zaman `True`), `NullNotifi
 ```
 LessonService.resolve_request(request_id: str, approve: bool, actor_ref: str) -> ResolveResult
 LessonService.user_rollback(reason: str, actor_ref: str) -> ActivationResult     # "geri alma düğmesi"
+LessonService.rollback_to_user_approved(reason: str, actor_ref: str) -> ActivationResult   # 10.7; yalnız defter gerekir
 LessonService.daily_summary(run_day: str) -> dict                                # 9.3
 ```
 - `resolve_request`: istek `open` ve süresi dolmamış olmalı; `proposal` durumu `proposed|needs_user` ve `base_version_id` hâlâ etkin olmalı, aksi halde istek `stale`/`expired` (yan etkisiz, mesajla bildirilir). `approve=True` → `ledger.apply_proposal(pid, actor="user", reason=f"user approved via telegram ({actor_ref})")`; başarıda monitör açılır (kullanıcı onaylı değişiklik de gözlenir, 10.6). `approve=False` → `ledger.reject_proposal(pid, actor="user", ...)`. **Idempotent:** aynı istek ikinci kez aynı sonucu döner. Yetki (kimin onaylayabileceği) Telegram katmanının işidir; `actor_ref` yalnızca denetim içindir.
 - `user_rollback`: `ledger.rollback(None, actor="user", reason=...)` (haftalık sınıra tabi değil, kanıt şartı yok; defter-spec 5.5); sonra açık monitör `superseded` kapanır, `blacklist` kaydı yazılır (10.5).
+- `rollback_to_user_approved`: 10.7'deki `last_user_approved_version`'a `ledger.rollback(to_version_id=<anchor>, actor="user"|"lesson")`; `lesson.sqlite` ve bütçe gerekmez (yalnız defter).
 - Bu işlevler `read_only=False` bir defter bağlantısı açar (Telegram süreci ayrı süreçtir; SQLite WAL tek yazar kilidiyle serileştirir).
 
 ### 9.2 Gönderilen bildirim türleri
@@ -289,29 +405,42 @@ LessonService.daily_summary(run_day: str) -> dict                               
 
 ### 9.3 `daily_summary` (21:00 TR raporu için)
 
-`{run_day, status, mode, n_scope:{T1,R1}, menu_eligible:[...], decision: "no_change"|menu_id, class: "auto"|"ask_user"|null, applied_version_id, proposal_id, monitor:{open, n_new, k, state}, llm_cost_usd, skipped_reason, shadow:{proxy_menu_id, same}}`. Rapor biçimi madde 18'in işidir; ders servisi yalnızca bu sözlüğü verir.
+`{run_day, status, mode, n_scope:{T1,R1}, menu_eligible:[...], decision: "no_change"|menu_id, class: "auto"|"ask_user"|null, applied_version_id, proposal_id, monitor:{open, n_new, k, state, recheck_n}, llm_cost_usd, skipped_reason, shadow:{proxy_menu_id, same}, shadow_period:{active, ends_on, days_left}, checkpoints:[{stream, c, passed, valid_until}], twin:{available, code, window_from, day:{n_learner_entered, n_twin_entered, trade_count_diff}, since_divergence:{n_learner_entered, n_twin_entered, trade_count_diff, n_only_learner, n_only_twin, n_both, adv_mean, verdict}, report_visible}}`. `twin.*.trade_count_diff = öğrenen girilen işlem sayısı − ikiz girilen işlem sayısı` (`day`: `run_day`'in UTC günü; `since_divergence`: 4.5.2 penceresi; hepsi ledger okumasıyla, dışlananlar dahil). **Not:** "ikiz kullanıcı raporlarında görünmez" kararı sürer: `twin.report_visible = cfg.report_show_twin` (varsayılan `false`); sözlük bu alanı iç denetim için her zaman taşır, Telegram raporunda gösterilip gösterilmeyeceği madde 18'in kararıdır (en fazla tek satır "öğrenen−ikiz işlem farkı"). Rapor biçimi madde 18'in işidir; ders servisi yalnızca bu sözlüğü verir.
 
 ## 10. Otomatik geri alma kuralı
 
 ### 10.1 Gözlem (`monitor`)
 
-Her `ledger.apply_proposal` başarısında (otomatik ya da kullanıcı onaylı) `lesson_monitors` satırı açılır: `{monitor_id, version_id (yeni), base_version_id, param, from, to, scope, proposal_id, started_at, k = monitor_k}`. `reconcile` adımı, deftere göre `author='lesson'` olup monitörü olmayan etkin sürümler için gözlemi sonradan açar (uygulama ile monitör yazımı arasında çökme; `version_id` tekildir, idempotent).
+Her `ledger.apply_proposal` başarısında (otomatik ya da kullanıcı onaylı) `lesson_monitors` satırı açılır: `{monitor_id, version_id (yeni), base_version_id, param, from, to, scope, proposal_id, started_at, k = monitor_k, recheck_n = monitor_recheck_n}`. `reconcile` adımı, deftere göre `author='lesson'` olup monitörü olmayan etkin sürümler için gözlemi sonradan açar (uygulama ile monitör yazımı arasında çökme; `version_id` tekildir, idempotent).
 
 ### 10.2 Örnekler
 
-- **Yeni** `N`: `v_closed_trades` içinde `param_version_id == version_id (yeni)` (exact), kapsamdaki `setup`'lar, `exit_ts < as_of`; `entry_ts` sırasıyla **ilk K tanesi** (isteğe bağlı durdurma yanlılığını önlemek için değerlendirme örneği K'da dondurulur).
-- **Referans** `P`: aynı kapsamda `param_version_id == base_version_id` kapanmış işlemlerin en son `ref_max_n` (60) tanesi (`exit_ts` sırasıyla). Not: Önceki sürümün zamanla farklı piyasa koşulu altında olması, karışıklık (confounding) kaynağıdır (Bölüm 15 madde 5).
-- `diff = mean(N) − mean(P)`; `SE = sqrt(sd(N)²/n_N + sd(P)²/n_P)`; `z = diff / SE`.
+- **Yeni** `N`: `ledger.trades_for_versions([version_id (yeni)], closed_only=True, setup=kapsam, until_ts=as_of)` (yalnızca yeni sürüm, exact), `entry_ts` sırasıyla **ilk K tanesi** (ve yeniden denetim için ilk `monitor_recheck_n` tanesi; örnek dondurulur, isteğe bağlı durdurma yanlılığı yok).
+- **Referans** `P`: `ledger.pool_version_ids(base_version_id, param)` havuzu (kapsamı kesişen başka parametre farkı olmayan sürümler; yani izlenen değişikliğin kendisi dışında aynı yapılandırmadaki sürümler; kanıtın sıfırlanmaması ilkesiyle aynı), aynı kapsam, `exit_ts < activated_at(yeni)`, en son `ref_max_n` (60) işlem. Not: önceki dönemin farklı piyasa koşulunda olması karışıklık kaynağıdır; bu yüzden ikiz kanıtı da kullanılır.
+- **Zaman hükmü:** `cluster_diff(A=P, B=N)` ⇒ `diff = mean(N) − mean(P)`, `z_cl`. `time_verdict = harm` ⇔ `diff ≤ −monitor_margin_r` **ve** `z_cl ≤ −monitor_z`; `n_P < 10` ya da `z_cl` tanımsız ⇒ `time_verdict = unavailable` (zarar sayılmaz).
+- **İkiz hükmü:** `TwinReport`, pencere `[activated_at(yeni), as_of)` (4.5.2–4.5.3): `twin_verdict ∈ {harm, neutral, benefit, insufficient}`. İkiz, aynı mumlarda öğrenen−ikiz farkını ölçtüğü için rejim kaymasından ve aynı gün kümelenmiş şoklardan etkilenmez.
 
 ### 10.3 Karar (her günlük çalışmanın A adımında, gözlem açıkken)
 
-1. `n_N < early_min_n` (10): **bekle** (karar yok).
-2. **Erken geri alma:** `n_N ≥ early_min_n` ve `mean(N) ≤ early_mean_r` (−0.6) ve `z ≤ −early_z` (−1.645) → **geri al** (`state="early_rolled_back"`).
-3. **Normal:** `n_N ≥ K` (ilk K işlem) ve `diff ≤ −monitor_margin_r` (−0.30) **ve** `z ≤ −monitor_z` (−1.0) → **geri al** (`state="rolled_back"`). Aksi halde `state="confirmed"` (gözlem kapanır, değişiklik kalıcı).
-4. `n_N < K` iken `monitor_max_days` (28 gün) dolarsa `state="expired_no_data"`: gözlem kapanır, geri alma yok.
-5. `n_P < 10` (ihmal edilebilir referans; olağan dışı) → karar verilemez, `confirmed` kapanır ve `warn` bildirimi; (defter zaten ≥ 20 kanıt şartı koyduğundan pratikte olmaz).
+Değerlendirme **sabit noktalarda** yapılır (günlük anlamlılık testi yok): `n_N = 10` (yalnızca erken kural), `n_N = K` (M1, `monitor_k`=20), `n_N = monitor_recheck_n` (M2 yeniden denetim, 30) ve süre sonu. Aynı örnek yeniden hesaplanırsa aynı sonuç çıkar.
 
-Asimetri bilerek seçilmiştir: **uygulamak** için `z ≥ 1.64` ve ≥ 30 işlem, **geri almak** için yalnızca `z ≤ −1.0` ve 0.30 R düşüş (geri almak ucuzdur, kötü bir değişikliği tutmak pahalıdır).
+1. **Bekle:** `n_N < early_min_n` (10) ve ikiz erken koşulu da yok ⇒ karar yok.
+2. **Erken geri alma (iki kol; hepsi gerekir):**
+   a. *Zaman kolu:* `n_N ≥ early_min_n`, `mean(N) ≤ early_mean_r` (−0.6), `z_cl ≤ −early_z` (−1.645), **N'deki ayrı çıkış günü ≥ `early_min_days` (4)** ve `twin_verdict ∈ {harm, insufficient}` (ikiz `neutral`/`benefit` ise aynı şok iki tarafı da vurdu ⇒ erken geri alma yok).
+   b. *İkiz kolu:* `n_keys ≥ twin_min_keys`, `G ≥ early_min_days`, `adv_mean ≤ −twin_margin_r` ve `z_twin ≤ −early_z`.
+   Aynı gün kümelenmiş stoplar (örn. tek günde 7 stop) `G < early_min_days` ve büyük `SE` yüzünden **tek başına** erken geri alma tetikleyemez.
+3. **M1 (`n_N ≥ K`) ve M2 (`n_N ≥ monitor_recheck_n`) hüküm tablosu:**
+   | `time_verdict` | `twin_verdict` | Sonuç |
+   |---|---|---|
+   | herhangi | `harm` | **geri al** (`rolled_back`) |
+   | `harm` | `insufficient` ya da `neutral` | **geri al** |
+   | `harm` | `benefit` | geri alma **yok**; zaman farkı rejim kayması sayılır; `conflict=true`, `warn` bildirimi; M1 ise yeniden denetime kalır |
+   | `not harm`/`unavailable` | `neutral`/`benefit`/`insufficient` | M1: `confirmed_pending_recheck`; M2: `confirmed` |
+   M2'de yine geri alınmazsa `confirmed` (kalıcı). Yeniden denetim `n_N` M2'ye `recheck_max_days` içinde ulaşmazsa gözlem `confirmed` kapanır (M1 kanıtı vardı) ve `info` bildirimi; yeniden denetim bitmeden etkin sürüm değişirse `superseded` + `warn` ("yeniden denetim tamamlanamadı").
+4. **Süre sonu (`monitor_max_days`, 28 gün):** `n_N < K` ise (veri gelmedi) gözlem **geri alma ile** kapanır: `ledger.rollback(to_version_id=base_version_id, actor="lesson")`, durum `expired_rolled_back`, `warn` bildirimi, 10.5 kara liste. Veri gelmemiş bir değişiklik **kalıcı olmaz** (R1 gibi seyrek kapsamlarda sık görülebilir; kullanıcı onaylı değişiklikler için de geçerlidir, kullanıcı yeniden onaylayabilir).
+5. Kullanıcı onaylı değişiklikler (gölge dönemde tümü) aynı tabloya tabidir (10.6).
+
+Asimetri bilerek seçilmiştir: **uygulamak** için kalibre `z_cl ≥ min_z` ve ≥ 30 işlem kontrol noktası, **geri almak** için yalnızca `z_cl ≤ −1.0` ve 0.30 R düşüş ya da ikiz hükmü `harm` (geri almak ucuzdur, kötü bir değişikliği tutmak pahalıdır).
 
 ### 10.4 Geri alma işlemi
 
@@ -319,11 +448,20 @@ Yalnızca etkin sürüm hâlâ gözlenen sürümse: `ledger.rollback(to_version_
 
 ### 10.5 Kara liste ve bekleme
 
-Geri alınan (`param`, yön) çifti `blacklist_days` (14) boyunca menüde `eligible=false, fail=blacklisted` olur. Haftalık sınır geri almadan etkilenmez (yalnız `apply` sayılır): geri alma sonrası yeni öneri için en geç 7 gün zaten beklenmiştir; kara liste aynı kötü fikrin hemen yinelenmesini önler.
+Geri alınan (`param`, yön) çifti `blacklist_days` (14) boyunca menüde `eligible=false, fail=blacklisted` olur. Haftalık sınır geri almadan etkilenmez (yalnız `apply` sayılır): geri alma sonrası yeni öneri için en geç 7 gün zaten beklenmiştir; kara liste aynı kötü fikrin hemen yinelenmesini önler. `expired_rolled_back` da aynı kara listeyi doğurur (veri gelmeyen değişikliğin haftalık apply/rollback döngüsüne girmesini önler).
 
 ### 10.6 Kullanıcı onaylı ve kullanıcı sürümleri
 
 Kullanıcı **onaylı** ders değişikliği de izlenir ve gerekirse **otomatik geri alınır** (güvenlik önceliği; bildirimde belirtilir; Bölüm 15 madde 7). `author="user"` sürümleri (kullanıcının doğrudan, backtestli değişikliği) izlenmez ve ders servisi tarafından geri alınmaz.
+
+### 10.7 Güvenlik ağı: `lesson.sqlite` açılamazsa
+
+Geri alma kararı `lesson.sqlite`'a **bağımlı değildir**: izleyici açıklayıcısı defterden türetilebilir (etkin sürümün `param_activations` olayı: `version_id`, `activated_at`, `parent_version_id` = `base`, `params` farkından değişen parametre) ve N/P/ikiz hesapları yalnızca defter okumasıyla, belirleyici olarak yapılır. Mağaza yalnızca önbellek ve denetim izidir.
+1. **`ledger_only` kipi:** mağaza açılamıyorsa (`LessonStoreError`) tick **yalnızca A adımını** çalıştırır (10.3 aynen, kontrol noktaları/LLM/yeni öneri yok). Etkin sürüm `author='lesson'` ise (yani otomatik uygulanmış ya da kullanıcı onaylı ders değişikliği) açıklayıcı defterden kurulur; geri alma gerekiyorsa `ledger.rollback(to_version_id=base, actor="lesson", reason="ledger_only: …")` yapılır. Sonuç `<store_path>.fallback.jsonl` dosyasına tek satır JSON olarak (`flush`+`fsync`, defter spool'u gibi) yazılır; mağaza geri gelince `reconcile` satırları içe aktarır (idempotent, `fingerprint`).
+2. **Kör kalma (`blind_days`):** otomatik uygulanmış (`actor="lesson"`) bir sürüm etkinken mağaza art arda `blind_days` (3) gün açılamadıysa (`.fallback.jsonl` içindeki `blind_since` satırından; kararlar kaydedilemediği ve kara liste/izleyici durumu eksik kaldığı için `ledger_only` kararlarına süresiz güvenilmez) ders servisi **son kullanıcı onaylı sürüme döner** (aşağıda) ve `warn` bildirimi yollar. Gölge dönemde zaten otomatik uygulanmış sürüm yoktur.
+3. **`last_user_approved_version` (çapa):** `ledger.list_activations()` (en yeni önce) içindeki ilk olay `e` öyle ki `e.kind ∈ {initial, apply, rollback}` ve `e.actor ∈ {system, user}`; `e.version_id`. (`initial` → `system`; kullanıcının `create_user_version` + `activate_version`'ı ve `apply_proposal(actor="user")` onayı → `user`; `actor="lesson"` etkinleştirmeleri çapa olamaz.) Dönüş: `ledger.rollback(to_version_id=<çapa>, actor="lesson"|"user", reason=…)`; çapa zaten etkinse yan etkisiz.
+4. **Kullanıcı yolu:** `python3 -I scripts/lesson_run.py --rollback-to-user-approved --reason TEXT` (13.2) ya da Telegram'dan `rollback_to_user_approved`: yalnızca defter gerekir (mağaza, bütçe, API yok).
+5. **Defter de okunamıyorsa** ders servisi hiçbir şey yapamaz (`run_failed` bildirimi); bot zaten defter yazılamazsa yeni işlem açmaz (defter-spec 8.1). "Ders servisi N gündür çalışmadı" uyarısı sağlık denetçisinin (madde 19) işidir, burada yapılmaz.
 
 ## 11. Saklama ve denetim (`lesson.sqlite`)
 
@@ -338,8 +476,12 @@ Ayrı SQLite dosyası (`user_data/lesson.sqlite`; **defter şeması değiştiril
 | `lesson_llm_results` | `call_id UNIQUE`, `response_hash`, `response_text`, `stop_reason`, `result_type`, `usage_json`, `cost_micro`, `received_at` |
 | `lesson_decisions` | `run_id`, `role`, `source` (`llm`/`rule-proxy`), `menu_id`, `param`, `to_value`, `gate_code`, `class` (`auto`/`ask_user`/null), `proposal_id`, `outcome` |
 | `lesson_requests` + `lesson_request_events` | onay istekleri: `request_id`, `proposal_id`, `base_version_id`, `reason_code`, `delivered`, `expires_at`; olaylar `open/approved/rejected/expired/stale/apply_failed` |
-| `lesson_monitors` + `lesson_monitor_events` | 10.1; olaylar `open/early_rolled_back/rolled_back/confirmed/expired_no_data/superseded` + her değerlendirmenin `stats_json` (n, ortalama, sd, diff, z) |
+| `lesson_monitors` + `lesson_monitor_events` | 10.1; olaylar `open/early_rolled_back/rolled_back/confirmed_pending_recheck/confirmed/expired_rolled_back/superseded` + her değerlendirmenin `stats_json` (n, ortalama, sd, diff, `z_cl`, `time_verdict`, `twin_verdict`, `conflict`) |
 | `lesson_notices` | gönderilen bildirimler ve `fingerprint` |
+| `lesson_checkpoints` | 4.4.1: `stream_key`, `param`, `c`, `run_day`, `sample_hash`, `passed`, `stats_json`, `valid_until`; `UNIQUE(stream_key, c)` |
+| `lesson_twin_reports` | 4.5: `run_id`, `window_from`, `twin_status/code`, `TwinReport` JSON (sayılar), `twin_verdict` |
+| `lesson_state` | `shadow_start_day` (bir kez yazılır), `shadow_end_day`, `blind_since` yedeği |
+| `lesson_calibrations` | 7.3.8 çıktısı (tam nesne + `backtest_hash`) |
 
 İstem ve yanıt metinleri hem **hash** hem **tam metin** olarak saklanır (günde ~10–20 KiB; yılda birkaç MB). Aynı `(run_day, role)` için ikinci kayıt idempotent (aynı `request_hash`) ya da çatışma. Defterdeki öneri kaydı (`lesson_proposals`) ile `lesson_decisions.proposal_id` birbirine bağlar; günlük yedek kapsamına bu dosyanın eklenmesi madde 19 sahibine önerilir (bu işte yapılmaz).
 
@@ -349,7 +491,10 @@ Ayrı SQLite dosyası (`user_data/lesson.sqlite`; **defter şeması değiştiril
 |---|---|
 | Defter açılamıyor / okunamıyor / şema uyuşmazlığı | Çalışma `failed` (`ledger_unavailable`), bildirim (bir kez/gün); hiçbir uygulama |
 | Defter yazma hatası (`LedgerWriteError`) `propose/apply/rollback` sırasında | Ledger işlemi atomik; `failed` (`ledger_write`); sonraki tick'te `reconcile` durumu defterden okuyarak yeniden kurar. Geri alma gerekiyorsa **bir sonraki gün A adımında tekrar denenir** |
-| `lesson.sqlite` açılamıyor | Çalışma yok (`LessonStoreError`), `warn`. **Dikkat:** monitör kaydı olmadan geri alma yapılamaz; ledger yazımı yine de güvenlidir |
+| `lesson.sqlite` açılamıyor | `ledger_only` kipi (10.7): yalnızca A adımı (otomatik geri alma defterden türetilir ve yapılır), sonuç `.fallback.jsonl`'e; `blind_days` dolarsa son kullanıcı onaylı sürüme dönüş; `warn` |
+| İkiz defteri yok/okunamıyor/şema uyuşmazlığı/params uyuşmazlığı | `twin_unavailable` (4.5.1); ikiz hükmü `insufficient`; **otomatik uygulama kapalı** (8.3); geri alma yalnızca zaman karşılaştırmasıyla sürer; hata değil, `info` |
+| Kalibrasyon yok/bayat/`ok=false` | Eşikler geçici; gölge dönemde sorun yok; gölge dönem sonrası otomatik uygulama kapalı (`calibration_required`) |
+| Ders servisi defter yetenek eksikleri (`pool_version_ids`, şema 2, `require_user`) | 13.5 yedek davranışlar |
 | Bütçe reddi (`Denial`) | `skipped_budget`; deterministik adımlar (A, B) çalışmıştır; rapora tek satır |
 | Anthropic HTTP hatası | `budget.report_error` kararı; `stop` → gün biter; `fail`/süre aşımı → `failed` (`llm_unavailable`) |
 | Batch `expired`/`errored`/`canceled` | `release(grant)`; `failed` (`llm_batch_failed`); yeniden gönderilmez |
@@ -371,7 +516,12 @@ build_snapshot(ledger_ro, cfg, run_day) -> Snapshot             # saf; Bölüm 4
 render_prompt(snapshot, cfg) -> PromptBundle                    # system, user, request_hash, est_in_tokens
 propose_rule_proxy(snapshot, cfg) -> ProposalDraft               # Bölüm 7
 parse_and_validate(response_text, stop_reason, snapshot, cfg) -> ProposalDraft | Invalid   # G0–G5
-evaluate_monitor(ledger_ro, monitor, as_of, cfg) -> MonitorVerdict   # saf; Bölüm 10
+evaluate_monitor(ledger_ro, twin_ro | None, monitor, as_of, cfg) -> MonitorVerdict   # saf; Bölüm 10
+build_twin_report(ledger_ro, twin_ro | None, window, cfg) -> TwinReport   # saf; 4.5
+cluster_diff(a, b, min_days) -> ZResult; cluster_mean(x, m0=0.0) -> ZResult   # saf; 4.3
+evaluate_checkpoints(snapshot_inputs, cfg) -> list[CheckpointResult]   # saf; 4.4.1
+rollback_target_user_approved(ledger_ro) -> int   # saf; 10.7
+calibrate(replay_ledger, twin_replay, cfg, seed) -> Calibration   # saf; 7.3 (scripts/lesson_calibrate.py çağırır)
 class LlmClient(Protocol): submit(bundle, custom_id) -> str; poll(batch_id) -> BatchPoll; (sahte istemci testler için)
 class LessonService: run_tick(now=None) -> TickResult; resolve_request(...); user_rollback(...); daily_summary(...)
 ```
@@ -379,57 +529,72 @@ class LessonService: run_tick(now=None) -> TickResult; resolve_request(...); use
 
 ### 13.2 `scripts/lesson_run.py`
 
-`python3 -I scripts/lesson_run.py --once [--config PATH] [--mode llm|rule_proxy|both] [--day YYYY-MM-DD] [--dry-run]`. `--dry-run`: istatistik + menü + istem metnini yazdırır; ne API çağrısı, ne bütçe, ne defter yazımı yapar. Çıkış kodları: 0 başarılı (atlama, değişiklik yok, uygulama dahil), 1 yapılandırma/kullanım hatası, 2 çalışma `failed` (beklenen; `OnFailure` yalnızca beklenmedik çöküş için, saglik birimiyle aynı kalıp: `SuccessExitStatus=2`). Log'a anahtar/istem içeriği yazılmaz.
+`python3 -I scripts/lesson_run.py --once [--config PATH] [--mode llm|rule_proxy|both] [--day YYYY-MM-DD] [--dry-run]`; `python3 -I scripts/lesson_run.py --rollback-to-user-approved --reason TEXT [--config PATH]` (yalnızca defter; 10.7); `python3 -I scripts/lesson_calibrate.py --backtest-ledger PATH --twin-backtest-ledger PATH --out config/lesson.json [--seed N]` (7.3). `--dry-run`: istatistik + menü + istem metnini yazdırır; ne API çağrısı, ne bütçe, ne defter yazımı yapar. Çıkış kodları: 0 başarılı (atlama, değişiklik yok, uygulama dahil), 1 yapılandırma/kullanım hatası, 2 çalışma `failed` (beklenen; `OnFailure` yalnızca beklenmedik çöküş için, saglik birimiyle aynı kalıp: `SuccessExitStatus=2`). Log'a anahtar/istem içeriği yazılmaz.
 
 ### 13.3 systemd
 
-- `trader-lesson.service`: `Type=oneshot`, `User=trader`, `EnvironmentFile=/etc/trader-lesson.env` (0600: `ANTHROPIC_API_KEY_LESSON`, `LEDGER_PATH`, `LESSON_STORE_PATH`; **anahtar depoya girmez**), `ExecStart=/usr/bin/python3 -I /opt/trader/scripts/lesson_run.py --once`, `TimeoutStartSec=300`, `MemoryMax=256M`, `CPUQuota=30%`, `Nice=10`, `ProtectSystem=strict`, `ReadWritePaths=` (`user_data` yalnızca `lesson.sqlite*`, `ledger_learner.sqlite*`, `budget.sqlite*`, `lesson.lock`), `NoNewPrivileges=true`, `PrivateTmp=true`, `OnFailure=trader-health-fail@%n.service`. Defter/bütçe dosyaları aynı yerel docker volume üzerindedir (ağ paylaşımı olmaz).
+- `trader-lesson.service`: `Type=oneshot`, `User=trader`, `EnvironmentFile=/etc/trader-lesson.env` (0600: `ANTHROPIC_API_KEY_LESSON`, `LEDGER_PATH`, `LESSON_STORE_PATH`; **anahtar depoya girmez**), `ExecStart=/usr/bin/python3 -I /opt/trader/scripts/lesson_run.py --once`, `TimeoutStartSec=300`, `MemoryMax=256M`, `CPUQuota=30%`, `Nice=10`, `ProtectSystem=strict`, `ReadWritePaths=` (`user_data` yalnızca `lesson.sqlite*`, `lesson.sqlite.fallback.jsonl`, `ledger_learner.sqlite*`, `ledger_twin.sqlite*` (**yalnızca salt okunur kullanılır**; WAL `-shm` dosyasına okuma bağlantısının erişebilmesi için yolda bulunur, yazma ders servisi kodunda yasaktır: 4.5.1), `budget.sqlite*`, `lesson.lock`), `NoNewPrivileges=true`, `PrivateTmp=true`, `OnFailure=trader-health-fail@%n.service`. Defter/bütçe dosyaları aynı yerel docker volume üzerindedir (ağ paylaşımı olmaz).
 - `trader-lesson.timer`: `OnCalendar=*-*-* *:17:00`, `Persistent=true`, `RandomizedDelaySec=60`. Günlük çalışma başlangıç saati zamanlayıcıda değil `run_at_utc` yapılandırmasındadır (tick kendisi karar verir).
 
 ### 13.4 Test planı (yalnızca başlıklar; `tests/test_lesson_spec.py`)
 
-(1) istatistik ve Welch z örnekleri (14.1–14.3); (2) pencere: exact sürüm, `as_of` dışlayıcı, açık işlem hariç; (3) aday kuralları ve kırpma (14.1–14.5), kümelenme koruması; (4) istem: sızıntı taraması, enum dışı satırların elenmesi, serbest metin yok, küçültme; (5) yanıt doğrulama G0–G5 (her kod bir test), alıntı uydurma; (6) kapı → `propose_change` kodları (defter gerçek, geçici dosya); (7) küçük/büyük sınıflandırma matrisi (14.2, 14.4); (8) otomatik uygulama + monitör + haftalık sınır (14.5); (9) otomatik geri alma kararları (14.6) ve `rollback(to_version_id=base)`; (10) kara liste; (11) bütçe: reddedilince atlanır, `record(batch=True)`, `release` yalnızca faturasız sonuçta, çökme sonrası devam (sahte `LlmClient`, gerçek `BudgetGuard` geçici dosya); (12) rule-proxy ve gölge mod; (13) onay yolu: `resolve_request` idempotent, `stale`, süre dolması; (14) idempotent yeniden çalıştırma (aynı `stats_hash`); (15) ikiz bot reddi; (16) append-only mağaza ve saklanan istem/yanıt hash tutarlılığı; (17) `reconcile` (monitörsüz sürüm); (18) anahtar sızıntısı taraması.
+(1) istatistik ve gün-kümelenmiş `z_cl` örnekleri (14.1–14.3); (2) pencere: havuzlu sürümler (yedek: exact), `as_of` dışlayıcı, açık işlem hariç; (3) aday kuralları ve kırpma (14.1–14.5), kümelenme koruması; (4) istem: sızıntı taraması, enum dışı satırların elenmesi, serbest metin yok, küçültme; (5) yanıt doğrulama G0–G5 (her kod bir test), alıntı uydurma; (6) kapı → `propose_change` kodları (defter gerçek, geçici dosya); (7) küçük/büyük sınıflandırma matrisi (14.2, 14.4); (8) otomatik uygulama + monitör + haftalık sınır (14.5); (9) otomatik geri alma kararları (14.6) ve `rollback(to_version_id=base)`; (10) kara liste; (11) bütçe: reddedilince atlanır, `record(batch=True)`, `release` yalnızca faturasız sonuçta, çökme sonrası devam (sahte `LlmClient`, gerçek `BudgetGuard` geçici dosya); (12) rule-proxy ve gölge mod; (13) onay yolu: `resolve_request` idempotent, `stale`, süre dolması; (14) idempotent yeniden çalıştırma (aynı `stats_hash`); (15) ikiz bot reddi; (16) append-only mağaza ve saklanan istem/yanıt hash tutarlılığı; (17) `reconcile` (monitörsüz sürüm); (18) anahtar sızıntısı taraması; (19) gölge dönem: her öneri `needs_user`, `apply_proposal(actor="lesson")` `user_approval_required`, dönem sonunda geçiş, `shadow_weeks` 3/7 reddi (14.2); (20) `cluster_diff`/`cluster_mean` elle örnekleri ve `G` küçükken tanımsızlık (14.1, 14.4); (21) kontrol noktaları: ilk-`c` dondurulmuş örnek, tek hak, geçerlilik süresi, yeniden test yok, kapsam-ayrık değişiklikte havuzlama (14.10); (22) ikiz: salt okunur açılış (yazma `LedgerStateError`), eşleştirme, param-temiz kuralı, `adv_k`, hüküm, `twin_unavailable` kodları, `trade_count_diff` (14.11); (23) MFE/MAE: `trail_atr:down` koşulları, NULL dışlama, `runner_guard` (14.14); (24) erken geri alma aynı gün şok koruması ve ikiz çelişkisi, M1/M2 hüküm tablosu, süre sonu geri alma (14.6, 14.12); (25) `ledger_only` kipi, `.fallback.jsonl`, çapa sürümü ve `blind_days` dönüşü, `--rollback-to-user-approved` (14.13); (26) `stop_buffer_atr:up` her zaman `needs_user`, `ratchet_guard`, `twin_observed` gevşetme (ikiz değerini aşmama); (27) kalibrasyon: aynı tohum aynı sonuç, kabul ölçütleri, başarısızlıkta otomatik uygulamanın kapalı kalması; (28) defter yetenek yedekleri (13.5).
+
+### 13.5 Defter yetenekleri ve yedek davranışlar
+
+Revizyon 2, `ledger.py`'de şema 2, `pool_version_ids`/`trades_for_versions` ve `propose_change(require_user=...)` ister (defter-spec Revizyon 2). Ders servisi açılışta yetenekleri algılar (`SCHEMA_VERSION`, `hasattr`, imza) ve **güvenli yöne** düşer:
+- **Havuz yok:** kanıt ve izleyici örnekleri yalnızca `V` ile (exact; Revizyon 1 davranışı), `info` "pooling_off"; kontrol noktaları aynı şekilde çalışır.
+- **Şema 1 / `mfe_r` yok:** `trail_atr:down` menüde üretilmez (`excluded_missing_excursion` = tümü); diğer her şey çalışır.
+- **`require_user` yok:** "kullanıcıya sorulacak" öneriler defterde `proposed` kalır, bekleme `lesson_requests`'te tutulur (Revizyon 1) ve **gölge dönemde `apply_proposal(actor="lesson")` çağrısı ders servisi kodunda yapısal olarak engellenir** (tek savunma katmanı; test 19 bunu doğrular); `stop_buffer_atr:up` aynı şekilde.
+- İkiz dosyası şema 1 ise `twin_schema` (4.5.1; bot ve ders servisi aynı kod sürümüyle göç edilmelidir).
 
 ## 14. Elle doğrulanabilir örnekler
 
 Varsayılan yapılandırma; `bot="learner"`; sürüm 1 = varsayılan parametreler (`rr_min=1.5`, `vol_ratio_max=1.5`, `stop_buffer_atr=0.3`, `trail_atr=3.0`, `range_target_frac=0.75`), `lesson_bounds` varsayılan. Tüm sayılar sentetiktir.
 
-### 14.1 Otomatik uygulanabilir aday: `rr_min:up`
+### 14.1 Otomatik uygulanabilir aday: `rr_min:up` (kontrol noktası 30; gölge dönem sonrası, kalibre)
 
-Sürüm 1 altında kapanmış R1 işlemleri `n_scope=34` (≥ 30; kümelenme koruması geçti). `to = min(2.0, 1.5+0.25) = 1.75` (değişim 0.25 ≤ adım). `A` = `rr ∈ [1.5, 1.75)`: `n_A=10`, `mean_A=−0.40`, `sd_A=0.90`; `B` (kalan): `n_B=24`, `mean_B=0.50`, `sd_B=1.10`.
+Varsayım: `run_day ≥ shadow_end_day`, `calibration.ok`, ikiz kullanılabilir (`twin_verdict` ilgisiz), `min_z=2.0`. Havuzlu R1 kapanmış işlem sayısı çalışma gününde `n_scope=34`; ilk kontrol noktası `c=30` bugün ilk kez aşıldı ⇒ örnek **ilk 30 işlem**, her işlem ayrı günde (`G=30 ≥ 8`). `to = min(2.0, 1.5+0.25) = 1.75`. `A` = `rr ∈ [1.5, 1.75)`: `n_A=9`, `mean_A=−0.40`, `sd_A=0.90`; `B` (kalan): `n_B=21`, `mean_B=0.50`, `sd_B=1.10`.
 - `gap = 0.50 − (−0.40) = 0.90 ≥ 0.50`; `mean_A < 0` ✓.
-- `SE = sqrt(0.81/10 + 1.21/24) = sqrt(0.081 + 0.050417) = sqrt(0.131417) = 0.36251`; `z = 0.90/0.36251 = 2.4827 ≥ 1.64` ✓.
-- `n_A=10 ≥ 8`, `n_B=24 ≥ 8` ✓ ⇒ `eligible`; `observed_subset` ve `34 ≥ 30` ⇒ `auto_capable`. (Bilgi: `mean_W = (10·(−0.40)+24·0.50)/34 = 0.2353`; kalan işlemlerin ortalaması 0.50, işlemlerin %29'u elenir.)
-- LLM `{"decision":"change","menu_id":"rr_min:up","param":"rr_min","to":1.75,...,"cited":[n_scope=34, gap=0.9, z=2.4827]}` ⇒ G0–G5 geçer; `propose_change(base_version_id=1, changes={"rr_min":1.75}, ...)` ⇒ `proposed`; sınıf küçük ⇒ `apply_proposal(actor="lesson")` ⇒ `ok`, `param_versions.id=2` (`author=lesson`, `rr_min=1.75`), `param_activations.id=2` (`kind=apply`). Monitör açılır (`base=1`, `version=2`, `k=20`, kapsam R1).
-- Aynı yanıtta `cited` içindeki `z` değeri `3.1` ise ⇒ `cited_mismatch` (fact 2.4827), değişiklik yok, deftere öneri yazılmaz.
+- Her işlem ayrı gün ⇒ `Var = n/(n−1)·[(n_A−1)·sd_A²/n_A² + (n_B−1)·sd_B²/n_B²] = (30/29)·[8·0.81/81 + 20·1.21/441] = 1.034483·[0.08 + 0.054875] = 1.034483·0.134875 = 0.139526`; `SE = 0.373532`; `z_cl = 0.90/0.373532 = 2.4095 ≥ 2.0` ✓.
+- `n_A=9 ≥ 8`, `n_B=21 ≥ 8` ✓ ⇒ kontrol noktası `passed` (`lesson_checkpoints` satırı, `valid_until = bugün + 7 gün`) ⇒ `eligible`; `observed_subset`, `ALWAYS_USER` dışı, kümelenme koruması geçti ⇒ `auto_capable`. Çark: öğrenen = ikiz (`steps_from_twin=0 → 1 ≤ 2`) ✓.
+- LLM `{"decision":"change","menu_id":"rr_min:up","param":"rr_min","to":1.75,...,"cited":[n_scope=34, gap=0.9, z=2.4095]}` ⇒ G0–G5 geçer; sınıf `auto` ⇒ `propose_change(base_version_id=1, changes={"rr_min":1.75}, ..., require_user=False)` ⇒ `proposed`; `apply_proposal(actor="lesson")` ⇒ `ok`, `param_versions.id=2` (`author=lesson`, `rr_min=1.75`), `param_activations.id=2` (`kind=apply`). Monitör açılır (`base=1`, `version=2`, `k=20`, `recheck_n=30`, kapsam R1).
+- Aynı yanıtta `cited` içindeki `z` değeri `3.1` ise ⇒ `cited_mismatch` (fact 2.4095), değişiklik yok, deftere öneri yazılmaz.
+- Aynı gün bir kez daha çalıştırma: `(stream, c=30)` sonucu zaten var ⇒ **yeniden test yok**, aynı sonuç okunur.
 
-### 14.2 Aynı aday, kanıt 20–30 arası ⇒ kullanıcıya sorulur
+### 14.2 Gölge dönem ve kontrol noktası dışı sayı
 
-14.1 ama `n_scope=24` (R1), alt küme/kalan işlemleri aynı etkiyi verecek biçimde (ör. `n_A=8`, `n_B=16`; `mean_A=−0.40`, `sd_A=0.90`, `mean_B=0.50`, `sd_B=1.10` ⇒ `SE = sqrt(0.81/8+1.21/16)=sqrt(0.10125+0.075625)=0.42054`, `z=2.140`). `24 ≥ n_min_ask=20` ⇒ `eligible`; `24 < 30` ⇒ `auto_capable=false`. Defter `propose_change` ⇒ `proposed`; sınıf `ask_user` (`reason_code="evidence_below_auto"`); **uygulanmaz**; `ApprovalRequest` gönderilir. Kullanıcı onaylar ⇒ `apply_proposal(actor="user")` (defter kanıtı: R1 kapsamında 24 ≥ 20 ✓; haftalık sınır yok) ⇒ `applied`, monitör açılır.
+(a) Aynı aday ama `n_scope=24` (< 30): hiçbir kontrol noktasına ulaşılmadı ⇒ aday `not_at_checkpoint`, `eligible=false`; menüde başka aday yoksa `skipped_gate` (`skipped_no_data`), LLM çağrısı yok. (Revizyon 1'deki "20–30 arası ⇒ kullanıcıya sorulur" bandı kaldırıldı.)
+(b) **Gölge dönem:** `shadow_weeks=4`, `shadow_start_day=2026-11-30` ⇒ `shadow_end_day=2026-12-28`. `run_day=2026-12-09`, 14.1'deki durum (kontrol noktası geçti, LLM `rr_min:up` seçti). Sınıf `ask_user`, `reason_code="shadow_period"` ⇒ `propose_change(..., require_user=True)` ⇒ `status="needs_user"`, `code="user_approval_required"`. Savunma: bir hata yüzünden `apply_proposal(actor="lesson")` çağrılsa ⇒ `ok=False, code="user_approval_required"`. `ApprovalRequest(shadow_period=True, ...)` Telegram'a gider. Kullanıcı onaylar ⇒ `resolve_request(approve=True)` ⇒ `apply_proposal(actor="user")` (defter havuzlu kanıtı: R1 34 ≥ 20 ✓; haftalık sınır yok) ⇒ `applied`, monitör açılır (kullanıcı onaylı değişiklik de gözlenir). Reddeder ya da 3 gün yanıtlamazsa ⇒ `reject_proposal` (`user_rejected` / `user_timeout`). `run_day=2026-12-28` ve sonrası: aynı durum, kalibre ve ikiz hazırsa sınıf `auto` (14.1).
+(c) `shadow_weeks=3` ya da `7` ⇒ `LessonConfigError`.
 
 ### 14.3 Aday olmayan örnek
 
-`stop_buffer_atr:up`: `n_scope=40` (T1+R1), `A` = en küçük üçte biri `ceil(40/3)=14` işlem: `mean_A=−0.30`, `mean_B=0.10` ⇒ `gap=0.40 < 0.50` ⇒ `fail_reasons=["gap_low"]`, `eligible=false`; LLM seçse bile G4 `candidate_ineligible`. `trail_atr` için menü girdisi hiç yoktur; LLM `{"menu_id":"trail_atr:up",...}` verirse `unknown_menu_id` (ya da `allow_off_menu=true` iken `off_menu` ⇒ `needs_user`).
+`stop_buffer_atr:up`: `n_scope=40` (T1+R1), `A` = en küçük üçte biri `ceil(40/3)=14` işlem: `mean_A=−0.30`, `mean_B=0.10` ⇒ `gap=0.40 < 0.50` ⇒ `fail_reasons=["gap_low"]`, `eligible=false`; LLM seçse bile G4 `candidate_ineligible`. `trail_atr` için menü girdisi hiç yoktur; LLM `{"menu_id":"trail_atr:up",...}` verirse `unknown_menu_id` (ya da `allow_off_menu=true` iken `off_menu` ⇒ `needs_user`). `stop_buffer_atr:up` bir gün `eligible` olsa bile `always_user`: `auto_capable=false`, her zaman `needs_user` (`reason_code="always_user"`; gölge dönem dışında da).
 
 ### 14.4 Defterin `needs_user` verdiği ve ekstrapolasyon örneği: `vol_ratio_max:up`
 
-`from=1.5`, `to=min(1.7, 1.75)=1.7` (değişim 0.2 ≤ 0.25). Bant `A` = `atr_ratio ∈ (1.3, 1.5]` (genişlik 0.2): `n_A=9`, `mean_A=0.60`, `sd_A=0.80`; `B`: `n_B=27`, `mean_B=−0.05`, `sd_B=1.00`. `gap = 0.65 ≥ 0.50`; `mean_A ≥ 0.30` ✓; `SE = sqrt(0.64/9 + 1/27) = sqrt(0.071111+0.037037) = 0.32886`; `z = 0.65/0.32886 = 1.9766 ≥ 1.64` ✓ (`n_scope = 36`). Sınıf `extrapolated` ⇒ `eligible` ama `auto_capable=false`. `propose_change(vol_ratio_max→1.7)` ⇒ defter `needs_user` (`code="needs_user"`) ⇒ onay isteği (`reason_code="ledger_needs_user"`). `apply_proposal(actor="lesson")` ⇒ `user_approval_required` (ders servisi zaten denemez).
+(İkiz kullanılamıyor ya da öğrenen ikizle aynı değerde ⇒ `twin_observed` yok.) `from=1.5`, `to=min(1.7, 1.75)=1.7` (değişim 0.2 ≤ 0.25). Bant `A` = `atr_ratio ∈ (1.3, 1.5]` (genişlik 0.2): `n_A=9`, `mean_A=0.60`, `sd_A=0.80`; `B`: `n_B=27`, `mean_B=−0.05`, `sd_B=1.00`; kontrol noktası örneği `n=36` (varsayım: ayrı günler). `gap = 0.65 ≥ 0.50`; `mean_A ≥ 0.30` ✓; `Var = (36/35)·[8·0.64/81 + 26·1.00/729] = 1.028571·[0.063210 + 0.035665] = 1.028571·0.098875 = 0.101700`; `SE = 0.318904`; `z_cl = 0.65/0.318904 = 2.0382 ≥ 2.0` ✓. Sınıf `extrapolated` ⇒ `eligible` ama `auto_capable=false`. `propose_change(vol_ratio_max→1.7)` ⇒ defter `needs_user` (`code="needs_user"`) ⇒ onay isteği (`reason_code="ledger_needs_user"`; gölge dönemde `shadow_period`). `apply_proposal(actor="lesson")` ⇒ `user_approval_required` (ders servisi zaten denemez).
 
 ### 14.5 Çıkış payı vekili: `range_target_frac:down` ve ön kapılar
 
 R1 `n=34`: `time_stop=14` (pay 0.4118 ≥ 0.35), `target=8` (pay 0.2353 ≤ 0.30), `mean_r(time_stop) = −0.10 ≥ −0.25`, `n(time_stop)=14 ≥ 8` ⇒ `to = max(0.6, 0.75−0.125) = 0.625` ⇒ `eligible`, sınıf `exit_mix_weak` ⇒ yalnızca `ask_user` (`weak_evidence`); proxy bunu **seçmez**.
 **Haftalık ön kapı:** sürüm 2 `2026-12-10T12:00:00Z`'de uygulandı; `run_day=2026-12-14` ⇒ `activated_at ≥ 12-14 − 7 gün` ⇒ `skipped_gate` (`weekly_limit`), LLM çağrısı **yok**, bütçe harcanmaz. `run_day=2026-12-18` ⇒ kapı geçilir (7 günden sonra; defter-spec 14 ile aynı yorum). Ayrıca sürüm 2 gözlemdeyken (`monitor_open`) 12-18'de de yeni öneri olmaz; gözlem 10.3 ile kapanana kadar.
 
-### 14.6 Otomatik geri alma kararları (`P`: `n_P=24`, `mean=0.30`, `sd=1.10`)
+### 14.6 Otomatik geri alma kararları (`P`: `n_P=24`, `mean=0.30`, `sd=1.10`; her işlem ayrı gün)
 
+`cluster_diff(A=P, B=N)`; `Var = G/(G−1)·[(n_P−1)·sd_P²/n_P² + (n_N−1)·sd_N²/n_N²]`, `G = n_P + n_N`. Aksi belirtilmedikçe ikiz hükmü `insufficient`.
 | Durum `N` | Hesap | Sonuç |
 |---|---|---|
-| `n=20`, `mean=−0.25`, `sd=1.00` | `diff=−0.55`; `SE=sqrt(1.00/20+1.21/24)=sqrt(0.05+0.050417)=0.31689`; `z=−1.7356` | `diff ≤ −0.30` ✓, `z ≤ −1.0` ✓ ⇒ **geri al**: `ledger.rollback(to_version_id=1, actor="lesson", reason=...)`; `param_activations` yeni satır `kind=rollback, version_id=1, prev_version_id=2`; `param_versions` sayısı değişmez; `(rr_min, up)` 14 gün kara liste |
-| `n=20`, `mean=0.05`, `sd=1.00` | `diff=−0.25`; `z=−0.25/0.31689=−0.789` | `diff > −0.30` ⇒ **geri alma yok**, `confirmed` |
-| `n=20`, `mean=−0.10`, `sd=2.00` (`sd_P=2.00`) | `diff=−0.40`; `SE=sqrt(4/20+4/24)=sqrt(0.2+0.16667)=0.60553`; `z=−0.6606` | `z > −1.0` ⇒ gürültü, **geri alma yok**, `confirmed` |
-| `n=12`, `mean=−0.90`, `sd=0.80` | `diff=−1.20`; `SE=sqrt(0.64/12+1.21/24)=sqrt(0.053333+0.050417)=0.32210`; `z=−3.725` | `n≥10`, `mean ≤ −0.6`, `z ≤ −1.645` ⇒ **erken geri alma** (K beklenmez) |
-| `n=8`, herhangi | | `n < 10` ⇒ bekle |
-| `n=15`, 28 gün doldu | | `expired_no_data`, geri alma yok |
+| `n=20` (M1), `mean=−0.25`, `sd=1.00` | `diff=−0.55`; `Var=(44/43)·[23·1.21/576 + 19·1.00/400]=1.023256·[0.048316+0.0475]=0.098044`; `SE=0.313122`; `z_cl=−1.7566` | `time_verdict=harm` (`diff ≤ −0.30`, `z_cl ≤ −1.0`), ikiz `insufficient` ⇒ **geri al**: `ledger.rollback(to_version_id=1, actor="lesson", reason=...)`; yeni `param_activations` satırı `kind=rollback, version_id=1, prev_version_id=2`; `param_versions` sayısı değişmez; `(rr_min, up)` 14 gün kara liste |
+| aynı, ama `twin_verdict=benefit` | | geri alma **yok**: zaman farkı rejim kayması sayılır; `conflict=true`, `warn`; `confirmed_pending_recheck` |
+| aynı, ama `twin_verdict=neutral` | | **geri al** (zaman zararı, ikiz kurtarmıyor) |
+| `n=20`, `mean=0.05`, `sd=1.00` | `diff=−0.25`; `z_cl=−0.25/0.313122=−0.798` | `not harm` ⇒ `confirmed_pending_recheck`; `n_N=30`'da M2: yine `not harm` ise `confirmed` |
+| `n=20`, `mean=−0.10`, `sd=2.00` (`sd_P=2.00`) | `diff=−0.40`; `Var=1.023256·[23·4/576+19·4/400]=1.023256·[0.159722+0.19]=0.357855`; `SE=0.598210`; `z_cl=−0.6687` | `z_cl > −1.0` ⇒ gürültü, `confirmed_pending_recheck` |
+| `n=12`, `mean=−0.90`, `sd=0.80`, 12 ayrı gün | `diff=−1.20`; `Var=(36/35)·[23·1.21/576+11·0.64/144]=1.028571·[0.048316+0.048889]=0.099982`; `SE=0.316200`; `z_cl=−3.7951` | `n≥10`, `mean ≤ −0.6`, `z_cl ≤ −1.645`, günler 12 ≥ 4, ikiz `insufficient` ⇒ **erken geri alma** (K beklenmez) |
+| `n=10`: 7 stop (`−1.0`) **aynı gün**, 3 işlem `0.0` (2 başka gün) | `mean=−0.70 ≤ −0.6` ama ayrı gün = 3 < `early_min_days=4` | **erken geri alma yok** (aynı gün kümelenmiş stoplar tek başına yetmez); ikiz `neutral` ise zaten engelli |
+| `n=8` | | `n < 10` ⇒ bekle (ikiz erken koşulu yoksa) |
+| `n=15`, 28 gün doldu (`K=20` yok) | | **`expired_rolled_back`**: `ledger.rollback(to_version_id=base)`, kara liste, `warn` (veri gelmedi ⇒ kalıcı olmaz) |
 
 Etkin sürüm bu sırada kullanıcı tarafından 3'e alınmışsa ⇒ `rollback` denenmez, gözlem `superseded`.
 
@@ -443,25 +608,63 @@ Etkin sürüm bu sırada kullanıcı tarafından 3'e alınmışsa ⇒ `rollback`
 
 ### 14.9 Rule proxy seçimi
 
-Menüde `eligible`: `rr_min:up` (`z=2.4827`, `auto_capable`), `vol_ratio_max:down` (`z=1.80`, `auto_capable`), `vol_ratio_max:up` (`z=1.98`, `extrapolated`). Proxy (`proxy_include_ask_user=false`): `auto_capable` olanlar arasından en büyük z ⇒ `rr_min:up`. `z` eşitse `menu_id` sözlük sırası (`rr_min:up` < `vol_ratio_max:down`).
+Menüde `eligible` (gölge dönem sonrası): `rr_min:up` (`z=2.4095`, `auto_capable`), `vol_ratio_max:down` (`z=2.20`, `auto_capable`), `vol_ratio_max:up` (`z=2.04`, `extrapolated`). (Gölge dönemde proxy'nin seçtiği öneri de `needs_user` olur.) Proxy (`proxy_include_ask_user=false`): `auto_capable` olanlar arasından en büyük z (`z_cl`) ⇒ `rr_min:up`. `z` eşitse `menu_id` sözlük sırası (`rr_min:up` < `vol_ratio_max:down`).
+
+### 14.10 Kanıt havuzlama ve kontrol noktaları
+
+Sürüm 1 altında 18 R1 + 25 T1 kapanmış; sürüm 2 (kullanıcı onaylı `rr_min` değişikliği, R1) altında 13 T1 + 5 R1.
+- `trail_atr` (T1) akışı: `affects(rr_min, trail_atr)` yanlış ⇒ `POOL(2,"trail_atr")={1,2}` ⇒ `n_scope=25+13=38 ≥ 30` ⇒ `c=30` kontrol noktası **bugün** değerlendirilir; örnek = `(exit_ts, trade_id)` sırasındaki ilk 30 T1 işlemi (sürüm 1'in 25'i + sürüm 2'nin ilk 5'i). Havuzsuz sayım 13 olurdu (kanıt sıfırlanırdı).
+- `rr_min` ve `range_target_frac` (R1) akışları: kapsamları sürüm 2'deki `rr_min` değişikliğiyle kesişir ⇒ `POOL(2,"rr_min")={2}` ⇒ `n_scope=5` ⇒ kontrol noktası yok (yeni akış; `not_at_checkpoint`).
+- Rollback ile sürüm 1'e dönülünce: R1 akışı `POOL(1,"rr_min")={1}` (18 işlem + dönüş sonrası), T1 akışı `{1,2}` kesintisiz.
+- `n_scope` aynı günde 31'den 46'ya sıçrarsa (nadir): `c=30` ve `c=45` ayrı ilk-`c` örnekleriyle sırayla değerlendirilir, öneri için **en büyük geçen** `c` (45) kullanılır.
+
+### 14.11 İkiz raporu (elle)
+
+Öğrenen sürüm 2 (`rr_min=1.75`), ikiz `rr_min=1.5` (frozen). Sürüm 2'nin etkinleşmesinden sonraki penceredeki `only_twin` işlemleri (öğrenen `skip_reason=rr_below_min`), 6 ayrı gün, ikiz `r_multiple`: `−1.0, −1.0, +0.5, −0.6, −1.0, +1.1`. `adv_k = −r_T`: `+1.0, +1.0, −0.5, +0.6, +1.0, −1.1`; `adv_mean = 2.0/6 = 0.3333`; sapmalar `0.6667, 0.6667, −0.8333, 0.2667, 0.6667, −1.4333` (kareler toplamı 4.1533); `u_g = sapma/6`, `Σu_g² = 4.1533/36 = 0.11537`; `Var = (6/5)·0.11537 = 0.13844`; `SE = 0.37208`; `z_twin = 0.8958`. `n_keys = 6 < twin_min_keys = 10` ⇒ `twin_verdict = insufficient` (öğrenen o 6 işlemi almadığı için aşırı iyi görünse de hüküm verilmez).
+- Aynı pencerede öğrenen 14 işlem aldı, ikiz 20 (`both=14`, `only_twin=6`): `trade_count_diff = 14 − 20 = −6`; günlük özette `twin.since_divergence` (`report_visible=false` ⇒ kullanıcı raporunda yok).
+- `only_twin` işlemlerinden biri için ikizin kararı `skip_reason=veto_blocked` olsaydı o `key` `excluded_nonparam` olurdu; bir gün `entry_gate_closed` kaydı varsa o günün tüm `key`'leri `excluded_gate_days` ile dışlanır.
+- İkiz dosyası şema 1 ⇒ `twin_schema`, tüm ikiz metrikleri `unavailable`, otomatik uygulama kapalı.
+
+### 14.12 Erken geri alma: aynı gün kümelenmiş stoplar
+
+Yeni sürümün ilk 10 işleminin 7'si aynı UTC günde stop oldu (`−1.0` R), kalan 3 işlem iki ayrı günde `0.0`: `mean=−0.70`; `cluster_diff`'te `G` küçük ve bir günün `u_g`'si çok büyük ⇒ `SE` büyük, `z_cl` eşiği (−1.645) geçmez; ayrıca ayrı gün 3 < 4. Aynı gün ikiz de aynı mumlarda stop olduysa `adv_k ≈ 0` ⇒ `twin_verdict=neutral` ⇒ erken kol zaten kapalı. Sonuç: **geri alma yok**; değerlendirme `n_N=K=20`'de normal tabloyla sürer.
+
+### 14.13 Mağaza açılamıyor ve çapa sürüm
+
+Etkinleştirmeler: `id=1 initial/system (v1)`, `id=2 apply/user (v2, gölge dönemde onaylı)`, `id=3 apply/lesson (v3, otomatik)`. `lesson.sqlite` açılamıyor ⇒ `ledger_only`: etkin v3 `author=lesson`; açıklayıcı defterden kurulur (`base=2`, `param=trail_atr`...), N/P/ikiz hesabı defterden; `time_verdict=harm`, ikiz `insufficient` ⇒ `ledger.rollback(to_version_id=2, actor="lesson", reason="ledger_only: …")`; satır `.fallback.jsonl`'e yazılır. Mağaza 3 gün ardışık açılamazsa ve v3 hâlâ etkinse: çapa = en yeni olay `e` öyle ki `kind ∈ {initial, apply, rollback}` ve `actor ∈ {system, user}` ⇒ `id=2` ⇒ `v2`'ye `ledger.rollback(to_version_id=2, ...)` (v3 `actor=lesson` olduğundan çapa olamaz). `--rollback-to-user-approved` aynı hedefi, mağazasız, tek komutla uygular; çapa zaten etkinse yan etkisiz.
+
+### 14.14 `trail_atr:down` (MFE/MAE)
+
+T1, `n_scope=36`; `A` = `trail_stop` çıkışlı ve `mfe_r ≥ 1.0` işlemleri: `n_A=12` (12 ayrı gün), `mean(mfe_r)=1.8`, `mean(exit_gross_r)=0.7` ⇒ `giveback_mean = 1.1 ≥ 0.75` ✓, `capture_ratio = 0.7/1.8 = 0.3889 ≤ 0.45` ✓; `sd(giveback)=0.80` ⇒ `Var(cluster_mean) = (12/11)·[11·0.64/144] = 1.090909·0.048889 = 0.053333`; `SE=0.230940`; `z_gb = (1.1 − 0.5)/0.230940 = 2.598 ≥ 2.0` ✓. Koşucu koruması: `mfe_r ≥ 2.0` olan `trail_stop` çıkışları `n_R=6 ≥ 5` ve `capture_ratio(R)=0.55 < 0.70` ✓ ⇒ `eligible`. `to = max(2.5, 3.0 − 0.5) = 2.5`. Sınıf `exit_mfe_mae` ⇒ **her zaman `ask_user`** (`reason_code="exit_proxy"`; gölge dönemde `shadow_period`). `capture_ratio(R)=0.80` olsaydı `runner_guard` ⇒ `eligible=false`. `mfe_r` NULL (eski işlemler) olanlar `excluded_missing_excursion`'a yazılır.
+
+### 14.15 Kalibrasyon sonucu (sentetik örnek)
+
+`min_z=2.0`: `FPR_aile=0.083 ≤ 0.10`, `FPR_kural` en çok 0.027, `Güç(δ=0.75, c=60)=0.64 ≥ 0.60`, `Güç(c=45)=0.43 ≥ 0.40`, zararsız yanlış geri alma 0.11, zararlı tespit 0.74, şok erken geri alma 0.00, ikiz `harm` yanlış pozitif 0.06 / güç 0.78 ⇒ tüm ölçütler tamam ⇒ `calibration.ok=true` (`min_z=2.0`). `min_z=1.8`: `FPR_aile=0.13` ⇒ hücre elenir. Yalnızca `min_z=2.5`'te ölçütler sağlansaydı `min_z=2.5` seçilirdi ve güç düşerdi; hiçbir hücre sağlamıyorsa `ok=false` ve otomatik uygulama kapalı kalır.
 
 ## 15. Belirsizlikler ve bu belgedeki çözümleri
 
 | # | Belirsizlik | Çözüm / açık nokta |
 |---|---|---|
-| 1 | Defter yalnız `vol_ratio_max` artışı için `needs_user` kurar; "diğer her büyük değişiklik → needs_user" isteği defterde ifade edilemez | Defter değişmedi. Büyük öneriler defterde `proposed` kalır, "kullanıcı bekliyor" durumu `lesson_requests`'te tutulur; **uygulama yalnız `actor="user"`**. Alternatif: defter-spec'e genel `needs_user` girişi eklenmesi (sahibi karar verir) |
-| 2 | "Küçük" tanımı | `observed_subset` + ≥ 30 kapsam işlemi + tek adım + sınır içinde + defter `proposed`. Daha geniş "küçük" (ör. her tek adım) seçilmedi: çıkış parametrelerinin etkisi ölçülemiyor |
-| 3 | `trail_atr` ve `range_target_frac` için ölçülebilir vekil yok (defter MFE/MAE tutmuyor) | `trail_atr` v1'de menüsüz (fiilen donuk), `range_target_frac` yalnız zayıf çıkış payı vekili ve her zaman `ask_user`. **Öneri:** şema v2'de `trade_exits.mfe_r`, `mae_r` (ve R1 için `bars_held`); sonra `trail_atr`/`target` kuralları kanıtlı yazılabilir |
-| 4 | "≥ 20–30 işlem" | İki eşik: 20 (kullanıcıya sorma, defter alt sınırı) ve 30 (otomatik). Defter `min_evidence_trades=20` ile açılır; 30 ders servisinin ön denetimidir |
-| 5 | Geri alma karşılaştırması farklı zaman dilimlerini karşılaştırır (piyasa koşulu karışıklığı) | v1: basit önceki-sürüm karşılaştırması, gevşek eşik, asimetrik. İkiz (değişmeyen parametre) aynı pencerede doğal kontrol olabilir; ikiz defterini salt okunur açıp fark-farkı (difference-in-differences) tanısı v1.1 adayıdır, v1'de açılmaz |
-| 6 | Welch z küçük örnekte ve ağır kuyruklu R dağılımında kaba; günde birkaç aday sınanır (çoklu test) | Eşik sıkı (1.64 + 0.50 R fark + alt küme ≥ 8); ana koruma küçük adım, sınırlar, haftada bir değişiklik, tek gözlem, geri alma. Beklenen: bazı değişiklikler gürültü olacaktır |
+| 1 | Defter yalnız `vol_ratio_max` artışı için `needs_user` kurar; "diğer her büyük değişiklik / gölge dönemde her öneri → needs_user" ifade edilemez | **Revizyon 2:** defter-spec'e `propose_change(require_user=True)` eklendi (5.3 madde 11); ders servisi gölge dönem, `always_user` ve diğer kullanıcıya-sorulur sınıflar için bunu verir ⇒ defterde `needs_user`, `actor="lesson"` uygulayamaz. Defter henüz güncellenmediyse yedek: 13.5 (`proposed` + `lesson_requests`, ders servisi kodunda yapısal engel) |
+| 2 | "Küçük" tanımı | gölge dönem bitmiş + kalibre eşik + ikiz kullanılabilir + (`observed_subset` ya da `twin_observed`) + `ALWAYS_USER` dışı + geçen kontrol noktası (≥ 30 havuzlu işlem) + çark koruması + tek adım + sınır içinde + defter `proposed`. Daha geniş "küçük" (ör. her tek adım) seçilmedi: çıkış parametrelerinin etkisi ölçülemiyor |
+| 3 | `trail_atr` ve `range_target_frac` için ölçülebilir vekil | **Revizyon 2:** şema 2 `mfe_r`, `mae_r`, `bars_held` tutar; `trail_atr:down` MFE/MAE ile kurallaştı (her zaman `ask_user`; karşı-olgu kararsız: çıkış sonrası yol yok); `trail_atr:up` hâlâ kuralsız; `range_target_frac` hâlâ yalnız çıkış payı vekili. Eski işlemlerin MFE/MAE'si NULL |
+| 4 | "≥ 20–30 işlem" | **Revizyon 2:** test yalnızca kontrol noktalarında (30/45/60 havuzlu işlem); 20–30 bandı kaldırıldı. Defter `min_evidence_trades=20` yalnızca son emniyettir (`apply` anında yeniden sayar) |
+| 5 | Geri alma karşılaştırması farklı zaman dilimlerini karşılaştırır (piyasa koşulu karışıklığı); sıkılaştırma çarkı | **Revizyon 2:** ikiz defteri v1'de **salt okunur kontrol** olarak açılır (4.5): sinyal eşleştirmeli `adv_k` (aynı mumlar, rejim kayması iki tarafa eşit), `twin_verdict`; geri almada ve `twin_observed` gevşetmede kanıt; `ratchet_guard`. İkiz bilinen sınırlamaları: LLM vetosu ve portföy riski farkları `excluded_nonparam` ile dışlanır; ikizin params'ı donmuş olmalı (`twin_params_mismatch`); bot kapalı günler dışlanır |
+| 6 | Küçük örnekte ve ağır kuyruklu R dağılımında normal yaklaşım kaba; günde sınama = çoklu bakış | **Revizyon 2:** sabit kontrol noktaları (3 bakış), gün-kümelenmiş SE (`z_cl`), eşikler 7.3 kalibrasyonuyla (aile içi FPR ≤ %10, güç hedefleri); kalibrasyon yoksa gölge dönem sonrası otomatik uygulama kapalı. Ana koruma yine küçük adım, sınırlar, haftada bir değişiklik, tek gözlem, geri alma. Kalibrasyon backtest'e dayanır (canlıya genellenmeyebilir) |
 | 7 | Kullanıcı onaylı değişikliğin otomatik geri alınması kullanıcıyı geçer | Güvenlik önceliği; bildirimde açık yazılır. Alternatif: bu durumda geri alma yerine kullanıcıya sor |
 | 8 | Batch sonucu gecikmesi: öneri `as_of` anlık görüntüsünden saatler sonra uygulanır | Kabul; `stale_base` ve defterin kendi kanıt sayımı yarışı kapatır |
 | 9 | `config/lesson.json` dosya sahipliği listesinde yoktu | Bu iş yeni dosya olarak ekler (isteğe bağlı; yoksa kod varsayılanları). Sahibi itiraz ederse yalnız kod varsayılanları kalır |
 | 10 | Günlük yedek kapsamı `lesson.sqlite`'ı içermez | Madde 19 sahibine bildirilir; bu işte yapılmaz |
 | 11 | Sonnet 5.5 API ayrıntıları (`output_config.format`, düşünme kapatma) | 6.1'deki kısıtlar mevcut belgeye göre; uygulayıcı canlı API belgesiyle doğrular, kapı yanıt biçimine güvenmez |
 | 12 | Fiyat/model kimlikleri doğrulanmadı (`prices_verified_on=null`, butce-spec) | Model `config`'ten; fiyat bütçe modülünün işi |
+| 13 | Kanıt sürümler arası sıfırlanıyordu (kısa kanıt, yavaş öğrenme) | **Revizyon 2:** `pool_version_ids` ile kapsamı kesişen parametresi eşit sürümler havuzlanır (defter-spec 5.4); kapsamı ayrık değişiklik kanıtı sıfırlamaz. Risk: havuz uzun dönemi kapsar (rejim kayması); ikiz kontrolü ve izleyici bunu dengeler |
+| 14 | İzleyici süresi doldu, veri yok | **Revizyon 2:** geri alma (`expired_rolled_back`), kalıcılık yok; R1 gibi seyrek kapsamlarda sık geri alma olabilir (kara liste döngüyü yavaşlatır) |
+| 15 | Mağaza açılamıyor | 10.7: `ledger_only` kipi, `.fallback.jsonl`, çapa sürüme dönüş; defter de okunamıyorsa ders servisi çaresizdir (bot kapalı kalır) |
+| 16 | Gölge dönemde kullanıcı yorgunluğu (her öneri onaya gider) | `pending_proposal` kapısı (aynı anda tek), haftalık etkin kota 2, 3 günlük `user_timeout`; gölge dönem 4–6 hafta ile sınırlı |
+| 17 | "İkiz kullanıcı raporlarında görünmez" kararı ile günlük özete ikiz fark sayısı eklenmesi | Özet sözlüğü iç denetim için `twin` bölümünü taşır; `report_show_twin=false` ile kullanıcı raporunda gösterilmez. Gösterim madde 18 / kullanıcı kararıdır (öneri: en fazla tek satır) |
+| 18 | İkiz dosyası şema 1, öğrenen/ders servisi şema 2 | `twin_schema` ⇒ ikiz kontrolü yok; çözüm bot ve ikizin aynı kodla ve aynı gün göç etmesi (defter-spec 10.2) |
+| 19 | `bars_held` hesabı 15 dk birim; `1h` tetik dilimli işlemlerde mum sayısı 4'ün katı değildir | Kabul; birim sabit 15 dk (defter-spec 3.4.1) |
 
 ## 16. Kapsam dışı (bu sürümde yok)
 
-Serbest biçimli (menü dışı) LLM önerisi (yalnız `allow_off_menu` ile ve her zaman kullanıcıya), birden çok parametre/adım, ders servisinin kural/kod yazması, haber verisi, ikiz defterinden karşılaştırma (v1.1), MFE/MAE tabanlı trail/target kuralları (şema v2), `lesson_bounds` değiştirme (yalnız `author="user"`), Telegram gerçeklemesi (madde 18), rapor biçimi, birden çok bot, LLM yanıtını bir sonraki istemde bellek olarak kullanma (kasıtlı yok: enjeksiyon yüzeyi), Batch dışı eşzamanlı LLM çağrısı.
+Serbest biçimli (menü dışı) LLM önerisi (yalnız `allow_off_menu` ile ve her zaman kullanıcıya), birden çok parametre/adım, ders servisinin kural/kod yazması, haber verisi, ikiz defterine yazma ya da ikizin parametre değiştirmesi, çok-parametreli atıf (ikiz farkı yalnızca hüküm verir, parametreye atfedilmez; `twin_observed` yalnız iki giriş filtresi), `range_target_frac` için MFE tabanlı kural, `trail_atr:up` kuralı, `lesson_bounds` değiştirme (yalnız `author="user"`), Telegram gerçeklemesi (madde 18), rapor biçimi, birden çok bot, LLM yanıtını bir sonraki istemde bellek olarak kullanma (kasıtlı yok: enjeksiyon yüzeyi), Batch dışı eşzamanlı LLM çağrısı.
