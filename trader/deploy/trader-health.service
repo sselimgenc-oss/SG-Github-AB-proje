@@ -1,0 +1,25 @@
+[Unit]
+Description=Trader saglik kontrolu ve dis nabiz (tek seferlik)
+Documentation=file:///opt/trader/docs/saglik-spec.md
+After=docker.service network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/health_run.py
+EnvironmentFile=/etc/trader-health.env
+StateDirectory=trader-health
+Environment=STATE_DIR=/var/lib/trader-health
+TimeoutStartSec=90
+# 10 sagliksiz, 11 nabiz gonderilemedi, 12 uyari iletilemedi: beklenen; OnFailure yalniz beklenmedik coksuste
+SuccessExitStatus=10 11 12
+MemoryMax=64M
+CPUQuota=20%
+Nice=10
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/trader/trader/var
+ReadWritePaths=/var/lib/trader-health
+NoNewPrivileges=true
+PrivateTmp=true

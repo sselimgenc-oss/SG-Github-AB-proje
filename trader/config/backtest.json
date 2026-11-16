@@ -1,0 +1,6 @@
+{
+  "api_server": {
+    "enabled": false,
+    "jwt_secret_key": "backtest-only-not-a-secret-0000000000"
+  }
+}

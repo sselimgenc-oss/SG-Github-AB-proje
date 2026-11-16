@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader panosu yayini (5 dakikada bir)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target

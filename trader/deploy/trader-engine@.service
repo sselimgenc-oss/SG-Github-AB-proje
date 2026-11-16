@@ -1,0 +1,35 @@
+[Unit]
+Description=Trader motoru (%i) - kagit islem, tek surec
+Documentation=file:///opt/trader/docs/motor
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+# Hizli tekrar basarisizlikta (bozuk ayar) sonsuz dongu olmasin
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONUNBUFFERED=1
+# Defter yoksa olusturur; varsa dokunmaz (idempotent)
+ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot %i --config-dir config
+ExecStart=/usr/bin/python3 -m trader_engine run --bot %i --config-dir config
+Restart=on-failure
+RestartSec=20
+# 2 GB'lik sunucuda baska bir proje de calisiyor: sert tavan + yumusak tavan (ogrenen once, ikiz sonra)
+MemoryHigh=280M
+MemoryMax=350M
+CPUQuota=60%
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var /opt/trader/shared /opt/trader/user_data
+
+[Install]
+WantedBy=multi-user.target

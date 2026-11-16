@@ -1,0 +1,29 @@
+[Unit]
+Description=Trader gunluk ders servisi (tek seferlik tick)
+Documentation=file:///opt/trader/docs/ders-spec.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Type=oneshot
+User=trader
+EnvironmentFile=/etc/trader-lesson.env
+EnvironmentFile=-/etc/trader-telegram.env
+SupplementaryGroups=trader-tg
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/lesson_run.py --once
+TimeoutStartSec=300
+# 2: calisma `failed` (beklenen; bildirim ders servisinden gider). 1 (yapilandirma, bildirimci yok), 3 (bozulmus:
+# ledger_only/yedek yazilamadi/saat kilidi/defter yok) ve cokus OnFailure tetikler: 3 BILEREK SuccessExitStatus disinda (Revizyon 3)
+SuccessExitStatus=2
+MemoryMax=256M
+CPUQuota=30%
+Nice=10
+ProtectSystem=strict
+ProtectHome=read-only
+# Dosyalar onceden olusturulmus olmali (ProtectSystem=strict dizine yazdirmaz): lesson.sqlite, lesson.sqlite.fallback.jsonl, lesson.lock
+# (install -m 0600 -o trader /dev/null <dosya>); '-' oneki: yoksa birim yine baslar, yazma fail-safe reddedilir.
+# ikiz defteri YALNIZCA salt okunur kullanilir (yazma ders servisi kodunda yasak, ders-spec 4.5.1); WAL -shm erisimi icin yolda
+ReadWritePaths=-/opt/trader/user_data/lesson.sqlite -/opt/trader/user_data/lesson.sqlite-wal -/opt/trader/user_data/lesson.sqlite-shm -/opt/trader/user_data/lesson.sqlite.fallback.jsonl -/opt/trader/user_data/ledger_learner.sqlite -/opt/trader/user_data/ledger_learner.sqlite-wal -/opt/trader/user_data/ledger_learner.sqlite-shm -/opt/trader/user_data/ledger_twin.sqlite -/opt/trader/user_data/ledger_twin.sqlite-wal -/opt/trader/user_data/ledger_twin.sqlite-shm -/opt/trader/user_data/budget.sqlite -/opt/trader/user_data/budget.sqlite-wal -/opt/trader/user_data/budget.sqlite-shm -/opt/trader/user_data/lesson.lock /opt/trader/var/telegram
+NoNewPrivileges=true
+PrivateTmp=true

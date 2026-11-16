@@ -1,0 +1,4 @@
+--id 15m_IS_f2_s2 --period IS --fee-mult 2 --slip-bps 2 --tf 15m --notes ana-kol
+--id 15m_WF_f2_s2 --period WF --fee-mult 2 --slip-bps 2 --tf 15m --notes ana-kol
+--id 1h_IS_f2_s2 --period IS --fee-mult 2 --slip-bps 2 --tf 1h --notes ana-kol
+--id 1h_WF_f2_s2 --period WF --fee-mult 2 --slip-bps 2 --tf 1h --notes ana-kol

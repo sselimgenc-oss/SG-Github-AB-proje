@@ -1,0 +1,850 @@
+{
+ "id": "15m_WF_f2_s5",
+ "timestamp": "2026-11-16T15:32:46+00:00",
+ "git_commit": "47e3217+dirty",
+ "strategy": "TraderV1",
+ "params": {},
+ "period": "WF",
+ "timerange": "20251101-20260501",
+ "fee_mult": 2.0,
+ "slip_bps": 5.0,
+ "fee_eff": 0.0015,
+ "trigger_tf": "15m",
+ "notes": "maliyet-kolu",
+ "n_trades": 656,
+ "expectancy_R": -0.4583586858272732,
+ "n_R": 656,
+ "median_R": -1.0744936228318744,
+ "profit_factor": 0.3910939112039883,
+ "profit_abs": -899.97931981,
+ "profit_pct": -89.99793198100001,
+ "max_dd_pct": 90.32958325026664,
+ "max_dd_abs": 934.2747672399996,
+ "avg_duration": "3:40:00",
+ "avg_duration_min": 220.0,
+ "fees_total": 683.609804991,
+ "fee_only": 455.739869994,
+ "slip_approx": 227.869934997,
+ "funding_net": -0.9207368906911492,
+ "funding_paid": 0.9207368906911492,
+ "costs_total": 684.5305418816912,
+ "gross_pnl": -215.44877792830883,
+ "gross_winners": 752.3155360179469,
+ "costs_over_gross": null,
+ "costs_over_gross_winners": 0.9098981864776502,
+ "win_rate": 0.21189024390243902,
+ "freqtrade_pf": 0.39109391120398823,
+ "backtest_start": "2025-11-01 00:00:00",
+ "backtest_end": "2026-05-01 00:00:00",
+ "by_setup": [
+  {
+   "key": "R1",
+   "n": 32,
+   "exp_R": -0.6080265859385838,
+   "sum_R": -19.456850750034683,
+   "pf": 0.3745968432100171,
+   "win_rate": 0.15625,
+   "profit_abs": -45.88443746,
+   "fees": 31.916246706000003,
+   "funding": -0.0893547474533617
+  },
+  {
+   "key": "T1",
+   "n": 624,
+   "exp_R": -0.450683408898488,
+   "sum_R": -281.22644715265653,
+   "pf": 0.39195558184007895,
+   "win_rate": 0.21474358974358973,
+   "profit_abs": -854.09488235,
+   "fees": 651.693558285,
+   "funding": -0.8313821432377874
+  }
+ ],
+ "by_regime": [
+  {
+   "key": "range",
+   "n": 32,
+   "exp_R": -0.6080265859385838,
+   "sum_R": -19.456850750034683,
+   "pf": 0.3745968432100171,
+   "win_rate": 0.15625,
+   "profit_abs": -45.88443746,
+   "fees": 31.916246706000003,
+   "funding": -0.0893547474533617
+  },
+  {
+   "key": "trend_down",
+   "n": 446,
+   "exp_R": -0.40085701465027235,
+   "sum_R": -178.78222853402147,
+   "pf": 0.43150444364720547,
+   "win_rate": 0.2219730941704036,
+   "profit_abs": -659.4414930800001,
+   "fees": 525.9039280995,
+   "funding": -0.3724760312962631
+  },
+  {
+   "key": "trend_up",
+   "n": 178,
+   "exp_R": -0.5755293180822193,
+   "sum_R": -102.44421861863503,
+   "pf": 0.20446440710794478,
+   "win_rate": 0.19662921348314608,
+   "profit_abs": -194.65338927,
+   "fees": 125.78963018550002,
+   "funding": -0.458906111941524
+  }
+ ],
+ "by_pair": [
+  {
+   "key": "ADA/USDT:USDT",
+   "n": 53,
+   "exp_R": -0.5334205856036363,
+   "sum_R": -28.27129103699272,
+   "pf": 0.26995519488745734,
+   "win_rate": 0.22641509433962265,
+   "profit_abs": -102.02933272,
+   "fees": 53.029234875,
+   "funding": 0.06389216086839254
+  },
+  {
+   "key": "AVAX/USDT:USDT",
+   "n": 48,
+   "exp_R": -0.35422571267818953,
+   "sum_R": -17.002834208553097,
+   "pf": 0.5816307988131281,
+   "win_rate": 0.22916666666666666,
+   "profit_abs": -43.89682622999999,
+   "fees": 41.99806965,
+   "funding": -0.9000566128855396
+  },
+  {
+   "key": "BNB/USDT:USDT",
+   "n": 65,
+   "exp_R": -0.4335980970585355,
+   "sum_R": -28.18387630880481,
+   "pf": 0.5620539922105892,
+   "win_rate": 0.23076923076923078,
+   "profit_abs": -68.93295221,
+   "fees": 77.30183775000002,
+   "funding": -0.3058144852132164
+  },
+  {
+   "key": "BTC/USDT:USDT",
+   "n": 89,
+   "exp_R": -0.34549922303307523,
+   "sum_R": -30.749430849943696,
+   "pf": 0.6749951942827903,
+   "win_rate": 0.23595505617977527,
+   "profit_abs": -49.43212606,
+   "fees": 94.04778435,
+   "funding": 0.6747582891463391
+  },
+  {
+   "key": "DOGE/USDT:USDT",
+   "n": 64,
+   "exp_R": -0.1293720975989149,
+   "sum_R": -8.279814246330554,
+   "pf": 0.5371097797084846,
+   "win_rate": 0.25,
+   "profit_abs": -69.76942018999999,
+   "fees": 73.04512580400001,
+   "funding": 0.18925962009602967
+  },
+  {
+   "key": "ETH/USDT:USDT",
+   "n": 73,
+   "exp_R": -0.6608077196777769,
+   "sum_R": -48.23896353647771,
+   "pf": 0.13620757056613714,
+   "win_rate": 0.1780821917808219,
+   "profit_abs": -164.74539393999999,
+   "fees": 74.87259507,
+   "funding": 0.12618113227301125
+  },
+  {
+   "key": "LINK/USDT:USDT",
+   "n": 58,
+   "exp_R": -0.19441848396531658,
+   "sum_R": -11.276272069988362,
+   "pf": 0.4841143875409905,
+   "win_rate": 0.1896551724137931,
+   "profit_abs": -76.00948963,
+   "fees": 54.24503293500001,
+   "funding": 0.10933329803432783
+  },
+  {
+   "key": "SOL/USDT:USDT",
+   "n": 66,
+   "exp_R": -0.6398648945383041,
+   "sum_R": -42.231083039528066,
+   "pf": 0.1882891697047259,
+   "win_rate": 0.15151515151515152,
+   "profit_abs": -145.3845122,
+   "fees": 64.0580715,
+   "funding": -0.10076069025418884
+  },
+  {
+   "key": "TRX/USDT:USDT",
+   "n": 67,
+   "exp_R": -0.6118776127923312,
+   "sum_R": -40.99580005708619,
+   "pf": 0.3491910816497924,
+   "win_rate": 0.208955223880597,
+   "profit_abs": -50.6780428,
+   "fees": 68.774224452,
+   "funding": -0.5972243539356423
+  },
+  {
+   "key": "XRP/USDT:USDT",
+   "n": 73,
+   "exp_R": -0.6226566102600819,
+   "sum_R": -45.453932548985975,
+   "pf": 0.2750506233275045,
+   "win_rate": 0.2191780821917808,
+   "profit_abs": -129.10122382999998,
+   "fees": 82.237828605,
+   "funding": -0.18030524882066237
+  }
+ ],
+ "by_side": [
+  {
+   "key": "long",
+   "n": 193,
+   "exp_R": -0.5809238609166084,
+   "sum_R": -112.11830515690542,
+   "pf": 0.18505425645732174,
+   "win_rate": 0.19689119170984457,
+   "profit_abs": -234.86954573,
+   "fees": 142.0097903025,
+   "funding": -0.5072964586793081
+  },
+  {
+   "key": "short",
+   "n": 463,
+   "exp_R": -0.4072678029066647,
+   "sum_R": -188.56499274578576,
+   "pf": 0.44100145250967826,
+   "win_rate": 0.21814254859611232,
+   "profit_abs": -665.1097740799999,
+   "fees": 541.6000146885,
+   "funding": -0.413440432011841
+  }
+ ],
+ "by_exit": [
+  {
+   "key": "stop_loss",
+   "n": 369,
+   "exp_R": -1.138482343684839,
+   "sum_R": -420.0999848197056,
+   "pf": 0.0,
+   "win_rate": 0.0,
+   "profit_abs": -1263.9312793000001,
+   "fees": 383.940216429,
+   "funding": -0.513814932534969
+  },
+  {
+   "key": "target",
+   "n": 1,
+   "exp_R": 4.801843416166666,
+   "sum_R": 4.801843416166666,
+   "pf": Infinity,
+   "win_rate": 1.0,
+   "profit_abs": 4.47171039,
+   "fees": 0.5808296100000001,
+   "funding": 0.0
+  },
+  {
+   "key": "time_stop",
+   "n": 6,
+   "exp_R": 0.7428760744547945,
+   "sum_R": 4.457256446728767,
+   "pf": 89.20666393754658,
+   "win_rate": 0.6666666666666666,
+   "profit_abs": 22.753667540000002,
+   "fees": 4.213308576,
+   "funding": -0.1072118920335217
+  },
+  {
+   "key": "trail_stop",
+   "n": 4,
+   "exp_R": 3.1574403164833473,
+   "sum_R": 12.62976126593339,
+   "pf": Infinity,
+   "win_rate": 1.0,
+   "profit_abs": 69.80604984,
+   "fees": 4.757856960000001,
+   "funding": -0.009945211194409359
+  },
+  {
+   "key": "trailing_stop_loss",
+   "n": 276,
+   "exp_R": 0.3533616876383537,
+   "sum_R": 97.52782578818562,
+   "pf": 2.2482415868689087,
+   "win_rate": 0.47101449275362317,
+   "profit_abs": 266.92053172,
+   "fees": 290.117593416,
+   "funding": -0.2897648549282492
+  }
+ ],
+ "unmatched_ledger_rows": 0,
+ "riskcheck": {
+  "n_viol_2pct": 0,
+  "max_loss_pct_eq": 0.015534385507744166,
+  "n_loss_gt_1p1x_actual_risk": 253,
+  "n_R_lt_minus1": 375,
+  "min_R": -1.3459227166935699,
+  "viol": [],
+  "over_plan": [
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-01 00:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.59466145",
+    "R": "-1.2138609891548742",
+    "loss_pct_eq": "0.00559466145"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-01 00:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-9.58962836",
+    "R": "-1.1124545023378292",
+    "loss_pct_eq": "0.009589628360000001"
+   },
+   {
+    "pair": "AVAX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-01 02:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-10.2543",
+    "R": "-1.1001555320913845",
+    "loss_pct_eq": "0.010283333773821166"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-01 07:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.69377222",
+    "R": "-1.1698925197573244",
+    "loss_pct_eq": "0.006858031431248082"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-01 18:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-8.02335885",
+    "R": "-1.1300910644603024",
+    "loss_pct_eq": "0.008374350530504343"
+   },
+   {
+    "pair": "ADA/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 00:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-9.06611224",
+    "R": "-1.1095188100217241",
+    "loss_pct_eq": "0.009542633807883127"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 00:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.88380105",
+    "R": "-1.1546627189845904",
+    "loss_pct_eq": "0.00724561872691655"
+   },
+   {
+    "pair": "TRX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 06:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.12811136",
+    "R": "-1.2897663398526629",
+    "loss_pct_eq": "0.004419279935289167"
+   },
+   {
+    "pair": "ETH/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 22:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.4440365",
+    "R": "-1.1693883591236627",
+    "loss_pct_eq": "0.006883031399997435"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 23:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.9168976",
+    "R": "-1.1752740541838114",
+    "loss_pct_eq": "0.006443260978493914"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-02 23:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.719293",
+    "R": "-1.1917370898498862",
+    "loss_pct_eq": "0.006228077601253973"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-06 09:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-7.818045",
+    "R": "-1.1380772836005988",
+    "loss_pct_eq": "0.008096343596772826"
+   },
+   {
+    "pair": "SOL/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-08 07:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-9.11828353",
+    "R": "-1.1097882081799835",
+    "loss_pct_eq": "0.010225692771042313"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-08 19:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.5545068",
+    "R": "-1.1420454639162945",
+    "loss_pct_eq": "0.007400749366528607"
+   },
+   {
+    "pair": "TRX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-08 21:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.20356942",
+    "R": "-1.2621662090254406",
+    "loss_pct_eq": "0.004777232746681167"
+   },
+   {
+    "pair": "ETH/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-08 22:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.42427392",
+    "R": "-1.1567431939789272",
+    "loss_pct_eq": "0.00737259659298491"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-09 11:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.41316048",
+    "R": "-1.178338865763096",
+    "loss_pct_eq": "0.006349900644458351"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-09 13:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.495506",
+    "R": "-1.1430191931898557",
+    "loss_pct_eq": "0.007668237149776615"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "R1",
+    "open_date": "2025-11-09 19:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.8713453",
+    "R": "-1.2026229954888097",
+    "loss_pct_eq": "0.005795281947767934"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "R1",
+    "open_date": "2025-11-09 20:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.417576",
+    "R": "-1.1802676137678934",
+    "loss_pct_eq": "0.006482683925753427"
+   },
+   {
+    "pair": "ADA/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-10 19:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-8.2856866",
+    "R": "-1.1009054136129457",
+    "loss_pct_eq": "0.009926299287289365"
+   },
+   {
+    "pair": "TRX/USDT:USDT",
+    "side": "long",
+    "enter_tag": "T1",
+    "open_date": "2025-11-11 20:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.29566478",
+    "R": "-1.1466218713058807",
+    "loss_pct_eq": "0.007543414399274503"
+   },
+   {
+    "pair": "DOGE/USDT:USDT",
+    "side": "long",
+    "enter_tag": "R1",
+    "open_date": "2025-11-12 00:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.92815938",
+    "R": "-1.126203286967822",
+    "loss_pct_eq": "0.008402877436495313"
+   },
+   {
+    "pair": "DOGE/USDT:USDT",
+    "side": "long",
+    "enter_tag": "R1",
+    "open_date": "2025-11-12 03:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.99739024",
+    "R": "-1.1820905209879289",
+    "loss_pct_eq": "0.006113998008820256"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-12 04:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.5780077",
+    "R": "-1.1875911029016675",
+    "loss_pct_eq": "0.005635193359229574"
+   },
+   {
+    "pair": "DOGE/USDT:USDT",
+    "side": "long",
+    "enter_tag": "R1",
+    "open_date": "2025-11-12 05:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.84861301",
+    "R": "-1.1579749972234867",
+    "loss_pct_eq": "0.0071912755764489645"
+   },
+   {
+    "pair": "ETH/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-12 06:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.73244873",
+    "R": "-1.1561556920579288",
+    "loss_pct_eq": "0.007077465090457346"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-12 21:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.14753816",
+    "R": "-1.1530104750157137",
+    "loss_pct_eq": "0.007755063680534858"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-13 04:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.2945617",
+    "R": "-1.1311755716328802",
+    "loss_pct_eq": "0.006942392524452844"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-15 02:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.046876",
+    "R": "-1.1448095149287285",
+    "loss_pct_eq": "0.00787519811929163"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-15 09:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.24945785",
+    "R": "-1.1469895548306068",
+    "loss_pct_eq": "0.006944795559501419"
+   },
+   {
+    "pair": "SOL/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-15 13:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.75628757",
+    "R": "-1.120784680075325",
+    "loss_pct_eq": "0.009226999916498193"
+   },
+   {
+    "pair": "ADA/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-16 03:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.70971152",
+    "R": "-1.1070811746437739",
+    "loss_pct_eq": "0.00946217520149991"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-16 04:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-3.6955269",
+    "R": "-1.1839890473845698",
+    "loss_pct_eq": "0.005229202974075718"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-16 04:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-7.56955187",
+    "R": "-1.1011661160271975",
+    "loss_pct_eq": "0.010710982282668383"
+   },
+   {
+    "pair": "DOGE/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-16 07:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-6.20003153",
+    "R": "-1.1099366970330975",
+    "loss_pct_eq": "0.008861257471230018"
+   },
+   {
+    "pair": "TRX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-18 12:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.1418178",
+    "R": "-1.176082275920514",
+    "loss_pct_eq": "0.006564420348256168"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-20 10:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.2390317",
+    "R": "-1.1174881380482629",
+    "loss_pct_eq": "0.008419371036846183"
+   },
+   {
+    "pair": "ETH/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-20 10:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.21075458",
+    "R": "-1.134172134739674",
+    "loss_pct_eq": "0.00839677643883024"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-20 10:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.74333172",
+    "R": "-1.1473114356241934",
+    "loss_pct_eq": "0.007643556305822431"
+   },
+   {
+    "pair": "ETH/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-20 12:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.84292464",
+    "R": "-1.1169792524214486",
+    "loss_pct_eq": "0.009478505092389278"
+   },
+   {
+    "pair": "TRX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-21 04:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.41683248",
+    "R": "-1.1555523202111784",
+    "loss_pct_eq": "0.0073876860716343305"
+   },
+   {
+    "pair": "AVAX/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-21 18:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-9.04971411",
+    "R": "-1.1021825464012598",
+    "loss_pct_eq": "0.015534385507744166"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-22 15:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.19782345",
+    "R": "-1.1018086927284343",
+    "loss_pct_eq": "0.009068528361812244"
+   },
+   {
+    "pair": "BNB/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-23 11:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.6394172",
+    "R": "-1.135991451742096",
+    "loss_pct_eq": "0.008310747340901281"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-25 03:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-3.67249825",
+    "R": "-1.1357126929965544",
+    "loss_pct_eq": "0.006958479139077304"
+   },
+   {
+    "pair": "BTC/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-25 21:15:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-3.385091",
+    "R": "-1.1479191833961258",
+    "loss_pct_eq": "0.006696150820706607"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "long",
+    "enter_tag": "T1",
+    "open_date": "2025-11-26 01:30:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-5.24264398",
+    "R": "-1.101713759987843",
+    "loss_pct_eq": "0.010440543971645875"
+   },
+   {
+    "pair": "SOL/USDT:USDT",
+    "side": "short",
+    "enter_tag": "T1",
+    "open_date": "2025-11-26 05:00:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-4.30450334",
+    "R": "-1.1295686942333842",
+    "loss_pct_eq": "0.008662712801976745"
+   },
+   {
+    "pair": "XRP/USDT:USDT",
+    "side": "long",
+    "enter_tag": "T1",
+    "open_date": "2025-11-26 08:45:00+00:00",
+    "exit_reason": "stop_loss",
+    "profit_abs": "-3.4762979",
+    "R": "-1.152964361961507",
+    "loss_pct_eq": "0.007167976756715516"
+   }
+  ]
+ },
+ "ledger_check": {
+  "ft_trades": 656,
+  "ledger_entries": 656,
+  "ledger_closed": 656,
+  "ledger_pnl": -899.9869760368956,
+  "ft_pnl": -899.97931981,
+  "ledger_open_unclosed": 0,
+  "pnl_total_diff": -0.007656226895619511,
+  "unmatched_ft": 0,
+  "unmatched_ledger": 0,
+  "max_abs_pnl_diff": 0.11033149769940243,
+  "mean_abs_pnl_diff": 0.0008859047828929172,
+  "n_pnl_diff_gt_0.01": 17,
+  "n_pnl_diff_gt_0.10": 2,
+  "max_abs_gross_diff": 5.000061698012814e-09,
+  "max_abs_fee_diff": 0.0,
+  "max_abs_funding_diff": 0.11033149384970543,
+  "R_ledger_vs_actual_mean_abs": 0.0030759286176831853,
+  "R_ledger_vs_actual_max_abs": 0.18928544883276643,
+  "ledger_exp_R": -0.45645577448840896,
+  "actual_exp_R": -0.4583586858272732,
+  "planned_risk_over_actual_minmax": [
+   1.0,
+   1.2
+  ],
+  "ledger_exit_reasons": {
+   "stop": 367,
+   "trail_stop": 282,
+   "time_stop": 6,
+   "target": 1
+  },
+  "mismatch_rows": [
+   {
+    "pair": "AVAX/USDT:USDT",
+    "open_date": "2025-11-26 08:15:00+00:00",
+    "profit_abs": "-0.80669109",
+    "pnl_ledger": "-0.9170225876994025",
+    "pnl_diff": "-0.11033149769940243"
+   },
+   {
+    "pair": "AVAX/USDT:USDT",
+    "open_date": "2025-11-28 13:30:00+00:00",
+    "profit_abs": "-0.25632711",
+    "pnl_ledger": "-0.1507183246200156",
+    "pnl_diff": "0.10560878537998442"
+   }
+  ]
+ }
+}

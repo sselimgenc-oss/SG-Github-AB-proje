@@ -1,0 +1,52 @@
+# Iki bot: learner (L, dersleri uygular) ve twin (T, dondurulmus kopya).
+# API yalnizca 127.0.0.1'e baglanir. Imaj surumu sabitlenmistir (2026.10 etiketi dogrulandi).
+x-freqtrade: &freqtrade-common
+  image: freqtradeorg/freqtrade:2026.10
+  restart: unless-stopped
+  env_file: .env
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  learner:
+    <<: *freqtrade-common
+    container_name: trader-learner
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./user_data/learner:/freqtrade/user_data
+      - ./user_data/strategies:/freqtrade/user_data/strategies:ro
+      - ./config:/freqtrade/config:ro
+      - ./shared:/freqtrade/shared:ro
+      - ./src:/freqtrade/trader_src:ro
+    environment:
+      - PYTHONPATH=/freqtrade/trader_src
+    command: >
+      trade
+      --config /freqtrade/config/base.json
+      --config /freqtrade/config/learner.json
+      --strategy PlaceholderStrategy
+      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
+
+  twin:
+    <<: *freqtrade-common
+    container_name: trader-twin
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - ./user_data/twin:/freqtrade/user_data
+      - ./user_data/strategies:/freqtrade/user_data/strategies:ro
+      - ./config:/freqtrade/config:ro
+      - ./shared:/freqtrade/shared:ro
+      - ./src:/freqtrade/trader_src:ro
+    environment:
+      - PYTHONPATH=/freqtrade/trader_src
+    command: >
+      trade
+      --config /freqtrade/config/base.json
+      --config /freqtrade/config/twin.json
+      --strategy PlaceholderStrategy
+      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite

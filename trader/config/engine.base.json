@@ -1,0 +1,17 @@
+{
+  "schema": "engine/1",
+  "mode": "paper",
+  "pairs": ["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/USDT","DOGE/USDT","ADA/USDT","TRX/USDT","LINK/USDT","AVAX/USDT"],
+  "wallet_start": 1000.0,
+  "cost": {"fill_model": "native", "taker_fee": 0.0005, "slip_entry_bps": 2.0, "slip_exit_bps": 2.0,
+           "slip_stop_bps": 5.0, "trigger_source": "mark", "granularity": "1m"},
+  "strategy": "price_action_v1",
+  "target_mode": "bar_close",
+  "veto_mode": "required",
+  "record_filtered_candidates": true,
+  "stale_factor": 1.0,
+  "loop_sleep_s": 5.0, "bar_wait_s": 120.0, "minute_wait_s": 20.0, "reconcile_open_s": 15.0, "reconcile_flat_s": 60.0,
+  "start_delay_s": 0.0,
+  "var_dir": "var", "market_db": "var/market.sqlite", "history_dir": "user_data/data/binance/futures",
+  "veto_config": "config/veto.json", "kill_file": "shared/KILL"
+}
