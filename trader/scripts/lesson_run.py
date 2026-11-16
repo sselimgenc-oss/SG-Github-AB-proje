@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Gunluk ders servisi calistiricisi (docs/ders-spec.md Bolum 13.2). systemd timer saatte bir `--once` calistirir.
 
-Cikis kodlari: 0 basarili (atlama/degisiklik yok/uygulama dahil); 1 yapilandirma/kullanim hatasi; 2 calisma `failed`.
+Cikis kodlari: 0 basarili (atlama/degisiklik yok/uygulama dahil); 1 yapilandirma/kullanim hatasi (bildirimci
+yapilandirilmamis dahil); 2 calisma `failed` (beklenen; bildirim gider, systemd SuccessExitStatus=2); 3 BOZULMUS calisma
+(ledger_only/magaza yok, yedek yazilamadi, saat kilidi, defter acilamadi): systemd icin BASARISIZ => OnFailure.
+Bildirimci (Revizyon 3): `notifier=` enjekte edilir ya da `cfg.notifier` adi `lesson.NOTIFIER_FACTORIES`'ten kurulur;
+yoksa cikis 1 (`--dry-run` ya da test bayragi `--allow-log-notifier` disinda). Log bildirimcisi teslim SAYILMAZ.
 `--bot` secenegi yoktur (yalniz ogrenen). `--dry-run`: istatistik + menu + istem metni; API/butce/defter yazimi yok.
 API anahtari yalnizca `LazyAnthropicClient` icinde okunur; log/cikti hicbir anahtar ya da istem icerigi yazmaz
 (dry-run ciktisi disinda; dry-run da yalnizca sayi/numaralandirma icerir).
@@ -23,7 +27,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import lesson as LS  # noqa: E402
 
-EXIT_OK, EXIT_CONFIG, EXIT_FAILED = 0, 1, 2
+EXIT_OK, EXIT_CONFIG, EXIT_FAILED, EXIT_DEGRADED = LS.EXIT_OK, LS.EXIT_CONFIG, LS.EXIT_FAILED, LS.EXIT_DEGRADED
 log = logging.getLogger("trader.lesson.run")
 
 
@@ -62,6 +66,8 @@ def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env
     ap.add_argument("--mode", choices=("llm", "rule_proxy", "both"))
     ap.add_argument("--day")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--allow-log-notifier", action="store_true",
+                    help="yalniz test/gecis: bildirimci yoksa log bildirimcisi (teslim sayilmaz)")
     ap.add_argument("--reason")
     try:
         args = ap.parse_args(argv)
@@ -81,6 +87,9 @@ def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env
     if args.day and not LS._valid_day(args.day):
         print("--day YYYY-MM-DD olmali", file=sys.stderr)
         return EXIT_CONFIG
+    if args.day and not args.dry_run and args.day > LS._aware(clock()).date().isoformat():
+        print("--day gelecekte olamaz (yalniz --dry-run serbest)", file=sys.stderr)
+        return EXIT_CONFIG
     if args.rollback_to_user_approved:
         if not args.reason or not args.reason.strip():
             print("--reason gerekli", file=sys.stderr)
@@ -93,6 +102,15 @@ def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env
             return EXIT_FAILED
         print(json.dumps({"ok": res.ok, "code": res.code, "version_id": res.version_id}))
         return EXIT_OK if (res.ok or res.code == "already_active") else EXIT_FAILED
+    if notifier is None and not args.dry_run:
+        notifier = LS.build_notifier(cfg, env)
+        if notifier is None:
+            if args.allow_log_notifier:
+                notifier = LS.LogNotifier()
+            else:
+                print("bildirimci yapilandirilmamis (cfg.notifier / NOTIFIER_FACTORIES; Telegram madde 18): "
+                      "oneriler kullaniciya ulasmaz; test icin --allow-log-notifier ya da --dry-run", file=sys.stderr)
+                return EXIT_CONFIG
     llm = client
     if llm is None and cfg.mode in ("llm", "both") and not args.dry_run:
         llm = LS.LazyAnthropicClient(env=env, budget=budget)

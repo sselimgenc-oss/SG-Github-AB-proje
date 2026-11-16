@@ -5,6 +5,9 @@
 [--seed N] [--config PATH] [--B 1000]`. LLM ve butce kullanilmaz; hicbir parametre degistirilmez; uretim defteri
 kullanilmaz (yalniz verilen yeniden oynatma defterleri SALT OKUNUR acilir). Cikti: `--out` yapilandirmasina esikler ve
 `calibration` nesnesi; `ok=false` ise esikler en siki hucreye ayarlanir ama otomatik uygulama kapali kalir.
+M1 geri alma esigi (`monitor_margin_r`=0.3 R, `monitor_z`=1.0: diff <= -0.3R ve z <= -1) bu betikle kalibre edilir
+(`yanlis_geri_alma` <= %15, `geri_alma_tespit` >= %70 olcutleri; spec 7.3.4/7.3.6): sonuc dosyasi yoksa ya da
+`ok=false` ise otomatik uygulama baslamaz (gölge donem bitse bile; Revizyon 3).
 Cikis: 0 ok=true, 3 ok=false (yazildi), 1 kullanim/yapilandirma hatasi.
 """
 from __future__ import annotations
@@ -88,7 +91,10 @@ def main(argv=None) -> int:
                 st.add_calibration(cd)
         except Exception:  # noqa: BLE001
             pass
-    print(json.dumps({"ok": cal.ok, "code": cal.code, "min_z": cal.min_z, "FPR_aile": cal.FPR_aile}))
+    print(json.dumps({"ok": cal.ok, "code": cal.code, "min_z": cal.min_z, "FPR_aile": cal.FPR_aile,
+                      "monitor_z": cal.monitor_z, "monitor_margin_r": cal.monitor_margin_r,
+                      "yanlis_geri_alma": cal.yanlis_geri_alma, "geri_alma_tespit": cal.geri_alma_tespit,
+                      "calibration_file": str(out_path)}))
     return 0 if cal.ok else 3
 
 

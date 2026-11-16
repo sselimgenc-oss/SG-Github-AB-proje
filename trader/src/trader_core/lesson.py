@@ -200,6 +200,7 @@ def _clip(v: float, bounds: tuple[float, float]) -> float:
 
 _CAL_NUM = ("min_z", "min_gap_r", "min_affected", "monitor_z", "monitor_margin_r", "twin_z", "twin_margin_r")
 _CHECKPOINTS_DEFAULT = (30, 45, 60)
+_MAX_CHECKPOINTS = 8
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,9 @@ class LessonConfig:
     blind_days: int = 3
     calibration: Mapping[str, Any] | None = field(default=None, compare=False)
     report_show_twin: bool = False
+    notifier: str | None = None                      # Revizyon 3: NOTIFIER_FACTORIES adi (orn. "telegram")
+    reject_cooldown_days: int = 7                    # Revizyon 3: acik kullanici reddinden sonra ayni oneri beklemesi
+    calibration_file: str | None = field(default=None, compare=False)   # Revizyon 3: kalibrasyon sonuc dosyasi
 
     def __post_init__(self) -> None:
         def bad(msg):
@@ -298,6 +302,8 @@ class LessonConfig:
             isint(c, "checkpoints", 1, 120)
         if cps[0] < 30:
             bad("checkpoints[0] >= 30 olmali")
+        if len(cps) > _MAX_CHECKPOINTS:
+            bad(f"checkpoints en fazla {_MAX_CHECKPOINTS} eleman olabilir")
         if any(b <= a for a, b in zip(cps, cps[1:])):
             bad("checkpoints artan olmali")
         object.__setattr__(self, "checkpoints", cps)
@@ -338,6 +344,11 @@ class LessonConfig:
         isint(self.max_steps_from_twin, "max_steps_from_twin", 1)
         isint(self.blind_days, "blind_days", 2)
         isbool(self.report_show_twin, "report_show_twin")
+        isint(self.reject_cooldown_days, "reject_cooldown_days", 0)
+        if self.notifier is not None:
+            isstr(self.notifier, "notifier")
+        if self.calibration_file is not None:
+            isstr(self.calibration_file, "calibration_file")
         if self.calibration is not None:
             if not isinstance(self.calibration, Mapping):
                 bad("calibration nesne ya da null olmali")
@@ -361,11 +372,38 @@ class LessonConfig:
         return d
 
 
+def resolve_shadow_start(cfg: LessonConfig, ledger_ro, run_day: str) -> str:
+    """Golge donem baslangici (Revizyon 3): `paper_start_day` gecmiste olsa bile gercek kagit islem gunu
+    (defterdeki ilk karar) oncesine inemez; karar yoksa `run_day` (ilk calisma) esas alinir."""
+    first = None
+    if ledger_ro is not None:
+        try:
+            ds = ledger_ro.list_decisions(limit=1)
+            if ds:
+                first = day_of(ds[0].bar_close_ts)
+        except Exception:  # noqa: BLE001  fail-safe: karar okunamazsa run_day
+            first = None
+    base = first or run_day
+    if cfg.paper_start_day is None:
+        return run_day
+    return max(cfg.paper_start_day, base)
+
+
+_NUM_RE = re.compile(r"[-+\u2212]?\d+(?:[.,]\d+)*(?:\s*%|R\b)?")
+
+
+def _strip_numbers(text: Any) -> str:
+    """Serbest metindeki sayilari ('3.2R', '%40', '12') '[sayi]' ile degistirir (dogrulanmamis rakam gostermez)."""
+    return _NUM_RE.sub("[sayi]", str(text or ""))
+
+
 def calibration_status(cfg: LessonConfig, run_day: str) -> tuple[bool, str]:
     """(ok, kod): kalibrasyon etkin sayilir mi (7.3.8, madde 10)."""
     cal = cfg.calibration
     if not cal:
         return False, "no_calibration"
+    if cfg.calibration_file is not None and not os.path.isfile(cfg.calibration_file):
+        return False, "calibration_file_missing"   # Revizyon 3: sonuc dosyasi yoksa otomatik uygulama baslamaz
     if cal.get("ok") is not True:
         return False, "calibration_not_ok"
     if cal.get("rule_version") != RULES_VERSION:
@@ -410,6 +448,8 @@ def load_config(path=None, *, budget_config_path=None) -> LessonConfig:
         raise LessonConfigError(f"bilinmeyen anahtar: {sorted(unknown)}")
     if "checkpoints" in raw and isinstance(raw["checkpoints"], list):
         raw["checkpoints"] = tuple(raw["checkpoints"])
+    if raw.get("calibration") and p.exists():
+        raw["calibration_file"] = str(p.resolve())  # kalibrasyon nesnesinin geldigi dosya (Revizyon 3 korumasi)
     cfg = LessonConfig(**raw)
     # model butce fiyat tablosunda olmali (butce yapilandirmasi okunabiliyorsa)
     bp = Path(budget_config_path) if budget_config_path else (_repo_root() / "config" / "budget.json")
@@ -886,11 +926,18 @@ def _trade_map(ledger, caps: Caps, feats: FeatureCache) -> dict[int, TradeRow]:
     return {t.decision_id: to_row(t, feats) for t in recs}
 
 
-def collect_twin_items(ledger_ro, twin_ro, window, caps: Caps, feats: FeatureCache, twin_feats: FeatureCache):
-    """Sinyal eslestirme (4.5.2): (items, sayaclar). Kullanilabilirlik denetimi yapmaz."""
+def collect_twin_items(ledger_ro, twin_ro, window, caps: Caps, feats: FeatureCache, twin_feats: FeatureCache,
+                       version_id: int | None = None):
+    """Sinyal eslestirme (4.5.2): (items, sayaclar). Kullanilabilirlik denetimi yapmaz.
+    `version_id` (Revizyon 3, izleyici): ogrenenin karari baska bir surumle verilmisse o anahtar (ikizin karari
+    dahil) tamamen dislanir; yalniz izlenen degisiklikten SONRAKI (o surumle alinan) farklar atfedilir."""
     t0, t1 = window
     dl = list(ledger_ro.list_decisions(since_ts=t0, until_ts=t1))
     dt = list(twin_ro.list_decisions(since_ts=t0, until_ts=t1))
+    if version_id is not None:
+        bad_keys = {_key(d) for d in dl if d.param_version_id != version_id}
+        dl = [d for d in dl if _key(d) not in bad_keys]
+        dt = [d for d in dt if _key(d) not in bad_keys]
     tmap_l = _trade_map(ledger_ro, caps, feats)
     tmap_t = _trade_map(twin_ro, detect_caps(twin_ro), twin_feats)
     entered_l = sum(1 for d in dl if d.final_action == "entered")
@@ -939,7 +986,7 @@ def adv_series(items: Sequence[TwinItem]) -> list[tuple[float, str]]:
 
 def build_twin_report(ledger_ro, twin_ro, window, cfg: LessonConfig, *, unavailable_code: str | None = None,
                       caps: Caps | None = None, feats: FeatureCache | None = None,
-                      twin_feats: FeatureCache | None = None) -> TwinReport:
+                      twin_feats: FeatureCache | None = None, version_id: int | None = None) -> TwinReport:
     """Sinyal eslestirmeli ikiz karsilastirmasi (4.5.2-4.5.3). `window = (t0, as_of)`; saf (yalniz okuma)."""
     t0, t1 = window
     code = twin_availability(ledger_ro, twin_ro, cfg, unavailable_code)
@@ -949,7 +996,7 @@ def build_twin_report(ledger_ro, twin_ro, window, cfg: LessonConfig, *, unavaila
     feats = feats or FeatureCache(ledger_ro)
     twin_feats = twin_feats or FeatureCache(twin_ro)
     try:
-        items, cnt = collect_twin_items(ledger_ro, twin_ro, window, caps, feats, twin_feats)
+        items, cnt = collect_twin_items(ledger_ro, twin_ro, window, caps, feats, twin_feats, version_id)
     except L.LedgerError:
         return unavailable_report("twin_schema", window)
     both = [i for i in items if i.category == "both"]
@@ -1064,10 +1111,13 @@ def _eval_ab(rule: Rule, a: list[TradeRow], b: list[TradeRow], cfg: LessonConfig
     gap = zr = None
     if n_a and n_b:
         gap = (ma - mb) if loosen else (mb - ma)
-        zr = cluster_diff(_fmt_pair(b), _fmt_pair(a), cfg.min_distinct_days) if loosen \
-            else cluster_diff(_fmt_pair(a), _fmt_pair(b), cfg.min_distinct_days)
-        if gap + _EPS < cfg.min_gap_r:
-            fails.append("gap_low")
+        if loosen:
+            # Revizyon 3 (mentor): A-B >= 0.5R cok siki; kacirilan islemler kumesinin ortalamasi > 0 (cluster_mean)
+            zr = cluster_mean(_fmt_pair(a), 0.0, cfg.min_distinct_days)
+        else:
+            zr = cluster_diff(_fmt_pair(a), _fmt_pair(b), cfg.min_distinct_days)
+            if gap + _EPS < cfg.min_gap_r:
+                fails.append("gap_low")
         if zr.z is None:
             fails.append("z_undefined")
         elif zr.z + _EPS < cfg.min_z:
@@ -1709,7 +1759,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
             checks=checks))
     menu.sort(key=lambda m: m.menu_id)
 
-    shadow_start = shadow_start_day or cfg.paper_start_day or run_day
+    shadow_start = shadow_start_day or resolve_shadow_start(cfg, ledger_ro, run_day)
     shadow_end = cfg.shadow_end(shadow_start)
     cal_ok, cal_code = calibration_status(cfg, run_day)
     recent = _recent_rows(all_scope_rows, cfg, as_of, counters)
@@ -2227,7 +2277,8 @@ def evaluate_monitor(ledger_ro, twin_ro, monitor: Monitor, as_of: datetime, cfg:
     age_days = (as_of - started).total_seconds() / 86400.0
     k, rn = monitor.k, monitor.recheck_n
     trep = twin_report if twin_report is not None else build_twin_report(
-        ledger_ro, twin_ro, (started, as_of), cfg, unavailable_code=twin_code, caps=caps, feats=feats)
+        ledger_ro, twin_ro, (started, as_of), cfg, unavailable_code=twin_code, caps=caps, feats=feats,
+        version_id=monitor.version_id)   # Revizyon 3: yalniz izlenen surumle alinan (degisiklik sonrasi) farklar
     twin_v = trep.verdict
 
     def stats_for(sample: Sequence[TradeRow], tv: str, zr, diff, extra=None) -> dict:
@@ -2352,16 +2403,33 @@ class LessonNotifier(Protocol):
 
 
 class LogNotifier:
-    """Varsayilan: gunluge yazar, her zaman True."""
+    """Varsayilan: gunluge yazar ama kullaniciya TESLIM ETMEZ => her zaman False (Revizyon 3: oneriler bekler,
+    bildirimler `undelivered` kalir ve yeniden denenir; log satiri teslim sayilmaz)."""
 
     def request_approval(self, req: ApprovalRequest) -> bool:
-        log.info("lesson approval request %s %s %s->%s [%s]", req.request_id, req.param, req.from_value,
-                 req.to_value, req.reason_code)
-        return True
+        log.info("lesson approval request %s %s %s->%s [%s] (teslim edilmedi)", req.request_id, req.param,
+                 req.from_value, req.to_value, req.reason_code)
+        return False
 
     def notify(self, notice: LessonNotice) -> bool:
-        log.info("lesson notice %s: %s", notice.code, scrub(notice.title))
-        return True
+        log.info("lesson notice %s: %s (teslim edilmedi)", notice.code, scrub(notice.title))
+        return False
+
+
+# Bildirim kancasi (Revizyon 3): `cfg.notifier` adi -> fabrika(cfg, env) -> LessonNotifier. Telegram (madde 18)
+# kendini burada kaydeder: `NOTIFIER_FACTORIES["telegram"] = lambda cfg, env: TelegramNotifier(...)`.
+NOTIFIER_FACTORIES: dict[str, Callable[..., "LessonNotifier"]] = {}
+
+
+def build_notifier(cfg: "LessonConfig", env: Mapping[str, str] | None = None) -> "LessonNotifier | None":
+    """Yapilandirilmis bildirimciyi dondurur; `cfg.notifier` yok/kayitsizsa None (cagiran basarisizlik sayar)."""
+    name = cfg.notifier
+    if not name:
+        return None
+    fac = NOTIFIER_FACTORIES.get(name)
+    if fac is None:
+        return None
+    return fac(cfg, env if env is not None else os.environ)
 
 
 class NullNotifier:
@@ -3020,6 +3088,26 @@ class LessonStore:
                 out[k] = r["until_ts"]
         return out
 
+    def rejection_cooldowns(self, days: int) -> dict[tuple[str, str], str]:
+        """Acik KULLANICI reddinden (`rejected`) sonra ayni (param, yon) icin `days` gun bekleme (Revizyon 3).
+        Zaman asimi (`expired`) reddedilmis sayilmaz."""
+        out: dict[tuple[str, str], str] = {}
+        if days <= 0:
+            return out
+        for r in self._q("SELECT rq.request_json AS j, e.recorded_at AS t FROM lesson_requests rq "
+                         "JOIN lesson_request_events e ON e.request_id = rq.request_id WHERE e.event='rejected' "
+                         "ORDER BY e.id"):
+            try:
+                req = json.loads(r["j"])
+                direction = "up" if float(req["to_value"]) > float(req["from_value"]) else "down"
+                until = fmt_ts(parse_ts(r["t"]) + timedelta(days=days))
+            except (ValueError, KeyError, TypeError):
+                continue
+            k = (req["param"], direction)
+            if k not in out or until > out[k]:
+                out[k] = until
+        return out
+
     def add_calibration(self, cal: Mapping) -> None:
         self._ins("lesson_calibrations", ok=1 if cal.get("ok") else 0, date=cal.get("date"),
                   backtest_hash=cal.get("backtest_hash"), calibration_json=canon(cal), recorded_at=self._now())
@@ -3044,17 +3132,21 @@ class FallbackLog:
         if not os.path.exists(self.path):
             return []
         out = []
-        with open(self.path, encoding="utf-8") as f:
-            for ln in f:
-                ln = ln.strip()
-                if not ln:
-                    continue
-                try:
-                    obj = json.loads(ln)
-                except ValueError:
-                    continue
-                if isinstance(obj, dict):
-                    out.append(obj)
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                for ln in f:
+                    ln = ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        obj = json.loads(ln)
+                    except ValueError:
+                        continue
+                    if isinstance(obj, dict):
+                        out.append(obj)
+        except OSError as e:  # fail-safe: okunamayan yedek = bos (izleyici yine calisir)
+            log.error("fallback okunamadi: %s", scrub(e))
+            return []
         return out
 
     def has(self, fingerprint: str) -> bool:
@@ -3108,6 +3200,9 @@ class FileLock:
 # Servis (Bolum 2, 8, 9, 10)
 # ---------------------------------------------------------------------------
 
+EXIT_OK, EXIT_CONFIG, EXIT_FAILED, EXIT_DEGRADED = 0, 1, 2, 3   # 3: SuccessExitStatus disi => OnFailure
+
+
 @dataclass(frozen=True)
 class TickResult:
     status: str
@@ -3138,6 +3233,7 @@ class _Ctx:
     owned: list = field(default_factory=list)
 
 
+CLOCK_AHEAD_MAX_H = 48
 _TERMINAL_APPLY_CODES = ("stale_base", "out_of_bounds", "step_too_large", "no_change", "immutable_param",
                          "unknown_param", "multiple_changes", "empty_changes", "bad_value")
 _TRANSIENT_APPLY_CODES = ("insufficient_evidence", "weekly_limit")
@@ -3167,6 +3263,7 @@ class LessonService:
         self._sleep = sleep_fn or time.sleep
         self._lock_path = lock_path
         self._caps_override = caps
+        self._clock_ahead: datetime | None = None
 
     # -- kaynaklar ----------------------------------------------------------
     def _now(self) -> datetime:
@@ -3262,7 +3359,7 @@ class LessonService:
                 return self._tick(ctx, now)
             except LessonStoreError as e:
                 log.error("lesson store hatasi: %s", scrub(e))
-                return TickResult("failed", None, "store_error", {}, 2)
+                return TickResult("failed", None, "store_error", {}, EXIT_DEGRADED)
         finally:
             if ctx is not None:
                 self._close_ctx(ctx)
@@ -3284,20 +3381,38 @@ class LessonService:
                          "ledger_unavailable", now)
         finally:
             self._close_ctx(ctx)
-        return TickResult("failed", day, "ledger_unavailable", {}, 2)
+        return TickResult("failed", day, "ledger_unavailable", {}, EXIT_DEGRADED)
 
     def _effective_run_day(self, ctx: _Ctx, now: datetime) -> tuple[str, datetime]:
         """Monoton saat ilkesi: run_day = max(now, last_seen_ts)'ten turetilir; eski gune donulmez."""
         last = ctx.store.last_seen_ts()
         eff = now
+        self._clock_ahead = None
         if last:
             with contextlib.suppress(ValueError):
                 lt = parse_ts(last)
                 if lt > now:
                     eff = lt
+                    if lt - now > timedelta(hours=CLOCK_AHEAD_MAX_H):
+                        self._clock_ahead = lt   # Revizyon 3: saat ileri sicradi => uyari + basarisiz cikis
         return eff.date().isoformat(), eff
 
     def _tick(self, ctx: _Ctx, now: datetime) -> TickResult:
+        real_now = now
+        res = self._tick_inner(ctx, now)
+        ahead = self._clock_ahead
+        if ahead is not None:
+            # depolanan son kayit gercek saatten > 48 sa ileride: sessiz `already_ran` yerine gorunur ariza
+            log.error("saat kilidi: son kayit %s, simdi %s", fmt_ts(ahead), fmt_ts(real_now))
+            self._notify(ctx, "clock_ahead", "warn", "Ders servisi: saat ileri sicramis",
+                         f"depolanan son kayit {fmt_ts(ahead)} gercek saatten >{CLOCK_AHEAD_MAX_H} sa ileride; "
+                         "calismalar bu gune kilitli (elle inceleme gerekir)", real_now.date().isoformat(),
+                         ahead.date().isoformat(), real_now)
+            res = dataclasses.replace(res, exit_code=EXIT_DEGRADED,
+                                      detail={**dict(res.detail), "clock_ahead": fmt_ts(ahead)})
+        return res
+
+    def _tick_inner(self, ctx: _Ctx, now: datetime) -> TickResult:
         store = ctx.store
         run_day, now = self._effective_run_day(ctx, now)
         # kor kalma izini temizle (magaza geri geldi)
@@ -3323,7 +3438,7 @@ class LessonService:
                                                    minutes=int(self.cfg.run_at_utc[3:]))
             if now < start:
                 return TickResult("idle", run_day, "before_run_at")
-            start_day = self.cfg.paper_start_day or run_day
+            start_day = resolve_shadow_start(self.cfg, ctx.led_ro, run_day)
             store.set_shadow_once(start_day, self.cfg.shadow_end(start_day))
             run = store.create_run(self.cfg, run_day)
             return self._drive(ctx, run, now)
@@ -3331,14 +3446,34 @@ class LessonService:
 
     # -- ledger_only kipi (10.7) -------------------------------------------
     def _tick_ledger_only(self, ctx: _Ctx, now: datetime) -> TickResult:
+        """Magaza yok (10.7). Revizyon 3: ONCE geri alma izleyicisi; yedek (fallback) yazma hatalari yakalanir
+        (fail-safe) ve calisma her zaman `EXIT_DEGRADED` (3, SuccessExitStatus disi => OnFailure) ile biter."""
         cfg = self.cfg
         run_day = now.date().isoformat()
         fb = FallbackLog(self.cfg.store_path)
-        if fb.blind_since() is None:
-            fb.append({"type": "blind_since", "run_day": run_day, "fingerprint": f"blind_since|{run_day}"})
+        fb_errors: list[str] = []
+
+        def fb_write(obj: Mapping) -> bool:
+            try:
+                fb.append(obj)
+                return True
+            except OSError as e:
+                log.error("fallback yazilamadi: %s", scrub(e))
+                fb_errors.append(scrub(e)[:80])
+                return False
+
+        def result(status: str, code: str | None, detail: dict) -> TickResult:
+            if fb_errors:
+                detail = {**detail, "fallback_write_failed": True}
+                self._notify(ctx, "run_failed", "warn", "Ders servisi: yedek yazilamadi",
+                             "lesson.sqlite yok ve fallback yazilamadi", run_day, "fallback_write", now)
+            return TickResult(status, run_day, code, detail, EXIT_DEGRADED)
+
         start = as_of_for(run_day) + timedelta(hours=int(cfg.run_at_utc[:2]), minutes=int(cfg.run_at_utc[3:]))
         if now < start:
-            return TickResult("ledger_only", run_day, "before_run_at")
+            if fb.blind_since() is None:
+                fb_write({"type": "blind_since", "run_day": run_day, "fingerprint": f"blind_since|{run_day}"})
+            return result("ledger_only", "before_run_at", {})
         as_of = as_of_for(run_day)
         led = ctx.led_rw
         detail: dict[str, Any] = {"mode": "ledger_only"}
@@ -3346,11 +3481,12 @@ class LessonService:
         try:
             mon = monitor_from_ledger(ctx.led_ro, cfg, origin="ledger_only")
         except L.LedgerError:
-            return TickResult("failed", run_day, "ledger_unavailable", detail, 2)
+            return TickResult("failed", run_day, "ledger_unavailable", detail, EXIT_DEGRADED)
         if mon is not None:
             mon = dataclasses.replace(mon, state=fb.monitor_state(mon.version_id))
             if mon.state not in _MONITOR_ACTIVE:
                 mon = None
+        rolled: TickResult | None = None
         if mon is not None:
             v = evaluate_monitor(ctx.led_ro, ctx.twin, mon, as_of, cfg, twin_code=ctx.twin_code, caps=ctx.caps)
             detail["verdict"] = v.action
@@ -3360,25 +3496,29 @@ class LessonService:
                                    reason=sanitize_text(f"ledger_only: {v.reason} {canon(v.stats)[:200]}", 400))
                 ev = v.action if res.ok else "superseded"
                 if not fb.has(fp):
-                    fb.append({"type": "monitor_event", "event": ev, "action": "rollback" if res.ok else "none",
-                               "rollback_code": res.code, "version_id": mon.version_id,
-                               "base_version_id": mon.base_version_id, "param": mon.param,
-                               "from_value": mon.from_value, "to_value": mon.to_value, "scope": mon.scope,
-                               "proposal_id": mon.proposal_id, "started_at": mon.started_at, "origin": mon.origin,
-                               "stats": dict(v.stats), "run_day": run_day, "fingerprint": fp})
+                    fb_write({"type": "monitor_event", "event": ev, "action": "rollback" if res.ok else "none",
+                              "rollback_code": res.code, "version_id": mon.version_id,
+                              "base_version_id": mon.base_version_id, "param": mon.param,
+                              "from_value": mon.from_value, "to_value": mon.to_value, "scope": mon.scope,
+                              "proposal_id": mon.proposal_id, "started_at": mon.started_at, "origin": mon.origin,
+                              "stats": dict(v.stats), "run_day": run_day, "fingerprint": fp})
                 if res.ok:
                     self._notify(ctx, "rolled_back", "warn", "Ders degisikligi geri alindi",
                                  f"{mon.param} {mon.to_value} -> {mon.from_value} (ledger_only)", run_day,
                                  mon.version_id, now)
-                    return TickResult("rolled_back", run_day, v.action, detail)
+                    rolled = TickResult("rolled_back", run_day, v.action, detail, EXIT_DEGRADED)
             elif v.action in ("confirmed_pending_recheck", "confirmed", "superseded") and not fb.has(fp):
-                fb.append({"type": "monitor_event", "event": v.action, "version_id": mon.version_id,
-                           "base_version_id": mon.base_version_id, "param": mon.param, "from_value": mon.from_value,
-                           "to_value": mon.to_value, "scope": mon.scope, "proposal_id": mon.proposal_id,
-                           "started_at": mon.started_at, "origin": mon.origin, "stats": dict(v.stats),
-                           "run_day": run_day, "fingerprint": fp})
-        # kor kalma: otomatik uygulanmis surum etkin ve magaza `blind_days` gundur kapali
-        since = fb.blind_since()
+                fb_write({"type": "monitor_event", "event": v.action, "version_id": mon.version_id,
+                          "base_version_id": mon.base_version_id, "param": mon.param, "from_value": mon.from_value,
+                          "to_value": mon.to_value, "scope": mon.scope, "proposal_id": mon.proposal_id,
+                          "started_at": mon.started_at, "origin": mon.origin, "stats": dict(v.stats),
+                          "run_day": run_day, "fingerprint": fp})
+        # kor kalma izi (monitorden SONRA; yazma hatasi izleyiciyi engellemez)
+        if fb.blind_since() is None:
+            fb_write({"type": "blind_since", "run_day": run_day, "fingerprint": f"blind_since|{run_day}"})
+        if rolled is not None:
+            return result(rolled.status, rolled.code, dict(rolled.detail))
+        since = fb.blind_since() or (run_day if fb_errors else None)
         if since is not None:
             days = (date.fromisoformat(run_day) - date.fromisoformat(since)).days + 1
             acts = ctx.led_ro.list_activations()
@@ -3387,13 +3527,13 @@ class LessonService:
                 res = led.rollback(to_version_id=target, actor="lesson",
                                    reason=f"blind_days: lesson.sqlite {days} gundur acilamadi; son kullanici onayli surume donus")
                 if res.ok:
-                    fb.append({"type": "blind_rollback", "version_id": target, "run_day": run_day,
-                               "fingerprint": f"blind_rollback|{run_day}"})
+                    fb_write({"type": "blind_rollback", "version_id": target, "run_day": run_day,
+                              "fingerprint": f"blind_rollback|{run_day}"})
                     self._notify(ctx, "rolled_back", "warn", "Kor kalma geri alimi",
                                  f"lesson.sqlite {days} gundur acilamadi; surum {target}'e donuldu", run_day,
                                  "blind", now)
-                    return TickResult("rolled_back", run_day, "blind_days", detail)
-        return TickResult("ledger_only", run_day, None, detail)
+                    return result("rolled_back", "blind_days", detail)
+        return result("ledger_only", None, detail)
 
     # =======================================================================
     # reconcile (adim 1)
@@ -3560,6 +3700,12 @@ class LessonService:
             log.exception("ders calismasi beklenmeyen hata: %s", scrub(e))
             return self._fail_notify(ctx, run, "unexpected", now)
 
+    def _llm_fail(self, ctx, run, code: str, now: datetime, detail: Mapping | None = None) -> TickResult:
+        """LLM hatalari (Revizyon 3) sessiz kalmaz: calisma `failed` + bildirim."""
+        res = self._finish(ctx, run, "failed", code, detail)
+        self._notify(ctx, "llm_error", "warn", "Ders LLM adimi basarisiz", f"kod: {code}", run.run_day, code, now)
+        return res
+
     def _fail_notify(self, ctx, run, code: str, now: datetime) -> TickResult:
         res = self._finish(ctx, run, "failed", code)
         self._notify(ctx, "run_failed", "warn", "Ders calismasi basarisiz", f"kod: {code}", run.run_day, code, now)
@@ -3680,12 +3826,19 @@ class LessonService:
         items.sort(key=lambda t: t[0])
         return [d for _, d in items][-self.cfg.history_n:] if self.cfg.history_n else []
 
+    def _blacklist_with_cooldown(self, store: LessonStore) -> dict:
+        bl = dict(store.blacklist())
+        for k, until in store.rejection_cooldowns(self.cfg.reject_cooldown_days).items():
+            if k not in bl or until > str(bl[k]):
+                bl[k] = until
+        return bl
+
     def _step_b(self, ctx: _Ctx, run: RunRow, now: datetime) -> Snapshot:
         store = ctx.store
         as_of = parse_ts(run.as_of_ts)
         snap = build_snapshot(
             ctx.led_ro, self.cfg, run.run_day, twin_ro=ctx.twin, twin_code=ctx.twin_code,
-            known_checkpoints=store.checkpoints(), blacklist=store.blacklist(),
+            known_checkpoints=store.checkpoints(), blacklist=self._blacklist_with_cooldown(store),
             shadow_start_day=store.get_state("shadow_start_day"), history=self._history_from_store(store, as_of),
             caps=ctx.caps)
         store.save_snapshot(run.id, snap)
@@ -3744,7 +3897,7 @@ class LessonService:
     def _llm_flow(self, ctx: _Ctx, run: RunRow, snap: Snapshot, now: datetime) -> TickResult | ProposalDraft:
         store, cfg = ctx.store, self.cfg
         if self._llm is None:
-            return self._finish(ctx, run, "failed", "llm_unavailable", {"detail": "istemci yok"})
+            return self._llm_fail(ctx, run, "llm_unavailable", now, {"detail": "istemci yok"})
         by: dict[str, RunEvent] = {}
         for e in store.run_events(run.id):
             by[e.status] = e
@@ -3756,7 +3909,7 @@ class LessonService:
         if "llm_ended" not in by:
             if "llm_submitted" not in by:
                 if "llm_reserved" in by:
-                    return self._finish(ctx, run, "failed", "submit_unknown")
+                    return self._llm_fail(ctx, run, "submit_unknown", now)
                 r = self._reserve_and_submit(ctx, run, snap, custom_id, now)
                 if r is not None:
                     return r
@@ -3779,7 +3932,7 @@ class LessonService:
         store, cfg, bud = ctx.store, self.cfg, self._budget
         ready = getattr(self._llm, "ready", None)
         if callable(ready) and not ready():
-            return self._finish(ctx, run, "failed", "llm_unavailable", {"detail": "istemci hazir degil"})
+            return self._llm_fail(ctx, run, "llm_unavailable", now, {"detail": "istemci hazir degil"})
         bundle = render_prompt(snap, cfg)
         if bundle.too_large:
             return self._finish(ctx, run, "skipped_gate", "prompt_too_large", {"est": bundle.est_in_tokens})
@@ -3820,7 +3973,7 @@ class LessonService:
                 if act.kind == "stop":
                     return self._finish(ctx, run, "skipped_budget", "provider_blocked",
                                         {"blocked_until": act.blocked_until})
-                return self._finish(ctx, run, "failed", "llm_unavailable", {"status": sc})
+                return self._llm_fail(ctx, run, "llm_unavailable", now, {"status": sc})
         store.set_batch_id(call_id, batch_id)
         store.add_event(run.id, "llm_submitted", None, {"batch_id": batch_id, "call_id": call_id,
                                                         "submitted_at": fmt_ts(now)})
@@ -3836,7 +3989,7 @@ class LessonService:
         if now - parse_ts(sub.detail.get("submitted_at") or sub.recorded_at) > timedelta(hours=cfg.batch_max_age_h):
             with contextlib.suppress(Exception):
                 getattr(self._llm, "cancel", lambda _b: None)(bid)
-            return self._finish(ctx, run, "failed", "llm_timeout", {"batch_id": bid})
+            return self._llm_fail(ctx, run, "llm_timeout", now, {"batch_id": bid})
         try:
             poll = self._llm.poll(bid)
         except Exception as e:  # noqa: BLE001
@@ -3850,7 +4003,7 @@ class LessonService:
             if consec + 1 >= 6:
                 with contextlib.suppress(Exception):
                     getattr(self._llm, "cancel", lambda _b: None)(bid)
-                return self._finish(ctx, run, "failed", "llm_timeout", {"batch_id": bid})
+                return self._llm_fail(ctx, run, "llm_timeout", now, {"batch_id": bid})
             return TickResult("in_progress", run.run_day, "llm_poll_failed")
         if poll.status != "ended":
             store.add_event(run.id, "llm_polled", None, {"status": poll.status})
@@ -3858,7 +4011,7 @@ class LessonService:
         res = next((r for r in poll.results if r.custom_id == custom_id), None)
         if res is None:
             bud.release(grant)
-            return self._finish(ctx, run, "failed", "llm_batch_failed", {"reason": "missing_result"})
+            return self._llm_fail(ctx, run, "llm_batch_failed", now, {"reason": "missing_result"})
         if res.result_type == "succeeded":
             st = bud.record("lesson", grant, budget_usage(res.usage), cfg.model, batch=True)
             store.add_result(call_id, res.text, res.stop_reason, "succeeded", res.usage,
@@ -3868,7 +4021,7 @@ class LessonService:
             return None
         bud.release(grant)
         store.add_result(call_id, res.text, res.stop_reason, res.result_type, res.usage, 0)
-        return self._finish(ctx, run, "failed", "llm_batch_failed", {"result_type": res.result_type})
+        return self._llm_fail(ctx, run, "llm_batch_failed", now, {"result_type": res.result_type})
 
     # -- E/F: kapi + yonlendirme ------------------------------------------------------
     def _finalize(self, ctx, run, snap, draft: ProposalDraft, now) -> TickResult:
@@ -3994,7 +4147,9 @@ class LessonService:
             extras.append(f"Golge donem (bitis {snap.shadow['ends_on']}): onaysiz uygulanmaz")
         if route.provisional:
             extras.append("gecici esik (kalibre degil)")
-        body = sanitize_text(f"{draft.rationale} | {ev_txt} | " + "; ".join(extras), 700)
+        # LLM gerekcesindeki sayilar dogrulanmamistir: onay metnine yalniz anlik goruntuden gelen sayilar girer
+        why = draft.rationale if draft.source == "rule-proxy" else _strip_numbers(draft.rationale)
+        body = sanitize_text(f"{why} | {ev_txt} | " + "; ".join(extras), 700)
         req = ApprovalRequest(
             request_id=f"lr-{run.run_day}-{pres.proposal_id}", proposal_id=pres.proposal_id,
             base_version_id=snap.active_version_id, param=draft.param, from_value=from_v, to_value=draft.to,
