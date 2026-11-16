@@ -14,7 +14,6 @@ import logging
 import os
 import re
 import secrets
-import subprocess
 import sys
 import time
 from collections.abc import Callable, Mapping
@@ -22,10 +21,30 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from trader_engine.fileio import atomic_write_json, parse_ts as parse_ts_z
-from trader_engine.killswitch import Killswitch
 
 from . import lesson as LS
+
+
+# trader_core -> trader_engine bagimliligi yasak (08 §4.7): motorun fileio bicimiyle ayni kucuk yardimcilar.
+def atomic_write_json(path, data: dict) -> Path:
+    """Gecici dosya + fsync + os.replace (trader_engine.fileio.atomic_write_json ile ayni bicim)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(data, ensure_ascii=False, indent=1, allow_nan=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return path
+
+
+def parse_ts_z(s: str) -> datetime:
+    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
 
 log = logging.getLogger("trader.telegram")
 UTC = timezone.utc
@@ -460,31 +479,25 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-def default_runner(argv: list[str], timeout: float, env: Mapping[str, str]) -> tuple[int, str]:
-    try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=dict(env))
-        return r.returncode, r.stdout
-    except Exception as e:  # noqa: BLE001
-        return 2, json.dumps({"status": "unknown", "code": type(e).__name__})
-
-
 HELP = ("/durum  /rapor  /hepsini_kapat  /devam  /onayla <id>  /reddet <id>  /yardim\n"
         "/durdur: desteklenmiyor (tam kapatma icin /hepsini_kapat)")
 
 
 class TelegramDaemon:
     def __init__(self, cfg: TelegramConfig, client: TelegramClient, *, now_fn: Callable[[], datetime] | None = None,
-                 runner: Callable | None = None, report_fn: Callable[[], str] | None = None,
+                 runner: Callable | None = None, killswitch=None, report_fn: Callable[[], str] | None = None,
                  sleep: Callable[[float], None] = time.sleep, random_code: Callable[[], str] | None = None):
         self.cfg, self.client = cfg, client
         self.now = now_fn or (lambda: datetime.now(UTC))
-        self.runner = runner or default_runner
+        if runner is None:
+            raise ValueError("runner zorunlu (alt surec cagrisi scripts/telegram_run.py'de)")
+        self.runner = runner
         self.report_fn = report_fn
         self.sleep = sleep
         self.base = Path(cfg.var_dir)
         self.base.mkdir(parents=True, exist_ok=True)
         self.outbox = Outbox(self.base, self.now)
-        self.killswitch = Killswitch(cfg.kill_file, _Clk(self.now)) if cfg.kill_file else None
+        self.killswitch = killswitch          # motorun Killswitch'i disaridan verilir (scripts/telegram_run.py)
         self.start_ts = self.now().timestamp()
         self._seen: set[int] = set()
         self._rand = random_code or (lambda: "%04d" % secrets.randbelow(10000))
