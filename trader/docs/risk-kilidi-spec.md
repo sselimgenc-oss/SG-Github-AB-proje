@@ -55,7 +55,7 @@ Sayısal alanlar `int`/`float` veya `numbers.Real` (numpy dahil) olabilir; `floa
 3. Kaldıraç aralık dışı veya tam sayı değil → red.
 4. Günlük sınır zaten dolmuş: `(equity - day_start)/day_start ≤ -daily_max_loss` → red.
 5. Aynı çift (normalleştirilmiş) zaten açık → red.
-6. Boyut (`size_position`) hata verirse → red.
+6. Boyut (`size_position`) hata verirse → red. Dönen sonuç ayrıca yeniden doğrulanır (sonlu, pozitif, risk ≤ %2, değer ≤ tavan, teminat ≤ özsermaye); bozuksa red.
 7. Likidasyon güvenliği: `|entry - liq| < liq_safety_factor*|entry - stop|` → red.
 8. Toplam açık risk + yeni risk `> max_open_risk*equity` → red.
 9. Aynı yön açık risk + yeni risk `> max_same_dir_risk*equity` → red.
