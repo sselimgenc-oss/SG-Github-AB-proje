@@ -174,7 +174,10 @@ class TelegramClient:
 # ---------------------------------------------------------------------------
 class TelegramConfig:
     def __init__(self, token: str, chat_id: int, var_dir: str, kill_file: str = "", status_path: str = "",
-                 lesson_run: str = "", health_state: str = ""):
+                 lesson_run: str = "", health_state: str = "", ledger_path: str = "", twin_ledger_path: str = "",
+                 budget_config: str = "", lesson_store: str = ""):
+        self.ledger_path, self.twin_ledger_path = ledger_path, twin_ledger_path
+        self.budget_config, self.lesson_store = budget_config, lesson_store
         self.token, self.chat_id, self.var_dir = token, chat_id, var_dir
         self.kill_file, self.status_path = kill_file, status_path
         self.lesson_run, self.health_state = lesson_run, health_state
@@ -193,7 +196,16 @@ class TelegramConfig:
         return cls(tok, chat, env.get("TELEGRAM_VAR_DIR") or str(here / "var" / "telegram"),
                    env.get("KILL_FILE", ""), env.get("ENGINE_STATUS_PATH", ""),
                    env.get("LESSON_RUN_PATH") or str(here / "scripts" / "lesson_run.py"),
-                   env.get("HEALTH_STATE_PATH", ""))
+                   env.get("HEALTH_STATE_PATH", ""),
+                   _abs_path(here, env.get("LEDGER_PATH") or "user_data/ledger_learner.sqlite"),
+                   _abs_path(here, env.get("TWIN_LEDGER_PATH") or "user_data/ledger_twin.sqlite"),
+                   _abs_path(here, env.get("BUDGET_CONFIG_PATH") or "config/budget.json"),
+                   _abs_path(here, env.get("LESSON_STORE_PATH") or "user_data/lesson.sqlite"))
+
+
+def _abs_path(base: Path, p: str) -> str:
+    q = Path(p)
+    return str(q if q.is_absolute() else base / q)
 
 
 def _key_hash(key: str) -> str:
@@ -899,12 +911,163 @@ def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping
         try:
             out.append(f"{name}: {fn()}")
         except Exception as e:  # noqa: BLE001
-            out.append(f"{name}: okunamadı: {type(e).__name__}")
+            out.append(f"{name}: okunamadı: {getattr(e, 'code', type(e).__name__)}")
     try:
         out.append(f"Spool bekleyen: {len(Outbox(cfg.var_dir, lambda: now).list())}")
     except Exception:  # noqa: BLE001
         pass
-    return "\n".join(out)
+    return fit_text("\n".join(out), "", 3500)
+
+
+class SectionError(Exception):
+    """Rapor bölümü okunamadı; `code` satıra yazılır."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _istanbul_day_bounds_utc(day: str) -> tuple[str, str]:
+    d0 = datetime.fromisoformat(day).replace(tzinfo=TR)
+    f = lambda d: d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    return f(d0), f(d0 + timedelta(days=1))
+
+
+def _fnum(x: Any, nd: int = 2) -> str:
+    try:
+        return f"{float(x):.{nd}f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _ledger_day(path: str, bot: str, day: str) -> tuple[list, list]:
+    from . import ledger as L  # noqa: PLC0415
+    if not path or not Path(path).exists():
+        raise SectionError("defter_yok")
+    try:
+        led = L.open_ledger(path, bot, create=False, read_only=True, migrate=False)
+    except Exception as e:  # noqa: BLE001
+        raise SectionError(getattr(e, "code", None) or type(e).__name__) from None
+    try:
+        a, b = _istanbul_day_bounds_utc(day)
+        closed = led._trades("exit_ts>=? AND exit_ts<?", [a, b], closed=True)
+        return closed, led.list_open_trades()
+    except Exception as e:  # noqa: BLE001
+        raise SectionError(type(e).__name__) from None
+    finally:
+        led.close()
+
+
+def _sum(trades: list) -> tuple[float, float]:
+    return (sum(t.realized_pnl or 0.0 for t in trades), sum(t.r_multiple or 0.0 for t in trades))
+
+
+def section_ledger(cfg: TelegramConfig, day: str) -> str:
+    closed, opened = _ledger_day(cfg.ledger_path, "learner", day)
+    pnl, r = _sum(closed)
+    win = sum(1 for t in closed if (t.realized_pnl or 0) > 0)
+    loss = sum(1 for t in closed if (t.realized_pnl or 0) <= 0)
+    eq = dse = None
+    try:
+        st = json.loads(Path(cfg.status_path).read_text(encoding="utf-8"))
+        eq, dse = st.get("equity"), st.get("day_start_equity")
+    except Exception:  # noqa: BLE001
+        pass
+    lines = [f"öğrenen: kapanan={len(closed)} PnL={pnl:+.2f}$ R={r:+.2f} kazanan/kaybeden={win}/{loss} "
+             f"açık={len(opened)}"]
+    if dse:
+        lim = 0.05 * float(dse)
+        lines.append(f"  equity={_fnum(eq)} gün_başı={_fnum(dse)} günlük zarar={max(0.0, -pnl):.2f}$ / "
+                     f"bütçe %5={lim:.2f}$")
+    else:
+        lines.append(f"  equity={_fnum(eq)} gün_başı=? günlük zarar={max(0.0, -pnl):.2f}$ / bütçe %5=?")
+    try:
+        tc, _to = _ledger_day(cfg.twin_ledger_path, "twin", day)
+        tp, tr = _sum(tc)
+        lines.append(f"  ikiz: kapanan={len(tc)} PnL={tp:+.2f}$ R={tr:+.2f} (fark PnL {pnl - tp:+.2f}$)")
+    except SectionError as e:
+        lines.append(f"  ikiz: okunamadı: {e.code}")
+    return "\n" + "\n".join(lines)
+
+
+def section_budget(cfg: TelegramConfig) -> str:
+    import dataclasses  # noqa: PLC0415
+    from . import budget as B  # noqa: PLC0415
+    try:
+        bc = B.load_config(cfg.budget_config)
+        db = Path(bc.db_path)
+        if not db.is_absolute():
+            db = Path(cfg.budget_config).resolve().parent.parent / db
+        bc = dataclasses.replace(bc, db_path=str(db))
+    except Exception:  # noqa: BLE001
+        raise SectionError("yapilandirma_gecersiz") from None
+    if not db.exists():
+        raise SectionError("depo_yok")
+    st = B.BudgetGuard(bc).status()
+    if not st.config_ok:
+        raise SectionError("yapilandirma_gecersiz")
+    if not st.store_ok:
+        raise SectionError("depo_okunamadi")
+    sv = st.services
+    names = {"veto": "veto", "lesson": "ders"}
+    parts = [f"{names.get(k, k)} {v.used_usd:.2f}$/{v.cap_usd:.2f}$ ({v.state})" for k, v in sv.items()]
+    out = f"ay {st.month_used_usd:.2f}$/{st.monthly_cap_usd:.2f}$ ({st.month_state}); bugün: " + ", ".join(parts)
+    if not st.prices_verified:
+        out += "; fiyatlar doğrulanmadı"
+    return out
+
+
+def section_lesson(cfg: TelegramConfig, now: datetime) -> str:
+    if not cfg.lesson_store or not Path(cfg.lesson_store).exists():
+        raise SectionError("depo_yok")
+    try:
+        store = LS.LessonStore(cfg.lesson_store, read_only=True, create=False)
+    except Exception as e:  # noqa: BLE001
+        raise SectionError(type(e).__name__) from None
+    try:
+        lines = []
+        reqs = store.open_requests()
+        if reqs:
+            lines.append(f"  bekleyen öneri: {len(reqs)}")
+            for r in reqs[:5]:
+                try:
+                    d = json.loads(r["request_json"])
+                    summ = f"{d.get('param')} {d.get('from_value')}→{d.get('to_value')} ({d.get('scope')})"
+                except Exception:  # noqa: BLE001
+                    summ = f"öneri #{r.get('proposal_id')}"
+                lines.append(f"  {r['request_id']}: {summ} -> /onayla {r['request_id']}")
+            if len(reqs) > 5:
+                lines.append(f"  +{len(reqs) - 5}")
+        else:
+            lines.append("  bekleyen öneri yok")
+        sd, ed = store.get_state("shadow_start_day"), store.get_state("shadow_end_day")
+        if sd:
+            today = now.astimezone(TR).date()
+            n = (today - datetime.fromisoformat(sd).date()).days + 1
+            tot = (datetime.fromisoformat(ed).date() - datetime.fromisoformat(sd).date()).days if ed else "?"
+            lines.append(f"  gölge dönem: gün {max(n, 0)}/{tot} (bitiş {ed})")
+        else:
+            lines.append("  gölge dönem: başlamadı")
+        rows = store._q("SELECT id, run_day FROM lesson_runs ORDER BY id DESC LIMIT 1")
+        if rows:
+            ev = store.run_events(rows[0]["id"])
+            last = ev[-1] if ev else None
+            res = f"{last.status}{'/' + last.code if last and last.code else ''}" if last else "olay yok"
+            lines.append(f"  son çalışma: {rows[0]['run_day']} {res}")
+        else:
+            lines.append("  son çalışma: yok")
+        return "\n" + "\n".join(lines)
+    except SectionError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise SectionError(type(e).__name__) from None
+    finally:
+        store.close()
+
+
+def default_sections(cfg: TelegramConfig, now: datetime, day: str) -> dict[str, Callable[[], str]]:
+    return {"Defter": lambda: section_ledger(cfg, day), "Bütçe": lambda: section_budget(cfg),
+            "Ders": lambda: section_lesson(cfg, now)}
 
 
 def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, sections=None) -> str:
@@ -917,7 +1080,7 @@ def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, s
     decision, day = report_decision(now, last)
     if decision == "atla":
         return "already" if last == day else "skipped"
-    text = build_report(cfg, now, day, sections)
+    text = build_report(cfg, now, day, default_sections(cfg, now, day) if sections is None else sections)
     if decision == "gecikmis":
         text = "[gecikmiş] " + text
     ok = notifier.send_text(text, "INFO", f"report-{day}")
