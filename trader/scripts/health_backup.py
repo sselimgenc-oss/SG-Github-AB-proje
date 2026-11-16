@@ -96,11 +96,11 @@ def _max_ids(conn) -> dict[str, int]:
 
 def _fail(name: str, error: str, bytes_: int = 0) -> dict:
     return {"ok": False, "bytes": bytes_, "sha256": None, "integrity": None, "user_version": None,
-            "max_ids": {}, "trades": None, "error": error}
+            "max_ids": {}, "positions": None, "error": error}
 
 
 def backup_one(kind: str, bot: str, src, dest, *, sleep=time.sleep, lock_retry_s: float = 30.0) -> dict:
-    """Tek veritabanini yedekler ve dogrular. `kind`: 'ledger' | 'freqtrade'. Girdi dosyasi degismez."""
+    """Tek veritabanini yedekler ve dogrular. `kind`: 'ledger' | 'state' (motor state.sqlite). Girdi dosyasi degismez."""
     src, dest = str(src), str(dest)
     partial = dest + ".partial"
     if not os.path.isfile(src):
@@ -166,7 +166,7 @@ def backup_one(kind: str, bot: str, src, dest, *, sleep=time.sleep, lock_retry_s
             return bad("integrity")
         uv = v.execute("PRAGMA user_version").fetchone()[0]
         entry = {"ok": True, "bytes": size, "integrity": "ok", "user_version": uv, "max_ids": {},
-                 "trades": None, "error": None}
+                 "positions": None, "error": None}
         if kind == "ledger":
             if uv != src_uv:
                 v.close()
@@ -180,10 +180,10 @@ def backup_one(kind: str, bot: str, src, dest, *, sleep=time.sleep, lock_retry_s
                 return bad("triggers")
             entry["max_ids"] = _max_ids(v)
         else:
-            if "trades" not in _tables(v):
+            if "positions" not in _tables(v):
                 v.close()
-                return bad("no_trades_table")
-            entry["trades"] = int(v.execute("SELECT count(*) FROM trades").fetchone()[0])
+                return bad("no_positions_table")
+            entry["positions"] = int(v.execute("SELECT count(*) FROM positions").fetchone()[0])
         v.close()
         v = None
     except sqlite3.Error:
@@ -284,7 +284,7 @@ def rotate_backups(backup_dir, keep_days: int, today: str) -> list[str]:
     return removed
 
 
-def run_backup(backup_dir, ledger_dir, user_data_dir, keep_days=KEEP_DEFAULT, *, now: datetime | None = None,
+def run_backup(backup_dir, var_dir, keep_days=KEEP_DEFAULT, *, now: datetime | None = None,
                free_bytes=None, sleep=time.sleep, bots=BOTS) -> tuple[int, dict]:
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
@@ -307,9 +307,9 @@ def run_backup(backup_dir, ledger_dir, user_data_dir, keep_days=KEEP_DEFAULT, *,
 
     jobs = []
     for b in bots:
-        jobs.append(("ledger", b, Path(ledger_dir) / f"ledger_{b}.sqlite", f"ledger_{b}.sqlite"))
+        jobs.append(("ledger", b, Path(var_dir) / b / "ledger.sqlite", f"ledger_{b}.sqlite"))
     for b in bots:
-        jobs.append(("freqtrade", b, Path(user_data_dir) / b / "tradesv3.sqlite", f"freqtrade_{b}.sqlite"))
+        jobs.append(("state", b, Path(var_dir) / b / "state.sqlite", f"state_{b}.sqlite"))
 
     if free_bytes is None:
         def free_bytes():
@@ -343,13 +343,12 @@ def main(argv=None) -> int:
     try:
         env = os.environ
         backup_dir = env.get("BACKUP_DIR")
-        ledger_dir = env.get("LEDGER_DIR")
-        ud = env.get("FREQTRADE_USER_DATA_DIR")
-        if not (backup_dir and ledger_dir and ud):
-            print("health_backup: BACKUP_DIR, LEDGER_DIR, FREQTRADE_USER_DATA_DIR gerekli", file=sys.stderr)
+        var_dir = env.get("ENGINE_VAR_DIR")
+        if not (backup_dir and var_dir):
+            print("health_backup: BACKUP_DIR, ENGINE_VAR_DIR gerekli", file=sys.stderr)
             return EXIT_CRASH
         keep = parse_keep_days(env.get("BACKUP_KEEP_DAYS"))
-        code, m = run_backup(backup_dir, ledger_dir, ud, keep)
+        code, m = run_backup(backup_dir, var_dir, keep)
         bad = [k for k, v in m["files"].items() if not v["ok"]]
         print(json.dumps({"backup_ok": m["ok"], "failed": bad, "created_at": m["created_at"]}))
         if bad:

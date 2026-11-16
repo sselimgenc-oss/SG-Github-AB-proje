@@ -29,16 +29,16 @@ def run_checks(env, snap, state, *, run=subprocess.run, expected_dry_run=True) -
     out = []
     for k, c in snap.containers.items():
         if c.state is None:
-            out.append(step("R1", "UNKNOWN", f"{k} durumu okunamadi", "docker inspect elle calistirin"))
+            out.append(step("R1", "UNKNOWN", f"{k} durumu okunamadi", "motor status.json okunamadi/yok: motor surecini (systemd/journal) elle kontrol et"))
         elif c.state != "running" or c.oom_killed:
             out.append(step("R1", "FAIL", f"{k} durum={c.state} oom={c.oom_killed}",
-                            "oom ise bellek sinirini incele; dongude docker logs --tail 200"))
+                            "status.json bayat: motor surecini ve journal'i incele (journalctl -u <motor birimi> -n 200)"))
         else:
-            out.append(step("R1", "PASS", f"{k} calisiyor, RestartCount={c.restart_count}"))
+            out.append(step("R1", "PASS", f"{k} motoru calisiyor (status taze), yeniden baslatma sayaci={c.restart_count}"))
     for bot in R.BOTS:
-        db = os.path.join(env["LEDGER_DIR"], f"ledger_{bot}.sqlite")
-        ft = os.path.join(env.get("FREQTRADE_USER_DATA_DIR", ""), bot, "tradesv3.sqlite")
-        for label, p in ((f"ledger_{bot}", db), (f"freqtrade_{bot}", ft)):
+        db = R.ledger_path(env["ENGINE_VAR_DIR"], bot)
+        st = os.path.join(env["ENGINE_VAR_DIR"], bot, "state.sqlite")
+        for label, p in ((f"ledger_{bot}", db), (f"state_{bot}", st)):
             try:
                 c = sqlite3.connect(f"file:{p}?mode=ro", uri=True, timeout=5)
                 try:
@@ -73,10 +73,16 @@ def run_checks(env, snap, state, *, run=subprocess.run, expected_dry_run=True) -
                             "record_decision ile supersedes_id duzeltmesi (defter-spec 7.2)"))
         else:
             out.append(step("R6", "PASS", f"{bot} sahipsiz karar yok"))
-        out.append(step("R7", "UNKNOWN", f"{bot} koruyucu stop denetimi bu surumde yok",
-                        "freqtrade stoploss_on_exchange alan adi 2026.10 imajinda dogrulanacak; elle kontrol"))
+        if ap is None or ap.unprotected_ids is None:
+            out.append(step("R7", "UNKNOWN", f"{bot} acik pozisyon stop'lari status.json'dan okunamadi",
+                            "status.json yok/bozuk: motoru ve pozisyonlari elle kontrol et"))
+        elif ap.unprotected_ids:
+            out.append(step("R7", "FAIL", f"{bot} stop'u olmayan acik pozisyon: {list(ap.unprotected_ids)}",
+                            "motor mutabakati stop'u yeniden kurana dek izle; gerekirse pozisyonu elle kapat (insan karari)"))
+        else:
+            out.append(step("R7", "PASS", f"{bot} tum acik pozisyonlarin stop'u var (paper: status.open_positions[].stop)"))
         if ap is None or ap.dry_run is None:
-            out.append(step("R8", "UNKNOWN", f"{bot} dry_run okunamadi"))
+            out.append(step("R8", "UNKNOWN", f"{bot} dry_run okunamadi (status.json)"))
         elif ap.dry_run != expected_dry_run:
             out.append(step("R8", "FAIL", f"{bot} dry_run={ap.dry_run} beklenmeyen", "ACIL: yapilandirmayi kontrol et"))
         else:

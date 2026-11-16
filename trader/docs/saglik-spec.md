@@ -345,3 +345,30 @@ Konteyner kill -9 sonrası: R1 `RestartCount` +1, R4 `spool_lines=2` ⇒ FAIL (k
 
 ## 14. Test planı (kod bu belgede yok; `tests/test_health_spec.py`, `tests/test_health_backup_spec.py`)
 `evaluate` için 13.1–13.7'nin her satırı; `plan_alerts` için 13.8; `HttpsHeartbeat` için sahte HTTP sunucusu (13.9, yönlendirme izlenmez, adres günlüğe girmez); yedek için geçici dizinde gerçek `sqlite3` dosyaları: WAL modunda açık yazar bağlantısı varken yedek yazarı **bloklamaz** (yazar `busy_timeout` içinde commit eder), bozuk kaynak ve bozuk kopya, rotation (13.10), idempotentlik, `.partial` kalıntısı; durum dosyası atomik yazma ve bozuk dosyada boş durum; ortam dosyası ayrıştırma (satır sonu `#`, boşluk, tırnak). `health.py` içe aktarımının `pandas`/`numpy`/`freqtrade` yüklemediği (`sys.modules` denetimi) ve `trader_core/__init__.py`'nin yalnız docstring içerdiği doğrulanır. Ağ, `docker` ve gerçek saat testlerde kullanılmaz (hepsi enjekte).
+
+
+## 14. Motor uyarlaması
+
+freqtrade kaldırıldı; girdi kaynağı kendi motorumuzun `status.json` dosyasıdır (`docs/motor/05-engine-runner.md` §8.2, şema `engine-status/1`). **Bu belgede geçen freqtrade API, `docker inspect`, `tradesv3.sqlite`, `FREQTRADE_*`, `LEARNER_API/TWIN_API`, `LEDGER_DIR` ifadeleri bu bölümle değiştirilmiştir.** `health.evaluate` ve 12 kontrolün adları/eşikleri/fail-closed davranışı aynıdır; yalnızca ölçüm toplayıcı (`scripts/health_run.py`) değişti. `ApiProbe` adı tarihsel kaldı.
+
+**Yollar** (tek ortam anahtarı `ENGINE_VAR_DIR` = motor `var_dir`): `<var>/<bot>/status.json`, `<var>/<bot>/ledger.sqlite`, `<var>/<bot>/state.sqlite` (`bot` ∈ learner, twin). Yedek dosya adları: `ledger_<bot>.sqlite`, `state_<bot>.sqlite` (doğrulama: `positions` tablosu, manifestte `positions` sayısı).
+
+**status.json okuma kuralları (fail-closed):** dosya yok → `ping_ok=False` (CRIT `api_unreachable`; döngü/mum UNKNOWN); okunamaz, bozuk JSON, `schema != engine-status/1`, `bot` uyuşmaz, 2 MB üstü → tüm alanlar `None` (UNKNOWN); `loop_at` 120 sn'den eskiyse `ping_ok=False`; `loop_at` gelecekteyse (saat uyumsuz) `ping_ok=None`. Twin dosyası yoksa twin bazlı kontroller CRIT/UNKNOWN olur ve `overall` sağlıksızdır (iki bot zorunlu).
+
+| # | Kontrol | Motor kaynağı |
+|---|---|---|
+| 1 | `api_reachable` | `loop_at` yaşı ≤ 120 sn ve dosya geçerli |
+| 2 | `bot_loop_age` | `loop_at` |
+| 3 | `candle_age` | `last_candle_open`; periyot `trigger_tf` |
+| 4 | `ledger_write_age` | `<var>/<bot>/ledger.sqlite` (salt okunur; değişmedi) |
+| 5 | `ledger_gate` | defter yoklaması (spool, unledgered, şema, etkin param) + `gate.code` (ok/kill dışı → CRIT `engine_gate_closed`); `kill`/`gate.code=="kill"` → WARN `engine_kill`; `counters.ledger_errors > 0` → WARN `ledger_errors`; `open_trade_ids` `find_unledgered_trades` girdisi |
+| 6 | `disk_free` | `ENGINE_VAR_DIR` + `BACKUP_DIR` (değişmedi) |
+| 7 | `memory` / `swap` | `/proc/meminfo` (değişmedi) |
+| 8 | `container_restarts` | `status.started_at` değişimi → kalıcı sayaç (+1; `state.json` `restart_counts`/`engine_started_at`); `state="running"` ⇔ `loop_at` ≤ 300 sn, aksi `not_running` (CRIT); `started_at` ısınma için kullanılır; `oom_killed` her zaman `None` |
+| 9 | `backup_age` | değişmedi (`health_backup.py`: iki defter + iki motor state) |
+| 10 | `veto_file_age` | değişmedi |
+| 11 | `budget_status` | değişmedi |
+
+Kurtarma (§7): R5 `open_trade_ids`; R7 `open_positions[].stop` boş/≤0 → FAIL (paper'da borsa stop'u yok, motorun stop'u var); R8 `dry_run`; R1 status tazeliği.
+
+**Motor tarafında eksikler (rapor edildi, motor değiştirilmedi):** (a) `oom_killed`/süreç çıkış nedeni status'ta yok → `None`; (b) yeniden başlatma sayacı status'ta yok → `started_at` değişiminden türetilir (iki çalışma arasında 2 restart tek sayılır); (c) status'ta `ledger_errors` kümülatiftir (süreç başından), zaman penceresi yok; (d) status'ta son defter yazma zamanı yok → defter sqlite'ından okunur; (e) temiz kapanış (`kalp_atisi.json` `stopped`) okunmuyor.

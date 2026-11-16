@@ -1332,36 +1332,36 @@ def make_ledger(path: Path, bot: str, rows: int = 5, wal: bool = True):
 
 def make_ft(path: Path, rows: int = 3):
     con = sqlite3.connect(path)
-    con.execute("CREATE TABLE trades(id INTEGER PRIMARY KEY, pair TEXT)")
+    con.execute("CREATE TABLE positions(id INTEGER PRIMARY KEY, pair TEXT)")
     for i in range(rows):
-        con.execute("INSERT INTO trades(pair) VALUES(?)", (f"BTC/USDT{i}",))
+        con.execute("INSERT INTO positions(pair) VALUES(?)", (f"BTC/USDT{i}",))
     con.commit()
     con.close()
 
 
 class Env:
-    """BACKUP/LEDGER/USER_DATA dizinlerini kurar.
+    """BACKUP/ENGINE_VAR_DIR dizinlerini kurar (spec Bolum 14).
 
-    Varsayim (spec Bolum 6, 8.3): LEDGER_DIR/ledger_<bot>.sqlite ve
-    FREQTRADE_USER_DATA_DIR/<bot>/tradesv3.sqlite; yedek adi freqtrade_<bot>.sqlite.
+    Motor yollari: ENGINE_VAR_DIR/<bot>/ledger.sqlite ve state.sqlite; yedek adlari
+    ledger_<bot>.sqlite ve state_<bot>.sqlite.
     """
 
     def __init__(self, tmp: Path):
-        self.ledger_dir = tmp / "ledgers"
-        self.ud = tmp / "user_data"
+        self.var = tmp / "var"
         self.backup = tmp / "backups"
-        for d in (self.ledger_dir, self.ud, self.backup):
+        for d in (self.var, self.backup):
             d.mkdir()
         for b in BOTS:
-            (self.ud / b).mkdir()
-        self.writers = {b: make_ledger(self.ledger_dir / f"ledger_{b}.sqlite", b)
-                        for b in BOTS}
+            (self.var / b).mkdir()
+        self.writers = {b: make_ledger(self.lp(b), b) for b in BOTS}
         for b in BOTS:
-            make_ft(self.ud / b / "tradesv3.sqlite")
+            make_ft(self.var / b / "state.sqlite")
+
+    def lp(self, bot):
+        return self.var / bot / "ledger.sqlite"
 
     def environ(self, keep=None):
-        e = {"BACKUP_DIR": str(self.backup), "LEDGER_DIR": str(self.ledger_dir),
-             "FREQTRADE_USER_DATA_DIR": str(self.ud)}
+        e = {"BACKUP_DIR": str(self.backup), "ENGINE_VAR_DIR": str(self.var)}
         if keep is not None:
             e["BACKUP_KEEP_DAYS"] = str(keep)
         return e
@@ -1423,14 +1423,14 @@ class TestBackupBasic:
         assert rc == 0
         d = env.day_dir()
         for n in ("ledger_learner.sqlite", "ledger_twin.sqlite",
-                  "freqtrade_learner.sqlite", "freqtrade_twin.sqlite", "MANIFEST.json"):
+                  "state_learner.sqlite", "state_twin.sqlite", "MANIFEST.json"):
             assert (d / n).is_file(), n
         assert not list(d.glob("*.partial")) and not list(d.glob("*.corrupt"))
         m = env.manifest()
         assert m["schema"] == 1 and m["ok"] is True
         assert "created_at" in m and "host" in m
         assert set(m["files"]) >= {"ledger_learner.sqlite", "ledger_twin.sqlite",
-                                   "freqtrade_learner.sqlite", "freqtrade_twin.sqlite"}
+                                   "state_learner.sqlite", "state_twin.sqlite"}
         for name, f in m["files"].items():
             assert f["ok"] is True and f["bytes"] > 0 and f["integrity"] == "ok"
             assert f["error"] is None
@@ -1440,11 +1440,11 @@ class TestBackupBasic:
         lj = m["files"]["ledger_learner.sqlite"]
         assert lj["user_version"] == 1
         assert lj["max_ids"] == {t: 5 for t in TRIGGER_TABLES}
-        assert m["files"]["freqtrade_twin.sqlite"]["trades"] == 3
+        assert m["files"]["state_twin.sqlite"]["positions"] == 3
 
     def test_manifest_has_no_secret(self, env, backup_mod, monkeypatch):
         monkeypatch.setenv("HEARTBEAT_URL", SECRET_URL)
-        monkeypatch.setenv("FREQTRADE_API_PASS", "hunter2-secret")
+        monkeypatch.setenv("SOME_API_PASS", "hunter2-secret")
         run_backup(backup_mod, env, monkeypatch)
         txt = (env.day_dir() / "MANIFEST.json").read_text("utf-8")
         assert "SECRET-TOKEN" not in txt and "hunter2" not in txt
@@ -1461,19 +1461,19 @@ class TestBackupBasic:
             c.close()
 
     def test_source_untouched(self, env, backup_mod, monkeypatch):
-        before = {b: hashlib.sha256((env.ledger_dir / f"ledger_{b}.sqlite").read_bytes()).hexdigest()
+        before = {b: hashlib.sha256((env.lp(b)).read_bytes()).hexdigest()
                   for b in BOTS}
         for c in env.writers.values():
             c.execute("PRAGMA wal_checkpoint(PASSIVE)")
         run_backup(backup_mod, env, monkeypatch)
         # veriler ayni: satir sayisi degismedi, tetikleyiciler yerinde
         for b in BOTS:
-            c = sqlite3.connect(env.ledger_dir / f"ledger_{b}.sqlite")
+            c = sqlite3.connect(env.lp(b))
             assert c.execute("SELECT count(*) FROM trade_entries").fetchone()[0] == 5
             c.close()
 
     def test_spool_copied_when_nonempty(self, env, backup_mod, monkeypatch):
-        sp = env.ledger_dir / "ledger_learner.sqlite.spool.jsonl"
+        sp = Path(str(env.lp("learner")) + ".spool.jsonl")
         sp.write_text('{"a":1}\n{"b":2}\n')
         run_backup(backup_mod, env, monkeypatch)
         out = env.day_dir() / "ledger_learner.sqlite.spool.jsonl"
@@ -1481,7 +1481,7 @@ class TestBackupBasic:
         assert not (env.day_dir() / "ledger_twin.sqlite.spool.jsonl").exists()
 
     def test_empty_spool_skipped(self, env, backup_mod, monkeypatch):
-        (env.ledger_dir / "ledger_learner.sqlite.spool.jsonl").write_text("")
+        (Path(str(env.lp("learner")) + ".spool.jsonl")).write_text("")
         run_backup(backup_mod, env, monkeypatch)
         assert not (env.day_dir() / "ledger_learner.sqlite.spool.jsonl").exists()
 
@@ -1514,14 +1514,14 @@ class TestBackupBasic:
         assert not list(env.day_dir().glob("*.partial"))
 
     def test_missing_source_fails_exit_20(self, env, backup_mod, monkeypatch):
-        (env.ud / "twin" / "tradesv3.sqlite").unlink()
+        (env.var / "twin" / "state.sqlite").unlink()
         assert run_backup(backup_mod, env, monkeypatch) == 20
         mp = env.day_dir() / "MANIFEST.json"
         if mp.exists():
             m = json.loads(mp.read_text())
             assert m["ok"] is False
-            assert m["files"]["freqtrade_twin.sqlite"]["ok"] is False
-            assert m["files"]["freqtrade_twin.sqlite"]["error"]
+            assert m["files"]["state_twin.sqlite"]["ok"] is False
+            assert m["files"]["state_twin.sqlite"]["error"]
 
     def test_no_file_copy_used(self, env, backup_mod, monkeypatch):
         # cp / shutil.copy2 ile DB kopyalamak yasak: kaynak WAL'deki commitlenmemis-checkpointsiz
@@ -1531,7 +1531,7 @@ class TestBackupBasic:
         for i in range(50):
             c.execute("INSERT INTO decision_events(payload) VALUES(?)", (f"w{i}",))
         c.commit()
-        assert (env.ledger_dir / "ledger_learner.sqlite-wal").stat().st_size > 0
+        assert Path(str(env.lp("learner")) + "-wal").stat().st_size > 0
         run_backup(backup_mod, env, monkeypatch)
         b = sqlite3.connect(env.day_dir() / "ledger_learner.sqlite")
         assert b.execute("SELECT count(*) FROM decision_events").fetchone()[0] == 55
@@ -1580,7 +1580,7 @@ class TestBackupCorruption:
             c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         for c in env.writers.values():
             c.close()
-        p = env.ledger_dir / "ledger_learner.sqlite"
+        p = env.lp("learner")
         raw = bytearray(p.read_bytes())
         ps = int.from_bytes(raw[16:18], "big") or 4096
         npages = len(raw) // ps
@@ -1634,7 +1634,7 @@ class TestBackupWalWriter:
         stop = threading.Event()
         lat = []
         errors = []
-        path = env.ledger_dir / "ledger_learner.sqlite"
+        path = env.lp("learner")
         for c in env.writers.values():
             c.close()
 
@@ -1733,7 +1733,7 @@ class TestBackupRotation:
 
     def test_today_failed_deletes_nothing(self, env, backup_mod, monkeypatch):
         olds = [seed_old_day(env, n) for n in range(1, 16)]
-        (env.ud / "twin" / "tradesv3.sqlite").unlink()
+        (env.var / "twin" / "state.sqlite").unlink()
         assert run_backup(backup_mod, env, monkeypatch, keep=14) == 20
         assert all(p.exists() for p in olds)
 
@@ -1793,11 +1793,9 @@ def recover_mod():
 def run_recover(mod, env: Env, monkeypatch, capsys):
     for k, v in env.environ().items():
         monkeypatch.setenv(k, v)
-    for k, v in {"HEARTBEAT_URL": "https://hc.example.test/p", "FREQTRADE_API_USER": "u",
-                 "FREQTRADE_API_PASS": "p", "BACKUP_KEEP_DAYS": "14", "NOTIFIER": "log"}.items():
+    for k, v in {"HEARTBEAT_URL": "https://hc.example.test/p",
+                 "BACKUP_KEEP_DAYS": "14", "NOTIFIER": "log"}.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.setenv("LEARNER_API", "http://127.0.0.1:1")
-    monkeypatch.setenv("TWIN_API", "http://127.0.0.1:1")
     try:
         sig = inspect.signature(mod.main)
         rc = mod.main(["--check"]) if sig.parameters else mod.main()
@@ -1817,17 +1815,17 @@ def tree_digest(root: Path):
 
 class TestRecover:
     def test_spool_pending_reported_fail_and_readonly(self, env, recover_mod, monkeypatch, capsys):
-        sp = env.ledger_dir / "ledger_learner.sqlite.spool.jsonl"
+        sp = Path(str(env.lp("learner")) + ".spool.jsonl")
         sp.write_text('{"a":1}\n{"b":2}\n')
         for c in env.writers.values():
             c.commit()
             c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             c.close()
-        before = tree_digest(env.ledger_dir)
+        before = tree_digest(env.var)
         rc, out = run_recover(recover_mod, env, monkeypatch, capsys)
         assert "spool_pending" in out or "R4" in out
         assert "FAIL" in out
-        assert tree_digest(env.ledger_dir) == before      # hicbir sey yazilmadi, spool bosaltilmadi
+        assert tree_digest(env.var) == before      # hicbir sey yazilmadi, spool bosaltilmadi
         assert sp.read_text() == '{"a":1}\n{"b":2}\n'
 
     def test_clean_state_spool_pass(self, env, recover_mod, monkeypatch, capsys):
@@ -1863,9 +1861,8 @@ class TestDeployExample:
             k, v = ln.split("=", 1)
             assert "#" not in v and '"' not in v and "'" not in v, ln
             keys[k] = v
-        for k in ("HEARTBEAT_URL", "HEARTBEAT_FAIL_URL", "FREQTRADE_API_USER",
-                  "FREQTRADE_API_PASS", "LEARNER_API", "TWIN_API", "LEDGER_DIR",
-                  "FREQTRADE_USER_DATA_DIR", "BACKUP_DIR", "BACKUP_KEEP_DAYS", "NOTIFIER",
+        for k in ("HEARTBEAT_URL", "HEARTBEAT_FAIL_URL", "ENGINE_VAR_DIR", "BACKUP_DIR", "BACKUP_KEEP_DAYS", "NOTIFIER",
                   "HEALTH_MAINTENANCE_FILE"):
             assert k in keys, k
-        assert keys["HEARTBEAT_URL"] == "" and keys["FREQTRADE_API_PASS"] == ""
+        assert keys["HEARTBEAT_URL"] == "" and keys["ENGINE_VAR_DIR"] == ""
+        assert not [k for k in keys if "FREQTRADE" in k]
