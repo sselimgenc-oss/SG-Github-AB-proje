@@ -57,3 +57,8 @@ Ek notlar: Claude kredisi/harcama limiti dolarsa bot yeni işlem açmaz (açık 
   - PowerTrader_AI (Apache-2.0): yalnız fikir — ders başına güvenilirlik puanı, kanıtı tutmayan ders zamanla zayıflar. Ders servisi v2.
   - universal-portfolios: yalnız fikir — ders kanıtı komisyon+kayma sonrası (net) ölçülmeli; ders-spec'e tek satır.
   - Diğerleri zaten puanlanmıştı ya da katkısı yok.
+- **17 Kasım 2026 — Kullanıcının iki ek repo raporu (mentor incelemesi):** Tasarım değişmez. Ortak desenin (zamanlanmış yeniden eğitim → nicel terfi kapısı → gölge → sıcak yükleme) terfi kapısı, gölge, sıcak yükleme, sınırlı parametre ve geri alma kısımları bizde zaten var; zamanlanmış walk-forward yeniden eğitim ML fazında (Aurum `splits.py`). Sonraki işler (yalnız fikir, kod alınmaz):
+  - Alınmayan sinyallerin sonucu: gece işi atlanan kararları sonraki mumlarda yeniden oynatıp varsayımsal R saklar (gevşetme kuralları + ML eğitim derlemi). Kağıt başladıktan sonra, ~1–2 gün. Ön koşul doğrulandı: defter her kararda (atlananlar dahil) `planned_entry`/`planned_stop`/`planned_target` yazıyor.
+  - Taban kayma alarmı: son N işlem, botun kendi önceki kağıt penceresiyle kıyaslanır; yalnız Telegram uyarısı. Ders servisi v2, ~yarım gün.
+  - Kağıt sonu raporuna beta ve alfa t-istatistiği (yalnız toplam getiriye bakılmaz). Canlı kararından önce, ~yarım gün.
+  - ML fazında yeni modeli reddeden IC tarzı kapı.
