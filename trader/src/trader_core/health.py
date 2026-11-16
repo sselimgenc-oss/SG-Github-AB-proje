@@ -1,0 +1,815 @@
+"""Saglik izleme: saf degerlendirme, uyari planlama, dis nabiz gonderici. Bkz. docs/saglik-spec.md (v1).
+
+Yalnizca standart kutuphane. Modul dosya/ag/saat/surec OKUMAZ; olcumleri `scripts/health_run.py`
+toplar ve `HealthSnapshot` olarak verir. Her belirsizlikte fail-closed: olculemeyen girdi
+`UNKNOWN` olur ve nabzi keser. Modul islem acmaz, bot baslatmaz, defter satiri yazmaz.
+(`HttpsHeartbeat` yalnizca `ok()/fail()` cagrilinca ag kullanir.)
+"""
+from __future__ import annotations
+
+import logging
+import math
+import re
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field, fields, replace
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Callable, Mapping, Protocol
+from urllib.parse import urlsplit
+
+__all__ = [
+    "Status", "CheckResult", "HealthReport", "HealthSnapshot", "ApiProbe", "LedgerProbe",
+    "ContainerProbe", "HealthConfig", "DEFAULT_CFG", "evaluate", "combine", "Alert", "Notifier",
+    "LogNotifier", "NullNotifier", "plan_alerts", "revert_failed_alerts", "empty_state",
+    "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
+    "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS",
+]
+
+log = logging.getLogger("trader.health")
+
+GIB = 1024 ** 3
+MIB = 1024 ** 2
+
+
+class Status(str, Enum):
+    OK = "OK"
+    WARN = "WARN"
+    CRIT = "CRIT"
+    UNKNOWN = "UNKNOWN"
+    SKIPPED = "SKIPPED"
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    name: str
+    status: Status
+    code: str
+    detail: str
+    value: float | None = None
+    threshold: float | None = None
+
+
+# Zorunlu kontroller (Z): taban adlari. Bot bazlilar "<ad>:<bot>" olur.
+REQUIRED_CHECKS = ("api_reachable", "bot_loop_age", "candle_age", "ledger_write_age", "ledger_gate",
+                   "disk_free", "memory", "container_restarts")
+_PER_BOT = ("api_reachable", "bot_loop_age", "candle_age", "ledger_write_age", "ledger_gate",
+            "container_restarts")
+
+
+@dataclass(frozen=True)
+class HealthReport:
+    generated_at: datetime
+    results: tuple[CheckResult, ...]
+    overall: Status
+    healthy: bool
+
+    def failing(self) -> tuple[CheckResult, ...]:
+        return tuple(r for r in self.results
+                     if r.status in (Status.WARN, Status.CRIT, Status.UNKNOWN))
+
+
+# ---------------------------------------------------------------------------------------------
+# Anlik goruntu
+# ---------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class ApiProbe:
+    ping_ok: bool | None = None
+    last_process_at: datetime | None = None
+    last_candle_open: datetime | None = None
+    open_trade_ids: tuple[int, ...] | None = None
+    dry_run: bool | None = None
+
+
+@dataclass(frozen=True)
+class LedgerProbe:
+    last_write_at: datetime | None = None
+    spool_lines: int | None = None
+    unledgered_ids: tuple[int, ...] | None = None
+    orphan_ids: tuple[int, ...] | None = None
+    schema_ok: bool | None = None
+    has_active_params: bool | None = None
+
+
+@dataclass(frozen=True)
+class ContainerProbe:
+    state: str | None = None
+    restart_count: int | None = None
+    started_at: datetime | None = None
+    oom_killed: bool | None = None
+
+
+@dataclass(frozen=True)
+class HealthSnapshot:
+    now: datetime
+    timeframe_s: int | None = None
+    api: Mapping[str, ApiProbe] = field(default_factory=dict)
+    ledger: Mapping[str, LedgerProbe] = field(default_factory=dict)
+    disk_free_bytes: int | None = None
+    disk_total_bytes: int | None = None
+    mem_available_bytes: int | None = None
+    swap_total_bytes: int | None = None
+    swap_used_bytes: int | None = None
+    containers: Mapping[str, ContainerProbe] = field(default_factory=dict)
+    prev_restart_counts: Mapping[str, int] = field(default_factory=dict)
+    veto_file_mtime: datetime | None = None
+    budget_state: str | None = None
+    last_backup_at: datetime | None = None
+    # Ek (spec 5.3 / 6.7): runner durum dosyasindan doldurur; yoksa varsayilan.
+    consecutive_restart_runs: Mapping[str, int] = field(default_factory=dict)
+    installed_at: datetime | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
+            raise ValueError("now tz-aware datetime olmali")
+
+
+# ---------------------------------------------------------------------------------------------
+# Yapilandirma
+# ---------------------------------------------------------------------------------------------
+def _pos(name, v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0:
+        raise ValueError(f"{name} sonlu ve pozitif sayi olmali")
+
+
+@dataclass(frozen=True)
+class HealthConfig:
+    loop_warn_s: int = 120
+    loop_crit_s: int = 300
+    candle_warn_mult: float = 2.0
+    candle_crit_mult: float = 3.0
+    candle_margin_s: int = 120
+    ledger_warn_mult: float = 1.0
+    ledger_crit_mult: float = 2.0
+    ledger_margin_s: int = 300
+    disk_warn_bytes: int = 3 * GIB
+    disk_crit_bytes: int = 1 * GIB
+    mem_warn_bytes: int = 250 * MIB
+    mem_crit_bytes: int = 120 * MIB
+    swap_warn_ratio: float = 0.50
+    swap_crit_ratio: float = 0.80
+    restart_warn_delta: int = 1
+    restart_crit_delta: int = 3
+    restart_crit_runs: int = 3
+    backup_warn_s: int = 26 * 3600
+    backup_crit_s: int = 50 * 3600
+    warmup_s: int = 600
+    clock_skew_tolerance_s: int = 5
+    require_bots: tuple[str, ...] = ("learner", "twin")
+    veto_max_age_s: int | None = None
+    budget_check_enabled: bool = False
+    # Uyari bastirma (Bolum 5)
+    confirm_runs: int = 2
+    crit_repeat_min: int = 180
+    warn_repeat_min: int = 720
+    multiple_threshold: int = 4
+
+    def __post_init__(self):
+        for n in ("loop_warn_s", "loop_crit_s", "candle_warn_mult", "candle_crit_mult", "candle_margin_s",
+                  "ledger_warn_mult", "ledger_crit_mult", "ledger_margin_s", "disk_warn_bytes",
+                  "disk_crit_bytes", "mem_warn_bytes", "mem_crit_bytes", "swap_warn_ratio",
+                  "swap_crit_ratio", "restart_warn_delta", "restart_crit_delta", "restart_crit_runs",
+                  "backup_warn_s", "backup_crit_s", "warmup_s", "confirm_runs", "crit_repeat_min",
+                  "warn_repeat_min", "multiple_threshold"):
+            _pos(n, getattr(self, n))
+        if self.clock_skew_tolerance_s is None or isinstance(self.clock_skew_tolerance_s, bool) \
+                or not isinstance(self.clock_skew_tolerance_s, (int, float)) \
+                or not math.isfinite(self.clock_skew_tolerance_s) or self.clock_skew_tolerance_s < 0:
+            raise ValueError("clock_skew_tolerance_s >= 0 olmali")
+        if not self.loop_warn_s < self.loop_crit_s:
+            raise ValueError("loop_warn_s < loop_crit_s olmali")
+        if not self.candle_warn_mult < self.candle_crit_mult:
+            raise ValueError("candle_warn_mult < candle_crit_mult olmali")
+        if not self.ledger_warn_mult < self.ledger_crit_mult:
+            raise ValueError("ledger_warn_mult < ledger_crit_mult olmali")
+        if not self.disk_crit_bytes < self.disk_warn_bytes:
+            raise ValueError("disk_crit_bytes < disk_warn_bytes olmali")
+        if not self.mem_crit_bytes < self.mem_warn_bytes:
+            raise ValueError("mem_crit_bytes < mem_warn_bytes olmali")
+        if not self.swap_warn_ratio < self.swap_crit_ratio:
+            raise ValueError("swap_warn_ratio < swap_crit_ratio olmali")
+        if not self.restart_warn_delta < self.restart_crit_delta:
+            raise ValueError("restart_warn_delta < restart_crit_delta olmali")
+        if not self.backup_warn_s < self.backup_crit_s:
+            raise ValueError("backup_warn_s < backup_crit_s olmali")
+        if self.veto_max_age_s is not None:
+            _pos("veto_max_age_s", self.veto_max_age_s)
+        if not isinstance(self.budget_check_enabled, bool):
+            raise ValueError("budget_check_enabled bool olmali")
+        if not isinstance(self.require_bots, tuple) or not self.require_bots \
+                or not all(isinstance(b, str) and b for b in self.require_bots):
+            raise ValueError("require_bots bos olmayan metin demeti olmali")
+
+
+DEFAULT_CFG = HealthConfig()
+
+
+# ---------------------------------------------------------------------------------------------
+# Kontroller
+# ---------------------------------------------------------------------------------------------
+class _Skew(Exception):
+    pass
+
+
+def _res(name, status, code, detail, value=None, threshold=None) -> CheckResult:
+    return CheckResult(name, status, code, detail,
+                       None if value is None else float(value),
+                       None if threshold is None else float(threshold))
+
+
+def _unknown(name, code, detail) -> CheckResult:
+    return CheckResult(name, Status.UNKNOWN, code, detail, None, None)
+
+
+def _age_s(now: datetime, ts: datetime, cfg: HealthConfig) -> float:
+    if not isinstance(ts, datetime) or ts.tzinfo is None or ts.utcoffset() is None:
+        raise ValueError("zaman damgasi tz-aware datetime degil")
+    age = (now - ts).total_seconds()
+    if age < -cfg.clock_skew_tolerance_s:
+        raise _Skew()
+    return max(age, 0.0)
+
+
+def _graded(name, age, warn, crit, ok_code, bad_code, label) -> CheckResult:
+    if age > crit:
+        return _res(name, Status.CRIT, bad_code, f"{label} {age:.0f} sn, kritik esik {crit:.0f} sn", age, crit)
+    if age > warn:
+        return _res(name, Status.WARN, bad_code, f"{label} {age:.0f} sn, uyari esigi {warn:.0f} sn", age, warn)
+    return _res(name, Status.OK, ok_code, f"{label} {age:.0f} sn", age, warn)
+
+
+def _container_key(snap: HealthSnapshot, bot: str) -> str:
+    for k in (f"trader-{bot}", bot):
+        if k in snap.containers:
+            return k
+    return f"trader-{bot}"
+
+
+def _in_warmup(snap: HealthSnapshot, bot: str, cfg: HealthConfig) -> bool:
+    c = snap.containers.get(_container_key(snap, bot))
+    if c is None or not isinstance(c.started_at, datetime) or c.started_at.tzinfo is None:
+        return False
+    since = (snap.now - c.started_at).total_seconds()
+    return 0 <= since <= cfg.warmup_s
+
+
+def _warm(r: CheckResult, warm: bool) -> CheckResult:
+    if warm and r.status is Status.CRIT:
+        return replace(r, status=Status.WARN, code=r.code + "_warmup",
+                       detail=r.detail + " (isinma suresi icinde)")
+    return r
+
+
+def _c_api(snap, bot, cfg):
+    name = f"api_reachable:{bot}"
+    p = snap.api[bot].ping_ok
+    if p is None:
+        return _unknown(name, "api_unknown", f"{bot} API durumu olculemedi")
+    if p is True:
+        return _res(name, Status.OK, "ok", f"{bot} API yanit veriyor")
+    return _res(name, Status.CRIT, "api_unreachable", f"{bot} API yanit vermiyor")
+
+
+def _c_loop(snap, bot, cfg):
+    name = f"bot_loop_age:{bot}"
+    t = snap.api[bot].last_process_at
+    if t is None:
+        return _unknown(name, "loop_unknown", f"{bot} dongu zamani olculemedi")
+    try:
+        age = _age_s(snap.now, t, cfg)
+    except _Skew:
+        return _unknown(name, "clock_skew", f"{bot} dongu zamani gelecekte; saat uyumsuz")
+    r = _graded(name, age, cfg.loop_warn_s, cfg.loop_crit_s, "ok", "stale_loop", f"{bot} son dongu yasi")
+    return _warm(r, _in_warmup(snap, bot, cfg))
+
+
+def _c_candle(snap, bot, cfg):
+    name = f"candle_age:{bot}"
+    t = snap.api[bot].last_candle_open
+    T = snap.timeframe_s
+    if t is None or T is None or isinstance(T, bool) or not isinstance(T, int) or T <= 0:
+        return _unknown(name, "candle_unknown", f"{bot} mum zamani/zaman dilimi olculemedi")
+    try:
+        age = _age_s(snap.now, t, cfg)
+    except _Skew:
+        return _unknown(name, "clock_skew", f"{bot} mum zamani gelecekte; saat uyumsuz")
+    warn = cfg.candle_warn_mult * T + cfg.candle_margin_s
+    crit = cfg.candle_crit_mult * T + cfg.candle_margin_s
+    r = _graded(name, age, warn, crit, "ok", "stale_candle", f"{bot} son mum yasi")
+    return _warm(r, _in_warmup(snap, bot, cfg))
+
+
+def _c_ledger_age(snap, bot, cfg):
+    name = f"ledger_write_age:{bot}"
+    t = snap.ledger[bot].last_write_at
+    T = snap.timeframe_s
+    if t is None or T is None or isinstance(T, bool) or not isinstance(T, int) or T <= 0:
+        return _unknown(name, "ledger_age_unknown", f"{bot} defter yazma zamani olculemedi")
+    try:
+        age = _age_s(snap.now, t, cfg)
+    except _Skew:
+        return _unknown(name, "clock_skew", f"{bot} defter zamani gelecekte; saat uyumsuz")
+    warn = cfg.ledger_warn_mult * T + cfg.ledger_margin_s
+    crit = cfg.ledger_crit_mult * T + cfg.ledger_margin_s
+    r = _graded(name, age, warn, crit, "ok", "ledger_write_stale", f"{bot} defter son yazma yasi")
+    return _warm(r, _in_warmup(snap, bot, cfg))
+
+
+def _c_gate(snap, bot, cfg):
+    name = f"ledger_gate:{bot}"
+    p = snap.ledger[bot]
+    if p.spool_lines is not None and p.spool_lines > 0:
+        return _res(name, Status.CRIT, "spool_pending", f"{bot} spool'da {p.spool_lines} satir var; kapi kapali olurdu",
+                    p.spool_lines, 0)
+    if p.unledgered_ids:
+        ids = ",".join(str(i) for i in list(p.unledgered_ids)[:5])
+        return _res(name, Status.CRIT, "unledgered_trades",
+                    f"{bot} defterde girisi olmayan acik islem var: {ids}", len(p.unledgered_ids), 0)
+    if p.has_active_params is False:
+        return _res(name, Status.CRIT, "no_active_params", f"{bot} etkin parametre yok")
+    if p.schema_ok is False:
+        return _res(name, Status.CRIT, "schema", f"{bot} defter semasi beklenenden farkli")
+    if p.spool_lines is None or p.unledgered_ids is None or p.has_active_params is None or p.schema_ok is None:
+        return _unknown(name, "gate_unknown", f"{bot} defter kapisi durumu olculemedi")
+    if p.orphan_ids:
+        ids = ",".join(str(i) for i in list(p.orphan_ids)[:5])
+        return _res(name, Status.WARN, "orphan_decisions",
+                    f"{bot} trade'e baglanmamis eski giris karari var: {ids}", len(p.orphan_ids), 0)
+    return _res(name, Status.OK, "ok", f"{bot} defter kapisi acik olurdu")
+
+
+def _c_disk(snap, cfg):
+    v = snap.disk_free_bytes
+    if v is None:
+        return _unknown("disk_free", "disk_unknown", "bos disk alani olculemedi")
+    if v < cfg.disk_crit_bytes:
+        return _res("disk_free", Status.CRIT, "disk_low", f"bos alan {v / GIB:.2f} GiB, kritik", v, cfg.disk_crit_bytes)
+    if v < cfg.disk_warn_bytes:
+        return _res("disk_free", Status.WARN, "disk_low", f"bos alan {v / GIB:.2f} GiB, dusuk", v, cfg.disk_warn_bytes)
+    return _res("disk_free", Status.OK, "ok", f"bos alan {v / GIB:.2f} GiB", v, cfg.disk_warn_bytes)
+
+
+def _c_mem(snap, cfg):
+    v = snap.mem_available_bytes
+    if v is None:
+        return _unknown("memory", "memory_unknown", "kullanilabilir bellek olculemedi")
+    if v < cfg.mem_crit_bytes:
+        return _res("memory", Status.CRIT, "memory_low", f"kullanilabilir bellek {v / MIB:.0f} MiB, kritik", v,
+                    cfg.mem_crit_bytes)
+    if v < cfg.mem_warn_bytes:
+        return _res("memory", Status.WARN, "memory_low", f"kullanilabilir bellek {v / MIB:.0f} MiB, dusuk", v,
+                    cfg.mem_warn_bytes)
+    return _res("memory", Status.OK, "ok", f"kullanilabilir bellek {v / MIB:.0f} MiB", v, cfg.mem_warn_bytes)
+
+
+def _c_swap(snap, cfg):
+    tot, used = snap.swap_total_bytes, snap.swap_used_bytes
+    if tot is None or used is None:
+        return _unknown("swap", "swap_unknown", "swap durumu olculemedi")
+    if tot == 0:
+        return _res("swap", Status.SKIPPED, "no_swap", "swap tanimli degil")
+    if tot < 0 or used < 0:
+        return _unknown("swap", "swap_unknown", "swap degerleri gecersiz")
+    ratio = used / tot
+    if ratio > cfg.swap_crit_ratio:
+        return _res("swap", Status.CRIT, "swap_high", f"swap kullanimi {ratio:.2f}, kritik", ratio, cfg.swap_crit_ratio)
+    if ratio > cfg.swap_warn_ratio:
+        return _res("swap", Status.WARN, "swap_high", f"swap kullanimi {ratio:.2f}, yuksek", ratio, cfg.swap_warn_ratio)
+    return _res("swap", Status.OK, "ok", f"swap kullanimi {ratio:.2f}", ratio, cfg.swap_warn_ratio)
+
+
+def _c_container(snap, key, cfg):
+    name = f"container_restarts:{key}"
+    c = snap.containers.get(key)
+    if c is None or c.state is None or c.restart_count is None:
+        return _unknown(name, "container_unknown", f"{key} konteyner durumu olculemedi")
+    prev = snap.prev_restart_counts.get(key)
+    delta = 0 if prev is None else max(c.restart_count - prev, 0)
+    runs = int(snap.consecutive_restart_runs.get(key, 0)) + (1 if delta >= 1 else 0)
+    if c.oom_killed is True:
+        return _res(name, Status.CRIT, "oom_killed", f"{key} bellek yetmezliginden oldurulmus", delta,
+                    cfg.restart_crit_delta)
+    if c.state != "running":
+        return _res(name, Status.CRIT, "container_not_running", f"{key} durumu '{c.state}'", delta,
+                    cfg.restart_crit_delta)
+    if delta >= cfg.restart_crit_delta:
+        return _res(name, Status.CRIT, "restart_loop", f"{key} son turdan beri {delta} yeniden baslatma", delta,
+                    cfg.restart_crit_delta)
+    if delta >= 1 and runs >= cfg.restart_crit_runs:
+        return _res(name, Status.CRIT, "restart_loop", f"{key} {runs} tur ust uste yeniden basladi", delta,
+                    cfg.restart_crit_runs)
+    if delta >= cfg.restart_warn_delta:
+        return _res(name, Status.WARN, "container_restarted", f"{key} son turdan beri {delta} yeniden baslatma",
+                    delta, cfg.restart_warn_delta)
+    return _res(name, Status.OK, "ok", f"{key} calisiyor, yeniden baslatma yok", delta, cfg.restart_warn_delta)
+
+
+def _c_backup(snap, cfg):
+    t = snap.last_backup_at
+    if t is None:
+        inst = snap.installed_at
+        if inst is not None:
+            try:
+                if _age_s(snap.now, inst, cfg) <= cfg.backup_warn_s:
+                    return _res("backup_age", Status.SKIPPED, "no_backup_yet", "ilk yedek henuz alinmadi (kurulum gunu)")
+            except (_Skew, ValueError):
+                pass
+        return _unknown("backup_age", "no_backup", "dogrulanmis yedek zamani bilinmiyor")
+    try:
+        age = _age_s(snap.now, t, cfg)
+    except _Skew:
+        return _unknown("backup_age", "clock_skew", "yedek zamani gelecekte; saat uyumsuz")
+    return _graded("backup_age", age, cfg.backup_warn_s, cfg.backup_crit_s, "ok", "backup_stale", "son yedek yasi")
+
+
+def _c_veto(snap, cfg):
+    mx = cfg.veto_max_age_s
+    if mx is None:
+        return _res("veto_file_age", Status.SKIPPED, "placeholder", "veto dosyasi denetimi kapali")
+    t = snap.veto_file_mtime
+    if t is None:
+        return _unknown("veto_file_age", "veto_unknown", "veto dosyasi yok ya da okunamadi")
+    try:
+        age = _age_s(snap.now, t, cfg)
+    except _Skew:
+        return _unknown("veto_file_age", "clock_skew", "veto dosya zamani gelecekte; saat uyumsuz")
+    return _graded("veto_file_age", age, mx, 3 * mx, "ok", "veto_stale", "veto dosyasi yasi")
+
+
+def _c_budget(snap, cfg):
+    if not cfg.budget_check_enabled:
+        return _res("budget_status", Status.SKIPPED, "placeholder", "butce denetimi kapali")
+    s = snap.budget_state
+    if s == "ok":
+        return _res("budget_status", Status.OK, "ok", "butce durumu iyi")
+    if s == "warn":
+        return _res("budget_status", Status.WARN, "budget_warn", "butce uyari duzeyinde")
+    if s == "exhausted":
+        return _res("budget_status", Status.CRIT, "budget_exhausted", "butce tukendi")
+    return _unknown("budget_status", "budget_unknown", "butce durumu olculemedi ya da taninmiyor")
+
+
+def _safe(name, fn, *args) -> CheckResult:
+    try:
+        r = fn(*args)
+        if not isinstance(r, CheckResult):
+            raise TypeError("kontrol sonucu gecersiz")
+        return r
+    except Exception:  # noqa: BLE001 - fail-closed: hicbir istisna sizmaz
+        return _unknown(name, "internal_error", "kontrol hesaplanirken beklenmeyen hata")
+
+
+def combine(results, cfg: HealthConfig = DEFAULT_CFG) -> Status:
+    """Birlestirme kurali (spec Bolum 2); `missing_check` ekleme `evaluate` icindedir."""
+    rs = [r.status for r in results if r.status is not Status.SKIPPED]
+    if not rs:
+        return Status.UNKNOWN
+    for s in (Status.CRIT, Status.UNKNOWN, Status.WARN):
+        if s in rs:
+            return s
+    return Status.OK
+
+
+def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthReport:
+    results: list[CheckResult] = []
+    bots = list(dict.fromkeys(list(cfg.require_bots) + list(snap.api) + list(snap.ledger)))
+    for bot in bots:
+        if bot in snap.api:
+            results.append(_safe(f"api_reachable:{bot}", _c_api, snap, bot, cfg))
+            results.append(_safe(f"bot_loop_age:{bot}", _c_loop, snap, bot, cfg))
+            results.append(_safe(f"candle_age:{bot}", _c_candle, snap, bot, cfg))
+        if bot in snap.ledger:
+            results.append(_safe(f"ledger_write_age:{bot}", _c_ledger_age, snap, bot, cfg))
+            results.append(_safe(f"ledger_gate:{bot}", _c_gate, snap, bot, cfg))
+    results.append(_safe("disk_free", _c_disk, snap, cfg))
+    results.append(_safe("memory", _c_mem, snap, cfg))
+    results.append(_safe("swap", _c_swap, snap, cfg))
+    keys = list(snap.containers)
+    for bot in cfg.require_bots:
+        k = _container_key(snap, bot)
+        if k not in keys:
+            keys.append(k)
+    seen_keys = set()
+    for k in keys:
+        if k in seen_keys or k not in snap.containers:
+            continue
+        seen_keys.add(k)
+        results.append(_safe(f"container_restarts:{k}", _c_container, snap, k, cfg))
+    results.append(_safe("backup_age", _c_backup, snap, cfg))
+    results.append(_safe("veto_file_age", _c_veto, snap, cfg))
+    results.append(_safe("budget_status", _c_budget, snap, cfg))
+
+    have = {r.name for r in results}
+    required = []
+    for base in REQUIRED_CHECKS:
+        if base in _PER_BOT:
+            for bot in cfg.require_bots:
+                key = _container_key(snap, bot) if base == "container_restarts" else bot
+                required.append(f"{base}:{key}")
+        else:
+            required.append(base)
+    for n in required:
+        if n not in have:
+            results.append(_unknown(n, "missing_check", "zorunlu kontrol sonucu yok"))
+            have.add(n)
+    overall = combine(results, cfg)
+    return HealthReport(snap.now, tuple(results), overall, overall in (Status.OK, Status.WARN))
+
+
+def should_send_ok(report: HealthReport) -> bool:
+    """Nabiz karari: yalnizca OK/WARN iken `ok()` gider (spec Bolum 4)."""
+    return report.overall in (Status.OK, Status.WARN) and report.healthy
+
+
+# ---------------------------------------------------------------------------------------------
+# Uyari yolu
+# ---------------------------------------------------------------------------------------------
+IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed"})
+
+
+@dataclass(frozen=True)
+class Alert:
+    level: Status
+    code: str
+    title: str
+    body: str
+    fingerprint: str
+    created_at: datetime
+
+
+class Notifier(Protocol):
+    def send(self, alert: Alert) -> bool: ...
+
+
+class LogNotifier:
+    """stderr/journal'a yazar; her zaman True doner."""
+
+    def __init__(self, logger: logging.Logger | None = None):
+        self._log = logger or log
+
+    def send(self, alert: Alert) -> bool:
+        try:
+            lvl = logging.WARNING if alert.level in (Status.WARN, Status.OK) else logging.CRITICAL
+            self._log.log(lvl, "ALERT %s %s: %s", alert.level.value, alert.title, alert.body)
+        except Exception:  # noqa: BLE001
+            pass
+        return True
+
+
+class NullNotifier:
+    """Testler: cagrilari listeler."""
+
+    def __init__(self, result: bool = True):
+        self.sent: list[Alert] = []
+        self.result = result
+
+    def send(self, alert: Alert) -> bool:
+        self.sent.append(alert)
+        return self.result
+
+
+def empty_state() -> dict:
+    return {"schema": 1, "restart_counts": {}, "fingerprints": {}, "last_overall": None, "last_run_at": None}
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _from_iso(s):
+    try:
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_maintenance(text: str | None, now: datetime) -> datetime | None:
+    """Bakim dosyasi icerigi (ISO UTC). Gelecekte ve en cok 4 saat ileride ise o zaman, aksi None."""
+    if not isinstance(text, str):
+        return None
+    s = text.strip()
+    if not s:
+        return None
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        return None
+    dt = dt.astimezone(timezone.utc)
+    if dt <= now or dt - now > timedelta(hours=4):
+        return None
+    return dt
+
+
+def _cut(s: str, n: int) -> str:
+    return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
+                cfg: HealthConfig = DEFAULT_CFG, *, maintenance_until: datetime | None = None):
+    """Saf: (alerts, new_state). `new_state` uyarilarin iletildigini varsayar; iletilemeyenler icin
+    `revert_failed_alerts` kullanilir. Bakim penceresinde uyari listesi bos doner (nabiz etkilenmez)."""
+    if not isinstance(now, datetime) or now.tzinfo is None:
+        raise ValueError("now tz-aware olmali")
+    st = state if isinstance(state, Mapping) else {}
+    prev_fp = st.get("fingerprints") if isinstance(st.get("fingerprints"), Mapping) else {}
+    maint = (maintenance_until is not None and now < maintenance_until
+             and maintenance_until - now <= timedelta(hours=4))
+
+    new_fp: dict[str, dict] = {}
+    due: list[tuple[CheckResult, str]] = []
+    failing = report.failing()
+    for r in failing:
+        fp = f"{r.name}|{r.code}"
+        old = prev_fp.get(fp) if isinstance(prev_fp.get(fp), Mapping) else None
+        ent = {
+            "first_seen": old.get("first_seen") if old and old.get("first_seen") else _iso(now),
+            "consecutive": (int(old.get("consecutive", 0)) if old else 0) + 1,
+            "last_alert_at": old.get("last_alert_at") if old else None,
+            "alerted": bool(old.get("alerted")) if old else False,
+            "level": r.status.value,
+        }
+        new_fp[fp] = ent
+        if r.status is Status.WARN:
+            need, repeat = cfg.confirm_runs, cfg.warn_repeat_min
+        else:
+            need = 1 if r.code in IMMEDIATE_CODES else cfg.confirm_runs
+            repeat = cfg.crit_repeat_min
+        is_due = False
+        if not ent["alerted"]:
+            is_due = ent["consecutive"] >= need
+        else:
+            last = _from_iso(ent["last_alert_at"])
+            is_due = last is None or (now - last) >= timedelta(minutes=repeat)
+        if is_due:
+            due.append((r, fp))
+
+    alerts: list[Alert] = []
+    if not maint:
+        if len(failing) >= cfg.multiple_threshold and due:
+            names = ", ".join(r.name for r in failing[:5])
+            worst = Status.CRIT if any(r.status is Status.CRIT for r in failing) else (
+                Status.UNKNOWN if any(r.status is Status.UNKNOWN for r in failing) else Status.WARN)
+            alerts.append(Alert(worst, "multiple", _cut(f"{len(failing)} saglik kontrolu bozuk", 80),
+                                _cut(f"Bozuk kontroller (ilk 5): {names}", 500), "multiple|multiple", now))
+        else:
+            for r, fp in due:
+                alerts.append(Alert(r.status, r.code, _cut(f"{r.status.value}: {r.name}", 80),
+                                    _cut(r.detail, 500), fp, now))
+        for r, fp in due:
+            new_fp[fp]["alerted"] = True
+            new_fp[fp]["last_alert_at"] = _iso(now)
+        for fp, old in prev_fp.items():
+            if fp not in new_fp and isinstance(old, Mapping) and old.get("alerted"):
+                name, _, code = fp.partition("|")
+                alerts.append(Alert(Status.OK, code, _cut(f"Duzeldi: {name}", 80),
+                                    _cut(f"{name} ({code}) yeniden saglikli.", 500), fp, now))
+
+    new_state = dict(st)
+    new_state.update({"schema": 1, "fingerprints": new_fp, "last_overall": report.overall.value,
+                      "last_run_at": _iso(now)})
+    new_state.setdefault("restart_counts", {})
+    return alerts, new_state
+
+
+def revert_failed_alerts(new_state: Mapping, prev_state: Mapping | None, failed: list[Alert]) -> dict:
+    """`Notifier.send` False donen uyarilar icin last_alert_at/alerted onceki degere doner
+    (sonraki turda yeniden denenir)."""
+    out = dict(new_state)
+    fps = {k: dict(v) for k, v in dict(new_state.get("fingerprints", {})).items()}
+    prev_fps = (prev_state or {}).get("fingerprints", {}) if isinstance(prev_state, Mapping) else {}
+    for a in failed:
+        if a.level is Status.OK:
+            if a.fingerprint in prev_fps:  # duzeldi bildirimi iletilemedi: kaydi koru, yine denensin
+                fps.setdefault(a.fingerprint, dict(prev_fps[a.fingerprint]))
+            continue
+        targets = list(fps) if a.fingerprint == "multiple|multiple" else [a.fingerprint]
+        for fp in targets:
+            if fp not in fps:
+                continue
+            old = prev_fps.get(fp) if isinstance(prev_fps.get(fp), Mapping) else None
+            if a.fingerprint == "multiple|multiple" and fps[fp].get("last_alert_at") != _iso(a.created_at):
+                continue
+            fps[fp]["alerted"] = bool(old.get("alerted")) if old else False
+            fps[fp]["last_alert_at"] = old.get("last_alert_at") if old else None
+    out["fingerprints"] = fps
+    return out
+
+
+# ---------------------------------------------------------------------------------------------
+# Dis nabiz
+# ---------------------------------------------------------------------------------------------
+class HeartbeatSender(Protocol):
+    def ok(self, report: HealthReport) -> bool: ...
+    def fail(self, report: HealthReport) -> bool: ...
+
+
+def heartbeat_message(report: HealthReport) -> str:
+    """En cok 200 bayt duz metin; sir icermez."""
+    codes = ",".join(f"{r.name}:{r.code}" for r in report.failing())
+    return (f"overall={report.overall.value} {codes}").encode("utf-8")[:200].decode("utf-8", "ignore")
+
+
+def _check_https(url: str, name: str) -> str:
+    if not isinstance(url, str):
+        raise ValueError(f"{name} metin olmali")
+    p = urlsplit(url.strip())
+    if p.scheme != "https" or not p.netloc or not p.hostname:
+        raise ValueError(f"{name} https:// ile baslamali")
+    return url.strip()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):  # yonlendirme izlenmez
+        return None
+
+
+class HttpsHeartbeat:
+    """`HEARTBEAT_URL`'e HTTPS GET. Adres gunluge asla basilmaz (yalniz ana makine ve durum kodu)."""
+
+    def __init__(self, url: str, fail_url: str | None = None, *, timeout: float = 10.0,
+                 delays: tuple[float, ...] = (2.0, 5.0), opener: Callable | None = None,
+                 sleep: Callable[[float], None] | None = None):
+        self._url = _check_https(url, "HEARTBEAT_URL")
+        self._fail_url = _check_https(fail_url, "HEARTBEAT_FAIL_URL") if fail_url and fail_url.strip() else None
+        self._timeout = timeout
+        self._delays = tuple(delays)
+        self._sleep = sleep if sleep is not None else (lambda x: time.sleep(x))
+        self._opener = opener if opener is not None else urllib.request.build_opener(_NoRedirect).open
+        self.last_status: int | None = None
+        self.last_error: str | None = None
+
+    def __repr__(self) -> str:  # adres sizmasin
+        return f"HttpsHeartbeat(host={urlsplit(self._url).hostname!r})"
+
+    def _get(self, url: str) -> bool:
+        host = urlsplit(url).hostname
+        attempts = len(self._delays) + 1
+        for i in range(attempts):
+            try:
+                req = urllib.request.Request(url, method="GET", headers={"User-Agent": "trader-health/1"})
+                resp = self._opener(req, timeout=self._timeout)
+                code = getattr(resp, "status", None) or resp.getcode()
+                try:
+                    resp.close()
+                except Exception:  # noqa: BLE001
+                    pass
+                self.last_status = int(code)
+                if 200 <= int(code) < 300:
+                    self.last_error = None
+                    return True
+                self.last_error = f"http_{int(code)}"
+                log.warning("nabiz %s durum=%s deneme=%d", host, code, i + 1)
+            except urllib.error.HTTPError as e:
+                self.last_status = int(e.code)
+                self.last_error = f"http_{int(e.code)}"
+                log.warning("nabiz %s durum=%s deneme=%d", host, e.code, i + 1)
+            except Exception as e:  # noqa: BLE001
+                self.last_status = None
+                self.last_error = type(e).__name__
+                log.warning("nabiz %s hata=%s deneme=%d", host, type(e).__name__, i + 1)
+            if i < attempts - 1:
+                try:
+                    self._sleep(self._delays[i])
+                except Exception:  # noqa: BLE001
+                    pass
+        return False
+
+    def ok(self, report: HealthReport) -> bool:
+        if not should_send_ok(report):  # savunma: bozuk raporla nabiz asla gitmez
+            return False
+        return self._get(self._url)
+
+    def fail(self, report: HealthReport) -> bool:
+        if self._fail_url is None:
+            return False
+        return self._get(self._fail_url)
+
+
+# ---------------------------------------------------------------------------------------------
+# Ortam dosyasi (saf ayristirma; systemd EnvironmentFile tuzaklari)
+# ---------------------------------------------------------------------------------------------
+_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def parse_env_text(text: str) -> dict[str, str]:
+    """Satir: bos, '#' ile baslayan tam satir yorum ya da AD=deger (bosluk, '#', tirnak yok).
+    Hata iletileri deger icermez (sir)."""
+    out: dict[str, str] = {}
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.rstrip("\r\n")
+        if line == "" or line.startswith("#"):
+            continue
+        if "=" not in line:
+            raise ValueError(f"satir {n}: AD=deger bicimi gerekli")
+        name, _, val = line.partition("=")
+        if not _ENV_NAME.match(name):
+            raise ValueError(f"satir {n}: gecersiz ad (bosluk/kucuk harf?)")
+        if val != val.strip() or any(c in val for c in " \t#\"'"):
+            raise ValueError(f"satir {n}: deger bosluk, '#' ya da tirnak iceremez ({name})")
+        if name in out:
+            raise ValueError(f"satir {n}: {name} tekrar tanimli")
+        out[name] = val
+    return out
