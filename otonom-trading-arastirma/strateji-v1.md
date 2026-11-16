@@ -6,7 +6,7 @@ Bu belge v1 kural motorunun ne yapacağını tanımlar. Buradaki hiçbir sayı k
 ## 1. Özet
 
 - **1 rejim etiketi, 2 kurulum:** trendde EMA'ya geri çekilme (T1), range kenarında red mumu (R1).
-- **Ayarlanan parametre sayısı: 8.** Geri kalan her sayı sabittir ve taranmaz.
+- **Ayarlanan parametre sayısı: 8** (+1: 15dk tetik kolu açık/kapalı, bkz. Bölüm 2). Geri kalan her sayı sabittir ve taranmaz.
 - **Swing/fraktal hesabı yok.** Trend etiketi hareketli ortalamalardan, range sınırı pencere en yüksek/en düşüğünden gelir. Böylece katalogdaki en dağınık parametre (swing N: 1–10) v1'e girmez.
 - Lot, kaldıraç ve toplam risk risk kilidinden gelir. Kural motoru yalnızca giriş, stop ve çıkış üretir.
 
@@ -16,14 +16,18 @@ Bu belge v1 kural motorunun ne yapacağını tanımlar. Buradaki hiçbir sayı k
 |---|---|
 | 4s | Rejim etiketi, trend yönü, range sınırları (RH/RL) |
 | 1s | Kurulum, tetik mumu, stop ve iz süren stop hesabı |
-| 15dk | Sinyal üretmez. Yalnızca backtest'te bar içi stop/hedef sırasını doğru çözmek için ayrıntı verisi (`timeframe_detail`) |
+| 15dk | Varsayılan: sinyal üretmez, backtest'te bar içi stop/hedef sırasını çözen ayrıntı verisidir (`timeframe_detail`). Ayrıca **aday tetik kolu** olarak test edilir (aşağıda) |
 | 1g | Sonradan eklenir; yalnızca ek yön filtresi olur (PA-FLT-01), yeni parametre getirmez |
 
-15dk'da sinyal olmamasının nedeni: stop mesafesi küçülür, maliyet ×2 varsayımında komisyon R'nin büyük kısmını yer; katalog da 15dk'yı gürültülü buluyor (PA-KIR-03, TE notu).
+15dk'nın varsayılan olarak tetik olmamasının nedeni: stop mesafesi küçülür, maliyet ×2 varsayımında komisyon R'nin büyük kısmını yer; katalog da 15dk'yı gürültülü buluyor (PA-KIR-03, TE notu).
+
+**15dk tetik kolu (onaylı tasarım kararında 15dk olduğu için):** backtest'te T1 ve R1 aynı kurallarla, tetik ve stop hesabı 15dk'ya alınarak ayrı bir kol olarak koşulur (`trigger_tf ∈ {1s, 15dk}`; rejim ve seviyeler yine 4s, başka hiçbir parametre değişmez). 15dk kolu ancak maliyet ×2 ile walk-forward'da kendi başına geçerse açılır; geçemezse v1 1s tetikle başlar ve 15dk sahte para döneminin verisiyle yeniden sınanır. Bu, ayarlanan parametre sayısını 9'a çıkarır.
 
 Kullanılan göstergeler: EMA20/50/100 (4s), EMA20 veya EMA50 (1s), ATR(14) (4s ve 1s). Hepsi yalnızca kapanmış mumlardan hesaplanır; 4s verisi 1s'e bir mum kaydırılarak birleştirilir (ileriye bakma yok).
 
 ## 3. Rejim tespiti (4s, her 4s kapanışında)
+
+**Kod kaynağı (mimari-taslak.md satır 4 ile uyum):** karışım. regime-trading-bot'tan (MIT, telif notu korunur) `indicators.py` gösterge hesapları (EMA, ATR) ve `regime.py`'nin etiket arayüzü, iskeleti ve test düzeni alınır: tek etiket, strateji + veto + ders servisi aynısını okur. **Sınıflandırma koşulları ve eşikleri ise aşağıdaki tablodan gelir**, o deponun kendi koşullarından değil. Neden: R1'in işlem yaptığı kenarlar (RH/RL) range tanımının kendisinden çıkıyor; etiket ile seviye iki ayrı tanımdan gelirse "range" denilen yerde kenar olmayabilir. Koşullar değiştiği için `regime.py` testleri yeniden yazılır; o deponun kapsam yüzdesi bizim koşullara devredilmez. Not: bu belge yazılırken `regime.py`'nin kendi koşulları yeniden okunmadı; uyarlama sırasında bizimkiyle eşdeğer çıkan kısım olduğu gibi kalır.
 
 Öncelik sırası yukarıdan aşağı; ilk tutan etiket geçerlidir.
 
