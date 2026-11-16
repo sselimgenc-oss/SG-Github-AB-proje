@@ -51,7 +51,7 @@ Her `src/trader_engine` dosyasının **tek** sahibi vardır (08 `test_engine_mod
 | `config/engine*.json` | 02 | `pyproject.toml`, `.gitignore` (satır ekleme) | 08 |
 | `scripts/fetch_binance_vision.py`, `research/bt_crosscheck.py`, `research/run_bt_engine.py` | 06 | `tests/engine/test_engine_<birim>_*`, `test_no_framework_imports.py` | ilgili birim (adlar her belgede) |
 
-Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1.py`, `research/run_bt.py`, `docker-compose.yml` (§4.3 silme commit'i; kapıdan önce). `feed.py`'nin 1l3a `paper_canli.py` kaynaklı kısmı 07 §4.2 kurallarıyla **01** tarafından uygulanır.
+Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1.py`, `research/run_bt.py`, `docker-compose.yml` (§4.3 silme commit'i; kapıdan önce). `feed.py` **01** tarafından sıfırdan yazılır; 1l3a `paper_canli.py`'den yalnız fikir alınır (07 §4.2, mentor kararı).
 
 ## 4. Çapraz birim sözleşmeleri (değişiklik = mentor onayı + etkilenen belgelerin revizyonu)
 
@@ -68,19 +68,19 @@ Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1
 
 | # | Konu | Çözüm (şartname) | Karar gereken |
 |---|---|---|---|
-| 1 | **Hedef çıkışı:** tasarım §2.6 R1 hedefini borsada `TAKE_PROFIT_MARKET` ister; `strateji-spec` §5.4/`TraderV1.custom_exit` kapanmış bar high/low'una bakıp bir sonraki adımda piyasa çıkışı verir | Faz A `target_mode="bar_close"` (05 §1); `place_target` yalnız arayüzde | Mentor (strateji davranışını değiştirir; çapraz doğrulama C düzeyi freqtrade kuralını ister) |
+| 1 | **Hedef çıkışı:** tasarım §2.6 R1 hedefini borsada `TAKE_PROFIT_MARKET` ister; `strateji-spec` §5.4/`TraderV1.custom_exit` kapanmış bar high/low'una bakıp bir sonraki adımda piyasa çıkışı verir | Faz A `target_mode="bar_close"` (05 §1); `place_target` yalnız arayüzde | **Karar verildi:** `bar_close` onaylandı; strateji kuralının tek kaynağı `strateji-spec`. Borsada TP Faz A ve canlı v1'de yok. (R1'in v1b'de kapatılması ayrı kullanıcı kararıdır; kod yolu yine yazılır ve test edilir) |
 | 2 | **Kapı sırası:** tasarım §2.2 `params_ok → ledger → stale → kill → tek karar → veto → risk`; TraderV1 `gate → stale → tek karar → veto → risk` | TraderV1 sırası korunur, kill/`entries_blocked_reason` ledger'ın arkasına eklenir (05 §1/§4.1) | Mentor (§5 inceleme 4) |
 | 3 | **`ledger` `skip_reason` sözlüğü** `stale_data`, `kill` vb. içermez; `not_evaluated` yalnız belirli skip'lerle geçerli | `entry_gate_closed`/`other` + `veto_reason="gate:<kod>"` (05 §4.1) | — (bilgi) |
 | 4 | **`Ledger.find_unledgered_trades(freqtrade_open_trade_ids)`** adı | Konumsal çağrı; yeniden adlandırma §4.3 madde 5 | — |
 | 5 | **`health.ApiProbe`** freqtrade API alanları | `status.json` eşdeğer alanları taşır (05 §8.2); `health_run` uyarlaması ayrı iş | — |
-| 6 | **`bars_held` 15 dk birimi** (ledger) ↔ zaman durdurma tetik tf barı (48) | İkisi ayrı; 04 §9 | — |
+| 6 | **`bars_held` 15 dk birimi** (ledger) ↔ zaman durdurma tetik tf barı (48) | İkisi ayrı; ledger 15 dk birimi ledger için, zaman durdurma tetik tf barı (04 §9) — mentor onayı | — |
 | 7 | **`Ledger(clock=…)` "yalnızca test"** ↔ backtest `SimClock` **zorunlu** (`bar_close_ts ≤ now+5 sn`) | `clock.now` geçirilir (05 §1 madde 9) | — |
 | 8 | **`veto.json.pairs_from → config/base.json`** (§4.3'te silinir); `veto.load_pairs` serbest `dosya:yol` | `config/engine.base.json:pairs`; silme adımında yeniden işaret | — |
-| 9 | **`pyproject.toml`** yalnız pandas/numpy; `pyarrow`, `requests` yok; **bu ortamda pyarrow kurulu değil** | 08 §3; testler `importorskip` | — |
+| 9 | **`pyproject.toml`** yalnız pandas/numpy; `pyarrow`, `requests` yok; **bu ortamda pyarrow kurulu değil** | 08 §3; testler `importorskip`. Mentor: `pyarrow` §1.0'da izinli, `pip install` serbest; çapraz doğrulama ve backtest koşularında kurulu olması **zorunlu** (atlanan test kabul sayılmaz) | — |
 | 10 | **`ConfigError` ad çakışması** (`trader_core.config_loader` freqtrade'e özgü `validate`) | `trader_engine.errors.ConfigError` ayrı sınıf; yalnız `deep_merge` yeniden kullanılır (02) | — |
-| 11 | **§4.3 madde 7 (`grep -ri freqtrade …` boş) ↔ uyum kipi adı `freqtrade_compat`** | Dar izin listesi ya da kip adı değişikliği (08 §6) | **Mentor** |
-| 12 | **`paper_canli.py` "(a) kopyala"** `TekrarKaynagi`/`motor.veri`/`paper_takvim` bağımlıdır (kopya listesinde yok); `kurallar.py` varsayılan `min_notional=5` uydurur (kendi docstring'iyle çelişir) | Ağır kesinti ya da "(b) fikir"; min-notional eksikse hata (07 §4.2–4.3, §7) | **Mentor** (kopya sınıfı) |
-| 13 | **Client id `seq` kuralı:** tasarım "yeniden gönderimde deneme sayacı seq'e girer"; şartname giriş/çıkışta aynı kimliği korur, yalnız stop'ta sayaç | Gerekçe 04 §1 | **Mentor** (§5 inceleme 3, satır satır) |
+| 11 | **§4.3 madde 7 (`grep -ri freqtrade …` boş) ↔ uyum kipi adı `legacy_compat`** | Kip adı `legacy_compat`; izin listesi yok, grep istisnasız boş (08 §6) | **Karar verildi** |
+| 12 | **`paper_canli.py` "(a) kopyala"** `TekrarKaynagi`/`motor.veri`/`paper_takvim` bağımlıdır (kopya listesinde yok); `kurallar.py` varsayılan `min_notional=5` uydurur (kendi docstring'iyle çelişir) | `paper_canli.py` **(b) fikir**, `feed.py` sıfırdan; (a) kopya yalnız `paper_veri.py`, `kurallar.py`, `atomik_yaz_*`; min-notional eksik → `RulesError`, o çifte giriş yok (07 §4.2–4.3, §7) | **Karar verildi** |
+| 13 | **Client id `seq` kuralı:** tasarım "yeniden gönderimde deneme sayacı seq'e girer"; şartname giriş/çıkışta aynı kimliği korur, yalnız stop'ta sayaç | Şartname yetkili: `e`/`x` aynı kimlik, sayaç yalnız stop; yeniden gönderim yalnız iki "emir yok" sorgusundan sonra; canlıda testnet doğrulamasına kadar `max_attempts=1` (04 §1) | **Karar verildi** |
 | 14 | **freqtrade backtest sentetik piyasa kuralları** (`freqtrade_offline.py::synthetic_markets`) ile üretildi | Uyum çalışmasında aynı türetme `sources.py`'de yeniden yazılır; sonuçlar "sentetik kurallar" etiketli (01 §6.2) | — |
 | 15 | **Geçmiş uzunluğu bağımlılığı:** özyinelemeli EMA/ATR → pencere (paper) ≠ tüm geçmiş (backtest); 4h EMA100 için 300 bar tohum etkisi ≈ %0,2 | `WINDOW_4H=1500` (≈1e-13); 06 paranoid kontrolü ayrık sütunları eşit, sürekli sütunları 1e-9 ister (05 §3.1) | — |
 | 16 | **Ortamda Binance REST HTTP 451**; 1m Vision verisi henüz yok | Uyum kipi 15m adım; native 1m için veri çekme 06 §5; kurallar `synthetic` | — |

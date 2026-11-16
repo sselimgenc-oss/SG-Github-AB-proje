@@ -256,7 +256,7 @@ Kenar durumlar:
 ```python
 @dataclass(frozen=True)
 class CostModel:
-    fill_model: Literal["native","freqtrade_compat"] = "native"
+    fill_model: Literal["native","legacy_compat"] = "native"
     taker_fee: float = 0.0005                    # 0 ≤ x ≤ 0.005
     slip_entry_bps: float = 2.0                  # 0 ≤ x ≤ 100
     slip_exit_bps: float = 2.0
@@ -290,7 +290,7 @@ def load_engine_config(base_path, bot_path=None, *, env=None) -> EngineConfig
 def apply_overrides(cfg: EngineConfig, **kw) -> EngineConfig       # dataclasses.replace + yeniden doğrulama (backtest CLI kullanır)
 ```
 - Birleştirme: `trader_core.config_loader.deep_merge(base, override)` yeniden kullanılır (yalnız o işlev; `validate`/`ConfigError` kullanılmaz).
-- Doğrulama (hepsi `ConfigError`): bilinmeyen anahtar; `schema != "engine/1"`; `mode ∉ {paper, backtest}` (`testnet`/`live` → mesaj `"faz_b"`); `pairs` boş/yinelenen/biçim bozuk; `wallet_start ≤ 0` ya da sonsuz; `cost` aralıkları; `fill_model=="freqtrade_compat"` ise `trigger_source=="last"` ve `granularity=="15m"` **zorunlu** (aksi ret: uyum kipi mark/1 dk kullanamaz); `granularity=="15m"` ise `trigger_source=="last"`; `veto_mode=="off"` ve `mode!="backtest"` → ret; `stale_factor ∈ [1, 3]`; sayısal alanlar `bool` olamaz.
+- Doğrulama (hepsi `ConfigError`): bilinmeyen anahtar; `schema != "engine/1"`; `mode ∉ {paper, backtest}` (`testnet`/`live` → mesaj `"faz_b"`); `pairs` boş/yinelenen/biçim bozuk; `wallet_start ≤ 0` ya da sonsuz; `cost` aralıkları; `fill_model=="legacy_compat"` ise `trigger_source=="last"` ve `granularity=="15m"` **zorunlu** (aksi ret: uyum kipi mark/1 dk kullanamaz); `granularity=="15m"` ise `trigger_source=="last"`; `veto_mode=="off"` ve `mode!="backtest"` → ret; `stale_factor ∈ [1, 3]`; sayısal alanlar `bool` olamaz.
 - **Risk sayısı yasağı:** JSON'da `max_trade_risk`, `leverage`, `risk` vb. anahtarlar bilinmeyen anahtar olarak reddedilir; kaldıraç, boyut ve riskin tek kaynağı `LOCKED_CFG`'dir.
 - `bot` yalnız `learner|twin`; `twin` için `start_delay_s ≥ 0`.
 
@@ -330,7 +330,7 @@ def apply_overrides(cfg: EngineConfig, **kw) -> EngineConfig       # dataclasses
 4. `round_tight(97.951, "long", 0.01) == 97.96` (yukarı); `round_tight(102.049, "short", 0.01) == 102.04`; `round_adverse(100.02, "buy", 0.01) == 100.02` (zaten tam kat; kayan nokta kaydı `100.02000000000001` sonucu `100.03` yapmamalı); `round_adverse(97.951, "sell", 0.01) == 97.95`.
 5. `floor_step(6.3694, 0.001) == 6.369`; `is_multiple(6.369, 0.001) is True`.
 6. `aggregate_minutes` 60 dakikalık seri: `o`=ilkin açılışı, `h`=max, `l`=min, `c`=son kapanış, `v`=Σ; 59 dakika → `DataError`.
-7. `load_engine_config(base, learner)`: `ledger_path == "var/learner/ledger.sqlite"`; `mode: "live"` → `ConfigError` ("faz_b"); `fill_model="freqtrade_compat"` + `trigger_source="mark"` → `ConfigError`; JSON'a `"max_trade_risk": 0.03` eklenirse → `ConfigError` (bilinmeyen anahtar).
+7. `load_engine_config(base, learner)`: `ledger_path == "var/learner/ledger.sqlite"`; `mode: "live"` → `ConfigError` ("faz_b"); `fill_model="legacy_compat"` + `trigger_source="mark"` → `ConfigError`; JSON'a `"max_trade_risk": 0.03` eklenirse → `ConfigError` (bilinmeyen anahtar).
 
 ## 11. Kabul senaryoları (test ajanı için)
 

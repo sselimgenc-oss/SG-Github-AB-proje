@@ -39,7 +39,7 @@ Dokunulmaz: `marketdata/store.py`, `feed.py`, `sources.py` (01); `status.py` (05
 | `motor/canli/paper_veri.py` | (a) kes+uyarla | A | `marketdata/rest_public.py` | 07 |
 | `motor/canli/borsa/kurallar.py` | (a) kes+uyarla | A | `exchange/rules.py` | 07 |
 | `motor/canli/durum.py::atomik_yaz_*`, `motor/canli/kalp_atisi.py` | (a) kes+uyarla | A | `fileio.py` | 07 |
-| `motor/canli/paper_canli.py` (`CanliKaynak.baslat/guncelle/funding_guncelle`) | (a) ağır kes | A | `marketdata/feed.py` | **01** |
+| `motor/canli/paper_canli.py` (`CanliKaynak.baslat/guncelle/funding_guncelle`) | **(b) fikir** (mentor kararı) | A | `marketdata/feed.py` | **01** |
 | `motor/canli/borsa/binance_futures.py` | (a) | B | `exchange/binance_rest.py` | (Faz B) |
 | `motor/canli/borsa/canli_yurutucu.py` | (a) kes | B | `brokers/binance_futures.py`, `reconcile.py` (canlı kısım), `order_manager.py` canlı yolu | (Faz B) |
 | `motor/canli/borsa/kuru.py` | (a) + ek | B | `tests/engine/fake_exchange.py` | (Faz B) |
@@ -90,9 +90,11 @@ def rows_to_bars(pair: str, kind: Kind, tf: str, rows: Sequence[Sequence], now_s
 
 ### 4.2 `paper_canli.py` (`CanliKaynak`) → `marketdata/feed.py` (uygulayan: **01**)
 
-**Tutulan fikir/kod:** `GRACE_SN` (kapanıştan sonra REST'in yayımlaması için bekleme; bizde `grace_s=3`); `baslat`'ın "son yazılı barın ardından REST'ten tamamla" döngüsü; `guncelle`'nin "`son + 2·aralık + grace` geçmediyse sorma" ve eksik mum sayma/`veri_bosluk` olayı mantığı (`bos = (ix[k]-ix[k-1])/a - 1`); `funding_guncelle` artımlı başlangıç (`son.index[-1] + 1 ms`, ilk seferde 40 gün geriye); `ws_dogrula`'nın "REST geçerli, uyuşmazlık günlüğe" ilkesi → bizde bar builder `agg_mismatch` (01 §5.4).
+**Mentor kararı (16 Kasım 2026): sınıf (b) — yalnız fikir.** Dosya kopya listesinde olmayan modüllere bağlı olduğundan kopyalanmaz; `feed.py` 01 şartnamesine göre **sıfırdan** yazılır, kopya başlığı taşımaz, kaynaktan satır alınmaz. Aşağıdaki liste yalnız alınan fikirlerdir.
 
-**Kesilen:** `TekrarKaynagi` mirası ve `paper_kaynak.MUM_SUTUNLARI`; `satirlar`, `gec_barlar`, `BIRIM_BEKLEME_SN` (çok sembollü birim mantığı); `_tohum`/`tohum_dizin` (`motor.veri.yeniden_ornekle`, Dukascopy tohumu); `tk_acik`, `paper_takvim` kullanımı (TradFi seansları); `ws_url`, `akislar`, `ws_dongu` (WS **Faz B'ye**, ilke notu olarak kalır); `SEANS_KONTROL_SN`; DataFrame tabanlı bellek modeli (`self.mumlar`, `self.fundingler`) — yerine `MarketStore` (SQLite).
+**Alınan fikirler:** `GRACE_SN` (kapanıştan sonra REST'in yayımlaması için bekleme; bizde `grace_s=3`); `baslat`'ın "son yazılı barın ardından REST'ten tamamla" döngüsü; `guncelle`'nin "`son + 2·aralık + grace` geçmediyse sorma" ve eksik mum sayma/`veri_bosluk` olayı mantığı (`bos = (ix[k]-ix[k-1])/a - 1`); `funding_guncelle` artımlı başlangıç (`son.index[-1] + 1 ms`, ilk seferde 40 gün geriye); `ws_dogrula`'nın "REST geçerli, uyuşmazlık günlüğe" ilkesi → bizde bar builder `agg_mismatch` (01 §5.4).
+
+**Alınmayan:** `TekrarKaynagi` mirası ve `paper_kaynak.MUM_SUTUNLARI`; `satirlar`, `gec_barlar`, `BIRIM_BEKLEME_SN` (çok sembollü birim mantığı); `_tohum`/`tohum_dizin` (`motor.veri.yeniden_ornekle`, Dukascopy tohumu); `tk_acik`, `paper_takvim` kullanımı (TradFi seansları); `ws_url`, `akislar`, `ws_dongu` (WS **Faz B'ye**, ilke notu olarak kalır); `SEANS_KONTROL_SN`; DataFrame tabanlı bellek modeli (`self.mumlar`, `self.fundingler`) — yerine `MarketStore` (SQLite).
 
 **Ek:** SQLite yazımı, sunucu saati ofseti, kilit, durum dosyası, `gaps` tablosu (01'in kapsamı).
 
@@ -160,7 +162,8 @@ class FileIoError(Exception)
 
 ## 7. Belirsizlikler ve çözümleri
 
-- **Tasarım §1.2 `paper_canli.py` "(a) kopyala" der**, fakat dosya `TekrarKaynagi` (`paper_kaynak.py`), `motor.veri.*`, `paper_takvim` ve çok sembollü TradFi mantığına bağlıdır (bunlar kopya listesinde **yok**). Mantık değişmeden olduğu gibi kopyalanamaz; çözüm §4.2: yalnız boşluk doldurma/artımlı funding iskeleti alınır, depolama ve zamanlama yeniden yazılır — pratikte (a)'nın "yalnız belirtilen kesintiler" kuralını aşar; bu yüzden **mentor onayı** ister (kopyalama yerine "(b) fikir" olarak sınıflanması da kabul edilebilir; davranış aynı kalır).
+- **`paper_canli.py` sınıfı:** çözüldü (mentor) — **(b) fikir**; `feed.py` sıfırdan yazılır (§4.2). Gerçekten (a) kopyalananlar yalnız üç dosyadır: `paper_veri.py` → `rest_public.py`, `kurallar.py` → `exchange/rules.py`, `durum.py::atomik_yaz_*` → `fileio.py`.
+- **`kurallar.py` varsayılan `min_notional=5`:** çözüldü (mentor) — kopyada **kaldırılır**; `MIN_NOTIONAL`/`NOTIONAL` filtresi eksik ya da ayrıştırılamıyorsa `RulesError` (§4.3). Sonuç: o çiftin kuralı depoya yazılmaz, motor o çift için **giriş yapmaz** (açık pozisyonun çıkışları etkilenmez), feed uyarı üretir. Tahmini/varsayılan değer hiçbir alanda yoktur. Tek istisna backtest `synthetic_rules=True` (01 §6.2): değerler açıkça "sentetik" etiketlidir ve yalnız `legacy_compat` çapraz doğrulamasında izinlidir.
 - **`paper_veri.py` iki ayrı istemci mantığı** (`FapiIstemci` ağırlık bekleme ve `BinanceFutures` ağırlık bekleme) kopyalar arasında yinelenir; Faz B'de `binance_rest.py` ile `rest_public.py` ortak taban sınıfa birleştirilebilir (şimdilik ayrı: Faz A kapsamı kilidi).
 - **Lisans:** kaynak kullanıcının kendi kodu; `THIRD_PARTY_NOTICES.md`'ye ekleme gerekmez (yalnız başlık).
 - **Binance uç adları** kopyada olduğu gibi kullanılır; doğrulama testnet/gerçek hesap adımlarındadır (§3.3).
