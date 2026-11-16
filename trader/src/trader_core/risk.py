@@ -22,6 +22,11 @@ HARD_LIMITS = {
     "max_leverage": 5,
     "min_leverage": 1,
     "max_notional_ratio": 1.0,
+    # Alt sınırlar: maliyet ve güvenlik varsayımları gevşetilemez.
+    "min_fee_rate": 0.0005,
+    "min_slippage_rate": 0.0005,
+    "min_maint_margin_rate": 0.004,
+    "min_liq_safety_factor": 1.5,
 }
 
 
@@ -100,6 +105,9 @@ class RiskConfig:
                 raise ValueError(f"{n} kilitli üst sınırı aşıyor ({HARD_LIMITS[n]})")
         if self.min_leverage < HARD_LIMITS["min_leverage"]:
             raise ValueError("min_leverage kilitli alt sınırın altında")
+        for n in ("fee_rate", "slippage_rate", "maint_margin_rate", "liq_safety_factor"):
+            if getattr(self, n) < HARD_LIMITS["min_" + n]:
+                raise ValueError(f"{n} kilitli alt sınırın altında ({HARD_LIMITS['min_' + n]})")
 
 
 LOCKED_CFG = RiskConfig()
