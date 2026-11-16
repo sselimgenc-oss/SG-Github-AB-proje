@@ -125,7 +125,10 @@ def test_funding_missing_counter():
     b, _ = mk()
     enter(b)
     step(b, {P: bar(23 * 60)})
-    assert b.counters()["funding_missing"] == 1
+    # 16:00 ve 00:00 noktalari bekleme siniri (15 dk) asilmis -> eksik; 08:00 noktasi henuz bekliyor (imlec tutulur)
+    assert b.counters()["funding_missing"] == 2
+    step(b, {P: bar(23 * 60 + 16)})
+    assert b.counters()["funding_missing"] == 3
 
 
 def test_rejects_and_duplicates():

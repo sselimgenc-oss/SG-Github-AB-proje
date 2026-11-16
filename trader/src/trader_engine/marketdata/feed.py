@@ -36,6 +36,17 @@ RETRY_THROTTLE_MS = 5_000
 TF_GIVEUP_MS = 60_000
 FUNDING_FIRST_LOOKBACK_MS = 30 * 86_400_000
 _DAY_MS = 86_400_000
+_FUNDING_GRID_MS = 8 * 3_600_000
+
+
+def _floor_funding_ms(ms: int) -> int:
+    """fundingTime'i 8h izgaraya (00/08/16 UTC) tabana yuvarla: saat basini birkac ms gecen ham deger dusmesin."""
+    return ms - ms % _FUNDING_GRID_MS
+
+
+def _next_funding_boundary_ms(now_ms: int) -> int:
+    """now_ms'den SONRAKI 00/08/16 UTC siniri."""
+    return _floor_funding_ms(now_ms) + _FUNDING_GRID_MS
 
 
 def _default_backfill() -> Mapping[str, int]:
@@ -51,7 +62,8 @@ class FeedConfig:
     grace_s: float = 3.0
     minute_fetch_limit: int = 5
     backfill_bars: Mapping[str, int] = field(default_factory=_default_backfill)
-    funding_refresh_s: float = 3600.0
+    funding_refresh_s: float = 3600.0      # yedek periyodik cekim
+    funding_boundary_delay_s: float = 5.0  # 00/08/16 UTC + birkac saniye
     rules_refresh_s: float = 3600.0
     retention_1m_days: int = 14
 
@@ -360,7 +372,8 @@ class Feed:
         if now_ms >= self._next_funding_ms:
             for pair in self.pairs:
                 self._guard(f"{pair} funding", self._funding, pair, pair_symbol(pair), now_ms)
-            self._next_funding_ms = now_ms + int(self.cfg.funding_refresh_s * 1000)
+            self._next_funding_ms = min(now_ms + int(self.cfg.funding_refresh_s * 1000),
+                                        _next_funding_boundary_ms(now_ms) + int(self.cfg.funding_boundary_delay_s * 1000))
             self._guard("offset", self._measure_offset)
         if now_ms >= self._next_prune_ms:
             self._guard("prune", lambda: self.store.prune(now_ms, self.cfg.retention_1m_days))
@@ -442,7 +455,7 @@ class Feed:
         rows = self._rest(self.rest.funding_rates, sym, start_ms=last + 1)
         pts = []
         for x in rows:
-            ts = int(x["fundingTime"])
+            ts = _floor_funding_ms(int(x["fundingTime"]))
             pts.append(FundingPoint(pair, from_ms(ts), float(x["fundingRate"]), self._mark_at(pair, ts)))
         # bos mark'lari doldurmayi dene (son 3 gun)
         have = {p.ts for p in pts}

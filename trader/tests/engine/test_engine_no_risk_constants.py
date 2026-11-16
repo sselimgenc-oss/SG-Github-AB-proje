@@ -89,6 +89,8 @@ def scan_risk(root: Path) -> list[str]:
         def walk(o):
             if isinstance(o, dict):
                 for k, x in o.items():
+                    if k == "target_trade_risk" and p.name == "engine.base.json":
+                        continue      # tek izinli ayar: yalniz LOCKED_CFG'den SIKI olabilir (config.build_risk_config, fail-closed)
                     if RISK_NAME.search(str(k).lower()):
                         v.append(f"{p.name}: key {k}")
                     walk(x)

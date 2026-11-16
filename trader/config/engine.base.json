@@ -3,6 +3,7 @@
   "mode": "paper",
   "pairs": ["BTC/USDT","ETH/USDT","BNB/USDT","SOL/USDT","XRP/USDT","DOGE/USDT","ADA/USDT","TRX/USDT","LINK/USDT","AVAX/USDT"],
   "wallet_start": 1000.0,
+  "target_trade_risk": 0.005,
   "cost": {"fill_model": "native", "taker_fee": 0.0005, "slip_entry_bps": 2.0, "slip_exit_bps": 2.0,
            "slip_stop_bps": 5.0, "trigger_source": "mark", "granularity": "1m"},
   "strategy": "price_action_v1",

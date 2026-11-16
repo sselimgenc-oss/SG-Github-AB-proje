@@ -24,6 +24,12 @@ def funding_payment(side: Side, qty: float, mark: float, rate: float) -> float:
     return p if side == "long" else -p
 
 
+def floor_funding_time(t: datetime) -> datetime:
+    """Ham fundingTime'i 8 saatlik izgaraya (00/08/16 UTC) tabana yuvarlar (saat basini birkac ms gecen zaman damgasi)."""
+    require_utc(t, "t")
+    return t.replace(hour=t.hour - t.hour % 8, minute=0, second=0, microsecond=0)
+
+
 def due_funding_times(last_ts: datetime | None, upto: datetime) -> list[datetime]:
     require_utc(upto, "upto")
     if last_ts is None:

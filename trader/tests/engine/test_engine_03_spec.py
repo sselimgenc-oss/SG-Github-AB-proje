@@ -543,6 +543,8 @@ def test_funding_missing_counted_when_position_open():
     env = funding_env("buy", 6.369, points=[])
     w0 = env.b.account().wallet
     env.step(mb(T_F))
+    assert env.b.counters()["funding_missing"] == 0          # imlec bekler (sinirli)
+    env.step(mb(T_F + timedelta(minutes=15)))
     assert env.b.counters()["funding_missing"] == 1
     assert env.b.account().wallet == w0
 

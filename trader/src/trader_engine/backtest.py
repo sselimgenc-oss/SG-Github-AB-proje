@@ -286,7 +286,9 @@ class BacktestRunner:
             raw.setdefault("bot", "learner")
             cfg = _validate_cfg(raw)
         cost = build_cost(s.fill_model, s.fee_mult, s.slip_bps, s.granularity, s.trigger_source)
+        # backtest/capraz dogrulama kilitli hedef riskle kosar (taban yapilandirmadaki paper degeri 0.005 sonuclari kaydirmasin)
         kw = dict(mode="backtest", veto_mode="off", bot="learner", strategy=s.strategy, cost=cost,
+                  target_trade_risk=K.LOCKED_CFG.target_trade_risk,
                   record_filtered_candidates=bool(s.record_filtered))
         if s.pairs:
             kw["pairs"] = tuple(canon_pair(p) for p in s.pairs)

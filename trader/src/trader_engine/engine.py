@@ -39,7 +39,7 @@ log = logging.getLogger("engine")
 
 ENGINE_VERSION = "05.1"
 _REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit", "liquidation", "other")
-_STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "unknown_orders", "mark_fallbacks",
+_STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_failed", "unknown_orders", "mark_fallbacks",
                     "minute_gaps", "funding_missing", "exit_data_gap")
 
 
@@ -209,7 +209,7 @@ class Engine:
             "strategy_version": self.strategy.info.version, "entries_blocked_reason": blocked, "gate_code": code,
             "entries_open": code == "ok",
             "kill": killed, "kill_state": self.kill_state(), "wallet": acct.wallet, "equity": acct.equity,
-            "day_start_equity": ds if ds is not None else acct.wallet, "open_positions": self.state.open_positions(),
+            "day_start_equity": ds if ds is not None else acct.equity, "open_positions": self.state.open_positions(),
             "counters": self.counters(), "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
         }
@@ -231,7 +231,7 @@ class Engine:
             if cur == day:
                 return
             fresh = cur is None
-            self.state.kv_set("day_start:" + day, self.broker.account().wallet)
+            self.state.kv_set("day_start:" + day, self.broker.account().equity)
             self.state.kv_set("day_start_date", day)
             reason = self.state.kv_get("entries_blocked_reason")
             if reason == "day_start_missing":
@@ -411,12 +411,25 @@ class Engine:
 
     def _post_commit(self) -> None:
         try:
-            self.state.drain_outbox(self.ledger)
+            res = self.state.drain_outbox(self.ledger)
+            self._outbox_health(res)
         except StateError:
             raise
         except Exception as e:  # noqa: BLE001
             self._c["ledger_errors"] += 1
             log.error("outbox bosaltilamadi: %r", e)
+
+    def _outbox_health(self, res) -> None:
+        """Defter outbox'inda takili/gecersiz satir: say ve girisleri kapat (cozulene kadar; islem kapansa da kapali)."""
+        cur = self.state.kv_get("entries_blocked_reason")
+        if res.failed > 0:
+            self._c["outbox_failed"] += 1
+            log.error("outbox takili: %d satir yazilamadi (%s)", res.failed, res.first_error)
+            if not cur:
+                self._block("outbox_stuck")
+        elif cur == "outbox_stuck":
+            with self.state.tx():
+                self.state.kv_set("entries_blocked_reason", None)
 
     def _process_step(self, step) -> None:
         ts = step.ts

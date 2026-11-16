@@ -180,7 +180,7 @@ def _row(**kw) -> SignalRow:
 def gate_env(tmp_path):
     clock = SimClock(T0 + timedelta(seconds=5))
     raw = json.loads((ROOT / "config" / "engine.base.json").read_text())
-    raw.update(bot="learner", kill_file=str(tmp_path / "KILL"))
+    raw.update(bot="learner", kill_file=str(tmp_path / "KILL"), target_trade_risk=0.014)   # sevk edilen paper degeri 0.005
     (tmp_path / "c.json").write_text(json.dumps(raw))
     cfg = load_engine_config(tmp_path / "c.json")
     led = L.open_ledger(str(tmp_path / "l.sqlite"), "learner", create=True, clock=clock.now)

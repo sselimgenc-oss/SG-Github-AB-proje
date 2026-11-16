@@ -60,7 +60,8 @@ def test_twin_and_learner_share_same_risk_config(tmp_path):
 
 
 def test_shipped_configs_keep_locked_default():
-    for name in ("engine.base.json", "engine.learner.json", "engine.twin.json"):
+    assert json.loads((ROOT / "config" / "engine.base.json").read_text())["target_trade_risk"] == 0.005
+    for name in ("engine.learner.json", "engine.twin.json"):
         assert "target_trade_risk" not in json.loads((ROOT / "config" / name).read_text())
 
 

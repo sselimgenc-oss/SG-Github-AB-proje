@@ -14,7 +14,7 @@ from trader_core.risk import liquidation_price
 from ..clock import Clock
 from ..config import CostModel
 from ..errors import BrokerError, BrokerUncertain
-from ..funding import due_funding_times, funding_payment
+from ..funding import due_funding_times, floor_funding_time, funding_payment
 from ..numeric import is_multiple, round_adverse, round_nearest
 from ..types import (BrokerAccount, BrokerEvent, BrokerOrder, BrokerPosition, Fill, FundingPoint, MinuteBar,
                      OrderRequest, OrderResult, Role, Side, SymbolRules, require_utc)
@@ -42,6 +42,7 @@ class PaperConfig:
     cost: CostModel
     mmr: float
     wallet_start: float = 1000.0
+    funding_max_wait_s: float = 900.0   # funding noktasi gelmezse imlec en fazla bu kadar bekler, sonra funding_missing
 
 
 # --------------------------------------------------------------------------- ic kayitlar
@@ -376,13 +377,23 @@ class PaperBroker:
             self._last_funding[pair] = ts
             return
         pts = self._funding_fn(pair, last, ts)
-        if not pts:
-            self._ctr["funding_missing"] += 1
-            self._last_funding[pair] = ts
-            return
+        by_ts: dict[datetime, FundingPoint] = {}
+        for p in pts or ():
+            by_ts.setdefault(floor_funding_time(p.ts), p)      # ham fundingTime saat basini birkac ms gecebilir
         todo = []
-        for p in pts:
-            if p.ts > ts or p.ts <= last or pos.opened_ts >= p.ts:
+        hold_at: datetime | None = None                        # son odenen/atlanan nokta; imlec buraya kadar ilerler
+        held = False
+        for t in due_funding_times(last, ts):
+            if pos.opened_ts >= t:
+                hold_at = t
+                continue
+            p = by_ts.get(t)
+            if p is None:
+                if (ts - t).total_seconds() < self._cfg.funding_max_wait_s:
+                    held = True                                # nokta henuz yok: imleci tut (sinirli bekleme)
+                    break
+                self._ctr["funding_missing"] += 1              # sinir asildi: uyar ve ilerle (sonsuz bloklama yok)
+                hold_at = t
                 continue
             if p.mark is not None:
                 mark = p.mark
@@ -394,13 +405,15 @@ class PaperBroker:
             except ValueError:
                 self._ctr["funding_missing"] += 1
                 raise
-            todo.append((p, mark, pay))
-        for p, mark, pay in todo:
+            todo.append((t, p, mark, pay))
+            hold_at = t
+        for t, p, mark, pay in todo:
             self._wallet -= pay
             pos.funding_paid += pay
-            self._events.append(BrokerEvent(kind="funding", ts=p.ts, pair=pair, funding_paid=pay,
+            self._events.append(BrokerEvent(kind="funding", ts=t, pair=pair, funding_paid=pay,
                                             rate=p.rate, mark=mark))
-        self._last_funding[pair] = ts
+        self._last_funding[pair] = hold_at if held and hold_at is not None else (last if held else ts)
+        return
 
     def _slipped(self, base: float, order_side: str, slip_bps: float, tick: float,
                  pair: str | None = None, opened_ts: datetime | None = None) -> float:
