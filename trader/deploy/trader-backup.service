@@ -1,0 +1,21 @@
+[Unit]
+Description=Trader gunluk yedek (defterler ve freqtrade veritabanlari)
+Documentation=file:///opt/trader/docs/saglik-spec.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/health_backup.py
+EnvironmentFile=/etc/trader-health.env
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=96M
+# 20: en az bir dosya basarisiz (uyari uretildi); beklenen cikis
+SuccessExitStatus=20
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/trader/trader/user_data
+ReadWritePaths=/var/backups/trader
+NoNewPrivileges=true
+PrivateTmp=true

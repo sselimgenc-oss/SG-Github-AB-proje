@@ -1,0 +1,9 @@
+[Unit]
+Description=Trader saglik alarmi: %i basarisiz
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/trader-health.env
+ExecStart=/bin/bash /opt/trader/scripts/health_fail.sh %i
+NoNewPrivileges=true
+PrivateTmp=true
