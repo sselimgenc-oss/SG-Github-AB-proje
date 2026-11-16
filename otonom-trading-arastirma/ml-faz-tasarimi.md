@@ -181,3 +181,9 @@ Kullanıcı: "Fable ne diyorsa onayım var" — mentor önerileri aynen geçerli
 5. **Kapı eşikleri — onaylandı ve donduruldu.** Bölüm 1 (net R farkı ≥ +0,10 R ve bootstrap %90 alt sınırı > 0; filtreli net beklenti > 0; DSR ≥ 0,95; PBO ≤ 0,25; düşüş filtresizden kötü değil; adayların ≥ %30'u alınır; tek çift çıkarılınca çökmez) ve Bölüm 3.4 aynen geçerli. İlk koşudan önce yazıldıkları için "ML-1'de bir kez kalibre et" adımı kaldırıldı: eşikler sonuç görüldükten sonra gevşetilmez, yalnız sıkılaştırılabilir. Tek teknik düzeltme: walk-forward penceresi eldeki veriye uyduruldu (Bölüm 3.3).
 
 **Etkinleştirme kuralı (özet):** kağıt `ml_mode=off` ile başlar; `shadow` kapıdan geçmiş dondurulmuş modelle açılır; `active` yalnız ML-2 çıkış ölçütü + kullanıcının Telegram onayıyla. Canlı, filtre etkin olmadan başlar.
+
+## 11. Mentor kararları — 19a sonrası (17 Kasım 2026)
+1. **`meta.user_approved` kalır.** Eğitim hattı bunu asla yazmaz. Kullanıcı Telegram'da ders önerileri gibi `/onayla` akışıyla verir; onay deftere yazılır ve paket özetine (hash) bağlanır. Onay gerekir: ilk etkinleştirme; özellik listesi, etiket tanımı ya da eşik politikası değiştiğinde. Aynı tarifle haftalık yeniden eğitim kapıyı geçerse onayı devralır, yalnız bildirim gider (`/reddet` ya da geri alma mümkün).
+2. **Canlı özellik açığı:** şimdi (a) — BTC/ETH çapraz çift, funding ve `f_bars_since_exit` özellikleri motor sağlayana kadar listeden çıkarılır; NaN ile eğitilmez. `f_slope_1d` eğitimde de 1500 barlık pencereyle hesaplanır. Sonra (b) motor bağlamı genişletilir. Kağıttan önce gerekmez; **gölgeden önce zorunlu**, eğitim/canlı eşlik testiyle.
+3. **Backtest `model=`** (`precomputed.py:161`, `:212`): compat işi dosyayı bırakınca; gölgeyi de bekletir.
+4. **19b şimdi native kipte başlar.** Aday seti motor commit'i ve kip ile damgalanır; compat çapraz doğrulaması native davranışı değiştirirse yeniden üretilir. Çapraz doğrulama bitmeden son model eğitilmez, kapı çalıştırılmaz.
