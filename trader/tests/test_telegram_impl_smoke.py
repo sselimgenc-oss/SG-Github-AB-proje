@@ -56,6 +56,19 @@ def env_for(tmp_path):
             "LESSON_RUN_PATH": "/x/lesson_run.py"}
 
 
+class _FnClk:
+    def __init__(self, fn):
+        self._fn = fn
+
+    def now(self):
+        return self._fn()
+
+
+def _ks(cfg, now_fn):
+    from trader_engine.killswitch import Killswitch
+    return Killswitch(cfg.kill_file, _FnClk(now_fn)) if cfg.kill_file else None
+
+
 @pytest.fixture
 def rig(tmp_path):
     clk, fake, sleeps = Clk(), FakeTG(), []
@@ -68,7 +81,8 @@ def rig(tmp_path):
         calls.append((argv, dict(e)))
         return 0, json.dumps({"status": "approved", "code": "ok", "message": "tamam", "request_id": argv[4]})
 
-    d = T.TelegramDaemon(cfg, client, now_fn=clk, runner=runner, sleep=sleeps.append, random_code=lambda: "0427")
+    d = T.TelegramDaemon(cfg, client, now_fn=clk, runner=runner, sleep=sleeps.append, random_code=lambda: "0427",
+                         killswitch=_ks(cfg, clk))
     d.rig = type("R", (), {"clk": clk, "fake": fake, "sleeps": sleeps, "runs": calls, "tmp": tmp_path, "env": env})
     return d
 

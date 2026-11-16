@@ -17,6 +17,18 @@ sys.path.insert(0, str(ROOT / "src"))
 from trader_core import telegram as tg  # noqa: E402
 from trader_core.health import Alert, Status  # noqa: E402
 from trader_engine.clock import SimClock  # noqa: E402
+
+
+class _FnClk:
+    def __init__(self, fn):
+        self._fn = fn
+
+    def now(self):
+        return self._fn()
+
+
+def _ks_for(cfg, now_fn):
+    return Killswitch(cfg.kill_file, _FnClk(now_fn)) if cfg.kill_file else None
 from trader_engine.killswitch import Killswitch  # noqa: E402
 
 TOKEN = "123456:SECRETTOKENabcdefXYZ"
@@ -126,7 +138,8 @@ def env(tmp_path, monkeypatch):
     e.ks = Killswitch(e.kill_file, SimClock(T0))
     e.new_daemon = lambda **kw: tg.TelegramDaemon(
         e.cfg, e.client, now_fn=e.clk, runner=kw.pop("runner", e.runner), sleep=e.sleeps.append,
-        random_code=kw.pop("random_code", lambda: "4821"), **kw)
+        random_code=kw.pop("random_code", lambda: "4821"),
+        killswitch=kw.pop("killswitch", _ks_for(e.cfg, e.clk)), **kw)
     e.offset = lambda: _read_offset(tmp_path)
     e.d = e.new_daemon()
     e.clk.advance(2)
@@ -331,7 +344,8 @@ def test_hepsini_kapat_sends_4digit_code_no_kill(env):
 
 
 def test_default_code_generator_is_4_digits(env):
-    d = tg.TelegramDaemon(env.cfg, env.client, now_fn=env.clk, runner=env.runner, sleep=env.sleeps.append)
+    d = tg.TelegramDaemon(env.cfg, env.client, now_fn=env.clk, runner=env.runner, sleep=env.sleeps.append,
+                          killswitch=_ks_for(env.cfg, env.clk))
     env.clk.advance(2)
     d.process_updates([msg(_next(), "/hepsini_kapat", env.clk())])
     codes = re.findall(r"(?<!\d)\d{4}(?!\d)", env.fake.alltext())

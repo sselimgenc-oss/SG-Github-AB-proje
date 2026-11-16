@@ -19,6 +19,26 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import telegram as T  # noqa: E402
+from trader_engine.killswitch import Killswitch  # noqa: E402
+
+
+def default_runner(argv: list[str], timeout: float, env) -> tuple[int, str]:
+    """lesson_run.py --resolve alt sureci (trader_core'da surec cagrisi yasak, 08 §4.7)."""
+    import json
+    import subprocess
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=dict(env))
+        return r.returncode, r.stdout
+    except Exception as e:  # noqa: BLE001
+        return 2, json.dumps({"status": "unknown", "code": type(e).__name__})
+
+
+class _Clk:
+    def __init__(self, fn):
+        self._fn = fn
+
+    def now(self):
+        return self._fn()
 
 EXIT_OK, EXIT_CONFIG = 0, 1
 
@@ -54,7 +74,8 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
             n = T.TelegramNotifier(client, cfg.chat_id, T.Outbox(cfg.var_dir, now_fn), now_fn, sleep)
             print(T.run_report(cfg, n, now_fn()))
             return EXIT_OK
-        d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner,
+        ks = Killswitch(cfg.kill_file, _Clk(now_fn)) if cfg.kill_file else None
+        d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks,
                              report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
                                                        T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat())))
         flag = {"stop": False}
