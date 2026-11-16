@@ -49,6 +49,24 @@ API yalnizca sunucuda 127.0.0.1'dedir: learner 8080, twin 8081 (uzaktan SSH tune
   futures, dosyalarda anahtar/sir yok.
 - Bu yapi build ortaminda (ABD) Binance'e erisilemedigi icin calistirilarak dogrulanmadi.
 
+## Backtest (Binance'e erisimi olmayan ortam)
+
+`api.binance.com` / `fapi.binance.com` erisilemiyorsa veri `data.binance.vision` arsivinden gelir.
+
+```bash
+python3.12 -m venv .venv-ft && .venv-ft/bin/pip install freqtrade==2026.10   # bir kez
+.venv-ft/bin/python scripts/fetch_binance_vision.py      # veri yenile (idempotent, checksum dogrular)
+F="--config config/base.json --config config/backtest.json --userdir user_data --datadir user_data/data/binance"
+.venv-ft/bin/python scripts/freqtrade_offline.py list-data $F --trading-mode futures --show-timerange
+.venv-ft/bin/python scripts/freqtrade_offline.py backtesting $F --strategy PlaceholderStrategy \
+  --strategy-path user_data/strategies --timerange 20261001-20261101 --export none
+```
+
+- Veri `user_data/data/binance/futures/` altina (feather) yazilir; ham zip onbellegi `user_data/data/_vision_raw/` (gitignore'da).
+- `config/backtest.json`: base.json'a ek (API sunucusu kapali, gecerli JWT yer tutucusu).
+- `freqtrade_offline.py`: market listesini yerel veriden sentetik uretir (exchangeInfo erisilemez); precision/min-notional yaklasiktir.
+- Funding verisi ayin sonunda yayinlanir; icinde bulunulan ayin funding'i eksiktir (ayri `futures_funding_rate` ile doldurulabilir).
+
 ## Test
 
 ```bash
