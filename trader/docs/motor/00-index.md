@@ -10,7 +10,7 @@ Kaynak: `otonom-trading-arastirma/motor-tasarimi.md` (yetkili). Bu klasör tasar
 | 01 | `01-feed.md` | `market.sqlite`, REST yoklama feed'i, `StoreSource`/`HistoricalSource` (`MarketView`) | `marketdata/{store,feed,sources}` |
 | 03 | `03-paper-broker.md` | `Broker` arayüzü, `PaperBroker` (dolum, mark tetik, funding, likidasyon), `FaultPlan` | `brokers/{base,paper}`, `funding` |
 | 04 | `04-order-position.md` | `state.sqlite`, idempotent `OrderManager` (belirsizlik yolu), `PositionManager` (stop/trail/hedef/zaman/rejim, MFE/MAE) | `state, order_manager, position_manager` |
-| 05 | `05-engine-runner.md` | `StrategyRunner`, kapı zinciri, `Engine` döngüsü, yeniden oynatma, mutabakat (paper), kill, `status.json`, CLI | `strategy_runner, gates, engine, reconcile, killswitch, status, cli, __main__` |
+| 05 | `05-engine-runner.md` | `StrategyRunner`, kapı zinciri, `Engine` döngüsü, yeniden oynatma, mutabakat (paper), kill, `status.json`, CLI; **takılabilir strateji arayüzü** (`Strategy` protokolü, kayıt defteri, `PriceActionV1` v1b adaptörü, 1l3a uyarlama taslağı; §13) | `strategy_runner, gates, engine, reconcile, killswitch, status, cli, __main__`, `strategies/{__init__,base,registry,price_action_v1}` |
 | 06 | `06-backtester.md` | Aynı `Engine` ile backtest, metrikler, lookahead kilidi, freqtrade çapraz doğrulaması, paper ↔ backtest eşitliği, 1m veri çekme | `backtest, precomputed, metrics`, `research/bt_crosscheck.py`, `research/run_bt_engine.py`, `scripts/fetch_binance_vision.py` |
 | 07 | `07-copied-1l3a.md` | 1l3a'dan **kopyalanan** dosyalar: kesinti/ek/yeniden adlandırma, başlık, Faz B ön kuralları | `marketdata/rest_public`, `exchange/rules`, `fileio` |
 | 08 | `08-no-framework-guard.md` | Dış çerçeve yasağı + mimari koruma testleri, `pyproject.toml` bağımlılık kilidi | yalnız `tests/engine/test_*guard*`, `pyproject.toml`, `.gitignore` |
@@ -45,7 +45,7 @@ Her `src/trader_engine` dosyasının **tek** sahibi vardır (08 `test_engine_mod
 | Dosya | Sahip | Dosya | Sahip |
 |---|---|---|---|
 | `__init__.py, errors.py, types.py, numeric.py, clock.py, bars.py, config.py` | 02 | `state.py, order_manager.py, position_manager.py` | 04 |
-| `marketdata/{__init__,store,feed,sources}.py` | 01 | `strategy_runner.py, gates.py, engine.py, reconcile.py, killswitch.py, status.py, cli.py, __main__.py` | 05 |
+| `marketdata/{__init__,store,feed,sources}.py` | 01 | `strategy_runner.py, gates.py, engine.py, reconcile.py, killswitch.py, status.py, cli.py, __main__.py`, `strategies/**` | 05 |
 | `marketdata/rest_public.py` | 07 | `backtest.py, precomputed.py, metrics.py` | 06 |
 | `exchange/{__init__,rules}.py, fileio.py` | 07 | `brokers/{__init__,base,paper}.py, funding.py` | 03 |
 | `config/engine*.json` | 02 | `pyproject.toml`, `.gitignore` (satır ekleme) | 08 |
@@ -59,7 +59,7 @@ Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1
 2. `MarketView` (01 §6): `bars(until zorunlu)`, `contiguous_tail`, `minute_steps`, `funding`, `rules`, `last_closed_minute`, `data_range`, `step_seconds`.
 3. `Broker`/`SimBroker` (03 §3) ve iki aşamalı adım (`advance(…,"fills")` → `poll` → `advance(…,"triggers")` → `poll`).
 4. `state.sqlite` şeması ve `StateStore` API'si (04 §3), `make_client_id` biçimi (04 §4).
-5. `SignalSource`/`SignalFrame`/`SignalRow` (05 §3) ve `ExitContext`/`evaluate_exit` (04 §5).
+5. `SignalSource`/`SignalFrame`/`SignalRow` (05 §3) ve `ExitContext`/`evaluate_exit` (04 §5). **Strateji arayüzü** (05 §13): `Strategy`/`StrategyInfo`/`StrategyContext`/`ExitPolicy`, `compute` çıktısı = `trader_core.signals.SIGNAL_COLUMNS` (sütun kümesi donmuş), `registry.get_strategy(name)`.
 6. `PublicRestClient`, `rows_to_bars`, `extract_rules`/`to_symbol_rules`, `fileio` (07 §4).
 7. `status.json` şeması (05 §8.2) — `health_run.py` uyarlamasının girdisi.
 8. `trades.csv`/`summary.json` sütun/anahtar kümesi (06 §4) — `research/runs/*.json` ile uyumlu.
