@@ -9,7 +9,7 @@ Kaynak kararlar: `motor-tasarimi.md` §2.1 (veri akışı), §2.2 (`strategy_run
 | Tek döngü | Senkron, tek iş parçacığı; dakikalık adımlar zaman sırasıyla, tf kapanışında karar adımı |
 | Sıra (§2.7) | Her karar adımında: parametre yenile → **çıkışlar** → **stop güncelle** → **girişler** |
 | Aynı kod | `Engine` paper, backtest ve (Faz B) canlıda **aynı** sınıftır; fark `Broker`, `MarketView`, `Clock`, `SignalSource` enjeksiyonudur |
-| Tek risk kaynağı | `risk.check_entry(..., LOCKED_CFG)`; engine hiçbir risk sayısı tanımlamaz |
+| Tek risk kaynağı | `risk.check_entry(..., cfg.risk_config)`; `risk_config` = `LOCKED_CFG`'nin yalnız `target_trade_risk`i daha **sıkı** kopyası (varsayılan 0.014 = `LOCKED_CFG`; gevşek/geçersiz ⇒ `ConfigError`); engine hiçbir risk sayısı tanımlamaz |
 | Kapı sırası | §4.1 tablosu (TraderV1 sırasıyla birebir; §2.2 sırası ile fark gerekçeli) |
 | Çıkışlar kapısız | Defter/veto/kill/bayatlık hiçbir çıkışı engellemez |
 | Atomiklik | Paper/backtest'te her adım (dakika ya da karar) **tek** `state.tx()`; `broker.snapshot()` aynı işlemde yazılır |
@@ -132,7 +132,7 @@ Her satırda "kayıt" ledger `record_decision`'dır; **skip** kayıtları best-e
 | 8 | **bayat:** `clock.now() − D > stale_factor × tf` | `skip`, `mark_decided` | `other` | `veto_reason="gate:stale_data"` |
 | 9 | `rules_fn(pair)` `DataError` | `skip`, `mark_decided` | `other` | `veto_reason="gate:rules_missing"` |
 | 10 | `veto.lookup(pair, side, now).blocks` | `skip`, `mark_decided` | `f"veto_{lookup.status}"` | `veto_status=lookup.status` (`blocked`/`missing`/`stale`), `veto_reason=lookup.reason` |
-| 11 | `risk.check_entry(account_state, candidate, LOCKED_CFG)` `allowed == False` | `skip`, `mark_decided` | `risk_denied` | `veto_status="allowed"`, `veto_reason=lookup.reason`, `risk_allowed=False`, `risk_reason=dec.reason` |
+| 11 | `risk.check_entry(account_state, candidate, cfg.risk_config)` `allowed == False` | `skip`, `mark_decided` | `risk_denied` | `veto_status="allowed"`, `veto_reason=lookup.reason`, `risk_allowed=False`, `risk_reason=dec.reason` |
 | 12 | hepsi geçti | `enter` | `None` | `veto_status="allowed"`, `veto_reason=lookup.reason`, `risk_allowed=True`, `risk_reason=dec.reason`, `size_qty/notional/margin/risk_amount`, `leverage` |
 
 Notlar:
@@ -504,3 +504,9 @@ Kaynak şekil (`1l3a-proje/motor/strateji/temel.py`, salt okunur): `Strateji.sin
 | 06 | `--strategy` bayrağı, `PrecomputedSignalSource(strategy)`, özet/ledger etiketi (§13.7) | Evet |
 | 08 | `test_engine_module_inventory` modül listesine `strategies/{__init__,base,registry,price_action_v1}.py`; `importlib`/`__import__` taraması `strategies/` için ek korumaya (§13.2) | Evet |
 | `trader_core.ledger` (dokunulmaz; ayrı iş) | `_SETUPS` ve 9 anahtarlı `PARAM_SPECS` v1'e özgüdür; v1 dışı strateji için setup sözlüğü + parametre şeması genişlemesi, ayrı `strategy_name/version` alanları, gölge etiket kaydı | **Hayır**; 1l3a uyarlaması bunu bekler |
+
+## Netleştirmeler
+- **Hedef işlem riski (kullanıcı kararı 16 Kasım 2026: canlı %0,5):** `EngineConfig.target_trade_risk` (isteğe bağlı anahtar, varsayılan `LOCKED_CFG.target_trade_risk = 0.014`; backtest davranışı değişmez). `EngineConfig.risk_config` bunu `trader_core.risk.tightened(LOCKED_CFG, …)` ile kurar: yalnız `0 < değer ≤ 0.014` kabul; gevşek, ≤ 0, NaN/inf, bool, sayı olmayan ⇒ `ConfigError` (yükleme anında, fail-closed). Giriş kapısı (kapı 11 ve boyut) tek bu nesneyi kullanır; twin ve learner aynı `engine.base.json`'dan okuduğundan aynı değeri alır (bot dosyaları bu anahtarı **taşımaz**). Gönderilen `config/engine*.json` dosyaları varsayılanda bırakıldı; canlı %0,5 için `target_trade_risk: 0.005` `engine.base.json`'a (her iki botu birlikte etkiler) canlı geçişte yazılır. Dolum sonrası doğrulama (`max_trade_risk`) kilitli kalır.
+- **`entries_blocked_reason` ve karar adımındaki mutabakat:** her karar adımı mutabakatı çalıştırır (§7); mutabakat nedeni artık görmüyorsa `order_unknown`/`exit_unknown`/`stop_failed`/`reconcile_*` otomatik temizlenir, `day_start_missing` yeni UTC gününün `ensure_day_start`'ında temizlenir. Kapı 6 testleri bu temizlemeyi bilerek devre dışı bırakır; temizleme davranışı §7 tablosuyla uyumludur (belirsizlikte kapalı kalınır: neden hâlâ görülüyorsa temizlenmez).
+- **`status.write` kısıtı:** yazma en çok `loop_sleep_s` aralıkla yapılır (§8); `force=True` yalnız karar adımı sonunda kullanılır.
+- **Defter özellik zorunluluğu:** `DecisionEvent.features` sonlu değerler ister (T1: `atr_tf, stop_dist_atr, atr_4h, pullback_ema, ema_value, body_ratio`; R1: `wick_ratio, rr, edge_dist_atr`, ayrıca `planned_target`). Eksik/NaN ⇒ karar kaydı reddedilir; motor girişi **yapmaz** (zorunlu kayıt yazılamazsa emir yok; fail-closed), filtrelenmiş aday kaydı best-effort atlanır.

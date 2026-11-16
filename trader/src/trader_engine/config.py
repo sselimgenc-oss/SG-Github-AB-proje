@@ -1,14 +1,17 @@
-"""Motor yapilandirmasi (02 §8). Risk sayisi YOK; tek kaynak trader_core.risk.LOCKED_CFG."""
+"""Motor yapilandirmasi (02 §8). Risk kaynagi trader_core.risk.LOCKED_CFG; tek ayar `target_trade_risk` yalniz
+LOCKED_CFG'den SIKI olabilir (gevsek/gecersiz => ConfigError, fail-closed)."""
 from __future__ import annotations
 
 import dataclasses
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
 from trader_core.config_loader import deep_merge
+from trader_core.risk import LOCKED_CFG, RiskConfig, tightened
 
 from .errors import ConfigError
 from .types import canon_pair
@@ -50,6 +53,13 @@ class EngineConfig:
     history_dir: str
     veto_config: str
     kill_file: str
+    strategy: str = "price_action_v1"
+    target_trade_risk: float = LOCKED_CFG.target_trade_risk
+
+    @property
+    def risk_config(self) -> RiskConfig:
+        """Boyutlama/kapi icin tek RiskConfig (twin ve learner ayni degeri okur)."""
+        return build_risk_config(self.target_trade_risk)
 
     def _bot_path(self, name: str) -> str:
         return f"{self.var_dir.rstrip('/')}/{self.bot}/{name}"
@@ -72,6 +82,8 @@ _TOP_KEYS = {f.name for f in dataclasses.fields(EngineConfig)}
 _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wait_s",
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
+_OPTIONAL_KEYS = {"strategy", "target_trade_risk"}
+_STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 
 def _num(name: str, v: Any, lo: float | None = None, hi: float | None = None) -> float:
@@ -82,6 +94,16 @@ def _num(name: str, v: Any, lo: float | None = None, hi: float | None = None) ->
     if (lo is not None and v < lo) or (hi is not None and v > hi):
         raise ConfigError(f"{name} aralik disi [{lo}, {hi}]: {v!r}")
     return float(v)
+
+
+def build_risk_config(target_trade_risk: Any) -> RiskConfig:
+    """LOCKED_CFG'nin yalniz `target_trade_risk`i daha sikilastirilmis kopyasi. Gevsek (> kilitli hedef), <= 0,
+    sonlu olmayan ya da sayi olmayan deger => ConfigError."""
+    v = _num("target_trade_risk", target_trade_risk)
+    try:
+        return tightened(LOCKED_CFG, target_trade_risk=v)
+    except ValueError as e:
+        raise ConfigError(f"target_trade_risk: {e}") from e
 
 
 def _choice(name: str, v: Any, allowed: tuple[str, ...]) -> str:
@@ -122,7 +144,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     unknown = set(raw) - _TOP_KEYS
     if unknown:
         raise ConfigError(f"bilinmeyen anahtar: {sorted(unknown)}")
-    missing = _TOP_KEYS - set(raw)
+    missing = _TOP_KEYS - _OPTIONAL_KEYS - set(raw)
     if missing:
         raise ConfigError(f"eksik anahtar: {sorted(missing)}")
     if raw["schema"] != SCHEMA:
@@ -159,6 +181,11 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     for n in _STR:
         if not isinstance(raw[n], str) or not raw[n]:
             raise ConfigError(f"{n} bos olmayan str olmali")
+    strategy = raw.get("strategy", "price_action_v1")
+    if not isinstance(strategy, str) or not _STRATEGY_RE.fullmatch(strategy):
+        raise ConfigError(f"strategy gecersiz (^[a-z][a-z0-9_]{{0,39}}$): {strategy!r}")
+    ttr = raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk)
+    build_risk_config(ttr)
     cost = raw["cost"] if isinstance(raw["cost"], CostModel) else None
     cost = _build_cost(dataclasses.asdict(cost) if cost else raw["cost"])
     return EngineConfig(
@@ -169,7 +196,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         stale_factor=nums["stale_factor"], loop_sleep_s=nums["loop_sleep_s"],
         bar_wait_s=nums["bar_wait_s"], minute_wait_s=nums["minute_wait_s"],
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
-        start_delay_s=nums["start_delay_s"],
+        start_delay_s=nums["start_delay_s"], strategy=strategy,
+        target_trade_risk=float(ttr),
         **{n: raw[n] for n in _STR},
     )
 

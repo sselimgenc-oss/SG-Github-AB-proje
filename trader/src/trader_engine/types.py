@@ -258,3 +258,5 @@ class Position:
     exit_reason: str | None
     exit_client_id: str | None
     closed_ts: datetime | None
+    strategy_name: str = "price_action_v1"      # 05 §13.6: giris aninda donar
+    strategy_version: str = "1b.0"

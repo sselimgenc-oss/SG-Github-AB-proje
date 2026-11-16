@@ -70,7 +70,7 @@ EXPECTED_FIELDS = {
                  "initial_stop", "current_stop", "stop_seq", "stop_client_id", "planned_target",
                  "trail_atr", "param_version_id", "trigger_tf", "risk_amount", "margin", "rh", "rl",
                  "fee_entry", "funding_paid", "mfe_price", "mae_price", "exit_reason",
-                 "exit_client_id", "closed_ts"],
+                 "exit_client_id", "closed_ts", "strategy_name", "strategy_version"],
 }
 
 # defaults (field -> default); every other field must be required
@@ -83,6 +83,7 @@ EXPECTED_DEFAULTS = {
     "BrokerEvent": {"client_id": None, "fill": None, "funding_paid": 0.0, "rate": None,
                     "mark": None, "detail": None},
     "BrokerPosition": {"mark_price": None, "unrealized": 0.0},
+    "Position": {"strategy_name": "price_action_v1", "strategy_version": "1b.0"},
     "Intent": {"decision_id": None},
 }
 

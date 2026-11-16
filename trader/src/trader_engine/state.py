@@ -27,7 +27,8 @@ CREATE TABLE positions(
   planned_target REAL, trail_atr REAL NOT NULL, param_version_id INTEGER NOT NULL, trigger_tf TEXT NOT NULL,
   risk_amount REAL NOT NULL, margin REAL NOT NULL, rh REAL, rl REAL,
   fee_entry REAL NOT NULL DEFAULT 0, funding_paid REAL NOT NULL DEFAULT 0,
-  mfe_price REAL, mae_price REAL, exit_reason TEXT, exit_client_id TEXT, closed_ms INTEGER);
+  mfe_price REAL, mae_price REAL, exit_reason TEXT, exit_client_id TEXT, closed_ms INTEGER,
+  strategy_name TEXT NOT NULL DEFAULT 'price_action_v1', strategy_version TEXT NOT NULL DEFAULT '1b.0');
 CREATE UNIQUE INDEX ux_pos_pair_live ON positions(pair) WHERE status != 'closed';
 CREATE TABLE orders(
   client_id TEXT PRIMARY KEY, pair TEXT NOT NULL, role TEXT NOT NULL, order_side TEXT NOT NULL, qty REAL NOT NULL,
@@ -57,6 +58,7 @@ _POS_COLS: dict[str, tuple[str, bool]] = {
     "fee_entry": ("fee_entry", False), "funding_paid": ("funding_paid", False), "mfe_price": ("mfe_price", False),
     "mae_price": ("mae_price", False), "exit_reason": ("exit_reason", False),
     "exit_client_id": ("exit_client_id", False), "closed_ts": ("closed_ms", True),
+    "strategy_name": ("strategy_name", False), "strategy_version": ("strategy_version", False),
 }
 _ORD_COLS: dict[str, tuple[str, bool]] = {
     "client_id": ("client_id", False), "pair": ("pair", False), "role": ("role", False),

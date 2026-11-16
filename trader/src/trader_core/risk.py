@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import numbers
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 _SIDES = ("long", "short")
@@ -111,6 +111,15 @@ class RiskConfig:
 
 
 LOCKED_CFG = RiskConfig()
+
+
+def tightened(base: RiskConfig, *, target_trade_risk: float) -> RiskConfig:
+    """`base`in yalniz `target_trade_risk` değeri daha SIKI (<= base, > 0) bir kopyası. Gevşek/geçersiz değer
+    ValueError (kilit asla gevşetilemez; RiskConfig HARD_LIMITS ayrıca denetler)."""
+    v = _num(target_trade_risk, "target_trade_risk")
+    if v <= 0 or v > base.target_trade_risk:
+        raise ValueError(f"target_trade_risk (0, {base.target_trade_risk}] içinde olmalı: {v!r}")
+    return replace(base, target_trade_risk=v)
 
 
 @dataclass(frozen=True)

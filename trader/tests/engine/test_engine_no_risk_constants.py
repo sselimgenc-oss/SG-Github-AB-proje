@@ -59,7 +59,9 @@ def _tname(t):
 
 
 def _ends_locked(node) -> bool:
-    return (isinstance(node, ast.Name) and node.id == "LOCKED_CFG") or (isinstance(node, ast.Attribute) and node.attr == "LOCKED_CFG")
+    # `cfg.risk_config` = LOCKED_CFG'nin yalniz target_trade_risk'i daha SIKI kopyasi (config.build_risk_config ->
+    # trader_core.risk.tightened; gevsek => ConfigError). Motor RiskConfig kurmaz/replace etmez (asagidaki tarama).
+    return ((isinstance(node, ast.Name) and node.id == "LOCKED_CFG") or (isinstance(node, ast.Attribute) and node.attr in ("LOCKED_CFG", "risk_config")))
 
 
 def _mmr_ok(node) -> bool:
