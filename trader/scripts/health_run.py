@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """Saglik runner (docs/saglik-spec.md Bolum 8). Her 5 dk systemd timer ile calisir; daemon degildir.
 
-Salt okuma: HTTP GET, salt okunur sqlite, `docker inspect`. Islem acmaz, defter yazmaz, bot baslatmaz.
+Salt okuma: motorun `status.json` dosyasi (learner + twin), salt okunur sqlite. Islem acmaz, defter yazmaz, bot baslatmaz.
 Cikis kodlari: 0 saglikli+nabiz gitti; 10 CRIT/UNKNOWN (nabiz yok); 11 saglikli ama nabiz gonderilemedi;
 12 uyari iletilemedi; 1 beklenmeyen hata.
 """
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import os
 import sqlite3
-import subprocess
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,8 +26,9 @@ log = logging.getLogger("trader.health.run")
 
 EXIT_OK, EXIT_UNHEALTHY, EXIT_HB_FAILED, EXIT_ALERT_FAILED, EXIT_CRASH = 0, 10, 11, 12, 1
 TOTAL_BUDGET_S = 60.0
-HTTP_TIMEOUT_S = 5.0
-DOCKER_TIMEOUT_S = 10.0
+STATUS_SCHEMA = "engine-status/1"
+STATUS_MAX_BYTES = 2_000_000
+PING_MAX_AGE_S = 120  # docs/motor/05 8.2: ping_ok = (simdi - loop_at) <= 120 sn
 BOTS = ("learner", "twin")
 _TF_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
 
@@ -73,65 +71,86 @@ def save_state(path, state) -> None:
 
 
 # --------------------------------------------------------------------------- olcumler
-def _get_json(base: str, path: str, auth: str | None, timeout=HTTP_TIMEOUT_S):
-    req = urllib.request.Request(base.rstrip("/") + path, method="GET")
-    if auth:
-        req.add_header("Authorization", auth)
-    with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 - yalnizca yerel adres
-        if not 200 <= r.status < 300:
-            raise OSError("http")
-        return json.loads(r.read(2_000_000).decode("utf-8"))
+def status_path(var_dir: str, bot: str) -> str:
+    return os.path.join(var_dir, bot, "status.json")
 
 
-def probe_api(base: str, auth: str | None, deadline: float, get=_get_json) -> tuple[H.ApiProbe, int | None]:
-    """Her uc nokta ayri try/except; hata -> ilgili alan None. (ApiProbe, timeframe_s)"""
-    def left():
-        return time.monotonic() < deadline
-    ping = last_proc = candle = ids = dry = None
-    tf_s = None
-    pair = None
-    tf = None
-    if left():
+def ledger_path(var_dir: str, bot: str) -> str:
+    return os.path.join(var_dir, bot, "ledger.sqlite")
+
+
+def _ids(v):
+    if not isinstance(v, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in v):
+        return None
+    return tuple(v)
+
+
+def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | None]:
+    """Motor status.json -> (ApiProbe, timeframe_s). Fail-closed:
+    dosya yok -> ping_ok=False (motor yazmiyor); okunamaz/bozuk/sema ya da bot uyusmaz -> hepsi None (UNKNOWN);
+    loop_at 120 sn'den eskiyse ping_ok=False; gelecekteki (saat uyumsuz) loop_at -> ping_ok=None."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(STATUS_MAX_BYTES + 1)
+    except FileNotFoundError:
+        return H.ApiProbe(ping_ok=False), None
+    except OSError:
+        return H.ApiProbe(), None
+    try:
+        if len(raw) > STATUS_MAX_BYTES:
+            raise ValueError("buyuk")
+        d = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return H.ApiProbe(), None
+    if not isinstance(d, dict) or d.get("schema") != STATUS_SCHEMA or d.get("bot") != bot:
+        return H.ApiProbe(), None
+    loop_at = _parse_dt(d.get("loop_at"))
+    ping = None
+    if loop_at is not None:
+        age = (now - loop_at).total_seconds()
+        if age >= -H.DEFAULT_CFG.clock_skew_tolerance_s:
+            ping = age <= PING_MAX_AGE_S
+    gate = d.get("gate")
+    gc = gate.get("code") if isinstance(gate, dict) else None
+    gate_code = gc if isinstance(gc, str) and gc else "status_malformed"
+    kill = d.get("kill") if isinstance(d.get("kill"), bool) else None
+    cnt = d.get("counters")
+    le = cnt.get("ledger_errors") if isinstance(cnt, dict) else None
+    le = le if isinstance(le, int) and not isinstance(le, bool) and le >= 0 else None
+    pos = d.get("open_positions")
+    unprot = None
+    if isinstance(pos, list) and all(isinstance(p, dict) for p in pos):
         try:
-            ping = bool(get(base, "/api/v1/ping", None).get("status") == "pong")
-        except Exception:  # noqa: BLE001
-            ping = False
-    if left():
-        try:
-            h = get(base, "/api/v1/health", auth)
-            last_proc = _parse_dt(h.get("last_process")) if h.get("last_process") else None
-            if last_proc is None and isinstance(h.get("last_process_ts"), (int, float)):
-                last_proc = datetime.fromtimestamp(h["last_process_ts"], tz=timezone.utc)
-        except Exception:  # noqa: BLE001
-            pass
-    if left():
-        try:
-            c = get(base, "/api/v1/show_config", auth)
-            dry = c.get("dry_run") if isinstance(c.get("dry_run"), bool) else None
-            tf = c.get("timeframe")
-            tf_s = timeframe_to_s(tf)
-            wl = c.get("pair_whitelist") or c.get("exchange", {}).get("pair_whitelist") or []
-            pair = wl[0] if wl else None
-        except Exception:  # noqa: BLE001
-            pass
-    if left():
-        try:
-            st = get(base, "/api/v1/status", auth)
-            ids = tuple(int(t["trade_id"]) for t in st)
-        except Exception:  # noqa: BLE001
-            pass
-    if left() and pair and tf:
-        try:
-            from urllib.parse import quote
-            d = get(base, f"/api/v1/pair_candles?pair={quote(pair, safe='')}&timeframe={tf}&limit=2", auth)
-            cols = d["columns"]
-            row = d["data"][-1]
-            v = row[cols.index("date")]
-            candle = (datetime.fromtimestamp(v / 1000, tz=timezone.utc) if isinstance(v, (int, float))
-                      else _parse_dt(v))
-        except Exception:  # noqa: BLE001
-            pass
-    return H.ApiProbe(ping, last_proc, candle, ids, dry), tf_s
+            unprot = tuple(int(p["trade_id"]) for p in pos
+                           if not (isinstance(p.get("stop"), (int, float)) and not isinstance(p.get("stop"), bool)
+                                   and p["stop"] > 0))
+        except (KeyError, TypeError, ValueError):
+            unprot = None
+    dry = d.get("dry_run") if isinstance(d.get("dry_run"), bool) else None
+    probe = H.ApiProbe(ping, loop_at, _parse_dt(d.get("last_candle_open")), _ids(d.get("open_trade_ids")), dry,
+                       gate_code, kill, le, unprot)
+    return probe, timeframe_to_s(d.get("trigger_tf"))
+
+
+def engine_container(path: str, bot: str, now: datetime, state: dict, key: str) -> H.ContainerProbe:
+    """Motor surec dogrulugu (docker yok): state = status taze mi; started_at = status.started_at;
+    restart_count = kalici sayac (started_at degisince +1; durum dosyasinda saklanir); oom_killed bilinmez (None)."""
+    try:
+        with open(path, "rb") as f:
+            d = json.loads(f.read(STATUS_MAX_BYTES).decode("utf-8"))
+        if not isinstance(d, dict) or d.get("schema") != STATUS_SCHEMA or d.get("bot") != bot:
+            return H.ContainerProbe()
+        started = _parse_dt(d.get("started_at"))
+        loop_at = _parse_dt(d.get("loop_at"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return H.ContainerProbe()
+    if started is None or loop_at is None:
+        return H.ContainerProbe()
+    base = int(state.get("restart_counts", {}).get(key, 0) or 0)
+    prev = state.get("engine_started_at", {}).get(key)
+    count = base + (1 if prev and prev != H._iso(started) else 0)
+    fresh = (now - loop_at).total_seconds() <= H.DEFAULT_CFG.loop_crit_s
+    return H.ContainerProbe("running" if fresh else "not_running", count, started, None)
 
 
 _TS_TABLES = (("health_probes", "probed_at"), ("decision_events", "recorded_at"),
@@ -225,22 +244,10 @@ def probe_mem(meminfo_path="/proc/meminfo"):
         return None, None, None
 
 
-def probe_container(name: str, run=subprocess.run) -> H.ContainerProbe:
-    try:
-        p = run(["docker", "inspect", "--format", "{{json .}}", name], capture_output=True, text=True,
-                timeout=DOCKER_TIMEOUT_S, check=True)
-        d = json.loads(p.stdout)
-        st = d["State"]
-        return H.ContainerProbe(st.get("Status"), int(d.get("RestartCount")), _parse_dt(st.get("StartedAt")),
-                                bool(st.get("OOMKilled")))
-    except Exception:  # noqa: BLE001
-        return H.ContainerProbe()
-
-
 # --------------------------------------------------------------------------- ortam
 def load_env(environ=None) -> dict:
     env = dict(os.environ if environ is None else environ)
-    need = ("HEARTBEAT_URL", "LEDGER_DIR", "BACKUP_DIR", "LEARNER_API", "TWIN_API")
+    need = ("HEARTBEAT_URL", "ENGINE_VAR_DIR", "BACKUP_DIR")
     missing = [k for k in need if not env.get(k)]
     if missing:
         raise ValueError("eksik ortam degiskenleri: " + ", ".join(missing))
@@ -253,28 +260,28 @@ def make_notifier(name: str):
     raise ValueError("bilinmeyen NOTIFIER")
 
 
-def collect(env: dict, state: dict, now: datetime, *, deadline: float, get=_get_json, run=subprocess.run) -> H.HealthSnapshot:
-    user = env.get("FREQTRADE_API_USER", "")
-    pw = env.get("FREQTRADE_API_PASS", "")
-    auth = ("Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()) if user and pw else None
-    apis = {"learner": env["LEARNER_API"], "twin": env["TWIN_API"]}
-    api, ledger = {}, {}
+def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> H.HealthSnapshot:
+    var_dir = env["ENGINE_VAR_DIR"]
+    api, ledger, containers = {}, {}, {}
     tf_s = None
     for bot in BOTS:
+        sp = status_path(var_dir, bot)
         try:
-            probe, t = probe_api(apis[bot], auth, deadline, get)
+            probe, t = probe_status(sp, bot, now)
         except Exception:  # noqa: BLE001
             probe, t = H.ApiProbe(), None
         api[bot] = probe
         tf_s = tf_s or t
         try:
-            ledger[bot] = probe_ledger(os.path.join(env["LEDGER_DIR"], f"ledger_{bot}.sqlite"), bot,
-                                       probe.open_trade_ids)
+            ledger[bot] = probe_ledger(ledger_path(var_dir, bot), bot, probe.open_trade_ids)
         except Exception:  # noqa: BLE001
             ledger[bot] = H.LedgerProbe()
-    free = probe_disk([env["LEDGER_DIR"], env["BACKUP_DIR"]])
+        try:
+            containers[f"trader-{bot}"] = engine_container(sp, bot, now, state, f"trader-{bot}")
+        except Exception:  # noqa: BLE001
+            containers[f"trader-{bot}"] = H.ContainerProbe()
+    free = probe_disk([var_dir, env["BACKUP_DIR"]])
     mem, swap_t, swap_u = probe_mem()
-    containers = {f"trader-{b}": probe_container(f"trader-{b}", run) for b in BOTS}
     last_backup = None
     try:
         from health_backup import latest_ok_backup
@@ -322,6 +329,11 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
             runs[k] = runs.get(k, 0) + 1 if prev is not None and c.restart_count > prev else 0
             counts[k] = c.restart_count
     new_state["restart_counts"], new_state["consecutive_restart_runs"] = counts, runs
+    starts = dict(state.get("engine_started_at", {}))
+    for k, c in snap.containers.items():
+        if c.started_at is not None:
+            starts[k] = H._iso(c.started_at)
+    new_state["engine_started_at"] = starts
     new_state["installed_at"] = state["installed_at"]
 
     failed = []

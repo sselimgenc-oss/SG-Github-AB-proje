@@ -10,3 +10,7 @@ Bu iş paketinde dokunulmadı; sonraki adımda ilgili sahibi yapacak.
 6. Konteyner adları: runner `trader-learner` / `trader-twin` varsayar (`docker inspect`); compose `container_name` ile eşleşmeli.
 7. freqtrade API uç noktaları (`/api/v1/ping|health|show_config|status|pair_candles`) ve Basic auth kabulü 2026.10 imajından doğrulanmalı; R7 (borsada koruyucu stop alan adı) henüz uygulanmadı (`UNKNOWN` döner).
 8. Birimlerdeki yollar (`/opt/trader`, `/home/trader/trader/user_data`) kurulum belgesinde (madde 19 dağıtım) gerçek yollarla güncellenecek.
+
+## Motor geçişi sonrası durum (freqtrade kaldırıldı)
+
+Madde 2 (`/api/v1/ping` healthcheck), 4 (`api_server`), 6 (konteyner adları) ve 7 (freqtrade uç noktaları, R7) geçersizdir: toplayıcı artık yalnızca motorun `status.json`/`ledger.sqlite`/`state.sqlite` dosyalarını okur (spec §14). Madde 5: `probe_ledger` hâlâ ham SQL kullanır. Yeni: `ENGINE_VAR_DIR` ortam anahtarı; `deploy/*.service` `ReadOnlyPaths` motor `var` dizinine çevrildi (gerçek yol kurulumda doğrulanacak).

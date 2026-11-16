@@ -256,28 +256,27 @@ def _mk_ledger(p, bot):
 
 def _mk_ft(p):
     c = sqlite3.connect(p)
-    c.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY)")
-    c.execute("INSERT INTO trades VALUES (1)")
+    c.execute("CREATE TABLE positions (id INTEGER PRIMARY KEY)")
+    c.execute("INSERT INTO positions VALUES (1)")
     c.commit()
     c.close()
 
 
 def test_backup_rotation_idempotent(tmp_path):
     B = _load("health_backup")
-    led, ud, bk = tmp_path / "led", tmp_path / "ud", tmp_path / "bk"
-    led.mkdir()
+    var, bk = tmp_path / "var", tmp_path / "bk"
     for b in ("learner", "twin"):
-        _mk_ledger(led / f"ledger_{b}.sqlite", b)
-        (ud / b).mkdir(parents=True)
-        _mk_ft(ud / b / "tradesv3.sqlite")
-    code, m = B.run_backup(bk, led, ud, 14, now=NOW)
+        (var / b).mkdir(parents=True)
+        _mk_ledger(var / b / "ledger.sqlite", b)
+        _mk_ft(var / b / "state.sqlite")
+    code, m = B.run_backup(bk, var, 14, now=NOW)
     assert code == 0 and m["ok"], m
     day = bk / "2026-11-16"
     assert (day / "ledger_learner.sqlite").exists() and not list(day.glob("*.partial"))
-    assert m["files"]["freqtrade_twin.sqlite"]["trades"] == 1
+    assert m["files"]["state_twin.sqlite"]["positions"] == 1
     mf = json.loads((day / "MANIFEST.json").read_text())
     assert len(mf["files"]["ledger_learner.sqlite"]["sha256"]) == 64
-    code2, _ = B.run_backup(bk, led, ud, 14, now=NOW + timedelta(minutes=1))
+    code2, _ = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=1))
     assert code2 == 0 and not list(bk.glob("*.failed*"))
     assert B.latest_ok_backup(bk) == NOW.replace(minute=30, second=0)
     # rotation
@@ -296,17 +295,16 @@ def test_backup_rotation_idempotent(tmp_path):
 
 def test_backup_failures(tmp_path):
     B = _load("health_backup")
-    led, ud, bk = tmp_path / "led", tmp_path / "ud", tmp_path / "bk"
-    led.mkdir()
+    var, bk = tmp_path / "var", tmp_path / "bk"
     for b in ("learner", "twin"):
-        _mk_ledger(led / f"ledger_{b}.sqlite", b)
-        (ud / b).mkdir(parents=True)
-        _mk_ft(ud / b / "tradesv3.sqlite")
-    code, m = B.run_backup(bk, led, ud, 14, now=NOW, free_bytes=lambda: int(0.8 * GIB))
+        (var / b).mkdir(parents=True)
+        _mk_ledger(var / b / "ledger.sqlite", b)
+        _mk_ft(var / b / "state.sqlite")
+    code, m = B.run_backup(bk, var, 14, now=NOW, free_bytes=lambda: int(0.8 * GIB))
     assert code == 20 and all(f["error"] == "disk_low" for f in m["files"].values())
     # bozuk kaynak
-    (led / "ledger_twin.sqlite").write_bytes(b"not a database" * 100)
-    code, m = B.run_backup(bk, led, ud, 14, now=NOW + timedelta(minutes=3))
+    (var / "twin" / "ledger.sqlite").write_bytes(b"not a database" * 100)
+    code, m = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=3))
     assert code == 20 and m["files"]["ledger_twin.sqlite"]["ok"] is False
     assert list(bk.glob("2026-11-16.failed-*"))
 

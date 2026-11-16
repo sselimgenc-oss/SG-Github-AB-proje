@@ -1,5 +1,8 @@
 """Saglik izleme: saf degerlendirme, uyari planlama, dis nabiz gonderici. Bkz. docs/saglik-spec.md (v1).
 
+Girdi kaynagi: kendi motorumuzun `status.json` dosyasi (`ApiProbe` adi tarihsel; alanlari
+`scripts/health_run.py::probe_status` doldurur). Bkz. spec "Motor uyarlamasi".
+
 Yalnizca standart kutuphane. Modul dosya/ag/saat/surec OKUMAZ; olcumleri `scripts/health_run.py`
 toplar ve `HealthSnapshot` olarak verir. Her belirsizlikte fail-closed: olculemeyen girdi
 `UNKNOWN` olur ve nabzi keser. Modul islem acmaz, bot baslatmaz, defter satiri yazmaz.
@@ -80,6 +83,11 @@ class ApiProbe:
     last_candle_open: datetime | None = None
     open_trade_ids: tuple[int, ...] | None = None
     dry_run: bool | None = None
+    # Motor status.json alanlari (docs/saglik-spec.md "Motor uyarlamasi"); None = bilgi yok/saglanmadi.
+    gate_code: str | None = None          # status.gate.code ("ok", "kill", "degraded", ...)
+    kill: bool | None = None              # status.kill
+    ledger_errors: int | None = None      # status.counters.ledger_errors (surec basindan beri)
+    unprotected_ids: tuple[int, ...] | None = None   # stop'u olmayan acik pozisyonlar (yalniz kurtarma R7)
 
 
 @dataclass(frozen=True)
@@ -330,8 +338,17 @@ def _c_gate(snap, bot, cfg):
         return _res(name, Status.CRIT, "no_active_params", f"{bot} etkin parametre yok")
     if p.schema_ok is False:
         return _res(name, Status.CRIT, "schema", f"{bot} defter semasi beklenenden farkli")
+    a = snap.api.get(bot)
+    gc = None if a is None else a.gate_code
+    if gc is not None and gc not in ("ok", "kill"):
+        return _res(name, Status.CRIT, "engine_gate_closed", f"{bot} motor giris kapisi kapali: {gc}")
     if p.spool_lines is None or p.unledgered_ids is None or p.has_active_params is None or p.schema_ok is None:
         return _unknown(name, "gate_unknown", f"{bot} defter kapisi durumu olculemedi")
+    if gc == "kill" or (a is not None and a.kill is True):
+        return _res(name, Status.WARN, "engine_kill", f"{bot} kill dosyasi etkin; girisler kapali (operator karari)")
+    if a is not None and a.ledger_errors:
+        return _res(name, Status.WARN, "ledger_errors", f"{bot} motor surec basindan beri {a.ledger_errors} defter hatasi saydi",
+                    a.ledger_errors, 0)
     if p.orphan_ids:
         ids = ",".join(str(i) for i in list(p.orphan_ids)[:5])
         return _res(name, Status.WARN, "orphan_decisions",
