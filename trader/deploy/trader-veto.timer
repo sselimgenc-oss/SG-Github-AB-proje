@@ -1,0 +1,10 @@
+[Unit]
+Description=Trader Claude veto (30 dakikada bir, :20 ve :50)
+
+[Timer]
+OnCalendar=*:20,50:00
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
