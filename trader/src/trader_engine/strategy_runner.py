@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from trader_core import ledger as L
+from trader_core.ml_package import MlModelView, ml_score_from_reasons
 from trader_core.signals import SignalParams
 
 from .bars import tf_delta
@@ -55,6 +56,7 @@ class SignalRow:
     pullback_ema: int
     reasons: str
     param_version_id: int
+    ml_score: float | None = None          # ML-0a: reasons'taki `ml:p=` etiketinden; ML'siz stratejide None
 
 
 @dataclass(frozen=True)
@@ -100,7 +102,8 @@ def _to_row(pair: str, open_ts: datetime, close_ts: datetime, r: pd.Series, vers
         regime=_text(r["regime"], "unclear"), rh=_opt(r["rh"]), rl=_opt(r["rl"]),
         rh_touches=_int0(r["rh_touches"]), rl_touches=_int0(r["rl_touches"]), ema_value=_opt(r["ema_value"]),
         body_ratio=_opt(r["body_ratio"]), wick_ratio=_opt(r["wick_ratio"]), edge_dist_atr=_opt(r["edge_dist_atr"]),
-        pullback_ema=_int0(r["pullback_ema"]), reasons=_text(r["reasons"], "") or "", param_version_id=int(version_id))
+        pullback_ema=_int0(r["pullback_ema"]), reasons=_text(r["reasons"], "") or "", param_version_id=int(version_id),
+        ml_score=ml_score_from_reasons(_text(r["reasons"], "")))
 
 
 def _params_map(params) -> Mapping[str, object]:
@@ -113,11 +116,14 @@ class WindowedSignalSource:
     """Paper/canli: her karar adiminda pencere cek, stratejiyi calistir."""
 
     def __init__(self, view: MarketView, strategy: Strategy, *, strict: bool = False,
-                 last_exit_fn: Callable[[str, datetime], tuple[datetime, str] | None] | None = None) -> None:
+                 last_exit_fn: Callable[[str, datetime], tuple[datetime, str] | None] | None = None,
+                 ml_model: MlModelView | None = None, ml_error: str | None = None) -> None:
         self.view = view
         self.strategy = strategy
         self.strict = strict
         self.last_exit_fn = last_exit_fn
+        self.ml_model = ml_model            # 05 §13.2: stratejiye ctx.model olarak SALT OKUNUR verilir
+        self.ml_error = ml_error
         self.counters: Counter = Counter()
         self._cache: dict[tuple[str, datetime, int], SignalFrame] = {}
         self._latest: dict[tuple[str, datetime], SignalFrame] = {}
@@ -163,11 +169,12 @@ class WindowedSignalSource:
                 need = info.min_contiguous.get(key)
                 if need is not None and self.view.contiguous_tail(pair, real, D) < need:
                     return self._bad(pair, "data_gap", "hole")
-            ctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=None)
+            ctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=None, model=self.ml_model)
             sig = self.strategy.compute(ctx)
             validate_table(sig, info, trig.index)
             last_exit = self.last_exit_fn(pair, D) if self.last_exit_fn is not None else None
-            fctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=last_exit)
+            fctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=last_exit,
+                                   model=self.ml_model)
             last_row = self.strategy.post_filter(sig.iloc[-1], fctx)
             validate_row(last_row, info)
             if bool(last_row["signal"]) and not bool(sig.iloc[-1]["signal"]):
@@ -189,6 +196,26 @@ class WindowedSignalSource:
                 raise
             self.counters["callback_errors"] += 1
             return self._bad(pair, "error", f"{type(e).__name__}: {e}", error=True)
+
+    # ------------------------------------------------------------------ ml durumu (status.json / kapi gorunurlugu)
+    def ml_status(self, now: datetime) -> dict | None:
+        """ML'siz strateji -> None. state: off | ok | no_model | expired (active iken no_model/expired => giris yok)."""
+        mode = getattr(self.strategy, "ml_mode", None)
+        if mode is None:
+            return None
+        m = self.ml_model
+        if mode == "off":
+            state = "off"
+        elif m is None:
+            state = "no_model"
+        elif m.expired(now):
+            state = "expired"
+        else:
+            state = "ok"
+        return {"mode": mode, "state": state, "model_id": None if m is None else m.model_id,
+                "threshold": None if m is None else m.threshold,
+                "expires_at": None if m is None else m.expires_at.isoformat(), "error": self.ml_error,
+                "entries_blocked": mode == "active" and state in ("no_model", "expired")}
 
     # ------------------------------------------------------------------ exit_context
     def exit_context(self, pair: str, pos: Position, D: datetime) -> ExitContext | None:

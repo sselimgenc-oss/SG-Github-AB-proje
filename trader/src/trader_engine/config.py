@@ -55,6 +55,8 @@ class EngineConfig:
     kill_file: str
     strategy: str = "price_action_v1"
     target_trade_risk: float = LOCKED_CFG.target_trade_risk
+    ml_mode: Literal["off", "shadow", "active"] = "off"      # 05 §13.4a; yalniz price_action_v1_ml okur
+    ml_model_path: str | None = None                          # model paketi (JSON); off iken okunmaz
 
     @property
     def risk_config(self) -> RiskConfig:
@@ -82,7 +84,7 @@ _TOP_KEYS = {f.name for f in dataclasses.fields(EngineConfig)}
 _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wait_s",
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
-_OPTIONAL_KEYS = {"strategy", "target_trade_risk"}
+_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path"}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 
@@ -184,6 +186,10 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     strategy = raw.get("strategy", "price_action_v1")
     if not isinstance(strategy, str) or not _STRATEGY_RE.fullmatch(strategy):
         raise ConfigError(f"strategy gecersiz (^[a-z][a-z0-9_]{{0,39}}$): {strategy!r}")
+    ml_mode = _choice("ml_mode", raw.get("ml_mode", "off"), ("off", "shadow", "active"))
+    ml_path = raw.get("ml_model_path")
+    if ml_path is not None and (not isinstance(ml_path, str) or not ml_path):
+        raise ConfigError("ml_model_path bos olmayan str ya da null olmali")
     ttr = raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk)
     build_risk_config(ttr)
     cost = raw["cost"] if isinstance(raw["cost"], CostModel) else None
@@ -197,7 +203,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         bar_wait_s=nums["bar_wait_s"], minute_wait_s=nums["minute_wait_s"],
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
         start_delay_s=nums["start_delay_s"], strategy=strategy,
-        target_trade_risk=float(ttr),
+        target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path,  # type: ignore[arg-type]
         **{n: raw[n] for n in _STR},
     )
 

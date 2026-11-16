@@ -36,16 +36,20 @@ class StatusWriter:
         ids = [p.trade_id for p in f["open_positions"] if p.status in ("open", "closing")]
         blocked = f["entries_blocked_reason"]
         gate_code = f["gate_code"]
+        ml = f.get("ml")
+        ml_blocked = bool(ml and ml.get("entries_blocked"))          # active + model yok/suresi dolmus: giris yok (fail-closed)
+        if ml_blocked and gate_code == "ok":
+            gate_code = "ml_" + str(ml["state"])
         return {
             "schema": SCHEMA, "bot": self.cfg.bot, "mode": self.cfg.mode, "pid": os.getpid(),
             "started_at": _z(self.started_at), "loop_at": _z(now), "last_minute_ts": _z(f["last_minute_ts"]),
             "last_decision_bar_close": _z(f["last_decision_close"]), "last_candle_open": _z(f["last_candle_open"]),
             "trigger_tf": f["tf"], "param_version_id": f["param_version_id"],
             "strategy": {"name": f["strategy_name"], "version": f["strategy_version"]},
-            "entries_open": bool(f["entries_open"]), "gate": {"ok": gate_code == "ok", "code": gate_code},
+            "entries_open": bool(f["entries_open"]) and not ml_blocked, "gate": {"ok": gate_code == "ok", "code": gate_code},
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
             "dry_run": True, "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
-            "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"],
+            "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
         }
 
     def write(self, engine, *, force: bool = False, stopped: bool = False) -> bool:

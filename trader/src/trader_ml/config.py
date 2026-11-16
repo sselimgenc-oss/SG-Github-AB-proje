@@ -44,7 +44,7 @@ GATE = {
 }
 
 # --- model paketi (§3.3 adim 5, §3.6)
-MODEL_EXPIRY_DAYS = 21
+from trader_core.ml_package import MODEL_EXPIRY_DAYS  # noqa: E402,F401  (tek kaynak: motor tarafi)
 
 # --- kaynak plani (§6)
 TRAIN_MEM_CAP_MB = 450

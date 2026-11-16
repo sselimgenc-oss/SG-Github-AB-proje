@@ -2,6 +2,8 @@
 
 **Revizyon 2 (mentor incelemesi, ders-spec Revizyon 2 ile birlikte; şema sürüm 1 → 2):** (1) `trade_exits`'e `mfe_r`, `mae_r`, `bars_held`, `excursion_tf` eklendi (3.4, 3.4.1); (2) kanıt sayımı artık parametreye göre **havuzlanır**: ilgili parametrenin kapsamını etkilemeyen sürüm değişiklikleri kanıtı sıfırlamaz (5.4, `pool_version_ids`); (3) `propose_change(..., require_user=True)` ile herhangi bir öneri `needs_user` durumuna alınabilir (5.3 madde 11, 6.2); (4) yeni okuma yöntemleri: `pool_version_ids`, `trades_for_versions`, `aggregate_trades(version_ids=...)` (7.1); (5) `TradeRecord`'a `mfe_r`, `mae_r`, `bars_held` (7.1); (6) `SCHEMA_VERSION = 2` ve göç 1 → 2 (10.1); (7) ikiz defteri ders servisi tarafından **salt okunur** açılabilir (10.2). Mevcut `ledger.py` (şema 1) bu değişiklikler için güncellenmelidir.
 
+**Revizyon 3 (ML-0a, faz planı 19a; `ml-faz-tasarimi.md` §4 ve §10 madde 1b; şema sürüm 2 → 3):** (1) `decision_events.skip_reason` sözlüğüne **`ml_filter`** (ML filtresinin elediği aday; `veto_status='not_evaluated'` ile yazılır) eklendi (3.3); (2) `decision_events`'e **`ml_score`** (REAL NULL, [0,1]; ML kalibre olasılığı) eklendi; `DecisionEvent.ml_score` / `DecisionRecord.ml_score` (6.1, 7.1); (3) `SCHEMA_VERSION = 3` ve göç 2 → 3 (10.3). Ekleyici içerik: yeni sütun NULL; mevcut satır değişmez/silinmez. SQLite bir CHECK'i değiştiremediği için göç `decision_events`'i **yeniden kurar** (10.3); bu bir "ekleme türü" göçtür ama yeniden kurma yordamı kullanır. `ml_score` idempotent karşılaştırmaya dahil **değildir** (3.3).
+
 Kaynak kurallar: `otonom-trading-arastirma/mimari-taslak.md` (parça 7, 8, 9), `strateji-v1.md` (Bölüm 4–6: T1/R1, parametreler, ders servisi sınırları), `tasarim-kararlari.md` (15–16 Kasım bölümü: öğrenme ilk günden açık, ≥20–30 işlem kanıtı, değişiklik günlüğü, geri alma). Şekil uyumu: `risk-kilidi-spec.md` (`Decision`, `Candidate`, `SizeResult`) ve `rejim-spec.md` (`RegimeResult`, `Regime`). Bu belge kod ve test içermez; testler bu belgeden yazılır. Sayılar kârlılık kanıtı değildir.
 
 Modül: `src/trader_core/ledger.py`. Yalnızca standart kütüphane (`sqlite3`, `json`, `hashlib`, `dataclasses`, `datetime`, `os`); pandas/numpy ve freqtrade import edilmez. Hata durumunda her zaman kapalı (fail-closed): defter yazılamıyorsa yeni işlem açılmaz.
@@ -28,7 +30,7 @@ Modül: `src/trader_core/ledger.py`. Yalnızca standart kütüphane (`sqlite3`, 
 
 Ders servisinin **politika ret'leri** (sınır dışı, kanıt yetersiz vb.) istisna değil, `ProposalResult`/`ActivationResult` içinde `ok=False` + `code` olarak döner (Bölüm 5). Sistem hataları (`LedgerWriteError` vb.) her zaman istisnadır.
 
-## 3. Şema (sürüm 2; sürüm 1'den göç için 10.1)
+## 3. Şema (sürüm 3; sürüm 1'den göç için 10.1, sürüm 2'den 10.3)
 
 ### 3.1 Zaman ve kimlik kuralları (tüm tablolar)
 
@@ -71,15 +73,18 @@ Aday sinyal = bir kurulumun (T1/R1) tetik koşulunun 1s (veya `trigger_tf=15m` k
 | `size_qty`, `size_notional`, `size_margin`, `size_risk_amount` | REAL NULL | `Decision.size` (`SizeResult`); `risk_allowed=1` ise dolu |
 | `leverage` | INTEGER NULL | `risk_allowed=1` ise dolu |
 | `final_action` | TEXT | `entered` / `skipped` |
-| `skip_reason` | TEXT NULL | `skipped` ise zorunlu, kod: `stop_width`, `rr_below_min`, `veto_blocked`, `veto_missing`, `veto_stale`, `risk_denied`, `entry_gate_closed`, `order_failed`, `other` |
+| `skip_reason` | TEXT NULL | `skipped` ise zorunlu, kod: `stop_width`, `rr_below_min`, `veto_blocked`, `veto_missing`, `veto_stale`, `risk_denied`, `entry_gate_closed`, `order_failed`, `other`, `ml_filter` (şema 3: ML filtresi adayı eledi ya da `active` modda model yok/süresi dolmuş ⇒ yeni giriş yok; motor 05 §13.4a) |
 | `supersedes_id` | INTEGER NULL FK | düzeltme olayı ise eski satır |
 | `recorded_at` | TEXT | |
+| `ml_score` | REAL NULL | şema 3. ML filtresinin kalibre olasılığı (`price_action_v1_ml`, `shadow` ve `active`); `[0,1]` dışı ⇒ `LedgerValidationError` + `CHECK`. `off` modunda ve ML'siz stratejide NULL. `entered` kararlar da taşıyabilir (gölge/aktif geçişi). Boyutu/kararı etkilemez; gece işi etiketleme ve rapor içindir |
 
 `not_evaluated` bu belgenin eklediği beşinci veto değeridir: kurulum içi eleme (stop genişliği, `rr_min`) veto'dan önce olur; veto'ya hiç sorulmayan adayı `allowed` diye yazmak yanıltıcı olur. İstenen dört değer aynen korunur.
 
-Tutarlılık kuralları (CHECK + yazma doğrulaması): `final_action='entered'` ⇒ `veto_status='allowed'` ve `risk_allowed=1` ve `size_*`/`leverage` dolu ve `skip_reason` NULL. `veto_status ∈ {blocked, missing, stale}` ⇒ `final_action='skipped'` ve `skip_reason` buna uygun (`veto_*`). `risk_allowed=0` ⇒ `skipped`, `skip_reason='risk_denied'`. `veto_status='not_evaluated'` ⇒ `risk_allowed` NULL, `skip_reason ∈ {stop_width, rr_below_min, other}`.
+Tutarlılık kuralları (CHECK + yazma doğrulaması): `final_action='entered'` ⇒ `veto_status='allowed'` ve `risk_allowed=1` ve `size_*`/`leverage` dolu ve `skip_reason` NULL. `veto_status ∈ {blocked, missing, stale}` ⇒ `final_action='skipped'` ve `skip_reason` buna uygun (`veto_*`). `risk_allowed=0` ⇒ `skipped`, `skip_reason='risk_denied'`. `veto_status='not_evaluated'` ⇒ `risk_allowed` NULL, `skip_reason ∈ {stop_width, rr_below_min, other, entry_gate_closed, ml_filter}`.
 
-Benzersizlik: `UNIQUE (bot, pair, side, setup, trigger_tf, bar_close_ts) WHERE supersedes_id IS NULL`. Aynı mum için aynı içerikle ikinci yazma (freqtrade döngüsü tekrar çalışır) **idempotent**: var olan `id` döner. Farklı içerik → `LedgerConflictError` (düzeltme için `supersedes_id` kullanılır). "Aynı içerik" karşılaştırması `id`, `recorded_at`, `supersedes_id` dışındaki tüm alanlardadır.
+`ml_filter` yalnız `final_action='skipped'` ve `veto_status='not_evaluated'` ile yazılır (veto/risk hiç değerlendirilmedi; ML elemesi kapı zincirinden **önce** olur, `stop_width`/`rr_below_min` gibi). Yazma doğrulaması `ml_filter`'ı `not_evaluated` kümesine (`_NOT_EVAL_SKIP`) ve genel sözlüğe (`_SKIP`) ekler.
+
+Benzersizlik: `UNIQUE (bot, pair, side, setup, trigger_tf, bar_close_ts) WHERE supersedes_id IS NULL`. Aynı mum için aynı içerikle ikinci yazma (freqtrade döngüsü tekrar çalışır) **idempotent**: var olan `id` döner. Farklı içerik → `LedgerConflictError` (düzeltme için `supersedes_id` kullanılır). "Aynı içerik" karşılaştırması `id`, `recorded_at`, `supersedes_id` dışındaki tüm alanlardadır; **istisna:** `ml_score` karşılaştırmaya girmez (motor yeniden oynatmasında `ml_mode` farkı `LedgerConflictError` üretmesin; ilk yazılan kazanır).
 
 #### 3.3.1 `features` anahtarları (zorunlu; fazlası serbest, ders servisi yalnızca bunları bilir)
 
@@ -363,6 +368,7 @@ class DecisionEvent:
     final_action: str                     # entered | skipped
     skip_reason: str | None
     supersedes_id: int | None = None
+    ml_score: float | None = None         # şema 3; ML filtresi puanı, yoksa None
 
 @dataclass(frozen=True)
 class TradeEntry:
@@ -525,8 +531,8 @@ Ders servisi, defter yazımı başarısız olursa hiçbir parametre uygulamaz; `
 
 ## 10. Şema sürümü ve göçler
 
-- `PRAGMA user_version` = şema sürümü (şimdiki: **2**). Modülde `SCHEMA_VERSION = 2` ve sıralı `MIGRATIONS` listesi (`n → n+1`, her biri tek işlemde tablolar + tetikleyiciler + görünümler).
-- Açılışta: dosya yeni ve `create=True` ⇒ göçler 0 → 1 → 2 sırayla kurulur (sonuç sürüm 2). `user_version == SCHEMA_VERSION` ⇒ devam. `user_version > SCHEMA_VERSION` ⇒ `LedgerSchemaError` (eski kod yeni şemaya yazamaz). `user_version < SCHEMA_VERSION` ⇒ `migrate=True` ise önce `backup(<db>.premigrate-v<n>)`, sonra göçler sırayla `BEGIN IMMEDIATE` içinde; her göç sonrası `user_version` güncellenir ve `meta.schema_version` için **yeni** bir `schema_migrations` olayı yazılır; `migrate=False` ise `LedgerSchemaError`. Salt okunur bağlantı hiçbir zaman göç etmez.
+- `PRAGMA user_version` = şema sürümü (şimdiki: **3**). Modülde `SCHEMA_VERSION = 3` ve sıralı `MIGRATIONS` listesi (`n → n+1`, her biri tek işlemde tablolar + tetikleyiciler + görünümler).
+- Açılışta: dosya yeni ve `create=True` ⇒ göçler 0 → 1 → 2 → 3 sırayla kurulur (sonuç sürüm 3). `user_version == SCHEMA_VERSION` ⇒ devam. `user_version > SCHEMA_VERSION` ⇒ `LedgerSchemaError` (eski kod yeni şemaya yazamaz). `user_version < SCHEMA_VERSION` ⇒ `migrate=True` ise önce `backup(<db>.premigrate-v<n>)`, sonra göçler sırayla `BEGIN IMMEDIATE` içinde; her göç sonrası `user_version` güncellenir ve `meta.schema_version` için **yeni** bir `schema_migrations` olayı yazılır; `migrate=False` ise `LedgerSchemaError`. Salt okunur bağlantı hiçbir zaman göç etmez.
 - Göçler yalnızca **ekleyicidir** (yeni tablo/sütun/görünüm); mevcut satır silinmez ya da yeniden yazılmaz. Yeni sütunlar `NULL` ya da `DEFAULT` ile eklenir, tetikleyiciler yeniden kurulur.
 - Göç sırasında ders servisi aynı dosyayı salt okunur açmış olabilir; WAL buna izin verir. Göç, bot durmuşken yapılması önerilen bir operasyondur (docker compose yeniden başlatma).
 - `schema_migrations(id, from_version, to_version, applied_at)` tablosu, append-only.
@@ -546,6 +552,18 @@ Geri alma: göç ileri yönlüdür; sorun olursa `premigrate-v1` yedeğine dön�
 ### 10.2 İkiz defterini salt okunur açma (ders servisi)
 
 Ders servisi ikiz defterini `open_ledger(twin_path, "twin", create=False, read_only=True, migrate=False)` ile açar; ikiz botun kendisi dosyayı yazan tek süreçtir. Şema uyuşmazlığı (ikiz dosyası hâlâ şema 1, ders servisi kodu şema 2) `LedgerSchemaError` verir: ders servisi bunu "ikiz yok" kabul eder (ders-spec 4.5.5), hata değildir. Bu yüzden her iki bot dosyası aynı kod sürümüyle ve aynı gün göç edilmelidir (operasyon notu). Okuma, WAL anlık görüntüsüyle tutarlıdır; ikiz yazarken bloklanmaz.
+
+### 10.3 Göç 2 → 3 (ML-0a; Revizyon 3)
+
+Tek `BEGIN IMMEDIATE` işleminde, `migrate=True` ve bot durmuşken, önceden `backup(<db>.premigrate-v2)`. SQLite `CHECK`'i değiştiremediğinden (`ALTER TABLE` yok) `decision_events` SQLite'in resmi yeniden-kurma yordamıyla yeniden kurulur; **hiçbir satır değişmez ya da silinmez, `id`'ler korunur**:
+
+1. İşlemin **dışında** `PRAGMA foreign_keys=OFF` (`_FK_OFF_MIGRATIONS`); işlem sonrası `PRAGMA foreign_key_check` (ihlal ⇒ `LedgerSchemaError`) ve `foreign_keys=ON` (hata olsa da geri açılır).
+2. `DROP VIEW v_closed_trades, v_trades, v_decisions`.
+3. `decision_events_v3` tablosu yeni DDL ile kurulur (`skip_reason` CHECK'ine `ml_filter`; `not_evaluated` CHECK'ine `ml_filter`; yeni `ml_score REAL` + `CHECK (ml_score IS NULL OR ml_score BETWEEN 0 AND 1)`), eski sütunların hepsi `id` dahil kopyalanır (`ml_score` NULL), eski tablo `DROP`, yeni tablo `decision_events` adına `RENAME`, `ux_decision_key` ve `ix_decision_supersedes` yeniden kurulur.
+4. Görünümler (`v_decisions`, `v_trades`, `v_closed_trades`) yeniden kurulur; `decision_events` dahil tüm append-only tetikleyiciler düşürülüp yeniden kurulur (`trg_trade_exits_excursion_check` `trade_exits`'te kaldığı için dokunulmaz).
+5. `PRAGMA user_version = 3`; `schema_migrations(2, 3)` satırı. Mevcut kararların `ml_score`'u NULL kalır.
+
+Salt okunur bağlantı göç etmez; şema 2 dosyasını `migrate=False` ile açan yeni kod `LedgerSchemaError` alır (10.2'deki aynı-gün göç uyarısı geçerli: ders servisi ve ikiz aynı kod sürümüyle göç etmeli). Geri alma: `premigrate-v2` yedeği (eski kod şema 3 dosyasına yazamaz). Testler: `tests/test_ledger_v3_ml_filter.py`.
 
 ## 11. Belirsizlikler ve bu belgedeki çözümleri
 
@@ -689,7 +707,7 @@ Sürüm 2, `2026-12-10T12:00:00Z`'de lesson tarafından etkinleştirildi. `2026-
 
 ### 12.10 Şema
 
-Yeni dosyada `PRAGMA user_version == 2` (`SCHEMA_VERSION == 2`; göçler 0→1→2). Elle `user_version=3` yapılmış dosya, kod `SCHEMA_VERSION=2` ⇒ `LedgerSchemaError`. Elle `user_version=0` ve `migrate=False` ⇒ `LedgerSchemaError`.
+Yeni dosyada `PRAGMA user_version == 3` (`SCHEMA_VERSION == 3`; göçler 0→1→2→3). Elle `user_version=4` yapılmış dosya, kod `SCHEMA_VERSION=3` ⇒ `LedgerSchemaError`. Elle `user_version=0` ve `migrate=False` ⇒ `LedgerSchemaError`.
 
 **Göç 1 → 2:** sürüm 1 şemalı bir dosya (testte, 0→1 göçüyle kurulup `ALTER`/görünüm değişiklikleri geri alınmadan, ya da saklı v1 fikstürü) bir kapanmış işlemle hazırlanır. `open_ledger(migrate=False)` ⇒ `LedgerSchemaError`; `migrate=True` ⇒ `<db>.premigrate-v1` oluşur, `user_version == 2`, `trade_exits`'te dört yeni sütun var, eski işlemin `mfe_r/mae_r/bars_held/excursion_tf` değerleri NULL, `v_closed_trades` yeni sütunları gösterir, eski `r_multiple` değişmedi, tetikleyiciler yerinde (`UPDATE trade_exits` ⇒ `append-only`), `schema_migrations`'a `(1, 2)` satırı. `read_only=True` ile şema 1 dosyası ⇒ `LedgerSchemaError` (salt okunur göç etmez). İkinci `migrate=True` açılışı yan etkisizdir. `bot="twin"` ile açılan, `meta.bot="learner"` dosya ⇒ `LedgerSchemaError`. Bir tetikleyiciyi düşürülmüş dosya ⇒ açılışta `LedgerSchemaError`. `read_only=True` bağlantıda `record_decision` ⇒ `LedgerStateError`.
 

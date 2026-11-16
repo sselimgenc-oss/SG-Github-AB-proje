@@ -26,7 +26,7 @@ from .types import SymbolRules
 
 log = logging.getLogger("engine.gates")
 
-_FILTERED_SKIPS = ("stop_width", "rr_below_min")
+_FILTERED_SKIPS = ("stop_width", "rr_below_min", "ml_filter")
 
 
 class VetoSource(Protocol):
@@ -120,7 +120,7 @@ def build_decision_event(row: SignalRow, tf: str, **override) -> L.DecisionEvent
         planned_target=row.planned_target, param_version_id=int(row.param_version_id),
         veto_status="not_evaluated", veto_reason=None, risk_allowed=None, risk_reason=None,
         size_qty=None, size_notional=None, size_margin=None, size_risk_amount=None, leverage=None,
-        final_action="skipped", skip_reason=None)
+        final_action="skipped", skip_reason=None, ml_score=row.ml_score)
     base.update(override)
     return L.DecisionEvent(**base)
 

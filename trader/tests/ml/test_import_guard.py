@@ -38,8 +38,21 @@ def test_engine_and_core_do_not_import_trader_ml():
 
 
 def test_tree_evaluator_is_numpy_only():
-    imps = _imports(SRC / "trader_ml" / "treeeval.py")
+    """ML-0a: degerlendirici trader_core'a tasindi (motor trader_ml'e bagimli olmaz); trader_ml.treeeval geri-export eder."""
+    imps = _imports(SRC / "trader_core" / "ml_eval.py")
     assert imps <= {"__future__", "math", "numpy"}, imps
+    assert _imports(SRC / "trader_ml" / "treeeval.py") <= {"__future__", "trader_core"}
+    pkg = _imports(SRC / "trader_core" / "ml_package.py")                    # motor tarafi paket okuyucu: stdlib + numpy
+    assert pkg <= {"__future__", "hashlib", "json", "re", "dataclasses", "datetime", "pathlib", "numpy"}, pkg
+    import trader_ml.treeeval as te
+    from trader_core import ml_eval
+    assert te.TreeModel is ml_eval.TreeModel
+
+
+def test_engine_imports_only_core_for_ml():
+    """Motor ML icin yalniz trader_core.ml_* kullanir (trader_ml'e hic dokunmaz)."""
+    for f, imps in _scan("trader_engine").items():
+        assert "trader_ml" not in imps, f
 
 
 def test_lightgbm_only_in_training_modules():

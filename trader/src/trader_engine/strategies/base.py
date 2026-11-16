@@ -10,12 +10,13 @@ from typing import Literal, Protocol
 
 import pandas as pd
 
+from trader_core.ml_package import MlModelView
 from trader_core.signals import SIGNAL_COLUMNS
 
 from ..position_manager import ExitContext, ExitDecision
 from ..types import Position
 
-_SKIP_OK = (None, "stop_width", "rr_below_min")
+_SKIP_OK = (None, "stop_width", "rr_below_min", "ml_filter")
 
 
 class StrategyError(Exception):
@@ -62,6 +63,7 @@ class StrategyContext:
     params: Mapping[str, object]
     bars: Mapping[str, pd.DataFrame]
     last_exit: tuple[datetime, str] | None = None
+    model: MlModelView | None = None       # 05 §13.2 (ML-0a): yuklenmis model, SALT OKUNUR; yoksa None (motor tedarik eder)
 
 
 class ExitPolicy(Protocol):

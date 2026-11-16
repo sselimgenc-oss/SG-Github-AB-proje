@@ -1,5 +1,7 @@
 # ML fazı tasarımı (v2, 17 Kasım 2026 — kullanıcı onaylı)
 
+**Durum (17 Kasım 2026): ML-0a (faz planı 19a, 19d test kancaları) kodlandı ve test edildi; commit/inceleme bekliyor.** Motor `StrategyContext.model` alanı (05 §13.2, §13.4a); defter şema 3 (`ml_filter` atlama nedeni + `ml_score` sütunu, göç 2→3; defter-spec Revizyon 3, §10.3); ağaç okuyucu + paket okuyucu + özellik üretici `trader_core`'a taşındı (`ml_eval`, `ml_package`, `ml_features`; motor `trader_ml` import etmez); `price_action_v1_ml` kayıtlı, `ml_mode` varsayılan `off` (`config/engine.base.json`). `off`/`shadow` kararları v1b ile birebir (test). Açık kalan: `precomputed.py`'ye `ctx.model` geçişi (backtest'te ML, 19b ile), BTC/ETH/fonlama özelliklerinin canlıda NaN olması ve `f_bars_since_exit`/1g-eğim pencere farkı (05 §13.4a "Bilinen sınırlar").
+
 Kullanıcı 17 Kasım'da açık noktalardaki mentor önerilerini onayladı ve ML'yi Faz 2'ye aldı (Bölüm 9 ve 10; takvim Bölüm 7). Kod içermez. `tasarim-kararlari.md` ile çelişirse o belge geçerlidir.
 
 ## 0. Kısa sonuç

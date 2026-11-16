@@ -22,7 +22,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("trader_core.ledger")
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 BOTS = ("learner", "twin")
 MIN_FREE_BYTES = 50 * 1024 * 1024
 MAX_REASON = 500
@@ -92,8 +92,8 @@ _SETUPS = ("T1", "R1")
 _REGIMES = ("trend_up", "trend_down", "range", "volatile", "unclear")
 _VETO = ("allowed", "blocked", "missing", "stale", "not_evaluated")
 _SKIP = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
-         "entry_gate_closed", "order_failed", "other")
-_NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed")
+         "entry_gate_closed", "order_failed", "other", "ml_filter")
+_NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed", "ml_filter")
 _EXIT_REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit",
                  "liquidation", "other")
 _EXCURSION_TFS = ("1m", "5m", "15m")
@@ -325,6 +325,7 @@ class DecisionEvent:
     final_action: str
     skip_reason: str | None
     supersedes_id: int | None = None
+    ml_score: float | None = None          # sema 3: ML filtre puani (kalibre olasilik, [0,1]); yoksa None
 
 
 @dataclass(frozen=True)
@@ -456,6 +457,7 @@ class DecisionRecord:
     supersedes_id: int | None
     recorded_at: datetime
     activation_id: int | None
+    ml_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -729,8 +731,76 @@ def _migration_1_to_2(bot: str, now_s: str) -> str:
             + _VIEWS_V2 + "\n" + drops + "\n" + _trigger_ddl() + "\n" + _EXCURSION_TRIGGER_DDL + "\n")
 
 
+def _decision_events_ddl_v3(name: str) -> str:
+    """Sema 3 `decision_events`: skip_reason sozlugune 'ml_filter', yeni `ml_score` sutunu. Oz-referans adi
+    (`decision_events`) tablo yeniden adlandirilinca dogru cozulur."""
+    return f"""
+CREATE TABLE {name} (id INTEGER PRIMARY KEY AUTOINCREMENT, bot TEXT NOT NULL {_bot_check()},
+    bar_close_ts TEXT NOT NULL, trigger_tf TEXT NOT NULL CHECK (trigger_tf IN ('1h','15m')),
+    pair TEXT NOT NULL, side TEXT NOT NULL CHECK (side IN ('long','short')),
+    setup TEXT NOT NULL CHECK (setup IN ('T1','R1')),
+    regime TEXT NOT NULL CHECK (regime IN ('trend_up','trend_down','range','volatile','unclear')),
+    atr_ratio REAL, rh REAL, rl REAL, rh_touches INTEGER NOT NULL, rl_touches INTEGER NOT NULL,
+    features TEXT NOT NULL, planned_entry REAL NOT NULL, planned_stop REAL NOT NULL, planned_target REAL,
+    param_version_id INTEGER NOT NULL REFERENCES param_versions(id),
+    activation_id INTEGER,
+    veto_status TEXT NOT NULL CHECK (veto_status IN ('allowed','blocked','missing','stale','not_evaluated')),
+    veto_reason TEXT, risk_allowed INTEGER CHECK (risk_allowed IS NULL OR risk_allowed IN (0,1)),
+    risk_reason TEXT, size_qty REAL, size_notional REAL, size_margin REAL, size_risk_amount REAL,
+    leverage INTEGER,
+    final_action TEXT NOT NULL CHECK (final_action IN ('entered','skipped')),
+    skip_reason TEXT CHECK (skip_reason IS NULL OR skip_reason IN
+        ('stop_width','rr_below_min','veto_blocked','veto_missing','veto_stale','risk_denied',
+         'entry_gate_closed','order_failed','other','ml_filter')),
+    supersedes_id INTEGER REFERENCES decision_events(id), recorded_at TEXT NOT NULL,
+    ml_score REAL CHECK (ml_score IS NULL OR (ml_score >= 0 AND ml_score <= 1)),
+    CHECK ((regime = 'range' AND rh IS NOT NULL AND rl IS NOT NULL)
+        OR (regime <> 'range' AND rh IS NULL AND rl IS NULL)),
+    CHECK (final_action <> 'entered' OR (veto_status = 'allowed' AND risk_allowed = 1
+        AND size_qty IS NOT NULL AND size_notional IS NOT NULL AND size_margin IS NOT NULL
+        AND size_risk_amount IS NOT NULL AND leverage IS NOT NULL AND skip_reason IS NULL)),
+    CHECK (final_action <> 'skipped' OR skip_reason IS NOT NULL),
+    CHECK (veto_status NOT IN ('blocked','missing','stale') OR final_action = 'skipped'),
+    CHECK (risk_allowed IS NOT 0 OR (final_action = 'skipped' AND skip_reason = 'risk_denied')),
+    CHECK (veto_status <> 'not_evaluated' OR (risk_allowed IS NULL
+        AND skip_reason IN ('stop_width','rr_below_min','other','entry_gate_closed','ml_filter'))));
+"""
+
+
+_DECISION_COLS_V2 = ("id, bot, bar_close_ts, trigger_tf, pair, side, setup, regime, atr_ratio, rh, rl, rh_touches, "
+                     "rl_touches, features, planned_entry, planned_stop, planned_target, param_version_id, "
+                     "activation_id, veto_status, veto_reason, risk_allowed, risk_reason, size_qty, size_notional, "
+                     "size_margin, size_risk_amount, leverage, final_action, skip_reason, supersedes_id, recorded_at")
+
+_V_DECISIONS = """
+CREATE VIEW v_decisions AS
+    SELECT d.* FROM decision_events d
+    WHERE NOT EXISTS (SELECT 1 FROM decision_events s WHERE s.supersedes_id = d.id);
+"""
+
+
+def _migration_2_to_3(bot: str, now_s: str) -> str:
+    """Sema 3 (ML-0a, 19a): `decision_events.skip_reason` CHECK'ine 'ml_filter' ve yeni `ml_score` sutunu.
+    SQLite CHECK'i degistirmez: tablo yeniden kurulur (kopya, tum satirlar ayni `id` ile; hicbiri degismez/silinmez).
+    SQLite'in resmi yeniden-kurma yordami: `PRAGMA foreign_keys=OFF` islemin DISINDA (`_FK_OFF_MIGRATIONS`),
+    goc sonrasi `foreign_key_check`; goruntuler once dusurulur (RENAME/DROP hata vermesin), sonra kurulur;
+    append-only tetikleyicileri yeniden kurulur."""
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES
+                      for k in ("no_update", "no_delete"))
+    return ("DROP VIEW IF EXISTS v_closed_trades;\nDROP VIEW IF EXISTS v_trades;\nDROP VIEW IF EXISTS v_decisions;\n"
+            + _decision_events_ddl_v3("decision_events_v3") + "\n"
+            f"INSERT INTO decision_events_v3 ({_DECISION_COLS_V2}) SELECT {_DECISION_COLS_V2} FROM decision_events;\n"
+            "DROP TABLE decision_events;\n"
+            "ALTER TABLE decision_events_v3 RENAME TO decision_events;\n"
+            "CREATE UNIQUE INDEX ux_decision_key ON decision_events\n"
+            "    (bot, pair, side, setup, trigger_tf, bar_close_ts) WHERE supersedes_id IS NULL;\n"
+            "CREATE INDEX ix_decision_supersedes ON decision_events (supersedes_id);\n"
+            + _V_DECISIONS + _VIEWS_V2 + "\n" + drops + "\n" + _trigger_ddl() + "\n")   # excursion tetikleyicisi trade_exits'te zaten var
+
+
 # Sirali goc listesi: MIGRATIONS[n] = n -> n+1 icin SQL ureten fonksiyon (bot, now_s).
-MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2]
+MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3]
+_FK_OFF_MIGRATIONS = frozenset({2})      # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
 
 
 def _map_sqlite_error(e: sqlite3.Error) -> LedgerError:
@@ -889,16 +959,26 @@ class Ledger:
     def _run_migrations(self, conn: sqlite3.Connection, from_v: int) -> None:
         now_s = _fmt_ts(self._now())
         for n in range(from_v, SCHEMA_VERSION):
-            sql = ("BEGIN IMMEDIATE;\n" + MIGRATIONS[n](self.bot, now_s)
+            fk_off = n in _FK_OFF_MIGRATIONS
+            sql = (("PRAGMA foreign_keys=OFF;\n" if fk_off else "")
+                   + "BEGIN IMMEDIATE;\n" + MIGRATIONS[n](self.bot, now_s)
                    + (f"INSERT INTO schema_migrations (from_version, to_version, applied_at) "
                       f"VALUES ({n}, {n + 1}, '{now_s}');\n" if True else "")
                    + f"PRAGMA user_version={n + 1};\nCOMMIT;")
             try:
                 conn.executescript(sql)
+                if fk_off:
+                    bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+                    if bad:
+                        raise LedgerSchemaError(f"goc {n}->{n + 1} sonrasi yabanci anahtar ihlali: {len(bad)} satir")
             except sqlite3.Error as e:
                 with contextlib.suppress(sqlite3.Error):
                     conn.execute("ROLLBACK")
                 raise _map_sqlite_error(e) from e
+            finally:
+                if fk_off:
+                    with contextlib.suppress(sqlite3.Error):
+                        conn.execute("PRAGMA foreign_keys=ON")
 
     def _verify(self, conn: sqlite3.Connection) -> None:
         try:
@@ -1045,6 +1125,9 @@ class Ledger:
         if skip is not None:
             skip = _choice(skip, "skip_reason", _SKIP)
         sup = None if ev.supersedes_id is None else _int(ev.supersedes_id, "supersedes_id", minimum=1)
+        ml_score = _opt_num(ev.ml_score, "ml_score")
+        if ml_score is not None and not 0.0 <= ml_score <= 1.0:
+            raise LedgerValidationError("ml_score [0,1] araliginda olmali")
         sizes = (sq, sn, sm, sr, lev)
         if ra == 1 and any(s is None for s in sizes):
             raise LedgerValidationError("risk_allowed=True iken size_* ve leverage dolu olmali")
@@ -1068,7 +1151,7 @@ class Ledger:
                     planned_entry=pe, planned_stop=ps, planned_target=pt, param_version_id=pvid,
                     veto_status=veto, veto_reason=veto_reason, risk_allowed=ra, risk_reason=risk_reason,
                     size_qty=sq, size_notional=sn, size_margin=sm, size_risk_amount=sr, leverage=lev,
-                    final_action=final, skip_reason=skip)
+                    final_action=final, skip_reason=skip, ml_score=ml_score)
         return vals, sup
 
     @staticmethod
@@ -1685,7 +1768,7 @@ class Ledger:
             size_notional=r["size_notional"], size_margin=r["size_margin"],
             size_risk_amount=r["size_risk_amount"], leverage=r["leverage"], final_action=r["final_action"],
             skip_reason=r["skip_reason"], supersedes_id=r["supersedes_id"],
-            recorded_at=_parse_ts(r["recorded_at"]), activation_id=r["activation_id"])
+            recorded_at=_parse_ts(r["recorded_at"]), activation_id=r["activation_id"], ml_score=r["ml_score"])
 
     def get_decision(self, decision_id: int) -> DecisionRecord:
         with self._read() as c:

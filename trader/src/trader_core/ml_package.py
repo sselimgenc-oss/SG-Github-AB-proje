@@ -1,0 +1,129 @@
+"""Model paketi okuyucu (ML-0a, 19a): motor tarafi. Yalniz stdlib + numpy; trader_ml/lightgbm/sklearn/scipy yok.
+
+`load_package` kurali trader_ml.package ile AYNIDIR (oradan buraya tasindi, geri-export edilir): kapidan gecmemis
+(`meta.gate_passed` True degil) ya da esiksiz paket REDDEDILIR; hash'ler tutmali; 21 gunu asan paket REDDEDILIR.
+`MlModelView` motorun stratejiye verdigi SALT OKUNUR bag lam alanidir (05 §13.2 `StrategyContext.model`)."""
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import numpy as np
+
+from .ml_eval import TreeModel
+
+MODEL_EXPIRY_DAYS = 21
+
+
+class PackageError(ValueError):
+    pass
+
+
+def canon(obj) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def sha256_text(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+
+def feature_list_hash(names: list[str]) -> str:
+    return sha256_text("\n".join(names))
+
+
+def _utc(s: str) -> datetime:
+    d = datetime.fromisoformat(s)
+    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
+
+
+def expires_at(pkg: dict) -> datetime:
+    """Gecerlilik siniri: meta.expires_at ile created_at + 21 gunun ERKENI (uzatilmis expires_at dolanamaz)."""
+    meta = pkg["meta"]
+    lim = _utc(meta["expires_at"])
+    try:
+        lim = min(lim, _utc(meta["created_at"]) + timedelta(days=MODEL_EXPIRY_DAYS))
+    except (KeyError, ValueError, TypeError):
+        pass
+    return lim
+
+
+def is_expired(pkg: dict, now: datetime | None = None) -> bool:
+    now = now or datetime.now(timezone.utc)
+    return now >= expires_at(pkg)
+
+
+def load_package(path: str | Path | dict, *, now: datetime | None = None, check_expiry: bool = True,
+                 require_gate: bool = True) -> dict:
+    """Okur, hash'leri dogrular (tutmuyorsa PackageError), suresi dolmussa PackageError. Kapidan gecmemis
+    (meta.gate_passed true degil) ya da esiksiz paket require_gate=True iken REDDEDILIR; yalniz egitim hatti
+    kendi gidis-donus kontrolunde ve inceleme icin require_gate=False kullanir."""
+    pkg = path if isinstance(path, dict) else json.loads(Path(path).read_text(encoding="utf-8"))
+    meta = pkg["meta"]
+    if require_gate:
+        if meta.get("gate_passed") is not True:
+            raise PackageError(f"paket kapidan gecmedi (gate_passed={meta.get('gate_passed')!r}); yuklenemez")
+        if pkg.get("threshold") is None:
+            raise PackageError("paketin esigi yok (threshold null); yuklenemez")
+    body = {"model": pkg["model"], "calibration": pkg["calibration"], "threshold": pkg["threshold"]}
+    if sha256_text(canon(body)) != meta["model_hash"]:
+        raise PackageError("model hash tutmuyor")
+    if feature_list_hash(meta["features"]) != meta["feature_list_hash"]:
+        raise PackageError("ozellik listesi hash tutmuyor")
+    if check_expiry and is_expired(pkg, now):
+        raise PackageError("model suresi dolmus")
+    return pkg
+
+
+@dataclass(frozen=True)
+class MlModelView:
+    """Stratejiye salt okunur verilen yuklenmis model (05 §13.2). Dosya/ag/saat gormez; `expired(D)` karar anina gore."""
+    model_id: str
+    threshold: float
+    features: tuple[str, ...]
+    expires_at: datetime
+    user_approved: bool
+    _tree: TreeModel = field(repr=False, compare=False)
+
+    def expired(self, now: datetime) -> bool:
+        return now >= self.expires_at
+
+    def score(self, X) -> np.ndarray:
+        """X: (n, len(features)) sutun sirasi `features` ile ayni; kalibre olasilik (n,)."""
+        return self._tree.predict_proba(X)
+
+
+def view_from_package(pkg: dict) -> MlModelView:
+    meta = pkg["meta"]
+    return MlModelView(
+        model_id=f"{meta.get('version', '?')}@{meta['model_hash'][:12]}", threshold=float(pkg["threshold"]),
+        features=tuple(meta["features"]), expires_at=expires_at(pkg), user_approved=meta.get("user_approved") is True,
+        _tree=TreeModel(pkg["model"], pkg["calibration"]))
+
+
+def load_model_view(path: str | Path | dict, *, expected_features, ml_mode: str,
+                    now: datetime | None = None) -> MlModelView:
+    """Motor yukleyicisi: `load_package` (kapi + hash + 21 gun) + ozellik listesi canli ozellik ureticisiyle ayni olmali.
+    `active` modu ayrica kullanici onayi ister (`meta.user_approved is True`); yoksa PackageError (19a)."""
+    pkg = load_package(path, now=now)
+    if list(pkg["meta"]["features"]) != list(expected_features):
+        raise PackageError("model ozellik listesi canli ozellik ureticisiyle ayni degil")
+    view = view_from_package(pkg)
+    if ml_mode == "active" and not view.user_approved:
+        raise PackageError("active modu icin model kullanici onayli degil (meta.user_approved)")
+    return view
+
+
+_ML_P = re.compile(r"(?:^|\|)ml:p=([0-9]+(?:\.[0-9]+)?)\|")
+
+
+def ml_score_from_reasons(reasons: str | None) -> float | None:
+    """Strateji -> motor kanali (05 §13.4a): `reasons` basindaki `ml:p=0.412300|` etiketi; yok/aralik disi -> None."""
+    m = _ML_P.search(reasons or "")
+    if m is None:
+        return None
+    v = float(m.group(1))
+    return v if 0.0 <= v <= 1.0 else None

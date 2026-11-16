@@ -10,21 +10,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .config import MODEL_EXPIRY_DAYS, RECIPE_ID
+from trader_core.ml_package import (  # noqa: F401  (motor tarafina tasindi; geri-export)
+    MODEL_EXPIRY_DAYS, PackageError, canon, feature_list_hash, is_expired, load_package, sha256_text)
+
+from .config import RECIPE_ID
 
 PKG_VERSION = 1
-
-
-def canon(obj) -> str:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
-
-def sha256_text(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
-
-
-def feature_list_hash(names: list[str]) -> str:
-    return sha256_text("\n".join(names))
 
 
 def data_hash(df: pd.DataFrame) -> str:
@@ -79,34 +70,3 @@ def save_package(pkg: dict, path: str | Path) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(pkg, sort_keys=True, allow_nan=False), encoding="utf-8")
     return p
-
-
-class PackageError(ValueError):
-    pass
-
-
-def load_package(path: str | Path | dict, *, now: datetime | None = None, check_expiry: bool = True,
-                 require_gate: bool = True) -> dict:
-    """Okur, hash'leri dogrular (tutmuyorsa PackageError), suresi dolmussa PackageError. Kapidan gecmemis
-    (meta.gate_passed true degil) ya da esiksiz paket require_gate=True iken REDDEDILIR; yalniz egitim hatti
-    kendi gidis-donus kontrolunde ve inceleme icin require_gate=False kullanir."""
-    pkg = path if isinstance(path, dict) else json.loads(Path(path).read_text(encoding="utf-8"))
-    meta = pkg["meta"]
-    if require_gate:
-        if meta.get("gate_passed") is not True:
-            raise PackageError(f"paket kapidan gecmedi (gate_passed={meta.get('gate_passed')!r}); yuklenemez")
-        if pkg.get("threshold") is None:
-            raise PackageError("paketin esigi yok (threshold null); yuklenemez")
-    body = {"model": pkg["model"], "calibration": pkg["calibration"], "threshold": pkg["threshold"]}
-    if sha256_text(canon(body)) != meta["model_hash"]:
-        raise PackageError("model hash tutmuyor")
-    if feature_list_hash(meta["features"]) != meta["feature_list_hash"]:
-        raise PackageError("ozellik listesi hash tutmuyor")
-    if check_expiry and is_expired(pkg, now):
-        raise PackageError("model suresi dolmus")
-    return pkg
-
-
-def is_expired(pkg: dict, now: datetime | None = None) -> bool:
-    now = now or datetime.now(timezone.utc)
-    return now >= datetime.fromisoformat(pkg["meta"]["expires_at"])

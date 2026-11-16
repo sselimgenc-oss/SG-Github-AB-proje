@@ -31,6 +31,7 @@ from .reconcile import Reconciler, ReconcileReport
 from .state import StateStore, iso_z
 from .status import StatusWriter
 from .strategies.base import Strategy, StrategyError
+from .strategies.price_action_v1_ml import load_engine_model
 from .strategies.registry import check_param_keys, get_strategy, make_label, parse_label
 from .strategy_runner import SignalFrame, SignalSource, WindowedSignalSource
 from .types import Intent, Position
@@ -212,7 +213,12 @@ class Engine:
             "day_start_equity": ds if ds is not None else acct.equity, "open_positions": self.state.open_positions(),
             "counters": self.counters(), "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
+            "ml": self._ml_status(now),
         }
+
+    def _ml_status(self, now: datetime) -> dict | None:
+        f = getattr(self.signals, "ml_status", None)
+        return f(now) if callable(f) else None
 
     def summary(self) -> RunSummary:
         c = self.counters()
@@ -821,7 +827,7 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     from .marketdata.sources import StoreSource
 
     env = os.environ if env is None else env
-    strategy = get_strategy(cfg.strategy, mode=cfg.mode)
+    strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
     clock = clock or SystemClock()
     view = view or StoreSource(cfg.market_db)
     if broker is None:
@@ -835,6 +841,9 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     vsrc: VetoSource = FileVeto(veto.load_config(cfg.veto_config), env) if cfg.veto_mode == "required" else NoVeto()
     kill = Killswitch(cfg.kill_file, clock)
     status = StatusWriter(cfg.status_path, clock, cfg)
-    signals = WindowedSignalSource(view, strategy, strict=False)
+    ml_model, ml_error = None, None
+    if getattr(strategy, "ml_mode", "off") != "off":
+        ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
+    signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
                   strategy=strategy, veto=vsrc, kill=kill, status=status)

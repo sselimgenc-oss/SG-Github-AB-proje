@@ -7,12 +7,14 @@ from collections.abc import Mapping
 
 from .base import ParamSpec, Strategy, StrategyError
 from .price_action_v1 import make_v1_full, make_v1b
+from .price_action_v1_ml import make_v1b_ml
 
 __all__ = ["StrategyError", "list_strategies", "get_strategy", "parse_label", "make_label"]
 
 _FACTORIES = {
     "price_action_v1": make_v1b,
     "price_action_v1_full": make_v1_full,
+    "price_action_v1_ml": make_v1b_ml,
 }
 _NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _LABEL_RE = re.compile(r"strategy:([a-z][a-z0-9_]{0,39})@(\S+)")
@@ -23,7 +25,7 @@ def list_strategies() -> tuple[str, ...]:
     return tuple(_FACTORIES)
 
 
-def get_strategy(name: str, *, mode: str | None = None) -> Strategy:
+def get_strategy(name: str, *, mode: str | None = None, ml_mode: str | None = None) -> Strategy:
     if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
         raise StrategyError("bad_name", f"gecersiz strateji adi: {name!r}")
     f = _FACTORIES.get(name)
@@ -32,6 +34,11 @@ def get_strategy(name: str, *, mode: str | None = None) -> Strategy:
     s = f()
     if mode == "paper" and not s.info.paper_allowed:
         raise StrategyError("paper_not_allowed", f"{name} yalniz backtest/capraz dogrulama icindir")
+    if ml_mode is not None:
+        if hasattr(s, "set_ml_mode"):
+            s.set_ml_mode(ml_mode)
+        elif ml_mode != "off":
+            raise StrategyError("ml_not_supported", f"{name} ML modu desteklemez (ml_mode={ml_mode!r})")
     return s
 
 
