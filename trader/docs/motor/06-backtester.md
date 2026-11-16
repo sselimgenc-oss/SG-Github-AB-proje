@@ -12,7 +12,7 @@ Kaynak kararlar: `motor-tasarimi.md` §4.1 (kendi backtester'ımız: aynı `Engi
 | Çıktı | Çalışma başına **taze** `ledger.sqlite` (var olan dosya → hata), `trades.csv`, `summary.json`, `meta.json` |
 | Metrikler | `research/run_bt.py::analyze` anahtarlarıyla aynı (`research/runs/*.json` ile karşılaştırılabilir); freqtrade'e bağımlı kısımlar (stats) ledger'dan türetilir |
 | Dönemler | IS `20241101-20251101`, WF `20251101-20260501`; **HOLDOUT `[20260501, 20261101)` ile kesişen her dönem reddedilir** (geçersiz kılma anahtarı yoktur) |
-| Çapraz doğrulama | Önce `freqtrade_compat`, sonra `native`; freqtrade **yeniden çalıştırılmaz**, yalnız üretilmiş sonuç dosyaları okunur |
+| Çapraz doğrulama | Önce `legacy_compat`, sonra `native`; freqtrade **yeniden çalıştırılmaz**, yalnız üretilmiş sonuç dosyaları okunur |
 | Paper ↔ backtest | Aynı veri (`market.sqlite`), aynı parametre/veto kayıtları ile işlem listesi **birebir** eşit olmalı |
 
 ## 2. DOSYA SAHİPLİĞİ
@@ -36,7 +36,7 @@ Dokunulmaz: `engine.py`, `gates.py`, `strategy_runner.py` (05), `brokers/*` (03)
 | `--id ID` (zorunlu) | Çıktı dizini `var/backtests/<id>/`; var ise hata |
 | `--period IS\|WF\|YYYYMMDD-YYYYMMDD` | `run_bt.PERIODS` ile aynı; HOLDOUT ile kesişen dönem → çıkış 2 ("holdout_locked") |
 | `--tf 1h\|15m` | `trigger_tf` (parametre `trigger_tf` ile aynı) |
-| `--fill-model native\|freqtrade_compat` | `CostModel.fill_model` |
+| `--fill-model native\|legacy_compat` | `CostModel.fill_model` |
 | `--fee-mult F` (1), `--slip-bps S` (verilmezse: uyum kipinde 0, native'de 2/2/5) | **uyum kipinde** `taker_fee = fee_eff = 0.0005·F + S/1e4` (`run_bt.py` ile aynı; kayma komisyona katılır, ayrı kayma yok). **native kipte** `taker_fee = 0.0005·F`; `--slip-bps` **verilmişse** `slip_entry_bps = slip_exit_bps = S` ve `slip_stop_bps = 2.5·S` (varsayılan 2/2/5 oranı), verilmemişse `2/2/5` |
 | `--params '{"trail_atr":3.5}'` | kısmi geçersiz kılma (`SignalParams.from_mapping` doğrulaması); `trigger_tf` bayrağı ezer |
 | `--granularity 1m\|15m` | `cost.granularity`; uyum kipinde zorunlu `15m` |
@@ -64,7 +64,7 @@ Akış:
 
 ### 3.2 `GuardedView`
 
-`MarketView` sarmalayıcısı; her çağrı `until/end ≤ clock.now()` denetler (uyum kipinde `entry_ref_fn`'in "sonraki adım açılışı" okuması için tek istisna: `view.open_at(pair, ts)` yöntemi, **yalnız** `fill_model="freqtrade_compat"` iken kullanılabilir ve her kullanım `meta.json.peek_uses` sayacına yazılır). İhlal → `LookaheadError` (çalışma durur, çıkış 3). `HistoricalSource.open_at(pair, ts)` 01'de tanımlıdır (§6.2); uyum kipi `entry_ref_fn` (sonraki adım açılışını `open_at` ile okuyan işlev) bu birimde (`backtest.py`) yazılır ve `EntryGate`'e (05) enjekte edilir.
+`MarketView` sarmalayıcısı; her çağrı `until/end ≤ clock.now()` denetler (uyum kipinde `entry_ref_fn`'in "sonraki adım açılışı" okuması için tek istisna: `view.open_at(pair, ts)` yöntemi, **yalnız** `fill_model="legacy_compat"` iken kullanılabilir ve her kullanım `meta.json.peek_uses` sayacına yazılır). İhlal → `LookaheadError` (çalışma durur, çıkış 3). `HistoricalSource.open_at(pair, ts)` 01'de tanımlıdır (§6.2); uyum kipi `entry_ref_fn` (sonraki adım açılışını `open_at` ile okuyan işlev) bu birimde (`backtest.py`) yazılır ve `EntryGate`'e (05) enjekte edilir.
 
 ### 3.3 `LedgerReplayVeto(path)`
 
@@ -108,7 +108,7 @@ Tanımlar (kaynak `run_bt.py`, bire bir):
 
 ## 7. Çapraz doğrulama: `research/bt_crosscheck.py`
 
-Girdi: freqtrade referans çalışması `user_data/backtest_results/<ID>/` (`ledger.sqlite`, `trades_enriched.csv`, `overlay.json`) ve aynı dönem/parametre/maliyet için motor çalışması (`var/backtests/<ID>_compat/`). **Freqtrade çalıştırılmaz.** Zorunlu çalışmalar (§4.2): `1h_IS_f1_s0`, `1h_WF_f1_s0`, `15m_IS_f1_s0`, `1h_IS_f2_s5` (`fee_mult 2, slip_bps 5`: `fee_eff = 0.0010 + 0.0005 = 0.0015`). Motor komutu (örnek): `backtest --id 1h_IS_f1_s0_compat --period IS --tf 1h --fill-model freqtrade_compat --fee-mult 1 --slip-bps 0 --granularity 15m --synthetic-rules --no-record-filtered` (freqtrade `--timeframe-detail 15m` ile aynı adım; 15m kolunda ayrıntı yok, adım zaten 15m).
+Girdi: freqtrade referans çalışması `user_data/backtest_results/<ID>/` (`ledger.sqlite`, `trades_enriched.csv`, `overlay.json`) ve aynı dönem/parametre/maliyet için motor çalışması (`var/backtests/<ID>_compat/`). **Freqtrade çalıştırılmaz.** Zorunlu çalışmalar (§4.2): `1h_IS_f1_s0`, `1h_WF_f1_s0`, `15m_IS_f1_s0`, `1h_IS_f2_s5` (`fee_mult 2, slip_bps 5`: `fee_eff = 0.0010 + 0.0005 = 0.0015`). Motor komutu (örnek): `backtest --id 1h_IS_f1_s0_compat --period IS --tf 1h --fill-model legacy_compat --fee-mult 1 --slip-bps 0 --granularity 15m --synthetic-rules --no-record-filtered` (freqtrade `--timeframe-detail 15m` ile aynı adım; 15m kolunda ayrıntı yok, adım zaten 15m).
 
 ### 7.1 Eşleme anahtarı ve okuma
 
@@ -181,7 +181,7 @@ Aynı dönemler `native` (1m, mark tetik, ayrı kayma) ile koşar; `bt_crosschec
 
 ## 13. Belirsizlikler ve çözümleri
 
-- **Uyum kipi tam birebirlik** `freqtrade_compat` kuralları (03 §4.5) iki madde "doğrulanacak" taşır (tick yuvarlamama, stop gap fiyatı). Çapraz doğrulamanın ilk çalıştırması bunları **belirler**; bulgu 03 şartnamesine revizyon olarak işlenir (kuralı sessizce değiştirmeyin).
+- **Uyum kipi tam birebirlik** `legacy_compat` kuralları (03 §4.5) iki madde "doğrulanacak" taşır (tick yuvarlamama, stop gap fiyatı). Çapraz doğrulamanın ilk çalıştırması bunları **belirler**; bulgu 03 şartnamesine revizyon olarak işlenir (kuralı sessizce değiştirmeyin).
 - **Sentetik kurallar** (`freqtrade_offline.py` türetmesi) `qty_rounding` sınıfında ayrışma doğurabilir; bu beklenir ve ayrı etiketlenir. Aynı sentetik kural türetimi uyum çalışmasında kullanılır (01 §6.2).
 - **`equity_entry_est`** freqtrade tarafı için run_bt'nin tahminidir (1h kapanış mark'ıyla); B düzeyi boyut oranı toleransı bu yüzden %0,5'tir.
 - **Performans:** 10 çift × 2 yıl 1h için `compute_signals` birkaç on saniye, 15m için birkaç dakika (Python döngüsü); native 1m adımları yalnız aktif çiftlerde (span tabanlı) olduğundan toplam süre dakikalar mertebesindedir. Hedef, matris (≥ 28 çalışma) için paralel süreç (`queue.sh` benzeri; freqtrade çağrısı olmadan) — kapsam 06 dışı, §4.3 madde 3.

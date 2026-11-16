@@ -3,7 +3,7 @@
 Kullanıcı kararı: freqtrade yerine kendi motorumuz ("1l3a'yı uyarla ya da sıfırdan yaz, ama şimdi başla").
 Girdi: `research_notes/kullanici-projeleri/1l3a_motor_derin_inceleme.md`, `faz-plani.md`, `tasarim-kararlari.md`,
 `trader/src/trader_core/*`, `trader/user_data/strategies/TraderV1.py`.
-Bu belge karar + mimari + takvimdir; modül bazlı ayrıntılı şartname (`trader/docs/motor-spec.md`) bundan türetilir.
+Bu belge karar + mimari + takvimdir; modül bazlı ayrıntılı şartnameler `trader/docs/motor/` (00-index … 08) altındadır. Ayrıntıda çelişki olursa `00-index.md` §5'te "Karar verildi" işaretli satırlar geçerlidir.
 Hiçbir kod çalıştırılmadı; Binance uç adları ve davranışları "doğrulanacak" işaretlidir.
 
 ---
@@ -43,12 +43,13 @@ Kök: `/home/user/sselimgenc-oss/1l3a-proje/`. Her satır §1.0'daki iki yoldan 
 | 1l3a dosyası | Ne yapılır | Bizdeki hedef |
 |---|---|---|
 | `motor/canli/borsa/binance_futures.py` | **(a)** Kopyala: imza, tekrar politikası (`tekrar_guvenli=False`, `belirsiz` → sorgula), -1021, 429/418, ağırlık bekleme. Ekle: `X-MBX-ORDER-COUNT-10S/1M`, `PERCENT_PRICE`, mark kline/premiumIndex uçları | `exchange/binance_rest.py` |
-| `motor/canli/borsa/kurallar.py` | **(a)** Kopyala (`kural_cikar`, `miktar_yuvarla`, `stop_yuvarla`, `hedef_yuvarla`); `boyutlandir` atılır | `exchange/rules.py` |
+| `motor/canli/borsa/kurallar.py` | **(a)** Kopyala; uydurma varsayılan `min_notional=5` **kaldırılır** (filtre eksik → hata, o çifte giriş yok) (`kural_cikar`, `miktar_yuvarla`, `stop_yuvarla`, `hedef_yuvarla`); `boyutlandir` atılır | `exchange/rules.py` |
 | `motor/canli/borsa/canli_yurutucu.py` | **(a)** Kopyala, sonra kes: `_giris_gonder`, `_koru`/`_stop_kur`, `_stop_yukselt`, `_mutabakat`, `_dolum_sonrasi_risk`, `client_id`. `Niyet/MotorGorunumu` ve `_kayit_*` atılır | `brokers/binance_futures.py`, `reconcile.py`, `order_manager.py` |
 | `motor/canli/borsa/canli_limitler.py` | **(b)** Yalnız kill durum makinesi fikri; **sayıların hiçbiri alınmaz** | `killswitch.py` |
 | `motor/canli/borsa/canli_ayar.py` | **(b)** Fikir: mod, `CANLI_ONAY` çift onay, anahtarlar yalnız env | `config.py` |
 | `motor/canli/borsa/kuru.py` | **(a)** Kopyala; reddetme, gecikme, kısmi dolum, belirsiz yanıt ekle | `tests/engine/fake_exchange.py` (yalnız test) |
-| `motor/canli/paper_veri.py`, `paper_canli.py` | **(a)** Kopyala: klines/funding istemcisi, boşluk doldurma. WS `ws_dongu` kalıbı Faz B'ye | `marketdata/rest_public.py`, `marketdata/feed.py` |
+| `motor/canli/paper_veri.py` | **(a)** Kopyala: klines/funding istemcisi | `marketdata/rest_public.py` |
+| `motor/canli/paper_canli.py` | **(b)** Yalnız fikir (kopya listesinde olmayan modüllere bağlı; kopyalanamaz): grace, boşluk doldurma, artımlı funding. `feed.py` sıfırdan. WS `ws_dongu` kalıbı Faz B'de yine fikir olarak | `marketdata/feed.py` |
 | `motor/canli/durum.py::atomik_yaz_json`, `kalp_atisi.py` | **(a)** Kopyala | `status.py` |
 | `testler/test_canli_borsa.py`, `test_canli_limitler.py`, `test_lookahead_tum_stratejiler.py` | **(b)** Senaryo listesi kabul testi şartnamesi olur (test kodu bağımsız ajan tarafından bizim arayüze yazılır) | `tests/engine/` |
 | Stop/hedef aynı mumda → STOP, gap dolumu, funding imleci (`backtest/motor.py`, `portfoy/motor.py::_mum_ici`, `_funding_ode`) | **(b)** Yalnız kural | `brokers/paper.py` |
@@ -135,7 +136,7 @@ class Broker(Protocol):
 
 ### 2.4 Idempotent client id
 
-`tr{L|T}{e|s|t|x}-<sha1(bot|pair|side|signal_bar_close_ts|role|seq)[:24]>` (≤ 36 karakter). `seq`: giriş için 0; stop için stop sürüm sayacı (her trail güncellemesi yeni kimlik); belirsizlik sonrası yeniden gönderimde deneme sayacı. Aynı sinyal barı için ikinci giriş matematiksel olarak aynı kimliği üretir → çift giriş olamaz. Kimlik state.sqlite'a POST'tan önce yazılır; yeniden başlatmada `pending` satırlar `query` ile çözülür.
+`tr{L|T}{e|s|t|x}-<sha1(bot|pair|side|signal_bar_close_ts|role|seq)[:24]>` (≤ 36 karakter). `seq`: giriş ve çıkış için **sabit 0** (yeniden gönderim aynı kimlikle; sayaçlı yeni kimlik, ilk POST geç ulaşırsa çift emre yol açardı); stop için sürüm sayacı (her trail güncellemesi ve yeniden kurulum yeni kimlik). Yeniden gönderim yalnız iki sorgunun da "emir yok" demesinden sonra, tek kez. Yetkili ayrıntı: `trader/docs/motor/04-order-position.md` §1/§4. Aynı sinyal barı için ikinci giriş matematiksel olarak aynı kimliği üretir → çift giriş olamaz. Kimlik state.sqlite'a POST'tan önce yazılır; yeniden başlatmada `pending` satırlar `query` ile çözülür.
 
 ### 2.5 PaperBroker dolum modeli (paper = backtest)
 
@@ -155,7 +156,7 @@ Girdi her zaman kapanmış 1m barlardır (last + mark); backtest'te 1m veri yoks
 - Dolum sonrası gerçek fiyatla risk yeniden hesaplanır; `max_trade_risk` aşıldıysa reduceOnly küçült/kapat.
 - Trail güncelleme: **önce yeni stop, sonra eski iptal**; gevşetme yok; fiyat yeni stopu geçmişse piyasada kapat. Bar kapanışında, en fazla tf başına bir kez.
 - `closePosition=true` kullanılmaz (aynı anda iki stop gerekir); miktar bazlı reduceOnly. Bu varsayım testnet doğrulama listesinde (§3.3).
-- Hedef (R1): borsada `TAKE_PROFIT_MARKET`; kurulamaması ölümcül değil. Zaman/rejim çıkışı motor tarafında (servis ölürse stop korur).
+- Hedef (R1): **bar kapanışı kuralı** (`strateji-spec` §5.4 ile aynı: kapanmış barın high/low'u hedefe değdiyse sonraki adımda piyasa çıkışı; `target_mode="bar_close"`). Borsada `TAKE_PROFIT_MARKET` Faz A'da ve canlı v1'de **kurulmaz** (`place_target` yalnız arayüzde); strateji davranışını değiştirdiği için ancak strateji-spec revizyonu + yeniden backtest ile gelir. Zaman/rejim/hedef çıkışı motor tarafında (servis ölürse stop korur).
 - Mutabakat (açılışta + pozisyon açıkken 15 sn, değilken 60 sn):
 
 | Durum | Eylem |
@@ -306,7 +307,7 @@ Veri: mevcut feather'lar (15m/1h/4h last, 1h mark, funding) + Binance Vision'dan
 ### 4.2 Freqtrade sonuçlarıyla çapraz doğrulama
 Referans: `trader/user_data/backtest_results/<id>/` (`ledger.sqlite`, `trades_enriched.csv`, `overlay.json`). Araç: `research/bt_crosscheck.py`.
 
-Önce motor **uyum kipinde** koşar (`fill_model=freqtrade_compat`): tf barı ayrıntısı, stop tetik = last fiyat, giriş = sonraki bar açılışı, kayma komisyona katılmış (`fee_eff`, `run_bt.py` ile aynı), funding freqtrade yöntemiyle.
+Önce motor **uyum kipinde** koşar (`fill_model=legacy_compat`; ad bilerek nötr: §4.3 madde 7 grep'i istisnasız boş kalır): tf barı ayrıntısı, stop tetik = last fiyat, giriş = sonraki bar açılışı, kayma komisyona katılmış (`fee_eff`, `run_bt.py` ile aynı), funding freqtrade yöntemiyle.
 
 | Düzey | Karşılaştırılan | Kabul |
 |---|---|---|

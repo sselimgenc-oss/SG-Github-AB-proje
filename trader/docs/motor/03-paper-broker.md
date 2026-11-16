@@ -1,6 +1,6 @@
 # 03 — Broker arayüzü, PaperBroker, funding (spesifikasyon v1, 16 Kasım 2026)
 
-Kaynak kararlar: `motor-tasarimi.md` §2.3 (Broker arayüzü), §2.5 (dolum modeli; paper = backtest), §2.6 (stop yönetimi — paper'da aynı akış), §4.2 (uyum kipi `freqtrade_compat`), §5 risk 2/5 (mark vs last, gerçekçi olmayan dolum). 1l3a'dan **yalnız kural** alınır (§1.2 satırı: stop/hedef aynı mumda → STOP, gap dolumu, funding imleci; kod kopyalanmaz). Bağımlılıklar: `02-clock-bars.md` (tipler, `numeric.py`, `CostModel`, `Clock`), `trader_core.risk` (`liquidation_price`, `LOCKED_CFG.maint_margin_rate` okunur). Bu belge kod, test ve commit içermez.
+Kaynak kararlar: `motor-tasarimi.md` §2.3 (Broker arayüzü), §2.5 (dolum modeli; paper = backtest), §2.6 (stop yönetimi — paper'da aynı akış), §4.2 (uyum kipi `legacy_compat`), §5 risk 2/5 (mark vs last, gerçekçi olmayan dolum). 1l3a'dan **yalnız kural** alınır (§1.2 satırı: stop/hedef aynı mumda → STOP, gap dolumu, funding imleci; kod kopyalanmaz). Bağımlılıklar: `02-clock-bars.md` (tipler, `numeric.py`, `CostModel`, `Clock`), `trader_core.risk` (`liquidation_price`, `LOCKED_CFG.maint_margin_rate` okunur). Bu belge kod, test ve commit içermez.
 
 ## 1. Kararlar (özet)
 
@@ -109,7 +109,7 @@ Tetik fiyat aralığı `(lo, hi)`: `trigger_source=="mark"` ise `(mark_l, mark_h
 - `account()`: `unrealized = Σ pozisyon (mark−entry)×qty×işaret` (mark = `last_mark`; yoksa giriş fiyatı); `used_margin = Σ margin`; `equity = wallet + unrealized`; `available = wallet − used_margin`.
 - `positions()`: `liq_price`, `margin` kayıtlı; `mark_price = last_mark`.
 
-### 4.5 Uyum kipi (`cost.fill_model == "freqtrade_compat"`)
+### 4.5 Uyum kipi (`cost.fill_model == "legacy_compat"`)
 
 `granularity` zaten `"15m"`, `trigger_source="last"` (02 doğrulaması). Farklar: (i) kayma yok (`slip_*` yok sayılır); (ii) piyasa emri ve stop dolumu için **tick yuvarlama yok** (freqtrade backtest'i yuvarlamaz — *doğrulanacak*, çapraz doğrulama sınıfı "dolum fiyatı yuvarlama"); (iii) stop dolum fiyatı: adım açılışı stopun ötesindeyse açılış, değilse stop fiyatı (freqtrade ile aynı — *doğrulanacak*); (iv) `taker_fee = fee_eff = 0.0005 × fee_mult + slip_bps/1e4` (kaymanın komisyona katılması, `run_bt.py` ile aynı; değeri backtest çalıştırıcısı verir, 06); (v) funding: `qty × mark_1h_open(ts) × rate` — `FundingPoint.mark` 1h mark açılışıdır (01); (vi) likidasyon denetimi açık kalır (uyum kipinde de `liquidation` kaydı olursa çapraz doğrulama raporunda ayrı sınıflanır).
 
