@@ -1,0 +1,168 @@
+2026-11-16 15:43:59,527 - freqtrade - INFO - freqtrade 2026.10
+2026-11-16 15:44:00,443 - freqtrade.configuration.load_config - INFO - Using config: config/base.json ...
+2026-11-16 15:44:00,443 - freqtrade.configuration.load_config - INFO - Using config: config/backtest.json ...
+2026-11-16 15:44:00,444 - freqtrade.configuration.load_config - INFO - Using config: research/cfg/tf15.json ...
+2026-11-16 15:44:00,446 - freqtrade.loggers - INFO - Enabling colorized output.
+2026-11-16 15:44:00,446 - freqtrade.loggers - INFO - Logfile configured
+2026-11-16 15:44:00,446 - freqtrade.loggers - INFO - Verbosity set to 0
+2026-11-16 15:44:00,447 - freqtrade.configuration.configuration - INFO - Using additional Strategy lookup path: research/strategies
+2026-11-16 15:44:00,447 - freqtrade.configuration.configuration - INFO - Parameter --timerange detected: 20250501-20250801 ...
+2026-11-16 15:44:00,447 - freqtrade.configuration.configuration - INFO - Using user-data directory: user_data ...
+2026-11-16 15:44:00,448 - freqtrade.configuration.configuration - INFO - Using data directory: user_data/data/binance ...
+2026-11-16 15:44:00,448 - freqtrade.configuration.configuration - INFO - Using pairs ['TRX/USDT:USDT']
+2026-11-16 15:44:00,448 - freqtrade.configuration.configuration - INFO - Filter trades by timerange: 20250501-20250801
+2026-11-16 15:44:00,448 - freqtrade.configuration.configuration - INFO - Targeted Trade amount: 12
+2026-11-16 15:44:00,448 - freqtrade.configuration.configuration - INFO - Minimum Trade amount: 5
+2026-11-16 15:44:00,449 - freqtrade.exchange.check_exchange - INFO - Checking exchange...
+2026-11-16 15:44:00,456 - freqtrade.exchange.check_exchange - INFO - Exchange "binance" is officially supported by the Freqtrade development team.
+2026-11-16 15:44:00,456 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 15:44:00,466 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Forced order_types to market orders.
+2026-11-16 15:44:00,474 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Forced max_open_trades to -1 (same amount as there are pairs)
+2026-11-16 15:44:00,475 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Dry run wallet was not set to 1 billion, pushing it up there just to avoid false positives
+2026-11-16 15:44:00,475 - freqtrade.optimize.analysis.lookahead_helpers - INFO - fixing stake_amount to 10k
+2026-11-16 15:44:00,516 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Bias test of TraderV1Analysis.py started.
+2026-11-16 15:44:00,519 - freqtrade.exchange.exchange - INFO - Instance is running with dry_run enabled
+2026-11-16 15:44:00,519 - freqtrade.exchange.exchange - INFO - Using CCXT 4.5.92
+2026-11-16 15:44:00,520 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 15:44:00,524 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 15:44:00,528 - freqtrade.exchange.exchange - INFO - Using Exchange "Binance"
+2026-11-16 15:44:00,609 - freqtrade.resolvers.exchange_resolver - INFO - Using resolved exchange class 'Binance' ...
+2026-11-16 15:44:00,610 - freqtrade.resolvers.iresolver - INFO - Using resolved strategy TraderV1Analysis from '/home/user/SG-Github-AB-proje/trader/research/strategies/TraderV1Analysis.py'...
+2026-11-16 15:44:00,611 - freqtrade.strategy.hyper - INFO - Found no parameter file.
+2026-11-16 15:44:00,611 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'timeframe' with value from the configuration: 15m.
+2026-11-16 15:44:00,612 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'order_types' with value from the configuration: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 
+'stoploss_on_exchange': False}.
+2026-11-16 15:44:00,612 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_currency' with value from the configuration: USDT.
+2026-11-16 15:44:00,612 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_amount' with value from the configuration: 10000.
+2026-11-16 15:44:00,612 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'max_open_trades' with value from the configuration: -1.
+2026-11-16 15:44:00,613 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using minimal_roi: {'0': 100}
+2026-11-16 15:44:00,613 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using timeframe: 15m
+2026-11-16 15:44:00,613 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stoploss: -0.99
+2026-11-16 15:44:00,613 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop: False
+2026-11-16 15:44:00,613 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop_positive_offset: 0.0
+2026-11-16 15:44:00,614 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_only_offset_is_reached: False
+2026-11-16 15:44:00,614 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_custom_stoploss: True
+2026-11-16 15:44:00,614 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using process_only_new_candles: True
+2026-11-16 15:44:00,614 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_types: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 'stoploss_on_exchange': False}
+2026-11-16 15:44:00,614 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_time_in_force: {'entry': 'GTC', 'exit': 'GTC'}
+2026-11-16 15:44:00,615 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_currency: USDT
+2026-11-16 15:44:00,615 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_amount: 10000
+2026-11-16 15:44:00,615 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using startup_candle_count: 4800
+2026-11-16 15:44:00,615 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_exit_signal: True
+2026-11-16 15:44:00,615 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_only: False
+2026-11-16 15:44:00,616 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_roi_if_entry_signal: False
+2026-11-16 15:44:00,616 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_offset: 0.0
+2026-11-16 15:44:00,616 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using disable_dataframe_checks: False
+2026-11-16 15:44:00,616 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_buying_expired_candle_after: 0
+2026-11-16 15:44:00,616 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using position_adjustment_enable: False
+2026-11-16 15:44:00,617 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_entry_position_adjustment: -1
+2026-11-16 15:44:00,617 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_open_trades: -1
+2026-11-16 15:44:00,617 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 15:44:00,621 - freqtrade.resolvers.iresolver - INFO - Using resolved pairlist StaticPairList from 
+'/home/user/SG-Github-AB-proje/trader/.venv-ft/lib/python3.12/site-packages/freqtrade/plugins/pairlist/StaticPairList.py'...
+2026-11-16 15:44:00,622 - freqtrade.optimize.backtesting - INFO - Using fee 0.0500% - worst case fee from exchange (lowest tier).
+2026-11-16 15:44:00,670 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-08-01 00:00:00 (142 days).
+2026-11-16 15:44:00,790 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-08-01 00:00:00
+2026-11-16 15:44:00,796 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:07,306 - freqtrade.loggers.set_log_levels - INFO - Reducing verbosity for bias tester.
+2026-11-16 15:44:07,307 - freqtrade.optimize.analysis.lookahead - INFO - Found 98 trades, calculating 12 trades.
+2026-11-16 15:44:07,339 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-01 14:30:00 (50 days).
+2026-11-16 15:44:07,343 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-01 08:00:00
+2026-11-16 15:44:07,398 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-01 14:30:00
+2026-11-16 15:44:07,404 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:07,612 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-01 16:00:00 (50 days).
+2026-11-16 15:44:07,674 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-01 16:00:00
+2026-11-16 15:44:07,678 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:07,968 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-02 08:00:00 (51 days).
+2026-11-16 15:44:08,032 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-02 08:00:00
+2026-11-16 15:44:08,037 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:08,234 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-02 08:15:00 (51 days).
+2026-11-16 15:44:08,238 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-02 08:00:00
+2026-11-16 15:44:08,292 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-02 08:15:00
+2026-11-16 15:44:08,296 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:08,542 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-04 19:30:00 (53 days).
+2026-11-16 15:44:08,547 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-04 16:00:00
+2026-11-16 15:44:08,611 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-04 19:30:00
+2026-11-16 15:44:08,618 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:08,866 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-04 20:45:00 (53 days).
+2026-11-16 15:44:08,870 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-04 16:00:00
+2026-11-16 15:44:08,926 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-04 20:45:00
+2026-11-16 15:44:08,930 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:09,298 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-05 13:45:00 (54 days).
+2026-11-16 15:44:09,303 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-05 08:00:00
+2026-11-16 15:44:09,401 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-05 13:45:00
+2026-11-16 15:44:09,408 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:09,679 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-05 16:00:00 (54 days).
+2026-11-16 15:44:09,739 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-05 16:00:00
+2026-11-16 15:44:09,744 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:10,038 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-06 15:30:00 (55 days).
+2026-11-16 15:44:10,105 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-06 15:30:00
+2026-11-16 15:44:10,111 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:10,378 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-07 03:30:00 (56 days).
+2026-11-16 15:44:10,383 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-07 00:00:00
+2026-11-16 15:44:10,440 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-07 03:30:00
+2026-11-16 15:44:10,446 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:10,965 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-07 04:45:00 (56 days).
+2026-11-16 15:44:10,970 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-07 00:00:00
+2026-11-16 15:44:11,032 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-07 04:45:00
+2026-11-16 15:44:11,037 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:11,373 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-07 16:45:00 (56 days).
+2026-11-16 15:44:11,380 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-07 16:00:00
+2026-11-16 15:44:11,451 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-07 16:45:00
+2026-11-16 15:44:11,457 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:12,022 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-08 06:30:00 (57 days).
+2026-11-16 15:44:12,027 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-08 00:00:00
+2026-11-16 15:44:12,092 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-08 06:30:00
+2026-11-16 15:44:12,097 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:12,539 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-08 08:15:00 (57 days).
+2026-11-16 15:44:12,545 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-08 08:00:00
+2026-11-16 15:44:12,647 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-08 08:15:00
+2026-11-16 15:44:12,654 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:13,178 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-08 15:30:00 (57 days).
+2026-11-16 15:44:13,240 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-08 15:30:00
+2026-11-16 15:44:13,244 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:13,657 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-08 15:45:00 (57 days).
+2026-11-16 15:44:13,724 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-08 15:45:00
+2026-11-16 15:44:13,728 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:14,176 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-10 22:00:00 (59 days).
+2026-11-16 15:44:14,180 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-10 16:00:00
+2026-11-16 15:44:14,243 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-10 22:00:00
+2026-11-16 15:44:14,247 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:14,829 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-11 00:30:00 (60 days).
+2026-11-16 15:44:14,834 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-11 00:00:00
+2026-11-16 15:44:14,901 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-11 00:30:00
+2026-11-16 15:44:14,907 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:15,422 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-17 03:45:00 (66 days).
+2026-11-16 15:44:15,427 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-17 00:00:00
+2026-11-16 15:44:15,494 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-17 03:45:00
+2026-11-16 15:44:15,499 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:16,061 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-17 09:00:00 (66 days).
+2026-11-16 15:44:16,065 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-17 08:00:00
+2026-11-16 15:44:16,129 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-17 09:00:00
+2026-11-16 15:44:16,135 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:16,643 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-17 10:30:00 (66 days).
+2026-11-16 15:44:16,648 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-17 08:00:00
+2026-11-16 15:44:16,719 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-17 10:30:00
+2026-11-16 15:44:16,724 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:17,365 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-17 22:30:00 (66 days).
+2026-11-16 15:44:17,370 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-17 16:00:00
+2026-11-16 15:44:17,435 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-17 22:30:00
+2026-11-16 15:44:17,440 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:18,126 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-18 11:00:00 (67 days).
+2026-11-16 15:44:18,132 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, funding_rate, 1h, data ends at 2025-05-18 08:00:00
+2026-11-16 15:44:18,210 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-18 11:00:00
+2026-11-16 15:44:18,215 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:18,952 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-18 15:30:00 (67 days).
+2026-11-16 15:44:19,031 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2023-02-21 00:00:00 to 2025-05-18 15:30:00
+2026-11-16 15:44:19,036 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 15:44:19,814 - freqtrade.optimize.analysis.lookahead - INFO - Found targeted trade amount = 12 signals.
+2026-11-16 15:44:19,815 - freqtrade.loggers.set_log_levels - INFO - Restoring log verbosity.
+2026-11-16 15:44:19,815 - freqtrade.optimize.analysis.lookahead - INFO - TraderV1Analysis: no bias detected
+2026-11-16 15:44:19,816 - freqtrade.optimize.analysis.lookahead_helpers - INFO - Checking look ahead bias via backtests of TraderV1Analysis.py took 19 seconds.
+Analyzing trades ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12/12 100% • 0:00:12 • 0:00:00
+                                                          Lookahead Analysis                                                          
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃            filename ┃         strategy ┃ has_bias ┃ total_signals ┃ biased_entry_signals ┃ biased_exit_signals ┃ biased_indicators ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ TraderV1Analysis.py │ TraderV1Analysis │       No │            12 │                    0 │                   0 │                   │
+└─────────────────────┴──────────────────┴──────────┴───────────────┴──────────────────────┴─────────────────────┴───────────────────┘

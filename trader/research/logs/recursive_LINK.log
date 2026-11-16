@@ -1,0 +1,105 @@
+2026-11-16 14:50:42,537 - freqtrade - INFO - freqtrade 2026.10
+2026-11-16 14:50:43,704 - freqtrade.configuration.load_config - INFO - Using config: config/base.json ...
+2026-11-16 14:50:43,705 - freqtrade.configuration.load_config - INFO - Using config: config/backtest.json ...
+2026-11-16 14:50:43,708 - freqtrade.loggers - INFO - Enabling colorized output.
+2026-11-16 14:50:43,709 - freqtrade.loggers - INFO - Logfile configured
+2026-11-16 14:50:43,709 - freqtrade.loggers - INFO - Verbosity set to 0
+2026-11-16 14:50:43,710 - freqtrade.configuration.configuration - INFO - Using additional Strategy lookup path: research/strategies
+2026-11-16 14:50:43,710 - freqtrade.configuration.configuration - INFO - Parameter --timerange detected: 20250501-20250801 ...
+2026-11-16 14:50:43,711 - freqtrade.configuration.configuration - INFO - Using user-data directory: user_data ...
+2026-11-16 14:50:43,711 - freqtrade.configuration.configuration - INFO - Using data directory: user_data/data/binance ...
+2026-11-16 14:50:43,712 - freqtrade.configuration.configuration - INFO - Using pairs ['LINK/USDT:USDT']
+2026-11-16 14:50:43,712 - freqtrade.configuration.configuration - INFO - Filter trades by timerange: 20250501-20250801
+2026-11-16 14:50:43,713 - freqtrade.configuration.configuration - INFO - Startup candle to be used on recursive analysis: ['200', '400', '800']
+2026-11-16 14:50:43,713 - freqtrade.exchange.check_exchange - INFO - Checking exchange...
+2026-11-16 14:50:43,725 - freqtrade.exchange.check_exchange - INFO - Exchange "binance" is officially supported by the Freqtrade development team.
+2026-11-16 14:50:43,725 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:50:43,767 - freqtrade.optimize.analysis.recursive_helpers - INFO - Recursive test of TraderV1Analysis.py started.
+2026-11-16 14:50:43,769 - freqtrade.exchange.exchange - INFO - Instance is running with dry_run enabled
+2026-11-16 14:50:43,769 - freqtrade.exchange.exchange - INFO - Using CCXT 4.5.92
+2026-11-16 14:50:43,769 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:50:43,773 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:50:43,778 - freqtrade.exchange.exchange - INFO - Using Exchange "Binance"
+2026-11-16 14:50:43,877 - freqtrade.resolvers.exchange_resolver - INFO - Using resolved exchange class 'Binance' ...
+2026-11-16 14:50:43,878 - freqtrade.resolvers.iresolver - INFO - Using resolved strategy TraderV1Analysis from '/home/user/SG-Github-AB-proje/trader/research/strategies/TraderV1Analysis.py'...
+2026-11-16 14:50:43,879 - freqtrade.strategy.hyper - INFO - Found no parameter file.
+2026-11-16 14:50:43,879 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'timeframe' with value from the configuration: 1h.
+2026-11-16 14:50:43,880 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_currency' with value from the configuration: USDT.
+2026-11-16 14:50:43,880 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_amount' with value from the configuration: 100.
+2026-11-16 14:50:43,880 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'max_open_trades' with value from the configuration: inf.
+2026-11-16 14:50:43,881 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using minimal_roi: {'0': 100}
+2026-11-16 14:50:43,881 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using timeframe: 1h
+2026-11-16 14:50:43,882 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stoploss: -0.99
+2026-11-16 14:50:43,882 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop: False
+2026-11-16 14:50:43,882 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop_positive_offset: 0.0
+2026-11-16 14:50:43,883 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_only_offset_is_reached: False
+2026-11-16 14:50:43,883 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_custom_stoploss: True
+2026-11-16 14:50:43,883 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using process_only_new_candles: True
+2026-11-16 14:50:43,884 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_types: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 'stoploss_on_exchange': True, 
+'stoploss_on_exchange_interval': 60}
+2026-11-16 14:50:43,884 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_time_in_force: {'entry': 'GTC', 'exit': 'GTC'}
+2026-11-16 14:50:43,884 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_currency: USDT
+2026-11-16 14:50:43,885 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_amount: 100
+2026-11-16 14:50:43,885 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using startup_candle_count: 1200
+2026-11-16 14:50:43,885 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_exit_signal: True
+2026-11-16 14:50:43,885 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_only: False
+2026-11-16 14:50:43,886 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_roi_if_entry_signal: False
+2026-11-16 14:50:43,886 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_offset: 0.0
+2026-11-16 14:50:43,886 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using disable_dataframe_checks: False
+2026-11-16 14:50:43,886 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_buying_expired_candle_after: 0
+2026-11-16 14:50:43,886 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using position_adjustment_enable: False
+2026-11-16 14:50:43,887 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_entry_position_adjustment: -1
+2026-11-16 14:50:43,887 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_open_trades: inf
+2026-11-16 14:50:43,887 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:50:43,893 - freqtrade.resolvers.iresolver - INFO - Using resolved pairlist StaticPairList from 
+'/home/user/SG-Github-AB-proje/trader/.venv-ft/lib/python3.12/site-packages/freqtrade/plugins/pairlist/StaticPairList.py'...
+2026-11-16 14:50:43,894 - freqtrade.optimize.backtesting - INFO - Using fee 0.0500% - worst case fee from exchange (lowest tier).
+2026-11-16 14:50:43,894 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:50:43,911 - freqtrade.optimize.analysis.recursive - INFO - Using pair LINK/USDT:USDT only for recursive analysis. Replacing whitelist.
+2026-11-16 14:50:43,938 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-08-01 00:00:00 (142 days).
+2026-11-16 14:50:44,026 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:50:44,036 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:50:44,206 - freqtrade.loggers.set_log_levels - INFO - Reducing verbosity for bias tester.
+2026-11-16 14:50:44,207 - freqtrade.optimize.analysis.recursive - INFO - Calculating indicators to test lookahead on indicators.
+2026-11-16 14:50:44,214 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:50:44,233 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-03-12 00:00:00 up to 2025-05-01 10:00:00 (50 days).
+2026-11-16 14:50:44,239 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, funding_rate, 1h, data ends at 2025-05-01 08:00:00
+2026-11-16 14:50:44,284 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2024-10-13 00:00:00 to 2025-05-01 10:00:00
+2026-11-16 14:50:44,291 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:50:44,370 - freqtrade.optimize.analysis.recursive - INFO - Calculating indicators using startup candle of 200.
+2026-11-16 14:50:44,397 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-07-23 15:00:00 up to 2025-08-01 00:00:00 (8 days).
+2026-11-16 14:50:44,408 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, funding_rate, 1h, data starts at 2025-08-01 00:00:00
+2026-11-16 14:50:44,441 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2025-06-28 15:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:50:44,483 - freqtrade.optimize.analysis.recursive - INFO - Calculating indicators using startup candle of 400.
+2026-11-16 14:50:44,509 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-07-15 07:00:00 up to 2025-08-01 00:00:00 (16 days).
+2026-11-16 14:50:44,515 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, funding_rate, 1h, data starts at 2025-08-01 00:00:00
+2026-11-16 14:50:44,548 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2025-05-26 07:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:50:44,601 - freqtrade.optimize.analysis.recursive - INFO - Calculating indicators using startup candle of 800.
+2026-11-16 14:50:44,609 - freqtrade.exchange.exchange - WARNING - Using 2 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 800 candles for your 
+strategy.
+2026-11-16 14:50:44,630 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-06-28 15:00:00 up to 2025-08-01 00:00:00 (33 days).
+2026-11-16 14:50:44,635 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, funding_rate, 1h, data starts at 2025-08-01 00:00:00
+2026-11-16 14:50:44,676 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2025-03-20 15:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:50:44,743 - freqtrade.optimize.analysis.recursive - INFO - Calculating indicators using startup candle of 1200.
+2026-11-16 14:50:44,749 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:50:44,768 - freqtrade.optimize.backtesting - INFO - Loading data from 2025-06-11 23:00:00 up to 2025-08-01 00:00:00 (50 days).
+2026-11-16 14:50:44,773 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, funding_rate, 1h, data starts at 2025-08-01 00:00:00
+2026-11-16 14:50:44,817 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2025-01-12 23:00:00 to 2025-08-01 00:00:00
+2026-11-16 14:50:44,908 - freqtrade.loggers.set_log_levels - INFO - Restoring log verbosity.
+2026-11-16 14:50:44,908 - freqtrade.optimize.analysis.recursive - INFO - Start checking for recursive bias
+2026-11-16 14:50:44,919 - freqtrade.optimize.analysis.recursive - INFO - Start checking for lookahead bias on indicators only
+2026-11-16 14:50:44,921 - freqtrade.optimize.analysis.recursive - INFO - Check indicators at 2025-05-01T10:00:00
+2026-11-16 14:50:44,923 - freqtrade.optimize.analysis.recursive - INFO - No lookahead bias on indicators found.
+2026-11-16 14:50:44,924 - freqtrade.optimize.analysis.recursive_helpers - INFO - Checking recursive and indicator-only lookahead bias of indicators of TraderV1Analysis.py took 1 seconds.
+Startup candle 1200 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4/4 100% • 0:00:00 • 0:00:00
+                        Recursive Analysis                         
+┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Indicators ┃     200 ┃     400 ┃     800 ┃ 1200 (from strategy) ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━┩
+│     atr_tf │  0.000% │ -0.000% │       - │                    - │
+│     atr_4h │ -0.000% │ -0.000% │       - │                    - │
+│  atr_ratio │  0.001% │  0.000% │ -0.000% │              -0.000% │
+└────────────┴─────────┴─────────┴─────────┴──────────────────────┘
