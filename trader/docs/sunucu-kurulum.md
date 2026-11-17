@@ -113,7 +113,7 @@ run_as_trader() { runuser -u trader -- sh -c "cd $T && PYTHONPATH=$T/src $*"; } 
 
 **0. Onceden hazirla** (degerleri sohbete degil, sunucuda `nano` ile yazin). `free -m` ile bos bellegi ve diger projenin payini kontrol edin (install.sh de basar). Anahtar SIRASI (her adimdan sonra `install.sh`'i yeniden calistirin; zamanlayicilar kendi anahtarlari tamamlaninca acilir):
 1. Telegram bot token + chat id (`/etc/trader-telegram.env`): daemon, gunluk rapor ve saglik uyarilari (NOTIFIER=auto) acilir.
-2. `HEARTBEAT_URL` (`/etc/trader-health.env`; https://, ornegin healthchecks.io; saglik birimi bu OLMADAN her 5 dk basarisiz olur).
+2. `HEARTBEAT_URL` (`/etc/trader-health.env`; https://, ornegin healthchecks.io; bos kalirsa saglik birimi calisir ama yalniz uyari yazar; sunucu tamamen olurse tek alarm budur).
 3. Veto icin Anthropic anahtari `ANTHROPIC_API_KEY_VETO` (`/etc/trader-veto.env`). HMAC anahtari OTOMATIK uretilir; elle yazmayin.
 4. Ders icin Anthropic anahtari `ANTHROPIC_API_KEY_LESSON` (`/etc/trader-lesson.env`); ders zamanlayicisi Telegram anahtarlari da doluysa acilir.
 5. Cloudflare (panel yayini) EN SON.
