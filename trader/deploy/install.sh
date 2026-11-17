@@ -3,6 +3,7 @@
 # Kullanim: bash install.sh [--no-twin]   (ikiz (twin) VARSAYILAN ACIK; --with-twin geriye uyumluluk icin kabul edilir, etkisizdir)
 # Yalniz "trader" kullanicisina ve trader-* systemd birimlerine dokunur; baska projeye, guvenlik duvarina, acik porta dokunmaz.
 set -euo pipefail
+SELF_SUM_AT_START="$(sha256sum "$0" 2>/dev/null | cut -d" " -f1 || true)"   # depo guncellenince yeni betikle yeniden baslamak icin
 
 # ---- ayarlar (gerekirse degistirin) ---------------------------------------
 REPO_URL="${REPO_URL:-https://github.com/sselimgenc-oss/SG-Github-AB-proje.git}"
@@ -101,6 +102,13 @@ else
     || fail "Depo indirilemedi. Depo ozelse deploy anahtari gerekir: bkz. trader/docs/sunucu-kurulum.md"
 fi
 [ -d "$TRADER_DIR/deploy" ] || fail "$TRADER_DIR/deploy yok; dal/depo adi yanlis olabilir."
+# Bash calisan betigi bellekte eski haliyle surdurur; depo guncellemesi install.sh'i degistirdiyse yeni surumle bastan calistir (bir kez).
+NEW_SELF="$TRADER_DIR/deploy/install.sh"
+if [ -z "${TRADER_INSTALL_REEXEC:-}" ] && [ -f "$NEW_SELF" ] && [ "$(sha256sum "$NEW_SELF" | cut -d" " -f1)" != "$SELF_SUM_AT_START" ]; then
+  say "install.sh guncellendi; yeni surumle yeniden baslatiliyor"
+  export TRADER_INSTALL_REEXEC=1
+  exec bash "$NEW_SELF" "$@"
+fi
 
 # ---- 5. python ortami (yalniz calisma bagimliliklari) -----------------------------
 say "Python ortami (birkac dakika surebilir)"
