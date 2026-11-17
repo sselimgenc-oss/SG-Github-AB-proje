@@ -16,6 +16,7 @@ SupplementaryGroups=trader-tg
 # Outbox dosyalari root olarak yazilir: dizin setgid trader-tg (2770) oldugundan grup trader-tg olur; UMask=0007 -> 0660 (daemon okuyup siler)
 UMask=0007
 StateDirectory=trader-health
+StateDirectoryMode=0755
 Environment=STATE_DIR=/var/lib/trader-health
 TimeoutStartSec=90
 # 10 sagliksiz, 11 nabiz gonderilemedi, 12 uyari iletilemedi: beklenen; OnFailure yalniz beklenmedik coksuste

@@ -136,6 +136,12 @@ def load_state(path) -> tuple[dict, bool]:
 def save_state(path, state) -> None:
     from health_backup import atomic_write_json
     atomic_write_json(path, state)
+    # UMask=0007 (trader-health.service) state.json'u 0660 root:root yapar; panel/yayin (User=trader) okuyamaz -> "state_okunamadi".
+    # Icerik gizli degil (sayaclar/parmak izleri); herkes okuyabilir, yalniz root yazar.
+    try:
+        os.chmod(path, 0o644)
+    except OSError:
+        pass
 
 
 # --------------------------------------------------------------------------- olcumler

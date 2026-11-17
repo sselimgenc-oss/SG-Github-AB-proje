@@ -286,7 +286,7 @@ def budget_view(budget_config: str) -> dict:
         raise SectionError("yapilandirma_gecersiz") from None
     if not db.exists():
         raise SectionError("depo_yok")
-    st = B.BudgetGuard(bc).status()
+    st = B.BudgetGuard(bc, read_only=True).status()
     if not st.config_ok:
         raise SectionError("yapilandirma_gecersiz")
     if not st.store_ok:

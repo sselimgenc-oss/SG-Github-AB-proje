@@ -16,6 +16,7 @@ import os
 import random
 import re
 import sqlite3
+from urllib.parse import quote
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -396,7 +397,10 @@ _SVC_TR = {"veto": "veto", "lesson": "ders"}
 
 class BudgetGuard:
     def __init__(self, config: BudgetConfig | str | os.PathLike | None,
-                 clock: Callable[[], datetime] | None = None):
+                 clock: Callable[[], datetime] | None = None, *, read_only: bool = False):
+        # read_only=True: depo `file:...?mode=ro` acilir; PRAGMA journal_mode/synchronous, sema kurulumu ve BEGIN IMMEDIATE yok
+        # (panel/yayin birimi /opt/trader'i salt okunur baglar; okuma yazma gerektirmemeli).
+        self._read_only = read_only
         self._config_error: str | None = None
         self.config: BudgetConfig | None = None
         if isinstance(config, BudgetConfig):
@@ -433,7 +437,35 @@ class BudgetGuard:
             conn.execute("INSERT OR IGNORE INTO meta(key,value) VALUES(?,?)", (k, v))
         conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
+    def _open_ro(self) -> sqlite3.Connection:
+        db, _marker = self._paths()
+        try:
+            if not db.exists() or db.stat().st_size == 0:
+                raise _StoreFail("store_missing", "veritabani dosyasi yok")
+            uri = "file:" + quote(os.path.abspath(db)) + "?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=5.0, isolation_level=None)
+        except (sqlite3.Error, OSError) as e:
+            raise _StoreFail("store_unavailable", f"depo acilamadi: {type(e).__name__}") from None
+        try:
+            conn.execute("PRAGMA busy_timeout=5000")
+            ver = conn.execute("PRAGMA user_version").fetchone()[0]
+            row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            last = conn.execute("SELECT value FROM meta WHERE key='last_ts'").fetchone()
+            if row is None or last is None:
+                raise _StoreFail("store_unavailable", "meta eksik")
+            if ver > SCHEMA_VERSION or int(row[0]) > SCHEMA_VERSION:
+                raise _StoreFail("store_unavailable", "sema surumu koddan yeni")
+            return conn
+        except _StoreFail:
+            conn.close()
+            raise
+        except (sqlite3.Error, OSError, ValueError) as e:
+            conn.close()
+            raise _StoreFail("store_unavailable", f"depo hatasi: {type(e).__name__}") from None
+
     def _open(self) -> sqlite3.Connection:
+        if self._read_only:
+            return self._open_ro()
         db, marker = self._paths()
         try:
             exists = db.exists()
@@ -487,6 +519,8 @@ class BudgetGuard:
     def _run(self, fn: Callable[[sqlite3.Connection, datetime], Any], write: bool = True) -> Any:
         if self.config is None:
             raise _StoreFail("config_invalid", self._config_error or "yapilandirma gecersiz")
+        if write and self._read_only:
+            raise _StoreFail("store_unavailable", "depo salt okunur acildi")
         conn = self._open()
         try:
             try:
