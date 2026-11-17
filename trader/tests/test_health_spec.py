@@ -1266,7 +1266,7 @@ class TestPlanAlertsMultiple:
         first = next(a for _, a in out if a)
         assert len(first) == 1 and first[0].code == "multiple"
         assert len(first[0].body) <= 500
-        assert "disk_free" in first[0].body
+        assert "disk" in first[0].body and "disk_free" not in first[0].body
 
     def test_three_failing_not_summarized(self):
         rep = ev(disk_free_bytes=0, mem_available_bytes=10 * MiB,

@@ -360,7 +360,7 @@ def test_status_and_report_line_formats(tmp_path):
     assert line in r.say("/durum")
     sec = T.default_sections(r.cfg, T0, "2026-12-30", None, r.d.ladders)
     assert "Risk kademesi" in sec and line in sec["Risk kademesi"]()
-    assert "Risk kademesi" in T.build_report(r.cfg, T0, "2026-12-30", sec)
+    assert line in T.build_report(r.cfg, T0, "2026-12-30", sec)
     assert "Risk kademesi" not in T.default_sections(r.cfg, T0, "2026-12-30", None, None)
 
 
@@ -385,7 +385,7 @@ def test_run_report_passes_ladders(tmp_path):
 
     now = datetime(2026, 12, 30, 18, 1, tzinfo=UTC)                     # 21:01 Istanbul
     assert T.run_report(r.cfg, N(), now, pauses={"learner": r.pause}, ladders=r.d.ladders) == "sent"
-    assert "Risk kademesi" in sent[0] and "İNCELEME" in sent[0]
+    assert "Kademe:" in sent[0] and "İNCELEME" in sent[0]
 
 
 # ------------------------------------------------------------------------------------------------ calistirici

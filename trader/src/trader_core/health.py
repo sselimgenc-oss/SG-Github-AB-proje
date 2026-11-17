@@ -956,6 +956,72 @@ def _cut(s: str, n: int) -> str:
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+# Kullanıcıya giden uyarı metinleri (sade Türkçe). Anahtar: kontrol adının ":bot" ekinden önceki kısmı.
+# Değer: (sorun cümlesi, düzeldi cümlesi, ne anlama geliyor). Sorun/düzeldi cümleleri <= 68 karakter (başlık 80 sınırı).
+_HEALTH_TR: dict[str, tuple[str, str, str]] = {
+    "api_reachable": ("Motor yanıt vermiyor", "Motor yeniden yanıt veriyor",
+                      "Bot çalışmıyor olabilir; yeni işlem açılmaz, açık pozisyonları kontrol et."),
+    "bot_loop_age": ("Motor döngüsü durmuş görünüyor", "Motor döngüsü yeniden işliyor",
+                     "Motor takılmış olabilir; yeni işlemler bekletilebilir."),
+    "candle_age": ("Piyasa mumları güncel değil", "Piyasa mumları yeniden güncel",
+                   "Güncel fiyat verisi yok; yeni işlem kararı verilemez."),
+    "ledger_write_age": ("Kayıt defterine uzun süredir yazılmadı", "Kayıt defterine yeniden yazılıyor",
+                         "Kayıtlar gecikmiş olabilir; panoyu kontrol et."),
+    "ledger_gate": ("İşlem kayıt sistemi giriş kapısı kapalı", "İşlem kayıt sistemi yeniden açıldı",
+                    "Kayıt sistemi hazır olmadığı için yeni işlemler bekletiliyor."),
+    "disk_free": ("Sunucuda boş disk alanı azaldı", "Boş disk alanı yeniden yeterli",
+                  "Disk dolarsa kayıtlar yazılamaz ve bot durabilir; yer açılmalı."),
+    "memory": ("Sunucuda bellek azaldı", "Bellek durumu yeniden normal",
+               "Bellek biterse bot kapanabilir; sunucuyu kontrol et."),
+    "swap": ("Sunucu yavaşlıyor (takas belleği yüksek)", "Sunucu takas belleği yeniden normal",
+             "Sunucu yavaşlayabilir; bellek durumunu kontrol et."),
+    "container_restarts": ("Bot sık sık yeniden başlıyor", "Bot yeniden kararlı çalışıyor",
+                           "Bot kendini toparlıyor ama sorun sürebilir; kayıtlara bak."),
+    "backup_age": ("Yedek alınmıyor ya da çok eski", "Yedekleme yeniden düzenli",
+                   "Veri kaybı riskine karşı yedeğin alındığından emin ol."),
+    "veto_file_age": ("Veto (yapay zekâ filtresi) güncel değil — yeni işlemler bekletiliyor",
+                      "Veto (yapay zekâ filtresi) yeniden güncel",
+                      "Yön filtresi güncellenene kadar yeni işlem açılmaz; açık pozisyonlar korunur."),
+    "budget_status": ("Yapay zekâ bütçesi azaldı", "Yapay zekâ bütçesi yeniden yeterli",
+                      "Bütçe biterse yapay zekâ filtresi çalışmaz ve yeni işlemler durur."),
+    "feed_status_age": ("Fiyat akışı durmuş görünüyor", "Fiyat akışı yeniden çalışıyor",
+                        "Güncel fiyat gelmiyor; yeni işlemler bekletilir."),
+    "market_bar_age": ("Piyasa verisi güncel değil", "Piyasa verisi yeniden güncel",
+                       "Eski veriyle işlem açılmaz; yeni işlemler bekletilir."),
+    "rules_coverage": ("Borsa kuralları eksik", "Borsa kuralları yeniden tam",
+                       "Bazı paritelerde kural yok; o pariteler için işlem açılmaz."),
+    "rules_age": ("Borsa kuralları eski", "Borsa kuralları yeniden güncel",
+                  "Kurallar tazelenmeli; acil değil ama uzarsa işlem engellenebilir."),
+    "rules_missing": ("Bazı paritelerin borsa kuralı alınamadı", "Borsa kuralı eksikliği düzeldi",
+                      "Etkilenen pariteler için yeni işlem açılmaz."),
+    "naked_position": ("Stop'u olmayan açık pozisyon var!", "Stopsuz pozisyon kalmadı",
+                       "Pozisyon korumasız; hemen kontrol et ya da /kapat kullan."),
+    "exchange_reachable": ("Borsaya ulaşılamıyor", "Borsa bağlantısı yeniden sağlandı",
+                           "Emir gönderilemeyebilir; açık pozisyonları borsadan kontrol et."),
+    "pause_audit": ("Duraklatma kaydı tutarsız", "Duraklatma kaydı yeniden tutarlı",
+                    "Yeni işlemler güvenlik için kapalı tutulur; kayıtlar incelenmeli."),
+    "risk_ladder": ("Risk kademesi sorunlu", "Risk kademesi yeniden normal",
+                    "Sermaye koruma kuralları devrede; yeni işlemler kısıtlanabilir."),
+}
+_HEALTH_TR_CODE: dict[str, tuple[str, str, str]] = {
+    "budget_exhausted": ("Yapay zekâ bütçesi tükendi — yeni işlemler durdu", "Yapay zekâ bütçesi yeniden yeterli",
+                         "Bütçe yenilenene kadar yapay zekâ filtresi çalışmaz; yeni işlem açılmaz."),
+    "api_unreachable": ("Motor yanıt vermiyor", "Motor yeniden yanıt veriyor",
+                        "Bot çalışmıyor olabilir; yeni işlem açılmaz, açık pozisyonları kontrol et."),
+}
+_HEALTH_TR_GENERIC = ("Bir sistem kontrolü sorunlu", "Sistem kontrolü yeniden normal",
+                      "Ayrıntı için panoya ya da kayıtlara bak.")
+
+
+def _health_tr(name: str, code: str) -> tuple[str, str, str]:
+    """(sorun, düzeldi, anlamı) - ham kontrol adı/kodu kullanıcıya sızdırılmaz."""
+    base, _, suffix = name.partition(":")
+    sorun, duzeldi, anlam = _HEALTH_TR_CODE.get(code) or _HEALTH_TR.get(base) or _HEALTH_TR_GENERIC
+    if suffix == "twin":
+        sorun, duzeldi = f"{sorun} (ikiz bot)", f"{duzeldi} (ikiz bot)"
+    return sorun, duzeldi, anlam
+
+
 def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
                 cfg: HealthConfig = DEFAULT_CFG, *, maintenance_until: datetime | None = None):
     """Saf: (alerts, new_state). `new_state` uyarilarin iletildigini varsayar; iletilemeyenler icin
@@ -998,23 +1064,27 @@ def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
     alerts: list[Alert] = []
     if not maint:
         if len(failing) >= cfg.multiple_threshold and due:
-            names = ", ".join(r.name for r in failing[:5])
+            descs = list(dict.fromkeys(_health_tr(r.name, r.code)[0] for r in failing[:5]))
+            names = "; ".join(descs)
             worst = Status.CRIT if any(r.status is Status.CRIT for r in failing) else (
                 Status.UNKNOWN if any(r.status is Status.UNKNOWN for r in failing) else Status.WARN)
-            alerts.append(Alert(worst, "multiple", _cut(f"{len(failing)} saglik kontrolu bozuk", 80),
-                                _cut(f"Bozuk kontroller (ilk 5): {names}", 500), "multiple|multiple", now))
+            mark = "🚨 Sorun" if worst is Status.CRIT else "⚠️ Dikkat"
+            alerts.append(Alert(worst, "multiple", _cut(f"{mark}: {len(failing)} sağlık kontrolü sorunlu", 80),
+                                _cut(f"Sorunlar (ilk 5): {names}", 500), "multiple|multiple", now))
         else:
             for r, fp in due:
-                alerts.append(Alert(r.status, r.code, _cut(f"{r.status.value}: {r.name}", 80),
-                                    _cut(r.detail, 500), fp, now))
+                sorun, _duz, anlam = _health_tr(r.name, r.code)
+                mark = "⚠️ Dikkat" if r.status is Status.WARN else "🚨 Sorun"
+                alerts.append(Alert(r.status, r.code, _cut(f"{mark}: {sorun}", 80), _cut(anlam, 500), fp, now))
         for r, fp in due:
             new_fp[fp]["alerted"] = True
             new_fp[fp]["last_alert_at"] = _iso(now)
         for fp, old in prev_fp.items():
             if fp not in new_fp and isinstance(old, Mapping) and old.get("alerted"):
                 name, _, code = fp.partition("|")
-                alerts.append(Alert(Status.OK, code, _cut(f"Duzeldi: {name}", 80),
-                                    _cut(f"{name} ({code}) yeniden saglikli.", 500), fp, now))
+                _sorun, duzeldi, _anlam = _health_tr(name, code)
+                alerts.append(Alert(Status.OK, code, _cut(f"✅ Düzeldi: {duzeldi}", 80),
+                                    _cut("Her şey yeniden normal.", 500), fp, now))
 
     new_state = dict(st)
     new_state.update({"schema": 1, "fingerprints": new_fp, "last_overall": report.overall.value,

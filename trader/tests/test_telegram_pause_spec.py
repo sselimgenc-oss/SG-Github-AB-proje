@@ -481,14 +481,16 @@ class TestStatusReply:
         penv.preload("drawdown_review", by="engine:rk1", bot="twin")
         penv.send("/durum")
         t = penv.fake.alltext()
-        # SPEC-AMBIGUOUS: satir bicimi yok ("bot basina duraklatma satiri (neden, kim, ne zaman)"); neden ve kim aranir
-        assert "user_cmd" in t and "drawdown_review" in t
-        assert SUFFIX in t and "engine:rk1" in t
+        # Satir sade Turkce: bot, neden (Turkce), kim (Telegram'dan / motor tarafindan), ne zaman; ham kod yok
+        assert tg.NEDEN_TR["user_cmd"] in t and tg.NEDEN_TR["drawdown_review"] in t
+        assert "Telegram'dan" in t and "motor tarafından" in t and "ana bot" in t and "ikiz bot" in t
+        assert "user_cmd" not in t and "engine:rk1" not in t
 
     def test_durum_without_pause_has_no_pause_reasons(self, penv):
         penv.send("/durum")
         t = penv.fake.alltext()
         assert "user_cmd" not in t and "drawdown_review" not in t
+        assert "duraklatıldı" not in t
 
     def test_durum_never_modifies_pause(self, penv):
         penv.preload("user_cmd", by=BY)

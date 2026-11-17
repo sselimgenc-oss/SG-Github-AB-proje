@@ -422,7 +422,7 @@ def test_telegram_daily_report_renders_from_ledger(off, tmp_path):
                            ledger_path=off.cfg.ledger_path, twin_ledger_path=str(tmp_path / "t.sqlite"),
                            budget_config=str(tmp_path / "b.json"), lesson_store=str(tmp_path / "l.sqlite"))
     now = datetime.fromisoformat(day).replace(tzinfo=UTC) + timedelta(hours=18)      # 21:00 TR
-    out = T.build_report(cfg, now, day, {"Defter": lambda: T.section_ledger(cfg, day)})
+    out = T.build_report(cfg, now, day, {"Defter": lambda: T.rapor_defter(cfg, day)})
     n_closed = sum(1 for t in off.trades() if t["exit_ts"]
                    and (datetime.fromisoformat(t["exit_ts"].replace("Z", "+00:00")) + timedelta(hours=3)).strftime("%Y-%m-%d") == day)
-    assert f"kapanan={n_closed}" in out and "öğrenen" in out
+    assert f"Bugün kapanan işlem: {n_closed}" in out and "kapanan=" not in out

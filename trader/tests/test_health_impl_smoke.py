@@ -183,7 +183,7 @@ def test_immediate_and_multiple_and_failed_send():
     rs = tuple(H.CheckResult(f"c{i}", Status.CRIT, "disk_low", "d") for i in range(5))
     rep = H.HealthReport(NOW, rs, Status.CRIT, False)
     a3, _ = H.plan_alerts(rep, None, NOW)
-    assert len(a3) == 1 and a3[0].code == "multiple" and "c0" in a3[0].body
+    assert len(a3) == 1 and a3[0].code == "multiple" and a3[0].body and "c0" not in a3[0].body and "disk_low" not in a3[0].body
     # bakim penceresi
     a4, _ = H.plan_alerts(rep, None, NOW, maintenance_until=NOW + timedelta(hours=1))
     assert a4 == []

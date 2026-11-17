@@ -718,7 +718,7 @@ class TestStatusAndReport:
         lad.wstatus("ok", equity=262.4)
         Path(lad.cfg.status_path).write_text(Path(lad.lstatus).read_text())
         out = self._report(lad)
-        assert "Risk kademesi" in out and OK_LINE in out
+        assert "Kademe:" in out and OK_LINE in out
 
     def test_report_prefix_review_and_floor(self, lad):
         lad.seed("review")

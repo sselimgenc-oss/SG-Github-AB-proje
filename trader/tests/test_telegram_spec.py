@@ -1028,14 +1028,14 @@ def test_report_missing_status_okunamadi_not_failure(tmp_path):
     assert not sp.exists()
     r = tg.run_report(cfg, n, now)
     assert r == "sent"
-    assert "okunamadı" in f.alltext()
+    assert "Bazı bilgiler okunamadı" in f.alltext()
 
 
 def test_report_corrupt_status_okunamadi(tmp_path):
     f, n, cfg, sp = _report_env(tmp_path)
     sp.write_text("{bozuk")
     text = tg.build_report(cfg, ist(21, 1), "2026-11-16")
-    assert "okunamadı" in text
+    assert "Bazı bilgiler okunamadı" in text and "JSONDecodeError" not in text
 
 
 def test_report_stale_status_first_line_crit(tmp_path):
@@ -1043,7 +1043,8 @@ def test_report_stale_status_first_line_crit(tmp_path):
     now = ist(21, 1)
     write_status(sp, loop_at=now - timedelta(seconds=600))
     text = tg.build_report(cfg, now, "2026-11-16")
-    assert "CRIT" in text.split("\n")[0]
+    first = text.split("\n")[0]
+    assert first.startswith("🚨") and "Motor yanıt vermiyor" in first and "10 dk" in first
 
 
 def test_report_fresh_status_no_crit_first_line(tmp_path):

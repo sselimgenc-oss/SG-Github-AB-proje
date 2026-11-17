@@ -160,7 +160,7 @@ def test_status_line_and_legacy_durdur(rig, tmp_path):
     say(d, "0427", 2)
     say(d, "/durum", 3)
     t = d.r.fake.texts()[-1]
-    assert "duraklatma learner: user_cmd (telegram:111, 2026-12-30T10:00:00Z)" in t
+    assert "⏸️ ana bot: yeni işlemler duraklatıldı — senin /durdur komutun (Telegram'dan, 30.12 13:00)" in t
     d2 = T.TelegramDaemon(d.cfg, d.client, now_fn=d.r.clk, runner=lambda *a: (0, "{}"), killswitch=d.killswitch)
     d2.r = d.r
     d2.process_updates([msg(d2, "/durdur", 9)])
@@ -232,8 +232,8 @@ def test_report_has_per_bot_pause_line(rig, tmp_path):
     rig.pauses["learner"].add("drawdown_review", "engine:rk1")
     secs = T.default_sections(rig.cfg, T0, "2026-12-30", rig.pauses)
     out = T.build_report(rig.cfg, T0, "2026-12-30", {"Duraklatma": secs["Duraklatma"]})
-    assert "duraklatma learner: drawdown_review (engine:rk1, 2026-12-30T10:00:00Z)" in out
-    assert "duraklatma twin: yok" in out
+    assert "⏸️ ana bot: yeni işlemler duraklatıldı — risk kademesi incelemesi bekliyor (motor tarafından, 30.12 13:00)" in out
+    assert "ikiz bot" not in out and "drawdown_review" not in out
     assert "Duraklatma" not in T.default_sections(rig.cfg, T0, "2026-12-30")
 
 
