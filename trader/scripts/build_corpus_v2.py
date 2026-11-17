@@ -49,6 +49,7 @@ from trader_ml.config import BAR, HORIZON_BARS, HOLDOUT_START  # noqa: E402
 from trader_ml.features import candidate_rows, feature_frame  # noqa: E402
 from trader_ml.features_v2 import R02_FEATURE_NAMES, R03_FEATURE_NAMES  # noqa: E402
 from trader_ml.features_v2 import feature_frame_v2 as guarded_v2  # noqa: E402
+from trader_ml.features_v2 import CORE_SOURCE_FILE  # noqa: E402
 from trader_ml.guards import HoldoutViolation, assert_pre_holdout  # noqa: E402
 from trader_ml.labels import cost_in_r, multi_r_labels  # noqa: E402
 
@@ -68,7 +69,7 @@ LABEL_COLUMNS = [f"{k}_{t}" for t in R_TAGS for k in ("label", "label_end_ts", "
 CORPUS_COLUMNS = BASE_COLUMNS + LABEL_COLUMNS + FEATURE_COLUMNS
 CODE_FILES = ["scripts/build_corpus_v2.py", "research/ml_build_candidates.py", "src/trader_ml/features.py",
               "src/trader_ml/features_v2.py", "src/trader_ml/labels.py", "src/trader_ml/guards.py", "src/trader_ml/config.py",
-              "src/trader_core/ml_features.py", "src/trader_core/ml_features_v2.py", "src/trader_core/signals.py",
+              "src/trader_core/ml_features.py", "src/trader_core/signals.py",
               "src/trader_core/regime.py", "src/trader_core/indicators.py", "src/trader_engine/holdout.py"]
 
 
@@ -255,7 +256,8 @@ def build_manifest(*, args, t: pd.DataFrame, pq_path: Path, hist: Path, pairs: l
                    "holdout_read": False, "ts_min": str(t["ts"].min()), "ts_max": str(t["ts"].max())},
         "pairs": pairs, "horizon_bars": HORIZON_BARS, "target_rs": list(TARGET_RS),
         "git": {"commit": commit, "dirty": dirty, "tree_clean": not dirty},
-        "code_sha256": {f: sha256_file(ROOT / f) for f in CODE_FILES},
+        "code_sha256": {**{f: sha256_file(ROOT / f) for f in CODE_FILES},
+                        str(Path(CORE_SOURCE_FILE).resolve().relative_to(ROOT)): sha256_file(Path(CORE_SOURCE_FILE))},
         "env": {"python": platform.python_version(), "pandas": pd.__version__, "numpy": np.__version__,
                 "pyarrow": __import__("pyarrow").__version__},
         "inputs_sha256": inputs, "input_slices": info,

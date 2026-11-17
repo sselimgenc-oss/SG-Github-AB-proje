@@ -206,7 +206,7 @@ def _cmd_pause(a) -> int:
 
 
 # ====================================================================== 12 (RK-1): sermaye ve kademe CLI'si
-EXIT_LADDER = 4          # 12 §5: "4 bulgu" (bozuk gunluk, kosulu tutmayan step-up)
+EXIT_LADDER = EXIT_FINDINGS   # 12 §5 (v1.1): 5 = bulgu (bozuk gunluk, kosulu tutmayan step-up); 4 = EXIT_ENGINE ile cakismaz
 
 
 def _ladder_ctx(a, *, write: bool):

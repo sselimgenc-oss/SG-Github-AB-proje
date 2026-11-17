@@ -551,12 +551,12 @@ class LiveBroker:
         out: dict[str, Transfer] = {}
         for r in rows or []:
             if not isinstance(r, Mapping):
-                continue
+                raise BrokerError("transfers: gecersiz satir (nesne degil)")   # RK-1 fix 3: atlama yok, fail-closed
             amt = _strict_float(r.get("income"))
             t_ms = _strict_float(r.get("time"))
             tid = str(r["tranId"]) if r.get("tranId") not in (None, "") else f"t{r.get('time')}:{r.get('income')}"
             if amt is None or t_ms is None:
-                continue
+                raise BrokerError("transfers: ayristirilamayan aktarim satiri")   # cagiran onceki sonucu korur
             out[tid] = Transfer(ts=_ts(t_ms, until), amount=amt, tran_id=tid, asset=str(r.get("asset") or ""))
         return sorted(out.values(), key=lambda x: (x.ts, x.tran_id))
 

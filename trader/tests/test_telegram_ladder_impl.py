@@ -86,8 +86,12 @@ class Rig:
         self.pause.add("capital_floor", "engine:rk1")
 
     def write_status(self, equity=790.0, age=5, **blk):
+        try:
+            lstate = self.log.state().status
+        except Exception:  # noqa: BLE001
+            lstate = None
         d = {"loop_at": z(T0 - timedelta(seconds=age)), "equity": equity, "mode": "testnet",
-             "risk_ladder": {"enforce": True, "gate_code": None, "counters": {"total_trades": 37, "step_trades": 37,
+             "risk_ladder": {"enforce": True, "state": lstate, "gate_code": None, "counters": {"total_trades": 37, "step_trades": 37,
                                                                               "step_days": 21, "step_mean_r": 0.04,
                                                                               "consec_losses": 2, "last30_sum_r": 1.3},
                              **blk}}
@@ -197,6 +201,21 @@ def test_refuse_status_missing_or_bad_equity(rig):
         assert "Motor durumu okunamıyor" in rig.say("/kademe_devam")
 
 
+def test_refuse_missing_or_mismatched_risk_ladder_block(rig):
+    """RK-1 fix 5: status.json taze ama `risk_ladder` blogu yok / gunluk durumuyla uyusmuyor -> ret 5 (Motor durumu okunamiyor)."""
+    d = json.loads(rig.status_path.read_text())
+    d.pop("risk_ladder")
+    rig.status_path.write_text(json.dumps(d))
+    assert "Motor durumu okunamıyor" in rig.say("/kademe_devam")
+    assert not rig.d._pending_p.exists()
+    rig.write_status(state="ok")                                  # gunluk review diyor, blok ok diyor
+    assert "Motor durumu okunamıyor" in rig.say("/kademe_devam")
+    rig.write_status(state=None)
+    assert "Motor durumu okunamıyor" in rig.say("/kademe_devam")
+    rig.write_status()                                            # uyumlu blok: kod istenir
+    assert "0427" in rig.say("/kademe_devam")
+
+
 def test_refuse_gate_code(rig):
     rig.write_status(gate_code="capital_mismatch")
     assert "Önce sermaye kaydı sorunu çözülmeli: capital_mismatch" in rig.say("/kademe_devam")
@@ -300,6 +319,7 @@ def test_hold_removal_failure_then_repeat_removes_only_hold(rig):
     assert "KALDIRILAMADI" in t and rows(rig)[-1] == "review_resume" and rig.pause.active()
     n = len(rig.log.rows())
     rig.pause.remove = real
+    rig.write_status()                                      # motor blogu guncel gunluk durumunu (ok) bildirir (RK-1 fix 5)
     t2 = rig.say("/kademe_devam")                           # durum artik ok + artik tutus: ret degil, 24 saat beklemez
     assert "0427" in t2
     rig.say("0427")

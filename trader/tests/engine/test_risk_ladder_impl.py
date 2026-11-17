@@ -444,7 +444,7 @@ def test_live_broker_transfers_reads_income_transfer_unsymboled(tmp_path):
             {"incomeType": "TRANSFER", "income": "750.00000000", "asset": "USDT", "time": base_ms + 1000, "tranId": 11},
             {"incomeType": "TRANSFER", "income": "-100.5", "asset": "USDT", "time": base_ms + 500, "tranId": 12},
             {"incomeType": "TRANSFER", "income": "5", "asset": "BNB", "time": base_ms + 2000, "tranId": 13},
-            {"incomeType": "TRANSFER", "income": "nan", "asset": "USDT", "time": base_ms, "tranId": 14}]
+            ]
 
     def income(symbol, income_type, start_ms, end_ms):
         calls.append((symbol, income_type, start_ms, end_ms))
@@ -465,6 +465,35 @@ def test_live_broker_transfers_reads_income_transfer_unsymboled(tmp_path):
         broker.transfers(S.NOW0, S.NOW0 + D)
 
 
+@pytest.mark.parametrize("bad", [{"income": "nan", "asset": "USDT", "time": 1000, "tranId": 14},
+                                 {"income": "5", "asset": "USDT", "time": "x", "tranId": 15},
+                                 "not-a-mapping"])
+def test_live_broker_transfers_unparseable_row_raises(tmp_path, bad):
+    """RK-1 fix 3: ayristirilamayan aktarim satiri atlanmaz (sessiz eksik), istisna yukselir -> cagiran capital_unverified."""
+    LS, cfg, clock, broker, view = _live_pieces(tmp_path, "testnet")
+    good = {"incomeType": "TRANSFER", "income": "750", "asset": "USDT", "time": int(S.NOW0.timestamp() * 1000), "tranId": 1}
+    broker._rest.income = lambda *a: [good, bad]
+    with pytest.raises(BrokerError):
+        broker.transfers(S.NOW0, S.NOW0 + D)
+
+
+def test_transfer_read_failure_from_bad_row_keeps_previous_and_goes_unverified(tmp_path):
+    state = {"bad": False}
+
+    def fn(since, until):
+        if state["bad"]:
+            raise BrokerError("transfers: ayristirilamayan aktarim satiri")
+        return []
+
+    e = S.Env(tmp_path, transfers_fn=fn)
+    e.tick(1000.0)
+    assert e.rl.gate_code() is None
+    state["bad"] = True
+    for _ in range(8):
+        e.tick(1000.0, dt=130.0)
+    assert e.rl.gate_code() == "capital_unverified"
+
+
 # =====================================================================================================
 # CLI: sermaye/kademe ayrintilari
 # =====================================================================================================
@@ -482,10 +511,10 @@ def _step_up_ctx(c: S.Cli, *, since_days=60, trades=60, mean_r=0.1):
 def test_t53b_step_up_conditions_one_by_one(tmp_path, monkeypatch, capsys):
     cases = [
         ({}, 0, None),
-        ({"trades": 59}, 4, "islemi"),
-        ({"since_days": 41}, 4, "gunu"),                  # 41 < 42 gun (basamak gunu ve son dusus 56'dan az)
-        ({"mean_r": -0.01}, 4, "ortalama R"),
-        ({"since_days": 55}, 4, "son dusus"),
+        ({"trades": 59}, 5, "islemi"),
+        ({"since_days": 41}, 5, "gunu"),                  # 41 < 42 gun (basamak gunu ve son dusus 56'dan az)
+        ({"mean_r": -0.01}, 5, "ortalama R"),
+        ({"since_days": 55}, 5, "son dusus"),
     ]
     for i, (kw, rc, word) in enumerate(cases):
         d = tmp_path / f"c{i}"
@@ -564,3 +593,158 @@ def test_cli_write_commands_rejected_in_backtest_mode(tmp_path):
         assert c.run(*argv) == 2
     assert not c.log_path.exists()
     assert c.run("capital", "list", by=None) == 0 and c.run("ladder", "status", by=None) == 0
+
+
+# =====================================================================================================
+# RK-1 mentor fixes (v1.1): 1 fail-open tutus, 2 stop satiri yazilamadi / saat gerisi, 4 yapiskan mandal, 6 cikis kodu
+# =====================================================================================================
+def _boom(*a, **k):
+    raise OSError("salt okunur")
+
+
+def test_fix1_hold_write_failure_latches_ladder_invalid_until_add_succeeds(tmp_path):
+    e = S.Env(tmp_path)
+    e.log.append("review_stop", "engine:rk1", S.NOW0 + 2 * H, equity=790.0, base=1000.0)
+    real_add = e.pause.add
+    e.pause.add = _boom
+    e.tick(790.0)
+    assert e.rl.gate_code() == "ladder_invalid" and e.reasons() == []        # eskiden: None (fail-open)
+    e.tick(790.0)
+    assert e.rl.gate_code() == "ladder_invalid"
+    e.pause.add = real_add                                                   # sonraki basarili ekleme mandali kaldirir
+    e.tick(790.0)
+    assert e.reasons() == ["drawdown_review"] and e.rl.gate_code() is None
+
+
+def test_fix1_floor_state_gate_never_none_without_verified_hold(tmp_path):
+    e = S.Env(tmp_path)
+    e.log.append("review_stop", "engine:rk1", S.NOW0 + 2 * H, equity=790.0, base=1000.0)
+    e.log.append("floor_stop", "engine:rk1", S.NOW0 + 3 * H, equity=590.0, dep_net=1000.0)
+    e.pause.add = _boom
+    e.tick(590.0)
+    assert e.rl.gate_code() == "ladder_invalid"
+
+
+def test_fix1_trigger_with_log_and_pause_both_unwritable_closes_gate(tmp_path, monkeypatch):
+    e = S.Env(tmp_path)
+    e.log.append = _boom
+    e.pause.add = _boom
+    for _ in range(3):
+        e.tick(700.0)
+    assert e.rl.gate_code() == "ladder_invalid"
+
+
+def test_fix2a_unwritten_stop_row_keeps_gate_closed_and_rehold(tmp_path):
+    e = S.Env(tmp_path)
+    real_append = e.log.append
+    e.log.append = _boom
+    e.tick(790.0)
+    e.tick(790.0)                                                            # onay: review_stop yazilamadi
+    assert e.rl._retry is not None and e.reasons() == ["drawdown_review"]
+    assert e.rl.gate_code() == "ladder_invalid"
+    e.pause.remove("drawdown_review", "telegram:x")                          # harici kaldirma
+    e.tick(810.0)                                                            # ozsermaye toparlandi
+    assert e.reasons() == ["drawdown_review"]                                # her adimda yeniden kurulur
+    assert e.rl.gate_code() == "ladder_invalid"                              # (/kademe_devam red 6'ya takilir)
+    assert e.rl._retry[0] == "review_stop"                                   # sonraki tetik stop retry'ini ezmez
+    e.log.append = real_append
+    e.tick(810.0)
+    assert e.log.state().status == "review" and e.rl._retry is None
+    assert e.rl.gate_code() is None and e.reasons() == ["drawdown_review"]
+
+
+def test_fix2b_retry_with_engine_clock_behind_last_row_is_written_not_dropped(tmp_path):
+    e = S.Env(tmp_path)
+    e.log.append("peak", "engine:rk1", S.NOW0 + 5 * H, value=1100.0)         # motor saati (NOW0+1h) gerisinde
+    real_append = e.log.append
+    calls = []
+
+    def flaky(kind, by, now, **f):
+        calls.append(kind)
+        if len(calls) == 1:
+            raise OSError("gecici")
+        return real_append(kind, by, now, **f)
+
+    e.log.append = flaky
+    for _ in range(4):
+        e.tick(790.0)                                                        # base 1000 -> durma; ilk yazma duser
+    st = e.log.state()
+    assert st.status == "review" and e.reasons() == ["drawdown_review"]
+    last = e.log.rows()[-1]
+    assert last["kind"] == "review_stop" and rl.parse_at(last["at"]) >= S.NOW0 + 5 * H
+
+
+def test_fix2b_clock_behind_direct_write_uses_last_row_at(tmp_path):
+    e = S.Env(tmp_path)
+    e.log.append("peak", "engine:rk1", S.NOW0 + 5 * H, value=1000.5)
+    for _ in range(3):
+        e.tick(700.0)
+    assert e.log.state().status == "review" and e.rl._retry is None
+
+
+def _xf(ts, amount=750.0, tid="t1"):
+    return rl.Transfer(ts=ts, amount=amount, tran_id=tid, asset="USDT")
+
+
+def test_fix4_unrecorded_exchange_transfer_stays_mismatch_after_five_days_and_sticky(tmp_path):
+    x = [_xf(S.NOW0 + 2 * H)]
+    e = S.Env(tmp_path, transfers_fn=lambda since, until: list(x))
+    e.tick(1750.0)
+    assert e.rl.gate_code() == "capital_mismatch"
+    for _ in range(3):
+        e.tick(250.0, dt=2 * D.total_seconds())                              # 6 gun sonra: hala 7 gun penceresinde
+    assert e.rl.gate_code() == "capital_mismatch"
+    assert not {"review_stop", "floor_stop", "step_down", "peak"} & set(e.kinds())
+    for _ in range(3):
+        e.tick(250.0, dt=3 * D.total_seconds())                              # pencereden dustu (>7 gun): mandal tutar
+    assert e.rl.gate_code() == "capital_mismatch"
+    assert not {"review_stop", "floor_stop", "step_down"} & set(e.kinds())
+    e.log.append("adjust", "cli:t", e.clock.now(), amount=-750.0, note="operator duzeltti")   # operator eylemi: seq degisir
+    e.tick(250.0, dt=130.0)
+    assert e.rl.gate_code() is None
+
+
+def test_fix4_logged_deposit_without_transfer_sticky_past_log_side_five_days(tmp_path):
+    e = S.Env(tmp_path, transfers_fn=lambda since, until: [])
+    e.log.append("deposit", "cli:t", S.NOW0 + 2 * H, amount=750.0)
+    e.tick(250.0)
+    assert e.rl.gate_code() == "capital_mismatch"
+    for _ in range(3):
+        e.tick(250.0, dt=3 * D.total_seconds())                              # gunluk tarafi 5 gunu asti
+    assert e.rl.gate_code() == "capital_mismatch"
+    assert not {"review_stop", "floor_stop"} & set(e.kinds())                # yanlis yon stop yok
+
+
+def test_fix4_late_arriving_transfer_clears_latch_without_operator(tmp_path):
+    x = []
+    e = S.Env(tmp_path, transfers_fn=lambda since, until: list(x))
+    e.log.append("deposit", "cli:t", S.NOW0 + 2 * H, amount=750.0)
+    e.tick(1750.0)
+    assert e.rl.gate_code() == "capital_mismatch"
+    x.append(_xf(S.NOW0 + 3 * H))                                            # aktarim gec geldi: gercek eslesme
+    e.tick(1750.0, dt=130.0)
+    assert e.rl.gate_code() is None and e.rl.status()["transfer"]["ok"] is True
+
+
+def test_fix4_r1_exchange_side_latch_not_cleared_by_window_rematch(tmp_path):
+    """Mentor R1: kayitli 750 + eslesen B; 36 saat sonra kayitsiz A (+750). B 7 gun penceresinden dusunce gunluk satiri
+    A ile yeniden eslesir; borsa tarafi mandal operator eylemi (seq) olmadan KALKMAMALI, tepe yazilmamali."""
+    t0 = S.NOW0 + H / 2
+    x = [_xf(t0, tid="B")]
+    e = S.Env(tmp_path, transfers_fn=lambda since, until: [t for t in x if since <= t.ts <= until])
+    e.log.append("deposit", "cli:t", t0, amount=750.0)
+    e.tick(1750.0)
+    assert e.rl.gate_code() is None
+    seq0 = e.log.state().seq
+    x.append(_xf(t0 + 36 * H, tid="A"))
+    e.tick(2500.0, dt=36 * H.total_seconds())
+    assert e.rl.gate_code() == "capital_mismatch"
+    for _ in range(14):
+        e.tick(2500.0, dt=12 * H.total_seconds())                            # ~9. gun: B pencereden duser
+        assert e.rl.gate_code() == "capital_mismatch"
+    assert e.log.state().seq == seq0 and "peak" not in e.kinds()
+
+
+def test_fix6_exit_ladder_is_five_not_engine_four():
+    assert engine_cli.EXIT_LADDER == engine_cli.EXIT_FINDINGS == 5
+    assert engine_cli.EXIT_LADDER != engine_cli.EXIT_ENGINE == 4

@@ -857,7 +857,9 @@ def test_t27_initial_and_adjust_not_in_pool():
 
 def test_t27_must_window_five_days():
     rows = rows_for([])
-    assert mt(rows, [X(NOWM - 6 * D, 300.0, "old")]).ok is True          # 5 gunden eski eslesmemis: bozmaz
+    # mentor v1.1 ruling: borsa tarafi zorunlu kume = tam 7 gunluk pencere; gunluk tarafi 5 gun kalir
+    assert mt(rows, [X(NOWM - 6 * D, 300.0, "old")]).ok is False         # mentor v1.1 ruling: 6 gunluk borsa aktarimi artik bozar
+    assert mt(rows, [X(NOWM - 8 * D, 300.0, "older")]).ok is True         # mentor v1.1 ruling: 7 gunden eski: pencere disi
     assert mt(rows, [X(NOWM - 4 * D, 300.0, "new")]).ok is False         # 5 gun icinde: bozar
     old_log = rows_for([dep(-6 * D, 300.0)])
     assert mt(old_log, []).ok is True
@@ -1102,6 +1104,11 @@ def test_t39_recorded_deposit_without_transfer_blocks(tmp_path):
         e.tick(250.0)
     assert e.rl.gate_code() == "capital_mismatch"
     assert e.reasons() == []
+    assert not {"review_stop", "floor_stop"} & set(e.kinds())
+    # mentor v1.1 ruling: yapiskan mandal - gunluk tarafi 5 gunde sonse de aktarim gelmedikce kapi acilmaz, stop uretilmez
+    for _ in range(3):
+        e.tick(250.0, dt=6 * 86400.0)
+    assert e.rl.gate_code() == "capital_mismatch"
     assert not {"review_stop", "floor_stop"} & set(e.kinds())
 
 
@@ -1376,8 +1383,8 @@ def test_t49_capital_list_corrupt(tmp_path, capsys):
     c = Cli(tmp_path)
     c.log_path.parent.mkdir(parents=True, exist_ok=True)
     c.log_path.write_text("bozuk\n")
-    # SPEC-AMBIGUOUS: sartname bozuk gunlukte cikis 4 der; mevcut cli.py'de EXIT_FINDINGS=5 (4=EXIT_ENGINE). Sartnamedeki 4 literal alindi.
-    assert c.run("capital", "list", by=None) == 4
+    # mentor v1.1 ruling: sartname v1.1 bozuk gunlukte cikis 5 der (EXIT_FINDINGS; 4 = EXIT_ENGINE ile cakisiyordu).
+    assert c.run("capital", "list", by=None) == 5   # mentor v1.1 ruling: bulgu cikis kodu 5 (EXIT_FINDINGS); 4 = EXIT_ENGINE
 
 
 def test_t50_withdraw_equity_source(tmp_path):

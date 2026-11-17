@@ -65,6 +65,9 @@ class RiskLadder:
         self._peak_day: str | None = None
         self._would: dict | None = None
         self._retry: tuple[str, dict] | None = None
+        self._hold_latch = False                       # RK-1 fix 1: tutus yazilamadi/dogrulanamadi -> ladder_invalid
+        self._forced_since: datetime | None = None
+        self._mm_latch: dict | None = None             # v1.1 §7: yapiskan capital_mismatch mandali
         self._cnt: dict | None = None
         self._cnt_at: datetime | None = None
         self._follow_state: dict | None = None
@@ -72,7 +75,19 @@ class RiskLadder:
 
     # ================================================================== kapi / etkin risk
     def gate_code(self) -> str | None:
-        return self._gate if self.enforce else None
+        if not self.enforce:
+            return None
+        if self._gate in ("capital_missing", "ladder_invalid"):
+            return self._gate
+        if self._hold_latch or self._stop_retry_pending():
+            if self._forced_since is None:
+                self._forced_since = self.clock.now()
+            return "ladder_invalid"                      # RK-1 fix 1/2: tutus kurulamadi ya da stop satiri yazilamadi
+        self._forced_since = None
+        return self._gate
+
+    def _stop_retry_pending(self) -> bool:
+        return self._retry is not None and self._retry[0] in ("review_stop", "floor_stop")
 
     @property
     def risk_config(self) -> RiskConfig:
@@ -128,14 +143,24 @@ class RiskLadder:
     def _write(self, kind: str, now: datetime, **fields: Any) -> bool:
         """Satir yazar; yazilamazsa CRITICAL ve (stop/inis icin) sonraki degerlendirmede yeniden denenir."""
         try:
-            self.log.append(kind, BY, now, **fields)
+            self.log.append(kind, BY, self._row_at(now), **fields)
             return True
         except Exception as e:  # noqa: BLE001 - satir yazilamasa da tutus kurulur
             log.critical("kademe satiri yazilamadi (%s): %r", kind, e)
             self.counters["ladder_write_errors"] += 1
-            if kind != "peak":
+            if kind != "peak" and not (self._stop_retry_pending() and kind not in ("review_stop", "floor_stop")):
                 self._retry = (kind, fields)
             return False
+
+    def _row_at(self, now: datetime) -> datetime:
+        """RK-1 fix 2b: motor saati son satirin gerisindeyse satir `at = max(now, son satir at)` ile yazilir."""
+        try:
+            rows = self.log.rows()
+            if rows:
+                return max(now, RL.parse_at(rows[-1]["at"]))
+        except Exception:  # noqa: BLE001 - okunamazsa now; yazma kendi hatasini verir
+            pass
+        return now
 
     # ================================================================== degerlendirme
     def tick(self, now: datetime, equity: float, wallet: float, *, flat: bool = False) -> None:
@@ -175,6 +200,9 @@ class RiskLadder:
         if self._retry is not None:
             st = self._do_retry(now, st) or st
             rows = self.log.rows() if self._st is not None else rows
+            if self._stop_retry_pending():                                                    # RK-1 fix 2a: stop satiri
+                self._pend_key, self._pend_n = None, 0                                        # yazilana dek baska
+                return                                                                        # eylem/tetik yok (kapi kapali)
         unverified, mismatch = False, False
         if self.enforce and self.transfers_fn is not None:                                    # 4: aktarim (yalniz canli)
             unverified, mismatch = self._transfers(now, rows, wallet, flat)
@@ -197,13 +225,16 @@ class RiskLadder:
     def _hold_invariant(self, st: RL.LadderState) -> None:
         if self.pause is None:
             return
-        try:
-            if st.status == "review":
-                self.pause.add("drawdown_review", BY, f"base={st.base:.2f} (gunluk: inceleme)")
-            elif st.status == "floor":
-                self.pause.add("capital_floor", BY, f"dep_net={st.dep_net:.2f} (gunluk: taban)")
-        except Exception as e:  # noqa: BLE001
-            log.critical("kademe tutusu kurulamadi: %r", e)
+        if st.status == "review":
+            self._add_hold("drawdown_review", f"base={st.base:.2f} (gunluk: inceleme)")
+        elif st.status == "floor":
+            self._add_hold("capital_floor", f"dep_net={st.dep_net:.2f} (gunluk: taban)")
+        elif self._stop_retry_pending():                  # RK-1 fix 2a: satir yazilamadi, tutus her adimda yeniden kurulur
+            kind, f = self._retry  # type: ignore[misc]
+            if kind == "review_stop":
+                self._add_hold("drawdown_review", f"base={f.get('base', 0):.2f} equity={f.get('equity', 0):.2f} (yeniden)")
+            else:
+                self._add_hold("capital_floor", f"dep_net={f.get('dep_net', 0):.2f} equity={f.get('equity', 0):.2f} (yeniden)")
 
     # -- 4 -----------------------------------------------------------------
     def _transfers(self, now: datetime, rows: list, wallet: float, flat: bool) -> tuple[bool, bool]:
@@ -222,12 +253,53 @@ class RiskLadder:
             (now - self._xfer_ok_at).total_seconds() > RL.XFER_STALE_S
         if self._xfers is not None:
             self._match = RL.match_transfers(rows, self._xfers, now)
-        mismatch = self._match is not None and not self._match.ok
+        mismatch = self._mismatch_latched(st, rows, now)
         self._init_mismatch = False
         if not mismatch and flat and RL.init_wallet_mismatch(rows, wallet) and not self._closed_since(st):
             self._init_mismatch = True
             mismatch = True
         return unverified, mismatch
+
+    def _mismatch_latched(self, st: RL.LadderState, rows: list, now: datetime) -> bool:
+        """12 §7 (v1.1) yapiskan mandal: uyusmazlik bir kez goruldu mu, sonraki eslesme tam ok VE gunluk basi (seq) degismis
+        (operator eylemi) ya da -- YALNIZ gunluk tarafi kalemler icin -- eslesmeyen her kalem GERCEKTEN eslesmis (gec gelen
+        aktarim) olmadikca kalkmaz. Borsa tarafi eslesmeyen aktarim mandalda ise yalniz seq degisimi kaldirir (mentor, R1).
+        Zaman asimi (pencereden dusme) tek basina mandali kaldirmaz."""
+        m = self._match
+        if m is not None and not m.ok:
+            ex = {str(t.tran_id) for t in m.unmatched_exchange}
+            lg = set(m.unmatched_log)
+            if self._mm_latch is None:
+                self._mm_latch = {"seq": st.seq, "ex": ex, "log": lg}
+            else:
+                self._mm_latch["ex"] |= ex
+                self._mm_latch["log"] |= lg
+            return True
+        if self._mm_latch is None:
+            return False
+        if m is None:                                    # yoklama sonucu yok: mandal korunur
+            return True
+        if st.seq != self._mm_latch["seq"] or self._latched_items_matched(m, rows, now):
+            self._mm_latch = None
+            return False
+        return True
+
+    def _latched_items_matched(self, m: RL.MatchResult, rows: list, now: datetime) -> bool:
+        lt = self._mm_latch or {}
+        if lt.get("ex"):                                 # mentor: borsa tarafi kalem ancak yeni kayitla (seq degisimi) eslesebilir
+            return False
+        win = now - timedelta(seconds=RL.XFER_WINDOW_S)
+        un_ex = {str(t.tran_id) for t in m.unmatched_exchange}
+        in_pool = {str(t.tran_id) for t in (self._xfers or []) if t.ts >= win}
+        for tid in lt.get("ex", ()):
+            if tid in un_ex or tid not in in_pool:
+                return False                             # hala eslesmemis ya da pencereden dusmus (asim)
+        log_from = now - timedelta(seconds=RL.XFER_WINDOW_S + RL.XFER_PAIR_S)
+        at = {r["seq"]: RL.parse_at(r["at"]) for r in rows}
+        for sq in lt.get("log", ()):
+            if sq in m.unmatched_log or sq not in at or at[sq] < log_from:
+                return False
+        return True
 
     def _closed_since(self, st: RL.LadderState) -> bool:
         if self.trades_fn is None:
@@ -244,9 +316,10 @@ class RiskLadder:
         if kind is None:
             return None
         try:
-            self.log.append(kind, BY, now, **fields)
+            self.log.append(kind, BY, self._row_at(now), **fields)
         except RL.LadderLogError:
-            self._retry = None                                   # durum bu arada degisti (CLI): satir gecersiz
+            # RK-1 fix 2b: saat gerisi artik `at` ile cozulur; kalan LadderLogError gercek gecis hatasidir (CLI durumu degistirdi)
+            self._retry = None
             log.warning("kademe satiri yeniden denemesi gecersiz, birakildi: %s", kind)
         except Exception as e:  # noqa: BLE001
             log.critical("kademe satiri yeniden yazilamadi (%s): %r", kind, e)
@@ -303,11 +376,24 @@ class RiskLadder:
         self._would = {"kind": a.kind, "at": RL.fmt_at(now)} if not self.enforce else self._would
         self._load()
 
-    def _add_hold(self, reason: str, note: str) -> None:
+    def _add_hold(self, reason: str, note: str) -> bool:
+        """Tutusu kurar ve DOGRULAR (RK-1 fix 1). Basarisizlikta bellek ici mandal (ladder_invalid) sonraki basarili
+        eklemeye/dogrulamaya kadar kalir."""
         try:
             self.pause.add(reason, BY, note)                     # type: ignore[union-attr]
+            present = any(h.reason == reason for h in self.pause.holds())    # type: ignore[union-attr]
         except Exception as e:  # noqa: BLE001
             log.critical("tutus kurulamadi %s: %r", reason, e)
+            self.counters["ladder_hold_errors"] += 1
+            self._hold_latch = True
+            return False
+        if not present:
+            log.critical("tutus dogrulanamadi %s", reason)
+            self.counters["ladder_hold_errors"] += 1
+            self._hold_latch = True
+            return False
+        self._hold_latch = False
+        return True
 
     # -- 9 -----------------------------------------------------------------
     def _refresh_counters(self, now: datetime, st: RL.LadderState) -> None:
@@ -354,10 +440,13 @@ class RiskLadder:
         except Exception:  # noqa: BLE001
             d["effective_risk"] = None
         d["gate_code"] = self.gate_code()
-        d["gate_since"] = None if self._gate_since is None or self.gate_code() is None else RL.fmt_at(self._gate_since)
+        gc = self.gate_code()
+        since = self._gate_since if gc == self._gate else (self._forced_since or self._gate_since)
+        d["gate_since"] = None if since is None or gc is None else RL.fmt_at(since)
         if self.transfers_fn is not None:
             d["transfer"] = {"checked_at": None if self._xfer_checked_at is None else RL.fmt_at(self._xfer_checked_at),
-                             "ok": None if self._match is None else bool(self._match.ok) and not self._init_mismatch,
+                             "ok": None if self._match is None else
+                             bool(self._match.ok) and self._mm_latch is None and not self._init_mismatch,
                              "unmatched": 0 if self._match is None else
                              len(self._match.unmatched_exchange) + len(self._match.unmatched_log),
                              "detail": "init_wallet" if self._init_mismatch else None}

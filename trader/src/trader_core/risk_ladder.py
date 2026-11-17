@@ -504,7 +504,7 @@ def match_transfers(rows: Sequence[Mapping], transfers: Sequence[Transfer], now:
     started = parse_at(rows[0]["at"]) if rows else now
     ex_from = max(started, now - timedelta(seconds=XFER_WINDOW_S))
     log_from = now - timedelta(seconds=XFER_WINDOW_S + XFER_PAIR_S)
-    must_from = now - timedelta(seconds=XFER_MUST_S)
+    must_from = now - timedelta(seconds=XFER_MUST_S)      # v1.1: yalniz gunluk tarafi 5 gun; borsa tarafi tam 7 gun
     pool = []                                            # (seq, at, signed)
     for r in rows:
         if r["kind"] in ("deposit", "withdraw"):
@@ -534,7 +534,7 @@ def match_transfers(rows: Sequence[Mapping], transfers: Sequence[Transfer], now:
         else:
             used.add(hit)
     un_log = [(seq, at) for seq, at, _ in pool if seq not in used]
-    bad = any(t.ts >= must_from for t in un_ex) or any(at >= must_from for _, at in un_log)
+    bad = bool(un_ex) or any(at >= must_from for _, at in un_log)     # un_ex zaten 7 gunluk havuzdan (ex_from)
     return MatchResult(ok=not bad, unmatched_exchange=tuple(un_ex), unmatched_log=tuple(s for s, _ in un_log))
 
 

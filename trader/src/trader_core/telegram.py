@@ -544,7 +544,7 @@ def ladder_view(lf: LadderFiles, now: datetime) -> dict:
     out: dict = {"state": "invalid", "stale": True, "status_fresh": False, "equity": None, "gate_code": None,
                  "counters": None, "enforce": None, "step": None, "step_name": None, "step_risk": None,
                  "dep_net": None, "base": None, "peak": None, "stop_at": None, "floor_at": None, "dd_base_pct": None,
-                 "dd_peak_pct": None, "stopped_at": None, "near": None, "loop_ok": False}
+                 "dd_peak_pct": None, "stopped_at": None, "near": None, "loop_ok": False, "block_ok": False}
     blk, eq, fresh = None, None, False
     try:
         d = json.loads(Path(lf.status_path).read_text(encoding="utf-8"))
@@ -578,6 +578,8 @@ def ladder_view(lf: LadderFiles, now: datetime) -> dict:
             out["dd_peak_pct"] = max(0.0, (st.peak - e) / st.peak * 100.0)
             out["near"] = e <= round(RL.NEAR_RATIO * st.base, 8)
     if fresh and blk is not None:
+        # RK-1 fix 5: blok gunluk durumuyla ayni durumu bildirmeli (eksik/uyusmayan blok = motor durumu okunamiyor)
+        out["block_ok"] = st is not None and blk.get("state") == st.status
         out["gate_code"] = blk.get("gate_code")
         out["counters"] = blk.get("counters")
         out["enforce"] = blk.get("enforce")
@@ -932,7 +934,7 @@ class TelegramDaemon:
                 if wait > 0:
                     at = (st.stopped_at + timedelta(seconds=RL.RESUME_MIN_WAIT_S)).astimezone(TR)
                     return f"En erken {at.strftime('%d.%m.%Y %H:%M')} (kalan {math.ceil(wait / 3600)} saat)", []
-            if not v["loop_ok"]:
+            if not v["loop_ok"] or not v.get("block_ok"):          # RK-1 fix 5: blok yok / gunlukle uyusmuyor
                 return "Motor durumu okunamıyor; sunucuda `ladder resume`", []
             if v.get("gate_code"):
                 return f"Önce sermaye kaydı sorunu çözülmeli: {v['gate_code']}", []

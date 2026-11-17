@@ -1,4 +1,6 @@
-# 12 — Risk kademe denetimi (RK-1 şartnamesi v1, 17 Kasım 2026 — mentor)
+# 12 — Risk kademe denetimi (RK-1 şartnamesi v1.1, 17 Kasım 2026 — mentor)
+
+> **v1.1 (mentor kararı, RK-1 incelemesi sonrası):** (1) §5 bulgu çıkış kodu **5** (`EXIT_FINDINGS`; 4 = `EXIT_ENGINE` ile çakışıyordu). (2) §7 uyuşmazlık kuralı: borsa tarafı zorunlu küme = tam 7 günlük pencere, günlük tarafı 5 gün; **yapışkan mandal** (süre aşımı tek başına uyuşmazlığı kaldırmaz). (3) §8.2 adım 3 metni düzeltildi (gerçekleme zaten doğruydu). (4) §12'ye günlükte yarım son satır onarım satırı eklendi. (5) Tutuş yazılamazsa / stop satırı yazılamazsa kapı `ladder_invalid` (§8.2 adım 3) ve Telegram `/kademe_devam` blok-durum uyuşmazlığında ret 5 (§9) — gerçekleme güvenlik sıkılaştırmaları.
 
 Kaynak kararlar: `otonom-trading-arastirma/risk-kademe-kurali.md` (v1; özellikle §2, §4, §5, §9); `tasarim-kararlari.md` 17 Kasım "Risk kademe kuralı taslağı" ve "Canlı başlangıç tutarı" (canlı 250–300 USD ile başlar; 3–4 hafta ya da 40–50 işlem sonra 1000 USD'ye tamamlanır; risk %0,5; bu dönemin işlemleri basamak sayaçlarına **girer**; −%20 durma ve %60 taban **yatırılan tutara göre** ölçülür); `11-canli-broker.md` §9 (`EntryPause`, `drawdown_review`, "motor asla kaldırmaz"), §9.4 (bu belgeye bırakılan iş), §13 satır "RK-1 (asgari)". Bağımlılıklar: `05` (`EntryGate`, `Engine`, `StatusWriter`), `11` WP-B2/B3/B6, `docs/risk-kilidi-spec.md` (`LOCKED_CFG`, `tightened`), `docs/telegram-spec.md` (iki adımlı kod), `docs/saglik-spec.md`.
 
@@ -159,7 +161,7 @@ def lowest(dep_net: float) -> int
 
 ## 5. Sermaye ve kademe CLI'si (`python -m trader_engine …`; yalnız sunucuda)
 
-Ortak: `--bot <b>` (ve mevcut `--env`), `--by <ad>` **zorunlu** (`by = "cli:<ad>"`), `--note`. `backtest` ve `paper` kipinde yazan komutlar reddedilir (çıkış 2, "kağıtta sermaye kaydı yok"); `list`/`status` her kipte çalışır. Geçersiz istek hiçbir şey yazmaz; çıkış kodları mevcut `cli.py` düzeni (0 başarı, 2 kullanım/doğrulama hatası, 4 bulgu).
+Ortak: `--bot <b>` (ve mevcut `--env`), `--by <ad>` **zorunlu** (`by = "cli:<ad>"`), `--note`. `backtest` ve `paper` kipinde yazan komutlar reddedilir (çıkış 2, "kağıtta sermaye kaydı yok"); `list`/`status` her kipte çalışır. Geçersiz istek hiçbir şey yazmaz; çıkış kodları mevcut `cli.py` düzeni (0 başarı, 2 kullanım/doğrulama hatası, **5 bulgu** = `EXIT_FINDINGS`; 4 = `EXIT_ENGINE` bu belgede kullanılmaz).
 
 | Komut | Davranış |
 |---|---|
@@ -167,11 +169,11 @@ Ortak: `--bot <b>` (ve mevcut `--env`), `--by <ad>` **zorunlu** (`by = "cli:<ad>
 | `capital deposit --amount A` | `deposit` |
 | `capital withdraw --amount A [--equity E]` | §4.3. `status.json` taze değilse ve `--equity` yoksa ret |
 | `capital adjust --amount ±A --note "<neden>"` | `adjust`; not boşsa ret |
-| `capital list` | Satırlar + katlanmış durum, tek JSON (`{"bot", "rows", "state"}`); bozuksa hata metni ve çıkış 4 |
+| `capital list` | Satırlar + katlanmış durum, tek JSON (`{"bot", "rows", "state"}`); bozuksa hata metni ve çıkış 5 |
 | `ladder status` | `status.json`'daki `risk_ladder` bloğu yoksa günlükten katlanmış durum |
 | `ladder resume [--no-rebase] [--equity E] [--decision "<ref>"]` | Koşul: `status == "review"`. `review_resume` yazar (`equity` §4.3'teki kaynak), **sonra** `EntryPause.remove("drawdown_review", by)`. Durum zaten `ok` ama tutuş duruyorsa yalnız tutuşu kaldırır. `--no-rebase` yanlış alarm içindir (taban değişmez) |
 | `ladder floor-restart --decision "<ref>" [--equity E]` | Koşul: `status == "floor"`; `--decision` boşsa ret. `floor_restart` yazar, sonra `capital_floor` **ve** varsa `drawdown_review` tutuşlarını kaldırır |
-| `ladder step-up --decision "<ref>"` | Yalnız K−1 → K0. Koşullar (hepsi): `status == "ok"`; `step + 1 ≤ MAX_STEP_APPROVABLE`; `counters` (§6.3) `step_trades ≥ 60`, `step_days ≥ 42`, `step_mean_r ≥ 0`; `last_down_at`'ten beri ≥ 56 gün. Tutmayan koşullar tek tek yazdırılır, çıkış 4 |
+| `ladder step-up --decision "<ref>"` | Yalnız K−1 → K0. Koşullar (hepsi): `status == "ok"`; `step + 1 ≤ MAX_STEP_APPROVABLE`; `counters` (§6.3) `step_trades ≥ 60`, `step_days ≥ 42`, `step_mean_r ≥ 0`; `last_down_at`'ten beri ≥ 56 gün. Tutmayan koşullar tek tek yazdırılır, çıkış 5 |
 
 Yazan her komut sonucu ve yeni eşikleri yazdırır (`base`, durma seviyesi, taban seviyesi, basamak). `capital deposit/withdraw` ayrıca şunu yazdırır: "Canlıda bu kayıt borsadaki aktarımla eşleşene kadar yeni giriş kapalıdır." `pause.remove` çağrısı `src/trader_engine` içinde yine **yalnız** `cli.py`'dedir (11 §9.2 AST koruması değişmez).
 
@@ -236,7 +238,8 @@ def match_transfers(rows: Sequence[Mapping], transfers: Sequence[Transfer], now:
 - `LiveBroker.transfers(since, until) -> list[Transfer]`: `income(None, "TRANSFER", …)` [V-8]; `tranId` ile tekilleştirir. Okuma hatası istisna olarak yükselir.
 - Havuzlar: borsa tarafı `ts >= max(started_at, now − XFER_WINDOW_S)`; günlük tarafı `deposit` (+`amount`) ve `withdraw` (−`amount`) satırları, `at >= now − XFER_WINDOW_S − XFER_PAIR_S`. `initial` ve `adjust` eşleştirmeye **girmez**.
 - Eşleme: borsa aktarımları zaman sırasıyla; her biri için aynı işaretli, `|tutar farkı| <= XFER_TOL`, `|Δt| <= XFER_PAIR_S` olan **en eski** eşleşmemiş günlük satırı; bire bir.
-- Zorunlu küme: son `XFER_MUST_S` içindeki borsa aktarımları ve günlük satırları. Bunlardan eşleşmeyen varsa `ok = False`. `asset != "USDT"` aktarım her zaman eşleşmemiş sayılır.
+- Zorunlu küme (v1.1): **borsa tarafı** = tüm 7 günlük pencere (`ts >= max(started_at, now − XFER_WINDOW_S)`); **günlük tarafı** = son `XFER_MUST_S` (5 gün) içindeki `deposit`/`withdraw` satırları. Bunlardan eşleşmeyen varsa `ok = False`. `asset != "USDT"` aktarım her zaman eşleşmemiş sayılır. (v1'de borsa tarafı da 5 gündü; 5–7 gün arası kaydedilmemiş aktarım sahte "tamam" üretip yanlış taban/yanlış yönde stop doğuruyordu.)
+- **Yapışkan mandal (v1.1, `RiskLadder`):** `ok = False` bir kez görüldüyse `capital_mismatch` kalkmaz; ancak sonraki eşleştirme tam `ok` **ve** (günlük başı `seq` değişmiş — operatör eylemi — **ya da** mandaldaki her eşleşmemiş kalem gerçekten eşleşmiş: geç gelen aktarım/kayıt) ise kalkar. Pencereden düşme/süre aşımı tek başına mandalı kaldırmaz. Mandal bellektedir; yeniden başlatmada kaybolur (kabul edilen sınır).
 - İlk kurulum denetimi: günlükte yalnız `initial` varken, açık pozisyon ve `started_at`'ten beri kapanmış işlem yokken `|wallet − dep_net| > max(INIT_TOL_ABS, INIT_TOL_REL × dep_net)` ise uyuşmazlık (`detail = "init_wallet"`). Düzeltme: `capital adjust`.
 - Operatör sırası serbesttir (önce kaydet ya da önce aktar); arada giriş kapalı kalır, sahte tetik üretilmez (§8.2 adım 6).
 - Motor 7 günden uzun kapalı kaldıysa o aradaki aktarımlar denetlenmemiş olur; açılış sonrası ilk günlük raporda mentor elle bakar (bilinen sınır).
@@ -273,7 +276,7 @@ class RiskLadder:
 
 1. **Kısma:** son değerlendirmeden beri `EVAL_EVERY_S` geçmediyse dön (ilk çağrı her zaman çalışır).
 2. **Günlük:** `log.state()`. Dosya yok/boş → kapı `capital_missing`, dön. `LadderLogError` ya da okuma hatası → kapı `ladder_invalid`, dön. (Dosya boyutu/mtime değişmediyse önbellek kullanılabilir.)
-3. **Tutuş değişmezi (zorlama):** `status == "review"` → `pause.add("drawdown_review", …)`; `"floor"` → `pause.add("capital_floor", …)` (ikisi de idempotent). Durma durumlarında adım 4–9 atlanır, yalnız `status()` alanları güncellenir.
+3. **Tutuş değişmezi (zorlama):** `status == "review"` → `pause.add("drawdown_review", …)`; `"floor"` → `pause.add("capital_floor", …)` (ikisi de idempotent; ekleme sonrası tutuşun varlığı doğrulanır). **Yalnız `floor`** durumunda adım 4–9 atlanır (yalnız `status()` alanları güncellenir). **`review`** durumunda adım 4–6 ve 8 çalışır (aktarım, özsermaye, uyuşmazlık; tetik yalnız `floor_stop` üretebilir), **adım 7 (tepe) atlanır**. Tutuş eklenemez/doğrulanamazsa bellek içi mandal kapıyı `ladder_invalid` yapar (sonraki başarılı ekleme kaldırır; durma durumlarında tutuş doğrulanmadan kapı asla `None` olmaz). Bir `review_stop`/`floor_stop` satırı yazılamayıp yeniden deneme bekliyorsa kapı `ladder_invalid` (Telegram ret 6 ile `/kademe_devam`'ı da engeller), tutuş her adımda yeniden kurulur ve başka eylem/tetik değerlendirilmez; satır `at = max(now, son satır at)` ile yazılır (motor saati geride kalsa da düşmez).
 4. **Aktarım (yalnız `transfers_fn`):** son başarılı yoklamadan beri `XFER_POLL_S` geçtiyse yokla + `match_transfers` + ilk kurulum denetimi. Yoklama hatası: önceki sonuç korunur; son **başarılı** yoklama `XFER_STALE_S`'ten eskiyse (ya da hiç yoksa) kapı `capital_unverified`.
 5. **Özsermaye:** sonlu ve > 0 değilse kapı `equity_unreadable`, dön.
 6. **Uyuşmazlık:** son eşleştirme `ok` değilse kapı `capital_mismatch`; **tepe güncellenmez, tetik değerlendirilmez**, bekleyen onay sayacı sıfırlanır, dön. (`capital_unverified` tek başına tetikleri **durdurmaz**.)
@@ -305,7 +308,7 @@ Gözlem kipinde (`enforce=False`) adım 3 ve 4 yoktur; adım 8'de günlük satı
   2. Durum `floor` → "Son taban: Telegram'dan açılamaz; yazılı karar + sunucu gerekir".
   3. KILL etkin → "Önce KILL: /devam".
   4. `now − stopped_at < RESUME_MIN_WAIT_S` → "En erken <tarih saat> (kalan <s> saat)".
-  5. `status.json` yok, `loop_at` `STATUS_FRESH_S`'ten eski ya da `equity` sonlu > 0 değil → "Motor durumu okunamıyor; sunucuda `ladder resume`".
+  5. `status.json` yok, `loop_at` `STATUS_FRESH_S`'ten eski ya da `equity` sonlu > 0 değil, **ya da `risk_ladder` bloğu yok / bloğun `state` alanı günlükten katlanan durumla aynı değil (v1.1)** → "Motor durumu okunamıyor; sunucuda `ladder resume`".
   6. `risk_ladder.gate_code` boş değil → "Önce sermaye kaydı sorunu çözülmeli: <kod>".
   
   İstek yanıtı kodla birlikte sonucu **önceden** gösterir: "Onaylarsan: yeni taban <E> USD, yeni durma seviyesi <0,80×E> USD, basamak <K0|K−1>, son taban <0,60×dep_net> USD." Onayda: `log.append("review_resume", by="telegram:<son3>", equity=<status equity>, rebase=True, decision="")` → **sonra** `pause.remove("drawdown_review", by)`. Satır yazılamazsa tutuş **kaldırılmaz** (CRIT yanıt). Satır yazıldı ama tutuş kaldırılamadıysa CRIT yanıt; komut yinelenince yalnız tutuş kaldırılır. Yanıt, kalan tutuşları da sayar (`_remaining_lines`). Mentor aynı gün kararı `tasarim-kararlari.md`'ye işler (süreç; kod değil).
@@ -369,6 +372,8 @@ Motor ayrıca her eylemde `CRITICAL` (durma/taban) ya da `WARNING` (iniş) günl
 6. **Çekme.** `base = 1000`, `equity = 1300`, `withdraw 300` ⇒ `capital_part = 0`, `base = 1000`, `peak = max(1000, peak − 300)`. `equity = 900`, `withdraw 100` ⇒ `capital_part = 100`, `base = dep_net = 900`.
 7. **Etkin risk.** `cfg.target_trade_risk = 0.005`: K0 ⇒ `cfg.risk_config` nesnesinin kendisi; K−1 ⇒ `target_trade_risk = 0.0035`, diğer alanlar `LOCKED_CFG` ile aynı; K2 (ileride) ⇒ yine 0.005 (yapılandırma tavanı).
 
+**Onarım (runbook, tek satır):** günlükte yarım son satır (satır sonu yok; çökme/disk dolu) ⇒ günlük fail-closed `ladder_invalid`; onarım: yarım son satırı sunucuda elle sil (`sed -i '$ d' var/risk_ladder.jsonl`, önce `cp` ile yedek), `python -m trader_engine capital list --bot <b>` ile zincirin geçerli olduğunu doğrula; kapı ≤ 60 sn'de kendiliğinden açılır.
+
 **Testnet tatbikatları (canlıdan önce zorunlu; sonuç `11-testnet-sonuc.md`'ye):** D-1 `capital init` cüzdanın 1,3 katıyla ⇒ iki değerlendirmede `review_stop`, giriş `drawdown_review` ile reddedilir, açık pozisyon ve stopu yerinde. D-2 motor yeniden başlatılır ⇒ tutuş sürer; `pause --clear --reason drawdown_review` ⇒ ≤ 60 sn'de yeniden kurulur. D-3 `/kademe_devam`: 24 saat reddi, sonra (test için `ladder resume`) taban yenilenir, giriş açılır. D-4 (canlı, duman testi sonrası ilk yatırma) [V-8]: aktarım görünür ve `capital deposit` ile eşleşir; kaydedilmeden önce kapı `capital_mismatch`.
 
 ## 13. Test listesi (bağımsız test ajanı yalnız bu belgeden yazar)
@@ -406,7 +411,7 @@ Saat her yerde enjekte edilir; gerçek saat, ağ ve gerçek `var/` kullanılmaz.
 - T-24 `evaluate` geçersiz `equity` (`NaN`, `inf`, 0, negatif, `bool`) ⇒ `ValueError`.
 - T-25 `step_config`: §12 örnek 7'nin üç durumu; K0'da dönen nesne `is base_cfg`; bilinmeyen basamak `ValueError`; sonuç hiçbir alanda `LOCKED_CFG`'den gevşek değil.
 - T-26 `counters`: `manual` kapanış sayılmaz; `started_at` öncesi giriş sayılmaz; `step_since` öncesi giriş `total`'a girer `step`'e girmez; `consec_losses` ve `last30_sum_r` (31 işlemle) değerleri; işlem yokken `step_mean_r is None`; `step_days` aşağı yuvarlanır.
-- T-27 `match_transfers`: tam eşleşme; tutar farkı 1,00 kabul / 1,01 ret; `Δt` 48 saat kabul / 48 saat 1 sn ret; ters işaret eşleşmez; bire bir (iki aktarım tek satırla eşleşmez); `initial` ve `adjust` havuzda değil; 5 günden eski eşleşmemiş kalem `ok`'u bozmaz, 5 gün içindeki bozar; `asset != "USDT"` her zaman eşleşmemiş; `started_at` öncesi aktarım yok sayılır.
+- T-27 `match_transfers`: tam eşleşme; tutar farkı 1,00 kabul / 1,01 ret; `Δt` 48 saat kabul / 48 saat 1 sn ret; ters işaret eşleşmez; bire bir (iki aktarım tek satırla eşleşmez); `initial` ve `adjust` havuzda değil; **(v1.1)** borsa tarafında 7 günlük pencere içindeki (6 günlük dahil) eşleşmemiş aktarım `ok`'u bozar, 7 günden eskisi bozmaz; günlük tarafında 5 günden eski eşleşmemiş kalem bozmaz, 5 gün içindeki bozar; `asset != "USDT"` her zaman eşleşmemiş; `started_at` öncesi aktarım yok sayılır.
 
 **C. Motor (`tests/engine/test_engine_ladder_spec.py`; sahte broker/saat)**
 
@@ -421,7 +426,7 @@ Saat her yerde enjekte edilir; gerçek saat, ağ ve gerçek `var/` kullanılmaz.
 - T-36 Günlük yazılamıyor (salt okunur dizin) ⇒ tutuş yine kurulur, `CRITICAL` günlük, istisna sızmaz; yazma düzelince satır eklenir (tek satır, çift değil).
 - T-37 `floor_stop`: `review` sürerken taban ⇒ `capital_floor` tutuşu; `pause.code() == "capital_floor"`.
 - T-38 `step_down` sonrası bir sonraki girişin `size_risk_amount`'ı K−1 riskine göre (≈ `0.0035 × equity`); o an açık pozisyonun miktarı değişmez.
-- T-39 Aktarım (live sahte): kaydedilmemiş +750 ⇒ kapı `capital_mismatch`, **tetik ve tepe yok**; `deposit 750` eklenince açılır. Tersi: `deposit` var, aktarım yok ⇒ kapı kapalı ve `review_stop`/`floor_stop` **üretilmez** (özsermaye 250, `base` 1000 olsa da).
+- T-39 Aktarım (live sahte): kaydedilmemiş +750 ⇒ kapı `capital_mismatch`, **tetik ve tepe yok**; `deposit 750` eklenince açılır (**v1.1:** 7 gün sonra da — pencere/süre aşımıyla — kapı açılmaz, mandal operatör eylemine ya da gerçek eşleşmeye kadar sürer). Tersi: `deposit` var, aktarım yok ⇒ kapı kapalı ve `review_stop`/`floor_stop` **üretilmez** (özsermaye 250, `base` 1000 olsa da).
 - T-40 Aktarım yoklaması hata verir: 15 dakikaya kadar kapı açık (önceki sonuç), sonra `capital_unverified`; bu durumda `review_stop` yine çalışır.
 - T-41 İlk kurulum denetimi: `initial 250`, cüzdan 300, düz ⇒ `capital_mismatch`; cüzdan 254 ⇒ tamam; açık pozisyon varken denetim atlanır.
 - T-42 Özsermaye `NaN` ⇒ kapı `equity_unreadable`, tetik yok, istisna yok.
@@ -434,7 +439,7 @@ Saat her yerde enjekte edilir; gerçek saat, ağ ve gerçek `var/` kullanılmaz.
 
 **D. CLI (`tests/engine/test_engine_ladder_spec.py`)**
 
-- T-49 `capital init/deposit/withdraw/adjust/list`: mutlu yol; `--by` yoksa ret; `paper` kipinde yazma reddi; ikinci `init` reddi.
+- T-49 `capital init/deposit/withdraw/adjust/list`: mutlu yol; `--by` yoksa ret; `paper` kipinde yazma reddi; ikinci `init` reddi; bozuk günlükte `capital list` çıkışı **5** (v1.1; eski şartnamedeki 4 literal hatalıydı).
 - T-50 `capital withdraw`: taze `status.json`'dan `equity`; bayat (121 sn) ve `--equity` yok ⇒ ret; `--equity` ile kabul.
 - T-51 `ladder resume`: `review` değilken ret; kabulde satır + tutuş kalkar; `--no-rebase` tabanı değiştirmez; durum `ok` + artık tutuş ⇒ yalnız tutuş kalkar.
 - T-52 `ladder floor-restart`: `--decision` boş ⇒ ret; kabulde iki tutuş da kalkar, `dep_net = equity`.

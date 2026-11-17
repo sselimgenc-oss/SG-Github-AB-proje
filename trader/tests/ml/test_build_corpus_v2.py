@@ -18,10 +18,12 @@ from trader_ml.fixture import synthetic_candles
 from trader_ml.guards import HoldoutViolation
 from trader_ml.labels import multi_r_labels
 
+from trader_engine.holdout import HOLDOUT  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[2]
 PAIRS = ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "BNB/USDT:USDT", "XRP/USDT:USDT", "DOGE/USDT:USDT"]
 START = pd.Timestamp("2025-06-01", tz="UTC")
-END = pd.Timestamp("2026-05-01", tz="UTC")
+END = pd.Timestamp(HOLDOUT[0])                     # kilitli donem baslangici (sabitten)
 
 
 @pytest.fixture(scope="module")
@@ -73,18 +75,18 @@ def built(mod, candles, tmp_path_factory):
 
 # ------------------------------------------------------------------ kilitli donem
 def test_holdout_refusal(mod, tmp_path):
-    for end in ("2026-05-02", "2026-11-01", "2027-01-01"):
+    for end in ((END + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), pd.Timestamp(HOLDOUT[1]).strftime("%Y-%m-%d"), "2027-01-01"):
         with pytest.raises(HoldoutViolation):
             mod.run(["--end", end, "--history-dir", str(tmp_path), "--out-dir", str(tmp_path / "o")])
     assert not (tmp_path / "o" / "corpus_v2.parquet").exists()
-    mod.check_period(pd.Timestamp("2021-01-01", tz="UTC"), pd.Timestamp("2026-05-01", tz="UTC"))     # dislayici sinir serbest
+    mod.check_period(pd.Timestamp("2021-01-01", tz="UTC"), END)     # dislayici sinir serbest
     with pytest.raises(SystemExit):
         mod.check_period(pd.Timestamp("2026-04-01", tz="UTC"), pd.Timestamp("2026-03-01", tz="UTC"))
 
 
 def test_holdout_rows_in_files_are_never_used(built):
     a, b = built["a"], built["b"]
-    assert b["man"]["period"]["ts_max"] < "2026-05-01"
+    assert b["man"]["period"]["ts_max"] < END.strftime("%Y-%m-%d")
     assert b["man"]["period"]["holdout_read"] is False
     pd.testing.assert_frame_equal(a["table"], b["table"], check_exact=True)               # ek kilitli satirlar sonucu degistirmez
     assert a["man"]["input_slices"] == {p: {**v, "candle_rows": v["candle_rows"]} for p, v in b["man"]["input_slices"].items()}

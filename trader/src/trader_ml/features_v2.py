@@ -9,6 +9,8 @@ from trader_core.ml_features_v2 import R02_FEATURE_NAMES, R03_FEATURE_NAMES, REC
 
 from .guards import assert_pre_holdout
 
+CORE_SOURCE_FILE = _v2.__file__          # derlem manifestinin kod sha256'si icin (ice aktarma yerine yol)
+
 
 def feature_frame_v2(pairs: dict[str, pd.DataFrame], cands: pd.DataFrame, *,
                      funding: dict[str, pd.DataFrame] | None = None, recipe: str) -> pd.DataFrame:
