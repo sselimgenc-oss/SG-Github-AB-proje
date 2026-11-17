@@ -100,7 +100,13 @@ def test_cli_exit_codes(monkeypatch):
     assert cli.EXIT_PERMISSION == 8
     assert _run(monkeypatch, {}) == cli.EXIT_FAZ_B                      # keys_missing
     keys = {"BINANCE_API_KEY": GOOD, "BINANCE_API_SECRET": GOOD}
-    assert _run(monkeypatch, keys) == cli.EXIT_FAZ_B                    # broker yok
+    # B4 sonrasi: anahtarlar varken run gercek build_engine'e gider; ag yok -> EngineExit(5)
+    import trader_engine.engine as _eng
+
+    def _unreachable(cfg, *a, **k):
+        raise EngineExit(5, "exchange_unreachable")
+    monkeypatch.setattr(_eng, "build_engine", _unreachable)
+    assert _run(monkeypatch, keys) == 5
 
     def refuse(cfg, k, s):
         raise EngineExit(8, "key_permission:enableWithdrawals")

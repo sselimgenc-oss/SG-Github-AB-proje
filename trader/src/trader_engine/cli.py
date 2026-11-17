@@ -50,8 +50,9 @@ def _live_startup(cfg, checker) -> int | None:
         except EngineExit as e:
             print(f"acilis denetimi reddetti: {e}", file=sys.stderr)
             return e.code
-    print("faz_b: testnet/live LiveBroker henuz uygulanmadi (Faz B: B3/B4)", file=sys.stderr)
-    return EXIT_FAZ_B
+        print("faz_b: acilis denetimi enjekte edildi; motor kurulmadi", file=sys.stderr)
+        return EXIT_FAZ_B
+    return None
 
 
 def _cmd_run(a, *, checker=None) -> int:
@@ -64,12 +65,20 @@ def _cmd_run(a, *, checker=None) -> int:
         print(f"yapilandirma hatasi: {e}", file=sys.stderr)
         return EXIT_FAZ_B
     if cfg.mode in ("testnet", "live"):
-        return _live_startup(cfg, checker)
+        rc = _live_startup(cfg, checker)       # anahtar + LIVE_CONFIRM (+ enjekte denetim); None => gercek kurulum
+        if rc is not None:
+            return rc
     try:
         eng = build_engine(cfg)
+    except EngineExit as e:                    # 11 §3.3/§3.4: acilis denetimi reddi (8) / ulasilamaz (5)
+        print(f"acilis denetimi reddetti: {e}", file=sys.stderr)
+        return e.code
     except StrategyError as e:
         print(f"strateji hatasi: {e.code}: {e}", file=sys.stderr)
         return EXIT_ENGINE
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
     except EngineError as e:
         print(f"hata: {e}", file=sys.stderr)
         return EXIT_REPEATED

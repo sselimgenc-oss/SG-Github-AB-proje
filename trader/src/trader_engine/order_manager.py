@@ -50,7 +50,8 @@ class SubmitOutcome:
 
 class OrderManager:
     def __init__(self, bot: str, broker, state: StateStore, clock: Clock,
-                 rules_fn: Callable[[str], SymbolRules], unknown_grace_s: float = 2.0, max_attempts: int = 2) -> None:
+                 rules_fn: Callable[[str], SymbolRules], unknown_grace_s: float = 2.0, max_attempts: int = 2,
+                 live_mode: bool = False, stop_deadline_s: float = 10.0, entry_resolve_window_s: float = 60.0) -> None:
         self.bot = bot
         self.broker = broker
         self.state = state
@@ -59,6 +60,21 @@ class OrderManager:
         self.unknown_grace_s = unknown_grace_s
         self.max_attempts = max(1, int(max_attempts))
         self.tick_fn: Callable[[str, datetime], float] | None = None   # yalniz legacy_compat: giris-ayi tarihsel tick
+        # 11 §6 (WP-B4): canli yol. live_mode=False iken davranis bit-bit eskisi gibidir.
+        self.live_mode = bool(live_mode)
+        self.stop_deadline_s = float(stop_deadline_s)
+        self.entry_resolve_window_s = float(entry_resolve_window_s)
+        self.on_entry_adopted: Callable[[OrderRow, BrokerOrder], None] | None = None   # sorguyla bulunan giris dolumu
+        self.on_ban: Callable[[], None] | None = None                                    # exchange_ban retinden sonra
+
+    def _eff_qty(self, pos: Position) -> float:
+        """Canli: L4 (dis azaltma) sonrasi state qty ORIJINAL kalir; emir miktari min(pos.qty, borsa miktari) (11 §8 L4)."""
+        q = pos.qty
+        if self.live_mode and q is not None:
+            d = self.state.kv_get(f"ext_reduction:{pos.trade_id}")
+            if isinstance(d, dict) and d.get("exch_qty"):
+                q = min(q, float(d["exch_qty"]))
+        return q
 
     def stop_tick(self, pos: Position) -> float:
         """Stop yuvarlama tick'i: native = borsa kurali; legacy_compat = pozisyonun GIRIS ayinin tarihsel tick'i."""
@@ -138,6 +154,8 @@ class OrderManager:
                 if bo is not None:
                     return self._adopt(row, bo, "duplicate_adopted")
             row = self._upd(row.client_id, status="rejected", detail=res.reason)
+            if res.reason == "exchange_ban" and self.on_ban is not None:
+                self.on_ban()
             if note is None and res.reason == "would_trigger":
                 note = "would_trigger"
             elif note is None:
@@ -146,7 +164,14 @@ class OrderManager:
 
     def _adopt(self, row: OrderRow, bo: BrokerOrder, note: str) -> SubmitOutcome:
         st = _BO_STATUS.get(bo.status, "accepted")
+        partial = (self.live_mode and row.role == "entry" and bo.status != "filled" and bo.filled_qty > 0
+                   and bo.status in ("expired", "canceled"))
+        if partial:
+            st = "filled"
         row = self._upd(row.client_id, status=st, broker_order_id=row.broker_order_id)
+        if (self.on_entry_adopted is not None and row.role == "entry"
+                and (bo.status == "filled" or partial)):
+            self.on_entry_adopted(row, bo)
         return self._outcome(row, None, note)
 
     # ------------------------------------------------------------------ ortak gonderim
@@ -177,6 +202,8 @@ class OrderManager:
 
     def _unknown_path(self, row: OrderRow, req: OrderRequest) -> SubmitOutcome:
         row = self._upd(row.client_id, status="unknown")
+        if self.live_mode:
+            return self._unknown_path_live(row, req)
         attempts = row.attempts
         while True:
             ok, bo = self._query(req.pair, req.client_id)
@@ -201,6 +228,38 @@ class OrderManager:
                 return self._after(self._apply_result(row, res, "resent_once"), row.trade_id)
             if attempts >= self.max_attempts - 1:
                 return self._fail(row)
+
+    def _unknown_path_live(self, row: OrderRow, req: OrderRequest) -> SubmitOutcome:
+        """11 §6.4: iki sorgu (arada unknown_grace_s), KOR YENIDEN GONDERIM YOK. Giris: 'emir yok' ise satir `unknown` kalir
+        (pencere dolana dek); diger roller: failed."""
+        for i in range(2):
+            if i:
+                self.clock.sleep(self.unknown_grace_s)
+            ok, bo = self._query(req.pair, req.client_id)
+            if not ok:
+                self._block("order_unknown")
+                return self._outcome(row, None, "query_uncertain")
+            if bo is not None:
+                return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
+        if row.role == "entry":
+            return self._entry_pending_or_fail(row)
+        return self._fail(row)
+
+    def _exchange_has_position(self, pair: str) -> bool:
+        try:
+            return any(p.pair == pair for p in self.broker.positions())
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001 - okunamadi: pozisyon var sayilir (muhafazakar)
+            log.warning("positions okunamadi: %r", e)
+            return True
+
+    def _entry_pending_or_fail(self, row: OrderRow) -> SubmitOutcome:
+        age = (self.clock.now() - row.created_ts).total_seconds()
+        if age >= self.entry_resolve_window_s and not self._exchange_has_position(row.pair):
+            return self._fail(row)
+        self._block("order_unknown")
+        return self._outcome(row, None, "entry_unknown_pending")
 
     def _fail(self, row: OrderRow) -> SubmitOutcome:
         row = self._upd(row.client_id, status="failed", detail=row.detail or "unknown_unresolved")
@@ -243,8 +302,22 @@ class OrderManager:
 
     def _resolve_row(self, row: OrderRow) -> SubmitOutcome:
         req = self._req_from_row(row)
+        if self.live_mode and row.role == "entry":
+            return self._resolve_entry_live(row, req)
         out = self._unknown_path(row, req)
         return out
+
+    def _resolve_entry_live(self, row: OrderRow, req: OrderRequest) -> SubmitOutcome:
+        """Her tur tek sorgu; bulunursa dolum uygulanir, yoksa pencere dolana ve borsa duzlesene dek `unknown`."""
+        if row.status != "unknown":
+            row = self._upd(row.client_id, status="unknown")
+        ok, bo = self._query(req.pair, req.client_id)
+        if not ok:
+            self._block("order_unknown")
+            return self._outcome(row, None, "query_uncertain")
+        if bo is not None:
+            return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
+        return self._entry_pending_or_fail(row)
 
     # ------------------------------------------------------------------ giris / cikis
     def submit_entry(self, intent: Intent, trade_id: int) -> SubmitOutcome:
@@ -284,7 +357,7 @@ class OrderManager:
             raise ValueError("pozisyon qty yok")
         cid = make_client_id(self.bot, "exit", pos.pair, pos.side, at, 0)
         req = OrderRequest(client_id=cid, pair=pos.pair, role="exit", order_side=order_side_for(pos.side, "exit"),
-                           qty=pos.qty, trigger_price=None, reduce_only=True, leverage=None,
+                           qty=self._eff_qty(pos), trigger_price=None, reduce_only=True, leverage=None,
                            signal_bar_close_ts=at, created_ts=self.clock.now())
         self._pupd(pos.trade_id, exit_reason=reason)
         out = self._submit(req, 0, pos.trade_id)
@@ -303,10 +376,11 @@ class OrderManager:
     def _stop_request(self, pos: Position, price: float, seq: int) -> OrderRequest:
         cid = make_client_id(self.bot, "stop", pos.pair, pos.side, pos.signal_bar_close_ts, seq)
         return OrderRequest(client_id=cid, pair=pos.pair, role="stop", order_side=order_side_for(pos.side, "stop"),
-                            qty=pos.qty, trigger_price=price, reduce_only=True, leverage=None,
+                            qty=self._eff_qty(pos), trigger_price=price, reduce_only=True, leverage=None,
                             signal_bar_close_ts=pos.signal_bar_close_ts, created_ts=self.clock.now())
 
-    def place_initial_stop(self, pos: Position) -> SubmitOutcome:
+    def place_initial_stop(self, pos: Position, t_fill: datetime | None = None) -> SubmitOutcome:
+        """t_fill verilirse (canli, 11 §6.4 madde 3) stop suresi siniri: ikinci deneme yalniz now - t_fill <= deadline - 5."""
         if pos.qty is None or not pos.qty > 0:
             raise ValueError("pozisyon qty yok")
         tick = self.stop_tick(pos)
@@ -314,6 +388,8 @@ class OrderManager:
         out = self._stop_attempt(pos, price, 0)
         if out.ok:
             return out
+        if t_fill is not None:
+            return self._stop_deadline_path(pos, price, out, t_fill)
         log.warning("ilk stop kurulamadi (%s), bir kez daha deneniyor", out.note)
         out = self._stop_attempt(pos, price, 1)
         if out.ok:
@@ -323,6 +399,21 @@ class OrderManager:
         self.submit_exit(cur, "other", self.clock.now())
         self._block("stop_failed")
         return SubmitOutcome(False, out.status, out.order, out.result, "stop_failed_closed")
+
+    def _stop_deadline_path(self, pos: Position, price: float, out: SubmitOutcome, t_fill: datetime) -> SubmitOutcome:
+        would = out.note == "would_trigger"
+        if not would and (self.clock.now() - t_fill).total_seconds() <= self.stop_deadline_s - 5.0:
+            log.warning("ilk stop kurulamadi (%s), yeni kimlikle bir kez daha deneniyor", out.note)
+            out = self._stop_attempt(pos, price, 1)
+            if out.ok:
+                return out
+            would = out.note == "would_trigger"
+        log.critical("stop kurulamadi (%s): trade %s piyasada kapatiliyor", out.note, pos.trade_id)
+        cur = self.state.get_position(pos.trade_id) or pos
+        self.submit_exit(cur, "other", self.clock.now())
+        if not would:
+            self._block("stop_failed")
+        return SubmitOutcome(False, out.status, out.order, out.result, "would_trigger_closed" if would else "stop_failed_closed")
 
     def _stop_attempt(self, pos: Position, price: float, seq: int) -> SubmitOutcome:
         req = self._stop_request(pos, price, seq)
@@ -421,9 +512,28 @@ class OrderManager:
                 continue
             with self.state.tx():
                 self.state.kv_set(f"exit_retry:{p.trade_id}", n + 1)
+            if self.live_mode:
+                outs.append(self._retry_failed_exit_live(p, row, n))
+                continue
             row = self._upd(row.client_id, status="unknown", attempts=0)
             out = self._resolve_row(row)
             if out.status == "failed" and out.order.status == "failed":
                 self._exit_failed_effects(self.state.get_position(p.trade_id) or p)
             outs.append(out)
         return outs
+
+    def _retry_failed_exit_live(self, p: Position, row: OrderRow, n: int) -> SubmitOutcome:
+        """Canli: kimlikle tek sorgu; emir varsa benimse (dolum poll'dan), yoksa pozisyon `open`a doner (yeni kimlikle yeniden)."""
+        with self.state.tx():
+            self.state.kv_set(f"exit_retry:{p.trade_id}", n + 1)
+        ok, bo = self._query(row.pair, row.client_id)
+        if ok and bo is not None:
+            row = self._upd(row.client_id, status="unknown", attempts=0)
+            return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
+        if ok:
+            with self.state.tx():
+                self.state.update_position(p.trade_id, status="open", exit_client_id=None, exit_reason=None)
+        out = self._outcome(row, None, "exit_not_found" if ok else "query_uncertain")
+        if n + 1 >= _EXIT_RETRY_LIMIT:
+            self._exit_failed_effects(self.state.get_position(p.trade_id) or p)
+        return out

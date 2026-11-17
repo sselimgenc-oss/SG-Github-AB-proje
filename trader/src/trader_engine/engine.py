@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter
+from contextlib import nullcontext
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timedelta
@@ -36,7 +37,7 @@ from .strategies.base import Strategy, StrategyError
 from .strategies.price_action_v1_ml import load_engine_model
 from .strategies.registry import check_param_keys, get_strategy, make_label, parse_label
 from .strategy_runner import SignalFrame, SignalSource, WindowedSignalSource
-from .types import Intent, Position
+from .types import BrokerEvent, Fill, Intent, Position
 
 log = logging.getLogger("engine")
 
@@ -46,6 +47,8 @@ _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_fai
                     "minute_gaps", "funding_missing", "exit_data_gap")
 STARTUP_MAX_AGE_S = 300          # acilis kapisi: son kapanmis 1m (last+mark) en fazla bu kadar eski olabilir
 EXIT_STARTUP_GATE = 7
+FEED_MODES = ("paper", "testnet", "live")        # 11 §6.1: "feed'li canli dongu" (benzetimli broker ayrimi: is_paper)
+_BROKER_REASONS = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,7 @@ class Engine:
     def __init__(self, cfg: EngineConfig, *, clock: Clock, view: MarketView, broker: Broker, ledger: L.Ledger,
                  state: StateStore, signals: SignalSource, strategy: Strategy, veto: VetoSource, kill: Killswitch,
                  status: StatusWriter | None, orders: OrderManager | None = None, entry_ref_fn=None,
-                 strict: bool = False, tick_fn=None, pause: EntryPause | None = None) -> None:
+                 strict: bool = False, tick_fn=None, pause: EntryPause | None = None, reconciler=None) -> None:
         self.cfg = cfg
         self.clock = clock
         self.view = view
@@ -89,11 +92,21 @@ class Engine:
         self.status = status
         self.strict = strict
         rules_fn = broker.rules
+        live = cfg.live
         self.orders = orders or OrderManager(cfg.bot, broker, state, clock, rules_fn)
+        if not getattr(broker, "is_simulated", False):
+            # 11 §6: canli yol (OrderManager bayraklari; kagit/backtest'te dokunulmaz)
+            self.orders.live_mode = True
+            self.orders.max_attempts = max(1, int(live.max_attempts)) if live is not None else 1
+            if live is not None:
+                self.orders.stop_deadline_s = float(live.stop_deadline_s)
+                self.orders.entry_resolve_window_s = float(live.entry_resolve_window_s)
+            self.orders.on_entry_adopted = self._on_adopted_entry
+            self.orders.on_ban = self._note_ban
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
         self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause)
-        self.reconciler = Reconciler(cfg, broker, state, ledger, self.orders, clock)
+        self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
         self._c: Counter = Counter()
@@ -113,6 +126,21 @@ class Engine:
         self._last_reconcile: datetime | None = None
         self._entry_events: dict[int, object] = {}
         self._started = False
+        self._ban_until: datetime | None = None
+        self._naked_rows: list[dict] = []
+        self._in_drain = 0
+
+    def _make_reconciler(self):
+        if self.is_paper:
+            return Reconciler(self.cfg, self.broker, self.state, self.ledger, self.orders, self.clock)
+        try:
+            from .reconcile_live import LiveReconciler
+        except ImportError:
+            log.warning("reconcile_live yok: canli mutabakat kagit alt kumesiyle (B5 bekleniyor)")
+            return Reconciler(self.cfg, self.broker, self.state, self.ledger, self.orders, self.clock)
+        return LiveReconciler(self.cfg, self.broker, self.state, self.ledger, self.orders, self.clock, self.kill,
+                              self.pause, handle_events=lambda evs, now: self._handle_events(evs, None, now),
+                              close_unopened=self._close_unopened)
 
     # ================================================================== yardimcilar
     def _set_clock(self, t: datetime) -> None:
@@ -123,7 +151,8 @@ class Engine:
         diff = {f.name: getattr(new, f.name) for f in fields(Position)
                 if f.name != "trade_id" and getattr(new, f.name) != getattr(old, f.name)}
         if diff:
-            self.state.update_position(old.trade_id, **diff)
+            with self.state.tx():
+                self.state.update_position(old.trade_id, **diff)
 
     def _mark_order(self, cid: str | None, status: str, detail: str | None = None) -> None:
         if not cid:
@@ -134,7 +163,8 @@ class Engine:
         f = {"status": status, "updated_ts": self.clock.now()}
         if detail:
             f["detail"] = detail
-        self.state.update_order(cid, **f)
+        with self.state.tx():
+            self.state.update_order(cid, **f)
 
     def _block(self, reason: str) -> None:
         with self.state.tx():
@@ -151,6 +181,10 @@ class Engine:
     @property
     def is_paper(self) -> bool:
         return bool(getattr(self.broker, "is_simulated", False))
+
+    def _outer_tx(self):
+        """11 §6.1: benzetimli brokerda tek dis tx aynen; canlida YOK (her yazma grubu kendi tx'i)."""
+        return self.state.tx() if self.is_paper else nullcontext()
 
     # ================================================================== gozlem
     def counters(self) -> dict:
@@ -218,7 +252,17 @@ class Engine:
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
             "pause": self._pause_status(),
+            **({} if self.is_paper else {"exchange": self._exchange_status()}),
         }
+
+    def _exchange_status(self) -> dict:
+        h = {}
+        try:
+            h = dict(self.broker.health())
+        except Exception:  # noqa: BLE001
+            pass
+        h["naked"] = list(self._naked_rows)
+        return h
 
     def _pause_status(self) -> dict | None:
         if self.pause is None:
@@ -241,12 +285,15 @@ class Engine:
     # ================================================================== gun basi
     def ensure_day_start(self, ts: datetime) -> None:
         day = ts.strftime("%Y-%m-%d")
+        pre = None
+        if not self.is_paper and self.state.kv_get("day_start_date") != day:
+            pre = self.broker.account().equity                 # canli: ag okumasi tx disinda
         with self.state.tx():
             cur = self.state.kv_get("day_start_date")
             if cur == day:
                 return
             fresh = cur is None
-            self.state.kv_set("day_start:" + day, self.broker.account().equity)
+            self.state.kv_set("day_start:" + day, pre if pre is not None else self.broker.account().equity)
             self.state.kv_set("day_start_date", day)
             reason = self.state.kv_get("entries_blocked_reason")
             if reason == "day_start_missing":
@@ -331,8 +378,37 @@ class Engine:
             self.clock.sleep(step)
             waited += step
 
+    def protect_first(self):
+        """11 §6.2 adim 2: veri kapisindan ONCE, piyasa verisi gerektirmez (yalniz canli). Stopsuz pozisyonu korur."""
+        if self.is_paper:
+            return None
+        pf = getattr(self.reconciler, "protect_first", None)
+        if pf is None:
+            self.orders.resolve_unresolved()
+            rep = None
+        else:
+            rep = pf()
+        self._recover_orphan_opening()
+        self._mirror_broker_blocks()
+        return rep
+
+    def _recover_orphan_opening(self) -> None:
+        """G1 ile emir satiri arasinda cokme (11 §6.4 madde 6): `opening` + emir satiri yok + borsada pozisyon yok => kapat."""
+        for p in self.state.open_positions():
+            if p.status != "opening" or self.state.orders_for_trade(p.trade_id):
+                continue
+            if not self.orders._exchange_has_position(p.pair):   # noqa: SLF001
+                self._close_unopened(p, self.clock.now())
+
     def start(self) -> RecoveryReport:
         cfg = self.cfg
+        live_loop = not self.is_paper and cfg.mode in FEED_MODES
+        if live_loop:
+            self._clear_broker_latches()
+        if cfg.mode in ("testnet", "live") and not self.is_paper:
+            if not self.state.integrity_check():
+                raise StateError("state integrity_check basarisiz")
+            self.protect_first()
         if cfg.mode == "paper":
             self._startup_gate()
         if cfg.bot == "twin" and cfg.start_delay_s > 0:
@@ -370,7 +446,7 @@ class Engine:
             log.critical("baslangic mutabakati ölümcül: girisler kapali; cikislar calisir")
         self._started = True
         mins, decs = 0, 0
-        if cfg.mode == "paper" and self._init_cursors():
+        if cfg.mode in FEED_MODES and self._init_cursors():
             c0 = self._c["decisions"]
             mins = self.advance_to(self.clock.now())
             decs = self._c["decisions"] - c0
@@ -412,6 +488,8 @@ class Engine:
         self._last_reconcile = now
         rep = self.reconciler.run(now)
         self._c["reconciles"] += 1
+        if not self.is_paper:
+            self._after_live_reconcile(rep)
         return rep
 
     def _init_cursors(self) -> bool:
@@ -500,6 +578,9 @@ class Engine:
         ts = step.ts
         end = ts + timedelta(seconds=self.view.step_seconds())
         self._set_clock(end)
+        if not self.is_paper:
+            self._process_step_live(step, ts)
+            return
         with self.state.tx():
             self.ensure_day_start(ts)
             self.broker.advance(step.bars, "fills")             # type: ignore[attr-defined]
@@ -519,17 +600,49 @@ class Engine:
         self._last_minute = ts
         self._c["steps"] += 1
 
+    def _process_step_live(self, step, ts: datetime) -> None:
+        """Canli dakika adimi (11 §6.2 madde 4): yalniz gun basi, MFE/MAE ve imlec. Olay/KILL live_tick'te."""
+        self.ensure_day_start(ts)
+        for p in self.state.open_positions():
+            bar = step.bars.get(p.pair)
+            if bar is not None and p.status in ("open", "closing"):
+                self._persist(p, update_excursion(p, bar))
+        with self.state.tx():
+            for pair in self.cfg.pairs:
+                c = self.state.get_cursor(pair, "minute")
+                if c is None or ts > c:
+                    self.state.set_cursor(pair, "minute", ts)
+        self._last_minute = ts
+        self._c["steps"] += 1
+
     def _kill_step(self, now: datetime) -> None:
         if self.kill.active():
             if self.state.kv_get("kill_seen_at") is None:
-                self.state.kv_set("kill_seen_at", iso_z(now))
+                with self.state.tx():
+                    self.state.kv_set("kill_seen_at", iso_z(now))
                 log.critical("KILL etkin: girisler kapali, acik pozisyonlar kapatiliyor")
             for p in self.state.open_positions():
                 if p.status == "open" and p.qty:
-                    self.orders.submit_exit(p, "force_exit", now)
+                    self._submit_exit(p, "force_exit", now)
         elif self.state.kv_get("kill_seen_at") is not None:
-            self.state.kv_set("kill_seen_at", None)
+            with self.state.tx():
+                self.state.kv_set("kill_seen_at", None)
             log.warning("KILL kalkti: girisler bir sonraki karar adiminda yeniden acilir")
+
+    def _submit_exit(self, pos: Position, reason: str, at: datetime):
+        """Piyasa cikisi; canlida hemen poll (11 §5.3 not 2) ve olaylari isle."""
+        if not self.is_paper and self._ban_until is not None and self.clock.now() < self._ban_until:
+            self._c["ban_skipped_exits"] += 1          # pencere icinde gonderim zaten reddedilir; yeni kimlik/satir uretme
+            return None
+        out = self.orders.submit_exit(pos, reason, at)
+        if not self.is_paper:
+            self._register(pos.trade_id)
+            self._drain_events()
+        return out
+
+    def _drain_events(self) -> None:
+        now = self.clock.now()
+        self._handle_events(self.broker.poll(now), None, now)
 
     # ------------------------------------------------------------------ broker olaylari
     def _handle_events(self, evs, step, now: datetime) -> None:
@@ -542,7 +655,7 @@ class Engine:
             elif e.kind == "funding":
                 p = self.state.position_for_pair(e.pair)
                 if p is not None and p.status in ("open", "closing"):
-                    self._persist(p, apply_funding(p, e))
+                    self._persist(p, apply_funding(p, e))   # _persist kendi tx'ini acar
             elif e.kind == "order_rejected":
                 self._on_rejected(e, now)
             elif e.kind == "order_canceled":
@@ -555,36 +668,70 @@ class Engine:
             self._c["unexpected_fills"] += 1
             log.critical("beklenmeyen giris dolumu %s", e.pair)
             return
-        newp = apply_entry_fill(pos, fill, step.bars.get(e.pair), now)
-        self._persist(pos, newp)
-        self._mark_order(fill.client_id, "filled")
-        self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp))
+        t_fill = self.clock.now()
+        newp = apply_entry_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
+        with self.state.tx():                                   # G2: pozisyon open + emir filled + outbox
+            self._persist(pos, newp)
+            self._mark_order(fill.client_id, "filled")
+            self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp))
         self._c["trades_opened"] += 1
         eq = self.state.kv_get(f"eq:{pos.trade_id}")
         tick = self.orders.stop_tick(newp)
         viol = fill_risk_violation(newp, float(eq), tick) if eq else None
         cur = self.state.get_position(pos.trade_id) or newp
+        live = not self.is_paper
+        if live:
+            self._register(pos.trade_id)
         if viol:
             log.critical("dolum sonrasi risk ihlali (%s) trade %s: cikis", viol, pos.trade_id)
             self._c["fill_risk_violation"] += 1
-            self.orders.submit_exit(cur, "other", now)
+            if live:
+                # 11 §6.4 madde 4: once stop, sonra cikis (stopsuz `closing` pozisyon kalmaz)
+                self.orders.place_initial_stop(cur, t_fill)
+                self._register(pos.trade_id)
+                cur = self.state.get_position(pos.trade_id) or cur
+                if cur.status == "open":
+                    self._submit_exit(cur, "other", now)
+            else:
+                self.orders.submit_exit(cur, "other", now)
+        elif live:
+            self.orders.place_initial_stop(cur, t_fill)
+            self._register(pos.trade_id)
         else:
             self.orders.place_initial_stop(cur)
 
     def _on_exit_fill(self, e, step, now: datetime) -> None:
         fill = e.fill
         pos = self.state.position_for_pair(e.pair)
+        if self._duplicate_exit(fill):
+            self._c["duplicate_fill_ignored"] += 1
+            return
         if pos is None or pos.status == "opening" or pos.entry_price is None:
             self._c["unexpected_fills"] += 1
             log.critical("beklenmeyen cikis dolumu %s", e.pair)
             return
-        closed = apply_exit_fill(pos, fill, step.bars.get(e.pair), now)
+        closed = apply_exit_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
+        if e.detail == "foreign_close":                          # 11 §5.5 madde 3: bizim olmayan kapanis
+            closed = replace(closed, exit_reason="manual")
+            log.critical("yabanci kapanis %s trade %s: exit_reason=manual", e.pair, pos.trade_id)
         newp = close_position(pos, closed)
-        self._persist(pos, newp)
-        self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed))
-        self._mark_order(fill.client_id, "filled")
+        with self.state.tx():                                   # G3
+            self._persist(pos, newp)
+            self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed))
+            self._mark_order(fill.client_id, "filled")
         self._c["trades_closed"] += 1
+        if not self.is_paper and self.state.kv_get(f"naked:{pos.trade_id}") is not None:
+            with self.state.tx():
+                self.state.kv_set(f"naked:{pos.trade_id}", None)
         self.orders.cancel_resting(pos)
+
+    def _duplicate_exit(self, fill) -> bool:
+        """11 §6.6: ayni kapanis iki kez teslim edilirse (emir satiri filled, sahibi pozisyon closed) sessizce yok say."""
+        row = self.state.get_order(fill.client_id) if fill.client_id else None
+        if row is None or row.trade_id is None or row.status != "filled":
+            return False
+        owner = self.state.get_position(row.trade_id)
+        return owner is not None and owner.status == "closed"
 
     def _on_rejected(self, e, now: datetime) -> None:
         row = self.state.get_order(e.client_id) if e.client_id else None
@@ -597,13 +744,15 @@ class Engine:
         if row.role == "entry" and pos.status == "opening":
             self._close_unopened(pos, now)
         elif row.role == "exit" and pos.status == "closing" and pos.exit_client_id == row.client_id:
-            self.state.update_position(pos.trade_id, status="open", exit_client_id=None, exit_reason=None)
+            with self.state.tx():
+                self.state.update_position(pos.trade_id, status="open", exit_client_id=None, exit_reason=None)
         elif row.role == "stop" and pos.status == "open":
             log.critical("stop reddedildi trade %s (%s): mutabakat yeniden kuracak", pos.trade_id, e.detail)
             self._block("stop_failed")
 
     def _close_unopened(self, pos: Position, now: datetime) -> None:
-        self.state.update_position(pos.trade_id, status="closed", exit_reason="other", closed_ts=now)
+        with self.state.tx():
+            self.state.update_position(pos.trade_id, status="closed", exit_reason="other", closed_ts=now)
         ev = self._entry_events.pop(pos.trade_id, None)
         if ev is not None:
             try:
@@ -623,10 +772,10 @@ class Engine:
     def _decision_step(self, D: datetime) -> None:
         self._set_clock(D)
         now = self.clock.now()
-        with self.state.tx():
+        with self._outer_tx():
             self.ensure_day_start(D)
             self._kill_step(now)
-            if self.cfg.mode == "paper":
+            if self.cfg.mode in FEED_MODES:
                 self._reconcile(now)
             self._refresh_params()
             self.veto.begin_step(now)
@@ -643,11 +792,13 @@ class Engine:
                         self._last_candle_open = c
             self._exits(D, frames)
             self._entries(D, frames)
-            for pair in self.cfg.pairs:
-                c = self.state.get_cursor(pair, "decision")
-                if c is None or D > c:
-                    self.state.set_cursor(pair, "decision", D)
-            self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+            with self.state.tx():                                   # G4: imecler
+                for pair in self.cfg.pairs:
+                    c = self.state.get_cursor(pair, "decision")
+                    if c is None or D > c:
+                        self.state.set_cursor(pair, "decision", D)
+                if self.is_paper:
+                    self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
         self._last_decision = D
         self._c["decisions"] += 1
 
@@ -678,13 +829,15 @@ class Engine:
                 dec = policy.evaluate(pos, ctx) if policy is not None else evaluate_exit(pos, ctx)
                 dec = self._vet(pos, dec)
                 if dec.kind == "exit":
-                    self.orders.submit_exit(pos, dec.reason, D)
+                    self._submit_exit(pos, dec.reason, D)
                 elif dec.kind == "stop_update":
                     out = self.orders.replace_stop(pos, dec.new_stop)
                     if out.note == "would_trigger":
                         cur = self.state.get_position(pos.trade_id) or pos
                         if cur.status == "open":
-                            self.orders.submit_exit(cur, "trail_stop", D)
+                            self._submit_exit(cur, "trail_stop", D)
+                    elif out.ok and not self.is_paper:
+                        self._register(pos.trade_id)
             except StateError:
                 raise
             except Exception as e:  # noqa: BLE001
@@ -721,7 +874,8 @@ class Engine:
             self._c["ledger_errors"] += 1
             log.error("skip karari yazilamadi (%s %s): %r", pair, out.code, e)
         if out.mark_decided:
-            self.state.mark_decided(pair, D, "skipped:" + out.code)
+            with self.state.tx():
+                self.state.mark_decided(pair, D, "skipped:" + out.code)
 
     def _enter(self, pair: str, D: datetime, fr: SignalFrame, out: EntryOutcome) -> None:
         row = fr.last
@@ -733,26 +887,31 @@ class Engine:
             return
         size = out.size
         equity = float(self.broker.account().equity)
-        tid = self.state.next_trade_id()
-        info = self.strategy.info
-        trail = float((self._params_map or {}).get("trail_atr", 0.0))
-        pos = Position(
-            trade_id=tid, bot=self.cfg.bot, pair=pair, side=row.side, setup=row.setup, status="opening",
-            decision_id=did, signal_bar_close_ts=row.bar_close_ts, entry_ts=None, entry_bar_open=None,
-            entry_price=None, qty=None, leverage=out.leverage, initial_stop=row.planned_stop,
-            current_stop=row.planned_stop, stop_seq=0, stop_client_id=None, planned_target=row.planned_target,
-            trail_atr=trail, param_version_id=row.param_version_id, trigger_tf=self.tf,
-            risk_amount=size.risk_amount, margin=size.margin, rh=row.rh, rl=row.rl, fee_entry=0.0,
-            funding_paid=0.0, mfe_price=None, mae_price=None, exit_reason=None, exit_client_id=None,
-            closed_ts=None, strategy_name=info.name, strategy_version=info.version)
-        self.state.insert_position(pos)
-        self.state.mark_decided(pair, D, "entered")
-        self.state.kv_set(f"eq:{tid}", equity)
+        with self.state.tx():                                   # G1: giris niyeti (POST'tan once commit)
+            tid = self.state.next_trade_id()
+            info = self.strategy.info
+            trail = float((self._params_map or {}).get("trail_atr", 0.0))
+            pos = Position(
+                trade_id=tid, bot=self.cfg.bot, pair=pair, side=row.side, setup=row.setup, status="opening",
+                decision_id=did, signal_bar_close_ts=row.bar_close_ts, entry_ts=None, entry_bar_open=None,
+                entry_price=None, qty=None, leverage=out.leverage, initial_stop=row.planned_stop,
+                current_stop=row.planned_stop, stop_seq=0, stop_client_id=None, planned_target=row.planned_target,
+                trail_atr=trail, param_version_id=row.param_version_id, trigger_tf=self.tf,
+                risk_amount=size.risk_amount, margin=size.margin, rh=row.rh, rl=row.rl, fee_entry=0.0,
+                funding_paid=0.0, mfe_price=None, mae_price=None, exit_reason=None, exit_client_id=None,
+                closed_ts=None, strategy_name=info.name, strategy_version=info.version)
+            self.state.insert_position(pos)
+            self.state.mark_decided(pair, D, "entered")
+            self.state.kv_set(f"eq:{tid}", equity)
         self._entry_events[tid] = out.event
         intent = Intent(kind="entry", bot=self.cfg.bot, pair=pair, side=row.side, signal_bar_close_ts=row.bar_close_ts,
                         setup=row.setup, qty=size.qty, leverage=out.leverage, planned_entry=row.planned_entry,
                         stop_price=row.planned_stop, target_price=row.planned_target, reason="entry", decision_id=did)
         res = self.orders.submit_entry(intent, tid)
+        if not self.is_paper:
+            self._drain_events()                                # 11 §6.4: dolum ayni cagri zincirinde -> stop
+            if res.status == "failed" and res.order.status == "unknown":
+                return                                          # belirsiz giris: satir/pozisyon pencere boyunca kalir
         if res.status not in ("filled", "accepted"):
             cur = self.state.get_position(tid)
             if cur is not None and cur.status == "opening":
@@ -781,9 +940,18 @@ class Engine:
             if is_tf_close(nxt, self.tf):
                 ld = self._cursor("decision")
                 if ld is None or ld < nxt:
-                    if not self._decision_ready(nxt, now):
-                        return n
-                    self.decision_step(nxt)
+                    if not self.is_paper and nxt < floor_tf(now, self.tf):
+                        # 11 §6.2 madde 4: kacan karar barlari yeniden oynatilmaz; yalniz en son kapanmis bar degerlendirilir
+                        self._c["skipped_decisions"] += 1
+                        with self.state.tx():
+                            for p in self.cfg.pairs:
+                                c = self.state.get_cursor(p, "decision")
+                                if c is None or nxt > c:
+                                    self.state.set_cursor(p, "decision", nxt)
+                    else:
+                        if not self._decision_ready(nxt, now):
+                            return n
+                        self.decision_step(nxt)
             end = nxt + timedelta(seconds=step_s)
             if now < end:
                 return n
@@ -816,6 +984,10 @@ class Engine:
         try:
             while not self._stop:
                 now = self.clock.now()
+                if not self.is_paper and self.cfg.mode in ("testnet", "live"):
+                    self.live_tick(now)
+                    self.clock.sleep(self.cfg.loop_sleep_s)
+                    continue
                 try:
                     self.advance_to(now)
                 except ClockError as e:
@@ -830,7 +1002,7 @@ class Engine:
 
     def _periodic_input_check(self, now: datetime) -> None:
         """Calisirken kural/veri sayaclarini (`rules_missing`, `data_stale`) dakikada bir tazeler; karar vermez."""
-        if self.cfg.mode != "paper":
+        if self.cfg.mode != "paper":              # canli: veri kapisi/girdi sayaclari feed'e baglidir; live_tick'te ayri
             return
         last = getattr(self, "_last_input_check", None)
         if last is not None and (now - last).total_seconds() < 60:
@@ -845,7 +1017,7 @@ class Engine:
         every = self.cfg.reconcile_open_s if self.state.open_positions() else self.cfg.reconcile_flat_s
         if self._last_reconcile is None or (now - self._last_reconcile).total_seconds() >= every:
             try:
-                with self.state.tx():
+                with self._outer_tx():
                     self._reconcile(now)
             except StateError:
                 raise
@@ -856,6 +1028,142 @@ class Engine:
         log.info("kapaniyor: %s", reason)
         if self.status is not None:
             self.status.write(self, force=True, stopped=True)
+
+
+    # ================================================================== canli yol (11 §6)
+    def live_tick(self, now: datetime) -> None:
+        """Her dongude, veri akisindan bagimsiz: KILL -> olaylar -> stop bekcisi -> mutabakat -> advance_to -> status."""
+        self._set_clock(now)
+        self._guard("kill", lambda: self._kill_step(now))
+        self._guard("events", lambda: self._drain_events())
+        self._post_commit()
+        self._guard("watchdog", lambda: self._stop_watchdog(self.clock.now()))
+        self._mirror_broker_blocks()
+        every = self.cfg.reconcile_open_s if self.state.open_positions() or self.state.unresolved_orders() \
+            else self.cfg.reconcile_flat_s
+        if self._last_reconcile is None or (now - self._last_reconcile).total_seconds() >= every:
+            self._guard("reconcile", lambda: self._reconcile(now))
+        try:
+            self.advance_to(now)
+        except ClockError as e:
+            log.critical("%s", e)
+        if self.status is not None:
+            self.status.write(self)
+
+    def _stop_watchdog(self, now: datetime) -> None:
+        """11 §6.5: borsada kabul edilmis stopu olmayan open/closing pozisyon stop_deadline_s'i (>) asarsa reduceOnly piyasa."""
+        deadline = float(self.cfg.live.stop_deadline_s) if self.cfg.live is not None else 10.0
+        rows: list[dict] = []
+        for p in self.state.open_positions():
+            if p.status not in ("open", "closing"):
+                continue
+            row = self.state.get_order(p.stop_client_id) if p.stop_client_id else None
+            if row is not None and row.status == "accepted":
+                if self.state.kv_get(f"naked:{p.trade_id}") is not None:
+                    with self.state.tx():
+                        self.state.kv_set(f"naked:{p.trade_id}", None)
+                continue
+            since_s = self.state.kv_get(f"naked:{p.trade_id}")
+            if since_s is None:
+                with self.state.tx():
+                    self.state.kv_set(f"naked:{p.trade_id}", iso_z(now))
+                since = now
+            else:
+                from .state import parse_iso_z
+                since = parse_iso_z(since_s)
+            secs = (now - since).total_seconds()
+            rows.append({"trade_id": p.trade_id, "pair": p.pair, "seconds": secs})
+            if secs > deadline:
+                self._c["naked_closes"] += 1
+                log.critical("stopsuz pozisyon %.1f sn (trade %s): piyasada kapatiliyor", secs, p.trade_id)
+                if p.status == "open" and p.qty:
+                    self._block("stop_failed")
+                    self._submit_exit(p, "other", now)
+        self._naked_rows = rows
+        sn = getattr(self.broker, "set_naked", None)
+        if callable(sn):
+            sn(list(rows))
+
+    def _register(self, trade_id: int) -> None:
+        """LiveBroker.register_position: yetkili acilis zamani + pozisyona ait kimlikler (best-effort)."""
+        reg = getattr(self.broker, "register_position", None)
+        if not callable(reg):
+            return
+        try:
+            p = self.state.get_position(trade_id)
+            if p is None or p.entry_ts is None or p.status == "closed":
+                return
+            cids = [r.client_id for r in self.state.orders_for_trade(trade_id)]
+            reg(p.pair, p.entry_ts, tuple(cids))
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("register_position basarisiz: %r", e)
+
+    def _on_adopted_entry(self, row, bo) -> None:
+        """Sorguyla (belirsizlik/yeniden baslatma sonrasi) bulunan dolu giris: dolum olayi uydur -> G2 + stop."""
+        pos = self.state.get_position(row.trade_id) if row.trade_id is not None else None
+        if pos is None or pos.status != "opening":
+            return
+        qty = bo.filled_qty if bo.filled_qty and bo.filled_qty > 0 else row.qty
+        price = bo.avg_price
+        if price is None:
+            try:
+                price = next((bp.entry_price for bp in self.broker.positions() if bp.pair == row.pair), None)
+            except Exception:  # noqa: BLE001
+                price = None
+        if price is None or not qty:
+            log.critical("bulunan giris dolumunun fiyati yok (%s): mutabakat cozecek", row.client_id)
+            return
+        now = self.clock.now()
+        fee = float(qty) * float(price) * self.cfg.cost.taker_fee
+        fill = Fill(client_id=row.client_id, pair=row.pair, role="entry", order_side=row.order_side, qty=float(qty),
+                    price=float(price), fee=fee, ts=bo.updated_ts or now, reason="market")
+        self._on_entry_fill(BrokerEvent("fill", fill.ts, row.pair, row.client_id, fill), None, now)
+
+    def _note_ban(self) -> None:
+        """exchange_ban reti hemen sonrasi: broker.last_ban'dan (http, retry_after_s) zamanla (11 §10 F8-F10)."""
+        now = self.clock.now()
+        lb = getattr(self.broker, "last_ban", None)
+        http, ra = (lb if lb else (None, None))
+        self._ban_until = now + timedelta(seconds=float(ra if ra else 1.0))
+        self._c["exchange_ban_rejects"] += 1
+        if http == 429 and not self.state.kv_get("entries_blocked_reason"):
+            self._block("exchange_rate_limited")
+        elif http in (418, 403, 451) and self.pause is not None:
+            try:
+                self.pause.add("exchange_ban", by="engine:orders", note=f"http={http} retry_after={ra}")
+            except Exception as e:  # noqa: BLE001
+                log.error("pause.add basarisiz: %r", e)
+
+    def _clear_broker_latches(self) -> None:
+        """Temiz yeniden baslatma: brokerin bellek-ici yapiskan nedenleri sifirlanir; kv'ye yansiyanlar da (11 §5)."""
+        cur = self.state.kv_get("entries_blocked_reason")
+        if cur in _BROKER_REASONS:
+            with self.state.tx():
+                self.state.kv_set("entries_blocked_reason", None)
+
+    def _mirror_broker_blocks(self) -> None:
+        """Brokerin giris engeli (exchange_auth, ...) kapi icin kv'ye yansitilir (baska nedeni ezmez)."""
+        br = getattr(self.broker, "entries_blocked_reason", None)
+        if not br:
+            return
+        cur = self.state.kv_get("entries_blocked_reason")
+        if cur is None:
+            self._block(str(br))
+
+    def _after_live_reconcile(self, rep) -> None:
+        """B4'un kendi exchange_unreachable mandali: yalniz temiz mutabakattan sonra, broker kendininkini kaldirdiysa temizlenir."""
+        cur = self.state.kv_get("entries_blocked_reason")
+        reasons = tuple(getattr(self.broker, "entries_blocked_reasons", ()) or ())
+        if "exchange_unreachable" in reasons or "exchange_unreachable" in getattr(rep, "findings", ()):
+            if cur is None:
+                self._block("exchange_unreachable")
+            return
+        if cur == "exchange_unreachable" and getattr(rep, "ok", False):
+            with self.state.tx():
+                self.state.kv_set("entries_blocked_reason", None)
+        self._mirror_broker_blocks()
 
     # ================================================================== backtest surucusu
     def run_range(self, start: datetime, end: datetime, *, active_only: bool = True) -> RunSummary:
@@ -875,7 +1183,7 @@ class Engine:
             D += tf_delta(tf)
         if end > cur:
             self._run_steps(cur, end, active_only)
-        if self.cfg.mode != "paper":
+        if self.cfg.mode not in FEED_MODES:
             self._guard("reconcile", lambda: self._reconcile_tx(end))
         return self.summary()
 
@@ -895,6 +1203,40 @@ class Engine:
 
 
 # ====================================================================== insa
+def _build_live_broker(cfg: EngineConfig, clock: Clock | None, env: Mapping[str, str]):
+    """11 §6.2 adim 1: load_keys -> SignedRestClient -> LiveBroker -> startup_check (EngineExit 8/5)."""
+    from .brokers.binance_futures import LiveBroker
+    from .clock import SystemClock
+    from .config import check_live_confirm, load_keys
+    from .exchange.binance_rest import SignedRestClient
+    if cfg.live is None:
+        raise ConfigError("live blogu yok")
+    check_live_confirm(cfg, env)
+    try:
+        key, secret = load_keys(env)
+    except ConfigError as e:
+        raise ConfigError(f"faz_b: LiveBroker kurulamadi ({e})") from None
+    clk = clock or SystemClock()
+    rest = SignedRestClient(env=cfg.mode, api_key=key, api_secret=secret,
+                            now_ms=lambda: int(clk.now().timestamp() * 1000), sleep=clk.sleep,
+                            recv_window_ms=cfg.live.recv_window_ms, conditional_mode=cfg.live.conditional_mode)
+    broker = LiveBroker(cfg.live, cfg.mode, cfg.leverage, cfg.pairs, rest, clk, cfg.cost.taker_fee, environ=env)
+    broker.startup_check()
+    return broker
+
+
+def _check_rules_drift(broker, view, cfg: EngineConfig) -> None:
+    chk = getattr(broker, "check_rules_drift", None)
+    if cfg.mode != "live" or not callable(chk):
+        return
+    try:
+        feed = {p: view.rules(p) for p in cfg.pairs}
+        for d in chk(feed):
+            log.warning("%s", d)
+    except Exception as e:  # noqa: BLE001
+        log.warning("kural karsilastirmasi yapilamadi: %r", e)
+
+
 def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketView | None = None,
                  broker: Broker | None = None, env: Mapping[str, str] | None = None) -> Engine:
     from .brokers.paper import PaperBroker, PaperConfig
@@ -903,7 +1245,17 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
 
     env = os.environ if env is None else env
     if cfg.mode in ("testnet", "live") and broker is None:
-        raise ConfigError("faz_b: testnet/live icin LiveBroker henuz yok (B3/B4)")
+        from .config import load_keys
+        try:
+            load_keys(env)
+        except ConfigError as e:
+            raise ConfigError(f"faz_b: LiveBroker kurulamadi ({e})") from None
+    if cfg.mode == "live":
+        from .config import check_live_confirm
+        check_live_confirm(cfg, env)                 # ag oncesi cift onay (11 §3.1)
+    live_broker_new = False
+    if cfg.mode in ("testnet", "live") and broker is None:
+        broker, live_broker_new = _build_live_broker(cfg, clock, env), True
     strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
     clock = clock or SystemClock()
     view = view or StoreSource(cfg.market_db)
@@ -923,5 +1275,7 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     if getattr(strategy, "ml_mode", "off") != "off":
         ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
     signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error)
+    if live_broker_new:
+        _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
                   strategy=strategy, veto=vsrc, kill=kill, status=status, pause=pause)

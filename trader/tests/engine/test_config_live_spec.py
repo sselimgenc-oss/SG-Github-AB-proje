@@ -335,7 +335,6 @@ def test_live_wallet_above_expected_exits_8(tmp_path):
     assert ei.value.code == 8 and "wallet_above_expected" in str(ei.value)
 
 
-@pytest.mark.xfail(strict=True, reason="WP-B3/B4: LiveBroker henuz yok")
 def test_cli_run_returns_8_on_exchange_exit(tmp_path, monkeypatch, capsys):
     """cli `run` maps EngineExit(8, ...) (raised while building/starting the live engine) to process exit code 8."""
     import trader_engine.cli as cli
