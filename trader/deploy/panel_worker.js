@@ -2,7 +2,33 @@
 // Kaynak: 1L3A projesinin deploy/pano_worker.js dosyasından uyarlandı (kullanıcının kendi kodu; THIRD_PARTY_NOTICES.md'ye bakın).
 // Kullanıcı adı sabit "trader"; parola Worker secret'ı PANEL_SIFRE. Secret yoksa/boşsa HER İSTEK 401 (fail-closed).
 // Parolasız yayın seçeneği/bayrağı YOKTUR.
+// Oturum çerezi: doğru Basic Auth sonrası 30 gün geçerli, PANEL_SIFRE ile HMAC imzalı çerez (telefonlar Basic Auth'u
+// hatırlamadığı için). Parola değişince tüm çerezler geçersiz olur. Çerez HttpOnly + Secure + SameSite=Strict.
 const KULLANICI = "trader";
+const CEREZ = "pano_oturum";
+const OTURUM_S = 30 * 24 * 3600;
+
+async function imza(anahtar, mesaj) {
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(anahtar), { name: "HMAC", hash: "SHA-256" },
+    false, ["sign"]);
+  const b = new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(mesaj)));
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+async function cerezGecerli(istek, sifre) {
+  const c = istek.headers.get("Cookie") || "";
+  const m = c.match(new RegExp("(?:^|;\\s*)" + CEREZ + "=(\\d+)\\.([0-9a-f]{64})"));
+  if (!m) return false;
+  const bitis = Number(m[1]);
+  const beklenen = await imza(sifre, "v1|" + m[1]);
+  const ok = await esitMi(m[2], beklenen);           // sabit zamanli
+  return ok && bitis > Math.floor(Date.now() / 1000);
+}
+
+async function cerezYap(sifre) {
+  const bitis = String(Math.floor(Date.now() / 1000) + OTURUM_S);
+  return `${CEREZ}=${bitis}.${await imza(sifre, "v1|" + bitis)}; Max-Age=${OTURUM_S}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+}
 
 async function ozet(metin) {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(metin)));
@@ -54,12 +80,16 @@ export default {
   async fetch(istek, env) {
     const sifre = env.PANEL_SIFRE;
     if (typeof sifre !== "string" || sifre.length === 0) return red();
+    if (await cerezGecerli(istek, sifre)) return baslikEkle(await env.ASSETS.fetch(istek));
     const bilgi = bilgiCoz(istek.headers.get("Authorization"));
     if (!bilgi) return red();
     // iki karşılaştırma da her zaman yapılır (kullanıcı adı yanlışsa bile süre sızdırmasın)
     const kOk = await esitMi(bilgi.kullanici, KULLANICI);
     const sOk = await esitMi(bilgi.sifre, sifre);
     if (!(kOk && sOk)) return red();
-    return baslikEkle(await env.ASSETS.fetch(istek));
+    const yanit = baslikEkle(await env.ASSETS.fetch(istek));
+    const h = new Headers(yanit.headers);
+    h.append("Set-Cookie", await cerezYap(sifre));
+    return new Response(yanit.body, { status: yanit.status, statusText: yanit.statusText, headers: h });
   },
 };
