@@ -132,7 +132,9 @@ class _Runner:
         while True:
             try:
                 return self.client.messages.create(
-                    model=cfg.model, max_tokens=cfg.max_tokens, temperature=cfg.temperature,
+                    model=cfg.model, max_tokens=cfg.max_tokens,
+                    # API surum 2026-10-21 / SDK 2.x: temperature/top_p/top_k artik 400 (kaldirildi); kisa siniflandirma icin dusuk efor
+                    output_config={"effort": "low"},
                     system=[{"type": "text", "text": parts.system,
                              "cache_control": {"type": "ephemeral", "ttl": cfg.cache_ttl}}],
                     messages=[{"role": "user", "content": parts.user}])

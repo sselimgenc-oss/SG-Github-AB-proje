@@ -1493,7 +1493,8 @@ class TestRunnerBudgetIntegration:
     def test_call_parameters_and_cached_system(self, world, monkeypatch):
         _run_runner(world, [good_reply()], monkeypatch)
         kw = [c for c in world.calls if c[0] == "client"][0][1]
-        assert kw["model"] == world.cfg.model and kw["temperature"] == 0 and kw["max_tokens"] == 1200
+        assert kw["model"] == world.cfg.model and "temperature" not in kw and kw["max_tokens"] == 1200
+        assert kw["output_config"] == {"effort": "low"}
         sysb = kw["system"]
         assert isinstance(sysb, list) and sysb[0]["type"] == "text"
         assert sysb[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
