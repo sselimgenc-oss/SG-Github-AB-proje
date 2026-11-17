@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from trader_engine.holdout import BacktestArgError, check_holdout  # noqa: E402
+from trader_ml import corpus_v2  # noqa: E402
 from trader_ml.config import HOLDOUT_START  # noqa: E402
 from trader_ml.guards import HoldoutViolation, assert_pre_holdout  # noqa: E402
 
@@ -76,6 +77,18 @@ def check_period(period: str) -> tuple[pd.Timestamp, pd.Timestamp]:
     return s, e
 
 
+def run_argv_matches(argv: list[str]) -> bool:
+    """Kosunun bayraklari (--id/--out-root cikarilarak) kayitli bt_args() ile BIREBIR ayni mi (fazla/eksik bayrak = hayir)."""
+    a, out, i = list(argv), [], 0
+    while i < len(a):
+        if a[i] in ("--id", "--out-root"):
+            i += 2
+            continue
+        out.append(a[i])
+        i += 1
+    return out == bt_args()
+
+
 def run_backtest(run_dir: Path) -> None:
     import os
     import subprocess
@@ -116,6 +129,7 @@ def run(argv=None) -> int:
     ap.add_argument("--period", default=PERIOD)
     ap.add_argument("--run-dir", default=None, help="hazir backtest kosusu (yoksa var/backtests/%s kosulur)" % RUN_ID)
     ap.add_argument("--corpus", default=str(ROOT / "research" / "ml" / "corpus_v2.parquet"))
+    ap.add_argument("--corpus-manifest", default=None, help="derlem manifesti (varsayilan: derlemin yaninda <corpus adi>.manifest.json)")
     ap.add_argument("--out-dir", default=str(ROOT / "research" / "ml"))
     a = ap.parse_args(argv)
     check_period(a.period)                                           # kilitli donem: ledger'a/backtest'e dokunmadan SERT RED
@@ -126,13 +140,21 @@ def run(argv=None) -> int:
     corpus = Path(a.corpus)
     if not corpus.exists():
         raise SystemExit(f"derlem yok: {corpus}")
+    cman = Path(a.corpus_manifest) if a.corpus_manifest else corpus.with_name(corpus.stem + ".manifest.json")
+    if not cman.exists():
+        raise SystemExit(f"derlem manifesti yok: {cman}")
+    cerrs, _ = corpus_v2.verify_corpus_manifest(corpus_v2.load_manifest(cman), corpus)       # UZUN backtest'ten ONCE (sha256 + code_sha256)
+    if cerrs:
+        raise SystemExit("derlem manifesti dogrulanamadi, backtest baslatilmaz:\n  " + "\n  ".join(cerrs))
     run_dir = Path(a.run_dir) if a.run_dir else ROOT / "var" / "backtests" / RUN_ID
     if not (run_dir / "ledger.sqlite").exists():
         run_backtest(run_dir)
     meta = _B19.check_run_meta(run_dir, commit)                      # sentetik kural, kagit riski, ayni temiz commit
     p0, p1 = (pd.Timestamp(x, tz="UTC") for x in meta["period"])
-    if p1 > HOLDOUT_START or p0 != pd.Timestamp("2021-01-01", tz="UTC") or meta["fill_model"] != "native":
-        raise SystemExit(f"kosu donemi/kipi on kayda uymuyor: {meta['period']} {meta['fill_model']}")
+    if p0 != pd.Timestamp("2021-01-01", tz="UTC") or p1 != HOLDOUT_START or meta["fill_model"] != "native":
+        raise SystemExit(f"kosu donemi/kipi on kayda uymuyor (tam 2021-01-01..{HOLDOUT_START:%Y-%m-%d} olmali): {meta['period']} {meta['fill_model']}")
+    if not run_argv_matches(meta.get("flags", {}).get("argv", [])):
+        raise SystemExit(f"kosu bayraklari kayitli bt_args() ile ayni degil: {meta.get('flags', {}).get('argv')} != {bt_args()}")
     if git_stamp()[0] != commit or git_stamp()[1]:
         raise SystemExit("kosu sirasinda agac/commit degisti")
     dec, tr = read_ledger(run_dir)
@@ -147,7 +169,7 @@ def run(argv=None) -> int:
     pq = out_dir / f"{OUT_NAME}.parquet"
     ent.to_parquet(pq, index=False)
     chash, payload = config_hash(run_dir)
-    man = {"overlay_version": "corpus_v2_taken", "file": pq.name, "sha256": sha256_file(pq), "period": a.period,
+    man = {"overlay_version": "corpus_v2_taken", "file": pq.name, "sha256": sha256_file(pq), "period": f"{p0:%Y%m%d}-{p1:%Y%m%d}",
            "corpus_file": corpus.name, "corpus_sha256": sha256_file(corpus),
            "git": {"commit": commit, "tree_clean": True}, "run_id": run_dir.name,
            "engine_git_commit": meta["git_commit"], "engine_version": meta["engine_version"],

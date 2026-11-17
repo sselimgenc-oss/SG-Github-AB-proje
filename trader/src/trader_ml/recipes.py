@@ -31,6 +31,7 @@ class Recipe:
     logit_params: dict = field(default_factory=dict)
     wf: dict = field(default_factory=dict)        # make_folds kwarg'lari: start,end,train_bars,test_bars,step_bars,min_test_bars
     source_map: dict = field(default_factory=dict)  # derlem source -> agirlik tablosu source
+    limits: dict = field(default_factory=dict)      # apply_limits kwarg'lari (tarife ozgu); {} = config varsayilanlari (r01, degismez)
 
 
 def _r01() -> Recipe:
@@ -52,11 +53,17 @@ _WF_V2 = {"start": CORPUS_V2_START, "end": CORPUS_V2_END, "train_bars": 8784, "t
           "step_bars": 9456, "min_test_bars": 9456}
 
 
+# r02/r03 kaynak limitleri (olcum: docs/sunucu-kurulum.md "Kaynak limitleri"). 450 MB (r01) derlem v2 boyutunda (~5,5 bin satir)
+# bile RLIMIT_DATA'yi asar (MemoryError; tek izinli yeniden baslatma yanar). Tepe RSS ~ 140 + 0,05 MB x satir (kapi bootstrap'i);
+# 1200 MB ~ 16 bin satira kadar yeter. CPU: olculen 5-10 sn; 1200 sn (20 dk) 100x+ pay, degismedi.
+V2_LIMITS = {"mem_mb": 1200, "cpu_seconds": 1200}
+
+
 def _v2(rid: str, feats, lgbm: dict) -> Recipe:
     return Recipe(
         id=rid, features=tuple(feats), label_col="label_1r", label_end_col="label_end_ts_1r",
         weight_scheme="uniq_decay", platt_nonneg=True, lgbm_params=lgbm, logit_params=dict(config.LOGIT_PARAMS),
-        wf=dict(_WF_V2), source_map={"native_v1b": "backtest"})
+        wf=dict(_WF_V2), source_map={"native_v1b": "backtest"}, limits=dict(V2_LIMITS))
 
 
 R03_LGBM_PARAMS = {**config.LGBM_PARAMS, "max_depth": 2, "num_leaves": 4, "min_data_in_leaf": 100}

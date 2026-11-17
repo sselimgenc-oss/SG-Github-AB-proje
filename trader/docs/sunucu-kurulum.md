@@ -300,7 +300,8 @@ Sira DEGISMEZ. Kod (iş emri) birlesmis ve commit'li olmali: `build_corpus_v2.CO
      -p WorkingDirectory=/home/trader/SG-Github-AB-proje/trader -p Environment=PYTHONPATH=src \
      .venv/bin/python scripts/build_corpus_v2_overlay.py
    ```
-   Cikti: `research/ml/corpus_v2_taken.parquet` + `corpus_v2_taken.manifest.json` (sha256, `config_hash`, commit, alinan/alinmayan, donem sonu acik). **Eslesmeyen alinmis islem 0 olmali**: degilse betik cikis kodu 3 ile biter, kosu baslamaz, mentor incelemeli (derlem ile motorun aday kumesi ayrismis). Temiz agac sart; `research/ml/` altinda izlenmeyen dosyalar izinlidir.
+   Betik backtest'ten ONCE `corpus_v2.manifest.json`'u dogrular (sha256 + 13 `code_sha256` anahtari; tutmazsa backtest baslamaz), sonra kosunun donemini (tam 2021-01-01 .. 2026-05-01) ve bayraklarini (`--id/--out-root` haric `bt_args()` ile birebir ayni) denetler; manifest `period` degeri kosunun kendi meta'sindan yazilir.
+   Cikti: `research/ml/corpus_v2_taken.parquet` + `corpus_v2_taken.manifest.json` (sha256, `corpus_sha256`, `overlay_version`, `config_hash`, commit, `backtest_period`, alinan/alinmayan, donem sonu acik). **Eslesmeyen alinmis islem 0 olmali**: degilse betik cikis kodu 3 ile biter, kosu baslamaz, mentor incelemeli (derlem ile motorun aday kumesi ayrismis). Temiz agac sart; `research/ml/` altinda izlenmeyen dosyalar izinlidir.
 4. **On hesap** (egitim/kapi KOSULMAZ; ozellik sagligi + guc; gereken IC rho yazdirilir, rho > 0,08 ise cikis 8 = "guc yetersiz", tarif kosulmaz):
    ```
    PYTHONPATH=src .venv/bin/python -m trader_ml.pipeline --recipe ml1-r02-long-ctx-1r --precheck-only --out research/ml/r02 \
@@ -308,20 +309,37 @@ Sira DEGISMEZ. Kod (iş emri) birlesmis ve commit'li olmali: `build_corpus_v2.CO
    ```
    Bu asamada `--expect-*` verilmez (sha256'lar henuz dondurulmadi); manifest + katman manifesti yine dogrulanir.
 5. **Dondurma:** `sha256sum research/ml/corpus_v2.parquet research/ml/corpus_v2_taken.parquet` ve kurulum bilgileri (commit, `config_hash`, satir sayilari, lightgbm surumu, on hesap ciktisi, n_trials) on kaydin **10. bolumundeki** tabloya yazilir ve **commit'lenir**. Tablo commit'lenmeden kosu baslamaz.
-6. **Tek kosu (r02):** `--expect-*` ZORUNLU (yoksa cikis 5); sha256 uyusmazsa cikis 5, manifest/kod/katman butunlugu uyusmazsa cikis 6:
+6. **Tek kosu (r02):** `--expect-*` ZORUNLU (yoksa cikis 5); sha256 uyusmazsa cikis 5, manifest/kod/katman butunlugu uyusmazsa cikis 6. Gercek kosu ayrica sunlari ister: temiz git agaci (19b `git_stamp` kurali; commit + agac durumu `gate_result.json`'a yazilir), `corpus_v2.sample_check.md` ("Bagimsiz yeniden hesap uyumu: 150/150"), katman manifestinde `corpus_sha256` == diskteki derlem. Kilitli donem ya da sema ihlali (`HoldoutViolation`/`SchemaError`) cikis 6 verir; tam sinir aninda (2026-05-01 00:00) cikis da `HoldoutViolation`dur: bu BILEREK boyledir, tetiklenirse duzeltmeye calismayin, mentora yazin.
    ```
    sudo systemd-run ... .venv/bin/python -m trader_ml.pipeline --recipe ml1-r02-long-ctx-1r --out research/ml/r02 \
      --corpus research/ml/corpus_v2.parquet --overlay research/ml/corpus_v2_taken.parquet --manifest research/ml/corpus_v2.manifest.json \
      --expect-corpus-sha256 <§10'daki sha256> --expect-overlay-sha256 <§10'daki sha256>
    ```
-   Cikis kodlari: 0 tamam (KABUL/RED `gate_result.json`'da), 2 lightgbm yok, 3 ozellik sagligi reddi, 4 paket kalibrasyonu kisitlandi (RED; rapor + `gate_result.json` yazilir, paket yok), 5 sha256, 6 manifest/katman, 7 sira korumasi, 8 guc vetosu. Rapor ve ham cikti commit'lenir (`docs/ml/r02-kapi-raporu.md`).
-7. **r03** yalniz r02 raporu commit'lendikten sonra ve r02 KABUL degilse; sira korumasi `--prior-result research/ml/r02/gate_result.json` ister (tarif r02, `passed == false`; yoksa/KABUL ise cikis 7). Once r03 icin `--precheck-only` (sonucu 10. bolume yazin), sonra:
+   Cikis kodlari: 0 tamam (KABUL/RED `gate_result.json`'da), 2 lightgbm yok, 3 ozellik sagligi reddi, 4 paket kalibrasyonu kisitlandi (RED; rapor + `gate_result.json` yazilir, paket yok), 5 sha256, 6 manifest/katman/kilitli donem/sema, 7 sira korumasi, 8 guc vetosu, 9 tek kosu kurali (`--out`'ta onceki sonuc var), 10 kirli git agaci. Rapor ve ham cikti commit'lenir (`docs/ml/r02-kapi-raporu.md`).
+7. **r03** yalniz r02 raporu commit'lendikten sonra ve r02 KABUL degilse; sira korumasi `--prior-result research/ml/r02/gate_result.json` ister (tarif r02, `passed == false`, `synthetic == false`, `corpus_sha256` ve `overlay_sha256` bu kosununkilerle AYNI; yoksa/KABUL/baska girdi ise cikis 7). **r03 BLOKE durumu:** r02 cikis 3 (ozellik sagligi) ya da 8 (guc vetosu) ile biterse `gate_result.json` YAZILMAZ (sonuc degildir) -> r03 icin `--prior-result` olamaz -> r03 kosulamaz. Bu durumda kimse sira korumasini atlamaya ya da dosyayi elle uretmeye calismaz; mentor karari beklenir. Once r03 icin `--precheck-only` (sonucu 10. bolume yazin), sonra:
    ```
    ... --recipe ml1-r03-long-regime8 --out research/ml/r03 --prior-result research/ml/r02/gate_result.json \
      --corpus ... --overlay ... --manifest ... --expect-corpus-sha256 <ayni> --expect-overlay-sha256 <ayni>
    ```
 - `n_trials` defterden okunur (`research/ml_trial_registry.csv`, tarif x 2 model; r02/r03 icin 10); `--n-trials` yalniz buyutebilir.
-- Ayni derlem + katmanla yeniden kosu YOK (tek kosu kurali); teknik kesintide (OOF yazilmadan) ayni commit/sha256'larla bir kez daha baslatilir.
+- **Tek kosu kurali (kodda zorunlu):** `--out`'ta `gate_result.json` ya da `oof_predictions.parquet` varsa gercek r02/r03 kosusu cikis 9 ile reddedilir; guc vetosu dali dahil hicbir dal mevcut sonucun/raporun uzerine yazmaz. Teknik kesintide (OOF yazilmadan; bellek/CPU limiti dahil) ayni commit/sha256'larla bir kez daha baslatilir: bos bir `--out` ile. Tek kosuda uretilen sonuc dosyalari silinmez/yeniden uretilmez.
+
+### r02/r03 kaynak limitleri (olcum + oneri)
+
+Tarife ozgudur (`recipes.V2_LIMITS`; r01 ve `config.py` sabitleri DEGISMEZ: 450 MB / 20 dk). `--research` limitleri kaldirir (sunucu disi). Eski 450 MB tavani derlem v2 boyutunda yetmez; asilirsa `MemoryError` ile is olur ve tek izinli yeniden baslatma yanar.
+
+Olcum (sentetik, 43 ozellik tablosu; `taskset -c 0 nice -n 19`, 4 cekirdekli 16 GB makine; kapi tam yolda: Platt kelepcelenmesi atlanarak, 2000 bootstrap; r02 = 40, r03 = 8 ozellik; yaklasik beklenen derlem ~5,5 bin satir = r01'in 1.379 `prefiltered` adayi x 4 kat sure):
+
+| Satir | r02 tepe RSS | r03 tepe RSS | CPU (r02 / r03) | 450 MB | 600 MB | 800 MB | 1000 MB |
+|---|---|---|---|---|---|---|---|
+| 5.500 | 416 MB | 410 MB | 5 sn / 2 sn | MemoryError | gecti | gecti | gecti |
+| 13.000 | 790 MB | 781 MB | 9 sn / 4 sn | MemoryError | MemoryError | MemoryError | gecti |
+| 26.000 | ~1.400 MB | ~1.400 MB | 13 sn / 9 sn | - | - | - | - |
+| 60.000 | ~3.000 MB (r02, gurultu) | - | 41 sn | - | - | - | - |
+
+Bellek kapidaki bootstrap (`run_gate`) tarafindan satir sayisiyla dogrusal buyur: tepe RSS ~ 140 + 0,05 MB x satir; `RLIMIT_DATA` RSS'nin ~150 MB uzerinde tetiklenir. Gercek veride LightGBM tum turlara kadar giderse en kotu durum yukaridaki "sinyalli" olcumlerdir.
+
+**Oneri (kodda):** `RLIMIT_DATA` = **1200 MB** (beklenen boyutta ~2,9x pay; ~16 bin satira kadar yeter), `RLIMIT_CPU` = **1200 sn** (olculen 5-10 sn; sunucu 3-5x yavas olsa da 100x pay; degismedi). nice 19 ve tek cekirdek aynen. systemd tarafi: `-p MemoryMax=1500M -p MemorySwapMax=0 -p CPUQuota=100%` (2 GB sunucuda botla birlikte `free -m` ile once bakin; bos bellek < 1,8 GB ise kosuyu bot durmadan baslatmayin, mentora yazin). `--precheck-only` cikti satir sayisi 16 binden buyukse limit yetmez: kosmadan mentora yazin (tahmin formulu yukarida). Gercek tepe degeri `gate_result.json` `peak_rss_mb` ve raporda; raporda "sunucu tavani" artik tarifin limitini gosterir.
 
 ## Testnet yoklama, duman ve tatbikat betigi (WP-B7; `scripts/smoke_testnet.py`)
 

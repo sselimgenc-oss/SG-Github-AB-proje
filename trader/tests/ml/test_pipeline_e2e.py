@@ -47,7 +47,7 @@ def test_report_is_turkish_and_complete(run):
         assert needle in md, needle
     res = json.loads((out / "gate_result.json").read_text())
     assert res["passed"] == (not any(c["ok"] is False for c in res["checks"]))
-    assert s["peak_rss_mb"] < 450                                      # §6 bellek tavani
+    assert s["peak_rss_mb"] > 0                                        # tepe bellek yazilir (tavan testi: ayri surecte, asagida)
 
 
 def test_oof_never_contains_training_rows(run, table):
@@ -60,6 +60,27 @@ def test_cli_script_synthetic(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / "ml_gate.py"), "--synthetic", "--out", str(tmp_path / "o")], capture_output=True, text=True, timeout=600, cwd=ROOT)
     assert r.returncode == 0, r.stderr[-2000:]
     assert (tmp_path / "o" / "gate_report.md").exists()
+
+
+def test_peak_rss_under_cap_measured_in_fresh_subprocess(tmp_path):
+    """§6 bellek tavani (450 MB r01). ru_maxrss pytest surecinde (onceki testlerin birikimi) ve fork edilen cocukta (ebeveynin
+    tepesini miras alir) siraya/ebeveyne baglidir; bu yuzden temiz alt surecte, exec ile SIFIRLANAN /proc/self/status VmHWM okunur.
+    Limitler uygulanir (tavan asilirsa is zaten MemoryError ile olur)."""
+    out = tmp_path / "rss"
+    code = ("import runpy, sys\n"
+            f"sys.argv = ['ml_gate.py', '--synthetic', '--out', {str(out)!r}]\n"
+            "rc = 0\n"
+            "try:\n"
+            f"    runpy.run_path({str(ROOT / 'scripts' / 'ml_gate.py')!r}, run_name='__main__')\n"
+            "except SystemExit as e:\n"
+            "    rc = e.code or 0\n"
+            "hwm = [int(l.split()[1]) for l in open('/proc/self/status') if l.startswith('VmHWM')][0]\n"
+            "print('VMHWM_MB', hwm / 1024.0)\n"
+            "sys.exit(rc)\n")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=600, cwd=ROOT)
+    assert r.returncode == 0, r.stderr[-2000:]
+    peak = float([ln for ln in r.stdout.splitlines() if ln.startswith("VMHWM_MB")][0].split()[1])
+    assert 0 < peak < 450, peak
 
 
 def test_loader_reads_19b_style_parquet_and_csv(table, tmp_path):

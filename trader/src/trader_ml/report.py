@@ -13,11 +13,22 @@ def _fmt(v, nd=4):
     return "-" if v is None or (isinstance(v, float) and not np.isfinite(v)) else (f"{v:.{nd}f}" if isinstance(v, float) else str(v))
 
 
+def run_info_lines(info: dict | None) -> list[str]:
+    """Koşu tablosu sayımları (r02/r03): açık kalan / çözülmemiş alınan işlemler ayrı satırlarda (sessizce atılmaz)."""
+    if not info:
+        return []
+    g = lambda k: info.get(k, "-")
+    return ["", "## Koşu tablosu sayımları (tablodan atılanlar)", "",
+            f"- Dönem sonunda AÇIK kalan alınmış işlem (çıkışı yok, atıldı): {g('dropped_taken_open_at_end')}",
+            f"- Etiketi çözülmemiş (son 72 mum) satır: {g('dropped_unresolved')}; bunlardan ALINMIŞ olup atılan: {g('dropped_unresolved_taken')}",
+            f"- Tablo: {g('rows')} satır, alınan {g('taken')}, alınmayan {g('not_taken')}; katmanda derlemle eşleşmeyen alınmış işlem: {g('overlay_unmatched_entered')}"]
+
+
 def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb: float, synthetic: bool,
                   selected_reason: str, n_trials: int | None = None, lightgbm_version: str | None = None,
                   corpus_sha256: str | None = None, overlay_sha256: str | None = None, diagnostics: dict | None = None,
                   health: dict | None = None, power: dict | None = None,
-                  calibration: dict | None = None) -> str:
+                  calibration: dict | None = None, run_info: dict | None = None, mem_cap_mb: int = TRAIN_MEM_CAP_MB) -> str:
     L = []
     verdict = "KABUL (gölgeye girişe uygun)" if res.passed else "RED"
     L += [f"# ML terfi kapısı raporu — {verdict}", ""]
@@ -37,8 +48,8 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
           *([f"- Katman (alınan işlem) sha256: `{overlay_sha256}`"] if overlay_sha256 else []),
           f"- Tarif kimliği: `{meta['version']}` | deneme sayısı (n_trials): {n_trials if n_trials is not None else '-'} | "
           f"lightgbm sürümü: {lightgbm_version or 'YOK'}",
-          f"- Tepe bellek: {peak_rss_mb:.0f} MB (sunucu tavanı {TRAIN_MEM_CAP_MB} MB"
-          + (" — AŞILDI: haftalık eğitim sunucu dışına alınmalı" if peak_rss_mb > TRAIN_MEM_CAP_MB else "") + ")", ""]
+          f"- Tepe bellek: {peak_rss_mb:.0f} MB (sunucu tavanı {mem_cap_mb} MB"
+          + (" — AŞILDI: haftalık eğitim sunucu dışına alınmalı" if peak_rss_mb > mem_cap_mb else "") + ")", ""]
     L += ["## Kapı adımları (sırayla; biri kalırsa model reddedilir)", "",
           "| Adım | Sonuç | Değer | Kural |", "|---|---|---|---|"]
     for c in res.checks:
@@ -61,6 +72,7 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
               f"kopya={[f'{a}=={b}' for a, b in health['duplicate']] or '-'} -> {'TEMİZ' if health['ok'] else 'SAĞLIKSIZ ÖZELLİK VAR (sentetik koşuda yalnız uyarı)'}"]
         if power is not None:
             L += ["- " + power_line.strip() if i == 0 else "  " + power_line.strip() for i, power_line in enumerate(_pre.power_lines(power))]
+    L += run_info_lines(run_info)
     if calibration is not None:
         cf = calibration["clamped_folds"]
         L += ["", "## Kalibrasyon (yalnız bilgi)", "",

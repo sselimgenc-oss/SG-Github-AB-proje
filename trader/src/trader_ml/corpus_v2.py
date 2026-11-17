@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .config import HOLDOUT_START
-from .features_v2 import R02_FEATURE_NAMES, R03_FEATURE_NAMES
+from .features_v2 import CORE_SOURCE_FILE, R02_FEATURE_NAMES, R03_FEATURE_NAMES
 from .guards import assert_pre_holdout
 from .schema import FEATURE_PREFIX, validate_candidates
 
@@ -27,6 +27,15 @@ CORPUS_PAIRS = ["BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK",
 CORPUS_PAIRS = [f"{c}/USDT:USDT" for c in CORPUS_PAIRS]
 R03_EXTRA = [c for c in R03_FEATURE_NAMES if c not in R02_FEATURE_NAMES]
 CORPUS_RECIPE_IDS = ["ml1-r02-long-ctx-1r", "ml1-r03-long-regime8"]
+# manifestteki code_sha256 anahtarlari: build_corpus_v2.CODE_FILES (12) + features_v2.CORE_SOURCE_FILE (13.). Biri eksikse kosu baslamaz
+# (bos/eksik sozluk sessizce gecmesin). Betik dondurulmus oldugundan liste burada ayrica yazilidir.
+EXPECTED_CODE_KEYS = (
+    "scripts/build_corpus_v2.py", "research/ml_build_candidates.py", "src/trader_ml/features.py", "src/trader_ml/features_v2.py",
+    "src/trader_ml/labels.py", "src/trader_ml/guards.py", "src/trader_ml/config.py", "src/trader_core/ml_features.py",
+    "src/trader_core/signals.py", "src/trader_core/regime.py", "src/trader_core/indicators.py", "src/trader_engine/holdout.py",
+    str(Path(CORE_SOURCE_FILE).resolve().relative_to(ROOT)))       # korumali sarmalayicinin sardigi cekirdek modul (13.)
+OVERLAY_VERSION = "corpus_v2_taken"
+SAMPLE_CHECK_OK = "Bagimsiz yeniden hesap uyumu: 150/150"
 
 
 class CorpusError(ValueError):
@@ -82,8 +91,10 @@ def load_run_table(corpus, overlay, recipe) -> tuple[pd.DataFrame, dict]:
     info = {"corpus_rows": int(len(df)), "overlay_rows": int(len(ov)),
             "overlay_unmatched_entered": int((~pd.MultiIndex.from_frame(ov[KEY]).isin(pd.MultiIndex.from_frame(df[KEY]))).sum())}
     n_corpus = len(df)
+    unres = df[df[lab].isna()]
+    info["dropped_unresolved_taken"] = int(pd.MultiIndex.from_frame(unres[KEY]).isin(pd.MultiIndex.from_frame(ov[KEY])).sum())
     df = df[df[lab].notna()].copy()                              # cozulmemis (son 72 mum) atilir
-    info["dropped_unresolved"] = n_corpus - int(len(df))
+    info["dropped_unresolved"] = n_corpus - int(len(df))         # alinmis olanlar dropped_unresolved_taken'da AYRICA sayilir
 
     m = df.merge(ov[KEY + ["exit_ts", "r_multiple"]].assign(_taken=True), how="left", on=KEY)
     taken = m["_taken"].fillna(False).to_numpy(bool)
@@ -159,6 +170,9 @@ def verify_corpus_manifest(man: dict, corpus_path: str | Path, *, root: Path = R
     code = man.get("code_sha256") or {}
     if not code:
         errs.append("code_sha256 bos")
+    missing = [k for k in EXPECTED_CODE_KEYS if k not in code]
+    if missing:
+        errs.append(f"code_sha256 beklenen anahtarlar eksik ({len(EXPECTED_CODE_KEYS)} gerekli): {missing}")
     for rel, want in sorted(code.items()):
         p = Path(root) / rel
         if not p.exists():
@@ -173,15 +187,34 @@ def verify_corpus_manifest(man: dict, corpus_path: str | Path, *, root: Path = R
     return errs, notes
 
 
-def verify_overlay_manifest(man: dict, overlay_path: str | Path) -> list[str]:
-    """Katman manifesti: dosya sha256'si tutmali, eslesmeyen alinmis islem 0 olmali, donem kilitli doneme girmemeli."""
+def verify_overlay_manifest(man: dict, overlay_path: str | Path, corpus_path: str | Path) -> list[str]:
+    """Katman manifesti: dosya sha256'si tutmali, katman bu diskteki derlemden uretilmis olmali (corpus_sha256), eslesmeyen
+    alinmis islem ve r'siz cikisli islem 0, donem tam kayitli donem, kilitli donem okunmamis, temiz agac."""
     errs = []
     _eq(errs, "overlay.sha256 (diskteki dosya)", man.get("sha256"), sha256_path(overlay_path))
+    _eq(errs, "overlay.corpus_sha256 (diskteki derlem)", man.get("corpus_sha256"), sha256_path(corpus_path))
+    _eq(errs, "overlay.overlay_version", man.get("overlay_version"), OVERLAY_VERSION)
     _eq(errs, "overlay.unmatched_entered", man.get("unmatched_entered"), 0)
+    _eq(errs, "overlay.taken_missing_r", man.get("taken_missing_r"), 0)
     _eq(errs, "overlay.period", man.get("period"), "20210101-20260501")
+    _eq(errs, "overlay.backtest_period", [str(x)[:10] for x in (man.get("backtest_period") or [])], ["2021-01-01", "2026-05-01"])
+    _eq(errs, "overlay.holdout_read", man.get("holdout_read"), False)
+    _eq(errs, "overlay.git.tree_clean", (man.get("git") or {}).get("tree_clean"), True)
     if not man.get("config_hash"):
         errs.append("overlay.config_hash yok")
     return errs
+
+
+def verify_sample_check(manifest_path: str | Path) -> list[str]:
+    """Elle kontrol dosyasi (manifestin yaninda <ad>.sample_check.md) var ve '150/150' satirini icermeli (on kayit 2.1)."""
+    mp = Path(manifest_path)
+    name = mp.name[:-len(".manifest.json")] if mp.name.endswith(".manifest.json") else mp.stem
+    p = mp.with_name(f"{name}.sample_check.md")
+    if not p.exists():
+        return [f"elle kontrol dosyasi yok: {p.name}"]
+    if SAMPLE_CHECK_OK not in p.read_text(encoding="utf-8"):
+        return [f"{p.name}: '{SAMPLE_CHECK_OK}' satiri yok (tek hatali etiket varsa derlem kullanilmaz)"]
+    return []
 
 
 def load_manifest(path: str | Path) -> dict:

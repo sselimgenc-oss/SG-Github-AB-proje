@@ -16,15 +16,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import config, diagnostics, models, prechecks, recipes
+from . import config, corpus_v2, diagnostics, models, prechecks, recipes
 from .config import BURN_IN_THRESHOLD, GATE
 from .gate import GateResult, model_metrics, run_gate, select_threshold
-from .guards import assert_pre_holdout
+from .guards import HoldoutViolation, assert_pre_holdout
 from .package import build_package, data_hash, load_package, save_package
 from .registry import DEFAULT_REGISTRY, n_trials_from_registry
+from . import report as report_mod
 from .report import render_report
 from .resources import apply_limits, peak_rss_mb
-from .schema import feature_columns, validate_candidates
+from .schema import SchemaError, feature_columns, validate_candidates
 from .treeeval import TreeModel
 from .walkforward import make_folds
 
@@ -39,8 +40,10 @@ class CalibrationClamped(RuntimeError):
 
 
 # CLI cikis kodlari: 0 tamam, 2 lightgbm yok, 3 ozellik sagligi, 4 CalibrationClamped (RED), 5 sha256 uyusmazligi,
-# 6 manifest/katman butunlugu, 7 sira korumasi (r03 icin r02 sonucu), 8 guc on hesabi vetosu (kosulmadi)
-EXIT_SHA, EXIT_MANIFEST, EXIT_ORDER, EXIT_POWER = 5, 6, 7, 8
+# 6 manifest/katman butunlugu (HoldoutViolation/SchemaError dahil), 7 sira korumasi (r03 icin r02 sonucu), 8 guc on hesabi vetosu
+# (kosulmadi), 9 tek kosu kurali (--out'ta gate_result.json/oof_predictions.parquet var), 10 kirli git agaci (gercek r02/r03 kosusu)
+EXIT_SHA, EXIT_MANIFEST, EXIT_ORDER, EXIT_POWER, EXIT_EXISTS, EXIT_DIRTY = 5, 6, 7, 8, 9, 10
+SINGLE_RUN_FILES = ("gate_result.json", "oof_predictions.parquet")
 
 
 class LightGBMRequired(RuntimeError):
@@ -138,7 +141,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
         now: datetime | None = None, corpus_sha256: str | None = None, health_strict: bool | None = None,
         expected_daily_sr: float | None = None, expected_ic: float | None = None,
         weight_scheme: str | None = None, recipe: recipes.Recipe | None = None,
-        overlay_sha256: str | None = None, extra_meta: dict | None = None) -> dict:
+        overlay_sha256: str | None = None, extra_meta: dict | None = None, git_info: dict | None = None) -> dict:
     """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry).
     synthetic=False (gercek kosu): lightgbm yuklenemezse LightGBMRequired (lojistige dusmez).
     ML-G1: ozellik sagligi (bos/sabit/kopya) gercek kosuda REDDEDER (health_strict varsayilan = not synthetic), sentetikte
@@ -182,7 +185,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     if pkg_clamped:
         err = CalibrationClamped("paket kalibrasyonunda Platt egimi a<0 kisitlandi (sinyalsiz model): paket uretilmez")
         err.summary = _write_clamped(out_dir, oof, kinds, pm, selected, reason, recipe, n_trials, n_clamped, health, power,
-                                     len(t), corpus_sha256, overlay_sha256, folds, synthetic)
+                                     len(t), corpus_sha256, overlay_sha256, folds, synthetic, extra_meta, git_info)
         raise err
     p_pkg = 1.0 / (1.0 + np.exp(-(cal_pkg["a"] * z_sel + cal_pkg["b"])))
     tk = oof["taken"].to_numpy()
@@ -229,7 +232,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     md = render_report(res, meta=pkg["meta"], folds=folds, peak_rss_mb=peak_rss_mb(), synthetic=synthetic,
                        selected_reason=reason, n_trials=n_trials, lightgbm_version=lightgbm_version(),
                        corpus_sha256=corpus_sha256, overlay_sha256=overlay_sha256, diagnostics=diag, health=health, power=power,
-                       calibration={"nonneg_slope": recipe.platt_nonneg, "clamped_folds": n_clamped,
+                       run_info=extra_meta, mem_cap_mb=recipe.limits.get("mem_mb", config.TRAIN_MEM_CAP_MB), calibration={"nonneg_slope": recipe.platt_nonneg, "clamped_folds": n_clamped,
                                     "n_folds": int(oof["fold"].nunique()), "weight_scheme": recipe.weight_scheme})
     (out_dir / "gate_report.md").write_text(md, encoding="utf-8")
     summary = {"passed": res.passed, "model": selected, "threshold": th, "parity_max_abs_diff": parity,
@@ -237,7 +240,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
                "package": str(pkg_path), "report": str(out_dir / "gate_report.md"), "peak_rss_mb": peak_rss_mb(),
                "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials,
                "recipe_id": recipe.id, "lightgbm_version": lightgbm_version(), "corpus_sha256": corpus_sha256,
-               "overlay_sha256": overlay_sha256, "run_table_info": extra_meta,
+               "overlay_sha256": overlay_sha256, "run_table_info": extra_meta, "synthetic": synthetic, "git": git_info,
                "feature_health": health, "power_precheck": power, "diagnostics": diag, "platt_clamped_folds": n_clamped, "weight_scheme": recipe.weight_scheme, "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
@@ -245,7 +248,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
 
 
 def _write_clamped(out_dir, oof, kinds, pm, selected, reason, recipe, n_trials, n_clamped, health, power, n_candidates,
-                   corpus_sha256, overlay_sha256, folds, synthetic) -> dict:
+                   corpus_sha256, overlay_sha256, folds, synthetic, run_info=None, git_info=None) -> dict:
     """Paket kalibrasyonu kisitlandi: paket YOK; kapi KOSULMADI -> sonuc RED (passed=false), neden + OOF olculeri yazilir."""
     out_dir = Path(out_dir)
     reason_txt = "CalibrationClamped: paket duzeyi Platt egimi a<0 kisitlandi (sinyalsiz model); paket uretilmedi (cikis kodu 4)"
@@ -255,6 +258,7 @@ def _write_clamped(out_dir, oof, kinds, pm, selected, reason, recipe, n_trials, 
          f"- lightgbm sürümü: {lightgbm_version() or 'YOK'}",
          f"- Korpus sha256: `{corpus_sha256 or 'yok'}` | katman sha256: `{overlay_sha256 or 'yok'}`",
          f"- Eğimi kısıtlanan ileri yönlü dilim sayısı: " + (", ".join(f"{k}={v}/{int(oof['fold'].nunique())}" for k, v in n_clamped.items()) or "-"),
+         *report_mod.run_info_lines(run_info),
          "", "## OOF ölçüleri (yalnız bilgi; kapı koşulmadı)", "",
          "| Model | Alınan oran | Filtreli net R | Filtresiz net R | Fark |", "|---|---|---|---|---|"]
     for k, m in pm.items():
@@ -268,7 +272,7 @@ def _write_clamped(out_dir, oof, kinds, pm, selected, reason, recipe, n_trials, 
                "report": str(out_dir / "gate_report.md"), "checks": [], "n_candidates": int(n_candidates), "n_oof": int(len(oof)),
                "n_trials": n_trials, "recipe_id": recipe.id, "lightgbm_version": lightgbm_version(),
                "corpus_sha256": corpus_sha256, "overlay_sha256": overlay_sha256, "feature_health": health, "power_precheck": power,
-               "platt_clamped_folds": n_clamped, "weight_scheme": recipe.weight_scheme, "synthetic": synthetic,
+               "run_table_info": run_info, "git": git_info, "platt_clamped_folds": n_clamped, "weight_scheme": recipe.weight_scheme, "synthetic": synthetic,
                "oof_metrics": {k: {kk: vv for kk, vv in m.items()} for k, m in pm.items()}}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
@@ -279,12 +283,35 @@ def _fmt(v):
     return f"{v:+.4f}" if isinstance(v, float) and np.isfinite(v) else "-"
 
 
+def git_state() -> dict:
+    """{commit, tree_clean, dirty}: 19b git_stamp'i aynen (izinli: research/ml|logs altinda izlenmeyen dosyalar). Testler yamalar."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ml_build_candidates_19b_pipeline", corpus_v2.ROOT / "research" / "ml_build_candidates.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    commit, dirty = m.git_stamp()
+    return {"commit": commit, "tree_clean": not dirty, "dirty": list(dirty)}
+
+
+def check_single_run(out_dir: str | Path) -> str | None:
+    """Tek kosu kurali (on kayit 8/10): --out'ta onceki sonuc (gate_result.json / oof_predictions.parquet) varsa kosu reddedilir;
+    guc vetosu dali dahil HICBIR dal mevcut sonucun uzerine yazmaz. Hata metni ya da None."""
+    found = [f for f in SINGLE_RUN_FILES if (Path(out_dir) / f).exists()]
+    if found:
+        return (f"tek kosu kurali: {Path(out_dir)} icinde {', '.join(found)} var; sonuc uzerine yazilmaz "
+                "(teknik kesinti istisnasi: OOF yazilmadiysa ve mentor onayiyla, bos --out ile)")
+    return None
+
+
 ORDER_GUARDED = {recipes.R03_ID: recipes.R02_ID}     # r03 yalniz r02 RED sonucundan sonra (on kayit 8, sira 3)
 POWER_VETO_RHO = 0.08                                # on kayit 8: gereken gunluk IC rho > 0,08 -> tarif kosulmaz
 
 
-def check_order_guard(recipe: recipes.Recipe, prior_result: str | Path | None) -> str | None:
-    """Hata metni (kosu reddedilir) ya da None. r03: --prior-result r02 gate_result.json (recipe_id r02, passed == false)."""
+def check_order_guard(recipe: recipes.Recipe, prior_result: str | Path | None, *, corpus_sha256: str | None = None,
+                      overlay_sha256: str | None = None) -> str | None:
+    """Hata metni (kosu reddedilir) ya da None. r03: --prior-result r02 gate_result.json (recipe_id r02, passed == false).
+    sha256'lar verilirse (hesaplandiktan sonra): onceki sonucun corpus_sha256 / overlay_sha256'si bunlara ESIT ve synthetic == false olmali
+    (baska derlem/katmanla ya da sentetik bir r02 sonucu r03'u acmaz)."""
     need = ORDER_GUARDED.get(recipe.id)
     if need is None:
         return None
@@ -301,6 +328,12 @@ def check_order_guard(recipe: recipes.Recipe, prior_result: str | Path | None) -
         return f"onceki sonucun tarifi {d.get('recipe_id')!r}, beklenen {need!r}"
     if d.get("passed") is not False:
         return f"{need} sonucu passed={d.get('passed')!r}; {recipe.id} yalniz {need} KABUL DEGILSE kosulur"
+    if corpus_sha256 is not None or overlay_sha256 is not None:
+        if d.get("synthetic") is not False:
+            return f"onceki sonuc synthetic={d.get('synthetic')!r}; yalniz gercek (synthetic == false) {need} sonucu gecerlidir"
+        for name, cur in (("corpus_sha256", corpus_sha256), ("overlay_sha256", overlay_sha256)):
+            if d.get(name) != cur:
+                return f"onceki sonucun {name} degeri {d.get(name)!r} != bu kosunun {cur!r} (ayni dondurulmus girdi olmali)"
     return None
 
 
@@ -312,6 +345,10 @@ def _load_v2_inputs(a, recipe, ap):
         if not getattr(a, flag):
             ap.error(f"--recipe {recipe.id} icin --{flag} zorunlu")
     corpus_sha, overlay_sha = corpus_v2.sha256_path(a.corpus), corpus_v2.sha256_path(a.overlay)
+    msg = check_order_guard(recipe, a.prior_result, corpus_sha256=corpus_sha, overlay_sha256=overlay_sha)   # hash'ler hesaplandiktan sonra
+    if msg:
+        print(f"REDDEDILDI: sira korumasi: {msg}", file=sys.stderr)
+        return None, None, None, EXIT_ORDER
     for name, got, want in (("corpus", corpus_sha, a.expect_corpus_sha256), ("overlay", overlay_sha, a.expect_overlay_sha256)):
         if want is None and not a.precheck_only:
             print(f"REDDEDILDI: gercek kosu --expect-{name}-sha256 ister (dondurma kaydi on kayit 10)", file=sys.stderr)
@@ -320,9 +357,11 @@ def _load_v2_inputs(a, recipe, ap):
             print(f"REDDEDILDI: {name} sha256 uyusmuyor: dosya {got} beklenen {want}", file=sys.stderr)
             return None, None, None, EXIT_SHA
     errs, notes = corpus_v2.verify_corpus_manifest(corpus_v2.load_manifest(a.manifest), a.corpus)
+    if not a.precheck_only:
+        errs += corpus_v2.verify_sample_check(a.manifest)                  # elle kontrol 150/150 (on kayit 2.1)
     ov_man = Path(a.overlay_manifest) if a.overlay_manifest else Path(a.overlay).with_suffix(".manifest.json")
     if ov_man.exists():
-        errs += corpus_v2.verify_overlay_manifest(corpus_v2.load_manifest(ov_man), a.overlay)
+        errs += corpus_v2.verify_overlay_manifest(corpus_v2.load_manifest(ov_man), a.overlay, a.corpus)
     elif not a.precheck_only:
         errs.append(f"katman manifesti yok: {ov_man}")
     for n in notes:
@@ -332,8 +371,8 @@ def _load_v2_inputs(a, recipe, ap):
         return None, None, None, EXIT_MANIFEST
     try:
         t, info = corpus_v2.load_run_table(a.corpus, a.overlay, recipe)
-    except corpus_v2.CorpusError as e:
-        print(f"REDDEDILDI: {e}", file=sys.stderr)
+    except (corpus_v2.CorpusError, HoldoutViolation, SchemaError) as e:      # kilitli donem / sema ihlali de cikis 6 (izlenim degil karar)
+        print(f"REDDEDILDI: {type(e).__name__}: {e}", file=sys.stderr)
         return None, None, None, EXIT_MANIFEST
     if info["overlay_unmatched_entered"] > 0:
         print(f"REDDEDILDI: derlemde karsiligi olmayan alinmis islem: {info['overlay_unmatched_entered']} (0 olmali)", file=sys.stderr)
@@ -380,8 +419,20 @@ def main(argv=None) -> int:
     if msg:
         print(f"REDDEDILDI: sira korumasi: {msg}", file=sys.stderr)
         return EXIT_ORDER
+    real_v2 = v2 and not a.precheck_only
+    if real_v2:
+        msg = check_single_run(a.out)                  # onceki sonucun UZERINE yazma yok (guc vetosu dali dahil)
+        if msg:
+            print(f"REDDEDILDI: {msg}", file=sys.stderr)
+            return EXIT_EXISTS
+        git_info = git_state()
+        if not git_info["tree_clean"]:
+            print("REDDEDILDI: kirli git agaci (gercek r02/r03 kosusu temiz agac ister):\n  " + "\n  ".join(git_info["dirty"][:20]), file=sys.stderr)
+            return EXIT_DIRTY
+    else:
+        git_info = None
     if not a.research:
-        apply_limits()
+        apply_limits(**recipe.limits)                  # tarife ozgu limitler (r01: {} = config varsayilanlari, degismez)
     n_trials = n_trials_from_registry(a.registry, recipe_id=recipe.id)
     if a.n_trials is not None:
         if a.n_trials < n_trials:
@@ -425,7 +476,7 @@ def main(argv=None) -> int:
             return EXIT_POWER
     try:
         s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials, corpus_sha256=corpus_sha, overlay_sha256=overlay_sha,
-                expected_daily_sr=a.expected_sr, expected_ic=a.expected_ic, recipe=recipe, extra_meta=info)
+                expected_daily_sr=a.expected_sr, expected_ic=a.expected_ic, recipe=recipe, extra_meta=info, git_info=git_info)
     except prechecks.FeatureHealthError as e:
         print(f"REDDEDILDI: {e}", file=sys.stderr)
         return 3
