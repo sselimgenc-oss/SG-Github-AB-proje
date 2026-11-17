@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from decimal import ROUND_DOWN, Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from .engine import ENGINE_VERSION, Engine
 from .errors import ConfigError, DataError, EngineError
 from .gates import NoVeto
 from .killswitch import Killswitch
+from .numeric import round_nearest
 from .marketdata.sources import HistoricalSource, StoreSource
 from .precomputed import GuardedView, LedgerReplayVeto, LookaheadError, PrecomputedSignalSource
 from .state import StateStore
@@ -256,12 +258,62 @@ class _CompatEntryView:
         return getattr(self._s, name)
 
 
+def _trunc_step(x: float, step: float) -> float:
+    """Adima asagi kesme, Decimal(repr) uzerinden (freqtrade TRUNCATE; kayan nokta gurultusu korunur)."""
+    d, q = Decimal(repr(float(x))), Decimal(repr(float(step)))
+    return float((d / q).to_integral_value(rounding=ROUND_DOWN) * q)
+
+
+class _CompatBrokerView:
+    """legacy_compat: giris kapisinin gordugu hesap. Ayni adimda cikacak (`_CompatEntryView._freed`) pozisyonlarin
+    gerceklesmis K/Z'si (cikis fiyati tahmini, giris-ayi tick'ine en yakin yuvarlama, cikis komisyonu dahil) boyutlandirmadan
+    ONCE ozsermayeye yansir (freqtrade: cikislar giristen once islenir; TraderV1 cuzdani). Paper/native'de kullanilmaz."""
+
+    def __init__(self, broker, entry_view, tick_fn, fee) -> None:
+        self._b = broker
+        self._ev = entry_view
+        self._tick_fn = tick_fn
+        self._fee = fee
+
+    def account(self):
+        acct = self._b.account()
+        freed = self._ev._freed()
+        if not freed:
+            return acct
+        bp = {x.pair: x for x in self._b.positions()}
+        adj = 0.0
+        for p in self._ev._s.open_positions():
+            px = freed.get(p.trade_id)
+            q = bp.get(p.pair)
+            if px is None or q is None or p.entry_price is None:
+                continue
+            fp = round_nearest(px, self._tick_fn(p.pair, q.opened_ts)) if self._tick_fn is not None else px
+            sign = 1.0 if p.side == "long" else -1.0
+            adj += q.qty * (fp - q.entry_price) * sign - q.qty * fp * self._fee - q.unrealized
+        return dataclasses.replace(acct, equity=acct.equity + adj)
+
+    def __getattr__(self, name):
+        return getattr(self._b, name)
+
+
 class _CoarsePaperBroker(PaperBroker):
     """legacy_compat (kaba 15 dk adim): PaperBroker ayni dolum/tetik kodu; yalniz adim ici `last_mark` zamanlamasi.
     Dolum asamasinda (adim acilisi) mark = adim ACILISI (koruyucu stop bu mark'a gore kurulur), tetik asamasindan sonra
     adim KAPANISI. Boylece 15 dk barin kapanisi stopu asmis olsa bile giris sonrasi stop kurulur ve ayni adimda tetiklenir
     (freqtrade: giris mumunda stoploss kontrolu); aksi halde `would_trigger` -> `stop_failed` giris kilidi olusurdu.
     Native 1 dk kipte kullanilmaz."""
+
+    def _fill_entry(self, o, bar, rules) -> None:
+        """freqtrade stake->miktar kesmesi (yalniz legacy_compat): `stake = qty*ref/lev` (karar marjini),
+        `amount = trunc((stake/fill)*lev, adim)` (Decimal(repr) kesme: 0.92 -> 0.9199999999999999 -> 0.91).
+        Ref = adim acilisi (`entry_ref`), fill = tick'e yuvarlanmis acilis."""
+        lev = o.leverage if o.leverage is not None else self._lev.get(o.pair)
+        if lev and o.qty > 0 and rules.step:
+            fp = self._slipped(bar.last_o, o.order_side, 0.0, rules.tick, o.pair, bar.open_ts)
+            if fp > 0:
+                margin = (o.qty * bar.last_o) / lev
+                o.qty = _trunc_step((margin / fp) * lev, rules.step)
+        super()._fill_entry(o, bar, rules)
 
     def advance(self, bars, phase):
         super().advance(bars, phase)
@@ -386,6 +438,7 @@ class BacktestRunner:
         view_peek = [0]
         if cfg.cost.fill_model == "legacy_compat":
             eng.gate.state = _CompatEntryView(state, raw, clock, view_peek)
+            eng.gate.broker = _CompatBrokerView(broker, eng.gate.state, tick_fn, cfg.cost.taker_fee)
         snap: list | None = None
         if snapshot_at is not None:
             orig = eng.decision_step
