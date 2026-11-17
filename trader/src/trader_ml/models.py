@@ -88,19 +88,21 @@ def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bo
 
 
 # ------------------------------------------------------------------------------------- LightGBM
-def _lgb_params() -> dict:
-    p = dict(LGBM_PARAMS)
+def _lgb_params(params: dict | None = None) -> dict:
+    p = dict(LGBM_PARAMS if params is None else params)
     p.pop("n_estimators_max"), p.pop("early_stopping_rounds")
     return p
 
 
-def fit_lgbm(X, y, w, *, val_frac: float = 0.2, num_rounds: int | None = None, ts=None, label_end=None):
+def fit_lgbm(X, y, w, *, val_frac: float = 0.2, num_rounds: int | None = None, ts=None, label_end=None,
+             params: dict | None = None):
     """Sabit tarif; erken durdurma icin kronolojik son %val_frac dogrulama. (booster, best_iter).
     num_rounds verilirse erken durdurma yok (nihai model). ts + label_end (datetime64, X ile ayni sira)
     verilirse egitim/dogrulama arasinda ARINDIRMA yapilir: etiketi dogrulama baslangicindan (- ambargo)
-    sonra biten egitim satirlari atilir."""
+    sonra biten egitim satirlari atilir. params None -> config.LGBM_PARAMS (r01); tarif ayari (r03) buradan gecer."""
     import lightgbm as lgb
-    p = _lgb_params()
+    full = LGBM_PARAMS if params is None else params
+    p = _lgb_params(full)
     if num_rounds is not None:
         ds = lgb.Dataset(X, label=y, weight=w, free_raw_data=False)
         return lgb.train(p, ds, num_boost_round=num_rounds), num_rounds
@@ -111,8 +113,8 @@ def fit_lgbm(X, y, w, *, val_frac: float = 0.2, num_rounds: int | None = None, t
         tr_ix = tr_ix[np.asarray(label_end, dtype="datetime64[ns]")[:k] < cut]
     dtr = lgb.Dataset(X[tr_ix], label=y[tr_ix], weight=w[tr_ix], free_raw_data=False)
     dva = lgb.Dataset(X[k:], label=y[k:], weight=w[k:], reference=dtr, free_raw_data=False)
-    b = lgb.train(p, dtr, num_boost_round=LGBM_PARAMS["n_estimators_max"], valid_sets=[dva],
-                  callbacks=[lgb.early_stopping(LGBM_PARAMS["early_stopping_rounds"], verbose=False)])
+    b = lgb.train(p, dtr, num_boost_round=full["n_estimators_max"], valid_sets=[dva],
+                  callbacks=[lgb.early_stopping(full["early_stopping_rounds"], verbose=False)])
     return b, max(int(b.best_iteration), 10)
 
 

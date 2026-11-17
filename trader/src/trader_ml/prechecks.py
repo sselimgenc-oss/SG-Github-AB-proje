@@ -26,10 +26,12 @@ class FeatureHealthError(ValueError):
     """Bos / sabit / kopya ozellik: gercek kosu reddedilir."""
 
 
-def feature_health(df: pd.DataFrame, names: list[str] | None = None) -> dict:
+def feature_health(df: pd.DataFrame, names: list[str] | None = None, *, recipe=None) -> dict:
     """{'all_nan': [...], 'constant': [...], 'duplicate': [(kopya, asil), ...], 'healthy': [...], 'ok': bool}.
     Sabit = en fazla 1 farkli bos-olmayan deger (kismen bos olup sabit kalan dahil). Kopya = baska bir
     ozellikle birebir ayni sutun (NaN konumlari dahil); ilk gorulen asil sayilir. Bos/sabit olanlar kopya aramasina girmez."""
+    if names is None and recipe is not None and recipe.features:
+        names = list(recipe.features)                       # tarifin ad ad listesi (eksik sutun KeyError: sessiz atlama yok)
     names = list(names) if names is not None else feature_columns(df)
     all_nan, const, dup, seen = [], [], [], {}
     for c in names:
@@ -101,9 +103,11 @@ def power_precheck(n_days_dsr: int, n_days_ic: int, n_trials: int, *, expected_d
     return out
 
 
-def corpus_power(t: pd.DataFrame, n_trials: int, **kw) -> dict:
-    """Aday tablosundan sinav (OOF) gun sayilarini kestirir: DSR = test dilimlerinin takvim gunu; IC = alinan satiri olan gun."""
-    folds = make_folds(t)
+def corpus_power(t: pd.DataFrame, n_trials: int, *, recipe=None, fold_kwargs: dict | None = None, **kw) -> dict:
+    """Aday tablosundan sinav (OOF) gun sayilarini kestirir: DSR = test dilimlerinin takvim gunu; IC = alinan satiri olan gun.
+    Pencere: fold_kwargs (make_folds kwarg'lari) ya da recipe.wf; ikisi de yoksa r01 penceresi."""
+    wf = fold_kwargs if fold_kwargs is not None else (recipe.wf if recipe is not None else {})
+    folds = make_folds(t, **wf)
     days = sum(max(0, int((f["test_end"] - f["test_start"]) / pd.Timedelta(days=1))) for f in folds if len(f["test_rows"]))
     rows = np.concatenate([f["test_rows"] for f in folds if len(f["test_rows"])]) if folds else np.array([], int)
     sub = t.iloc[rows]

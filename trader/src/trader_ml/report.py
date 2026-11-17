@@ -15,7 +15,7 @@ def _fmt(v, nd=4):
 
 def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb: float, synthetic: bool,
                   selected_reason: str, n_trials: int | None = None, lightgbm_version: str | None = None,
-                  corpus_sha256: str | None = None, diagnostics: dict | None = None,
+                  corpus_sha256: str | None = None, overlay_sha256: str | None = None, diagnostics: dict | None = None,
                   health: dict | None = None, power: dict | None = None,
                   calibration: dict | None = None) -> str:
     L = []
@@ -34,6 +34,7 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
           f"- Veri özeti: `{meta['data_hash'][:16]}…` | kod özeti: `{meta['code_hash'][:16]}…` | model özeti: `{meta['model_hash'][:16]}…`",
           f"- Özellik listesi özeti: `{meta['feature_list_hash'][:16]}…` ({len(meta['features'])} özellik)",
           f"- Korpus sha256 (aday dosyası): `{corpus_sha256 or 'yok (sentetik / dosyasız)'}`",
+          *([f"- Katman (alınan işlem) sha256: `{overlay_sha256}`"] if overlay_sha256 else []),
           f"- Tarif kimliği: `{meta['version']}` | deneme sayısı (n_trials): {n_trials if n_trials is not None else '-'} | "
           f"lightgbm sürümü: {lightgbm_version or 'YOK'}",
           f"- Tepe bellek: {peak_rss_mb:.0f} MB (sunucu tavanı {TRAIN_MEM_CAP_MB} MB"

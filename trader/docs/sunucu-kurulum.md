@@ -287,6 +287,42 @@ sudo systemd-run --uid=trader --gid=trader --unit=trader-corpus-v2 --collect --w
 - Yeniden uretim: `--skip-build --sample-check 50` var olan derlemden yalniz kontrol dosyasini yeniden yazar. Yerel duman kosusu icin `--allow-dirty --history-dir ... --out-dir ...` (sunucuda KULLANILMAZ).
 
 
+## r02/r03 kosusu: katman, on hesap, dondurma, tek kosu (ML-G7; on kayit `docs/ml/r02-r03-on-kayit.md`)
+
+Sira DEGISMEZ. Kod (iş emri) birlesmis ve commit'li olmali: `build_corpus_v2.CODE_FILES` manifestte sha256 ile kayitlidir, kosu aninda diskle karsilastirilir (kod derlemden sonra degisirse kosu reddedilir, cikis 6).
+
+1. **Derlem kurulumu** (yukaridaki "Derlem v2 kurulumu"): `scripts/build_corpus_v2.py --start 2021-01-01 --end 2026-05-01 --sample-check 50`; temiz agac.
+2. **50 etiket elle kontrol:** `research/ml/corpus_v2.sample_check.md` kutulari isaretlenir, "Bagimsiz yeniden hesap uyumu: 150/150" sarttir; tek hata = derlem kullanilmaz. Manifest + isaretli dosya commit'lenir (agac temiz kalsin).
+3. **Alinan-islem katmani** (motor backtest'i 19b ile ayni ayarlar, donem 20210101-20260501, kilitli donem koşulmaz; uzun surer, `systemd-run` ile derlemdeki gibi bellek sinirli):
+   ```
+   sudo systemd-run --uid=trader --gid=trader --unit=trader-corpus-v2-taken --collect --wait --pty \
+     -p Nice=15 -p MemoryMax=900M -p MemorySwapMax=0 -p CPUQuota=100% \
+     -p WorkingDirectory=/home/trader/SG-Github-AB-proje/trader -p Environment=PYTHONPATH=src \
+     .venv/bin/python scripts/build_corpus_v2_overlay.py
+   ```
+   Cikti: `research/ml/corpus_v2_taken.parquet` + `corpus_v2_taken.manifest.json` (sha256, `config_hash`, commit, alinan/alinmayan, donem sonu acik). **Eslesmeyen alinmis islem 0 olmali**: degilse betik cikis kodu 3 ile biter, kosu baslamaz, mentor incelemeli (derlem ile motorun aday kumesi ayrismis). Temiz agac sart; `research/ml/` altinda izlenmeyen dosyalar izinlidir.
+4. **On hesap** (egitim/kapi KOSULMAZ; ozellik sagligi + guc; gereken IC rho yazdirilir, rho > 0,08 ise cikis 8 = "guc yetersiz", tarif kosulmaz):
+   ```
+   PYTHONPATH=src .venv/bin/python -m trader_ml.pipeline --recipe ml1-r02-long-ctx-1r --precheck-only --out research/ml/r02 \
+     --corpus research/ml/corpus_v2.parquet --overlay research/ml/corpus_v2_taken.parquet --manifest research/ml/corpus_v2.manifest.json
+   ```
+   Bu asamada `--expect-*` verilmez (sha256'lar henuz dondurulmadi); manifest + katman manifesti yine dogrulanir.
+5. **Dondurma:** `sha256sum research/ml/corpus_v2.parquet research/ml/corpus_v2_taken.parquet` ve kurulum bilgileri (commit, `config_hash`, satir sayilari, lightgbm surumu, on hesap ciktisi, n_trials) on kaydin **10. bolumundeki** tabloya yazilir ve **commit'lenir**. Tablo commit'lenmeden kosu baslamaz.
+6. **Tek kosu (r02):** `--expect-*` ZORUNLU (yoksa cikis 5); sha256 uyusmazsa cikis 5, manifest/kod/katman butunlugu uyusmazsa cikis 6:
+   ```
+   sudo systemd-run ... .venv/bin/python -m trader_ml.pipeline --recipe ml1-r02-long-ctx-1r --out research/ml/r02 \
+     --corpus research/ml/corpus_v2.parquet --overlay research/ml/corpus_v2_taken.parquet --manifest research/ml/corpus_v2.manifest.json \
+     --expect-corpus-sha256 <§10'daki sha256> --expect-overlay-sha256 <§10'daki sha256>
+   ```
+   Cikis kodlari: 0 tamam (KABUL/RED `gate_result.json`'da), 2 lightgbm yok, 3 ozellik sagligi reddi, 4 paket kalibrasyonu kisitlandi (RED; rapor + `gate_result.json` yazilir, paket yok), 5 sha256, 6 manifest/katman, 7 sira korumasi, 8 guc vetosu. Rapor ve ham cikti commit'lenir (`docs/ml/r02-kapi-raporu.md`).
+7. **r03** yalniz r02 raporu commit'lendikten sonra ve r02 KABUL degilse; sira korumasi `--prior-result research/ml/r02/gate_result.json` ister (tarif r02, `passed == false`; yoksa/KABUL ise cikis 7). Once r03 icin `--precheck-only` (sonucu 10. bolume yazin), sonra:
+   ```
+   ... --recipe ml1-r03-long-regime8 --out research/ml/r03 --prior-result research/ml/r02/gate_result.json \
+     --corpus ... --overlay ... --manifest ... --expect-corpus-sha256 <ayni> --expect-overlay-sha256 <ayni>
+   ```
+- `n_trials` defterden okunur (`research/ml_trial_registry.csv`, tarif x 2 model; r02/r03 icin 10); `--n-trials` yalniz buyutebilir.
+- Ayni derlem + katmanla yeniden kosu YOK (tek kosu kurali); teknik kesintide (OOF yazilmadan) ayni commit/sha256'larla bir kez daha baslatilir.
+
 ## Testnet yoklama, duman ve tatbikat betigi (WP-B7; `scripts/smoke_testnet.py`)
 
 Ne zaman: Binance vadeli TESTNET anahtari gelince (B0 yoklamasi). **Durum: B0 yoklamasi anahtar gelince kosulabilir; T-13...T-16 ve D-1...D-8 adimlari yazildi ama duzeltme turu yeniden incelemesi (re-review) bitene kadar KAYIT ICIN KOSULMAZ (mentor karari).** Dry-run (plan yazdirma) her zaman serbesttir.
