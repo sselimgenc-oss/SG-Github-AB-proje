@@ -571,10 +571,11 @@ def calls_after(s, t_ms):
 
 
 def test_429_read_waits_retry_after_then_retries():
-    cl, s, clk = mk([err(429, -1003, "Too many", {"Retry-After": "7"}), Resp(200, {"ok": 1})])
+    # Mentor B1 madde 3: yalnız Retry-After <= 5 sn ise satır içi bekle+tekrar (önceden 7 sn; uzun uyku kaldırıldı).
+    cl, s, clk = mk([err(429, -1003, "Too many", {"Retry-After": "3"}), Resp(200, {"ok": 1})])
     assert cl.request("GET", "/fapi/v2/account", None, kind="read") == {"ok": 1}
-    assert sum(clk.sleeps) >= 7
-    assert s.calls[1]["at"] - s.calls[0]["at"] >= 7000     # sessizlik: tekrar en erken Retry-After sonra
+    assert sum(clk.sleeps) >= 3
+    assert s.calls[1]["at"] - s.calls[0]["at"] >= 3000     # sessizlik: tekrar en erken Retry-After sonra
 
 
 def test_429_order_is_reject_without_retry_and_code_none():
@@ -711,12 +712,13 @@ def test_weight_below_soft_no_delay():
 
 @pytest.mark.parametrize("w", [1200, 1250])
 def test_weight_soft_defers_non_protective_read(w):
+    # Mentor B1 madde 2: uyku yok; gönderilmeden ExchangeBan(http=None, retry_after_s=dakika penceresi sonuna kalan sn).
     cl, s, clk = mk([Resp(200, {}, _w(w)), Resp(200, {})])
     cl.request("GET", "/fapi/v2/positionRisk", None, kind="read")
-    cl.request("GET", "/fapi/v2/positionRisk", None, kind="read", protective=False)
-    assert len(s.calls) == 2
-    assert _events_before_call(clk, 1) >= 1                  # ikinci çağrıdan önce uyku (ertelendi)
-    assert s.calls[1]["at"] > s.calls[0]["at"]
+    with pytest.raises(ExchangeBan) as e:
+        cl.request("GET", "/fapi/v2/positionRisk", None, kind="read", protective=False)
+    assert len(s.calls) == 1 and clk.sleeps == []
+    assert e.value.http is None and e.value.retry_after_s == 60 and "weight_soft" in str(e.value)
 
 
 def test_weight_soft_protective_read_passes_immediately():
@@ -748,8 +750,9 @@ def test_weight_hard_only_protective_passes():
 def test_weight_custom_thresholds():
     cl, s, clk = mk([Resp(200, {}, _w(50)), Resp(200, {})], weight_soft=50, weight_hard=100)
     cl.request("GET", "/fapi/v2/positionRisk", None, kind="read")
-    cl.request("GET", "/fapi/v2/positionRisk", None, kind="read")
-    assert _events_before_call(clk, 1) >= 1
+    with pytest.raises(ExchangeBan):                         # madde 2: ertelenmez, gönderilmeden ExchangeBan
+        cl.request("GET", "/fapi/v2/positionRisk", None, kind="read")
+    assert len(s.calls) == 1 and clk.sleeps == []
 
 
 def test_weight_wrappers_protective_classification():

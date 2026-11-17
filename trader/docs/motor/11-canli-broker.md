@@ -166,14 +166,16 @@ Parametreler eklenme sırasıyla `urlencode` edilir, sona `recvWindow` ve `times
 | Durum | `read` / `cancel` / `setup` | `order` (emir POST'u) |
 |---|---|---|
 | Ağ hatası, zaman aşımı, HTTP 5xx, `-1001`, `-1007` | 1, 2, 4 sn geri çekilmeyle `max_attempts` kez; sonra `ExchangeUncertain` | **Tekrar yok.** Hemen `ExchangeUncertain` (→ `BrokerUncertain` → 04 belirsizlik yolu) |
-| `-1021` (zaman damgası pencere dışı) | `sync_time()` + tekrar | `sync_time()` + **bir** tekrar (istek işlenmedi; güvenli) |
-| 429 | `Retry-After` kadar **hiçbir** istek yok (koruyucular dahil); sonra tekrar | `ExchangeReject(code=None, http=429)`; `reason="rate_limited"` (istek işlenmedi) |
+| `-1021` (zaman damgası pencere dışı; yalnız HTTP < 500) | tek `sync_time()` denemesi (geri çekilme yok) + tekrar | aynı, emir zaman aşımıyla + **bir** tekrar (istek işlenmedi; güvenli). Eşitleme herhangi bir nedenle başarısızsa özgün istek için `ExchangeReject(code=-1021, http=400)` |
+| 429 | `Retry-After` kadar **hiçbir** istek yok (koruyucular dahil). Satır içi uyku yalnız `Retry-After <= 5 sn` ise (bekle + tekrar); daha uzunsa hemen `ExchangeBan(429, retry_after_s)`, pencere saatle kapanır. `Retry-After` 429/418'de [1, 3600] sn'ye kısılır | `ExchangeReject(code=None, http=429)`; `reason="rate_limited"` (istek işlenmedi) |
 | 418 | `ExchangeBan(retry_after)`; pencere bitene kadar hiçbir istek yok | aynı |
 | 451, 403 | `ExchangeBan(http)`; 403: 300 sn, sonra ikiye katlanarak en fazla 1800 sn bekle | aynı |
 | 401, `-2014`, `-2015`, `-1022` | `ExchangeAuth` (tekrar yok) | aynı |
-| Diğer 4xx + borsa kodu | `ExchangeReject` (tekrar yok); `cancel`'da `-2011/-2013`, `setup`'ta `-4046/-4059` **başarı** | `ExchangeReject` |
+| Diğer 4xx + borsa kodu | `ExchangeReject` (tekrar yok); `cancel`'da `-2011/-2013`, `setup`'ta `-4046/-4059` **başarı** | `ExchangeReject` yalnız 4xx **ve** tamsayı kod varsa (200 + gövdede `code<0` aynı sınıflanır); kodsuz 4xx / 408 / HTML 404 / 302 → `ExchangeUncertain(http)` |
 
-Ağırlık: her yanıtta `X-MBX-USED-WEIGHT-1M` okunur (IP geneli; feed'in kullanımını da içerir). `≥ weight_soft` → `protective=False` okumalar dakika başına ertelenir; `≥ weight_hard` → yalnız `protective=True` istekler geçer. Emir sayısı: `X-MBX-ORDER-COUNT-10S/1M` okunur; yerel tavan (`20/10 sn`, `100/dk`) aşılırsa `protective=False` emir **gönderilmeden** `ExchangeReject(code=None, msg="order_rate_cap")`; koruyucu emirler borsa sınırının %80'ine kadar geçer. Beklenen kullanım sınırların %5'inin altındadır; 429/418 görülmesi **hatadır** (§10).
+Ağırlık: her yanıtta `X-MBX-USED-WEIGHT-1M` okunur (IP geneli; feed'in kullanımını da içerir). `≥ weight_soft` → `protective=False` okumalar **uyutulmadan**, gönderilmeden `ExchangeBan(http=None, retry_after_s=<dakika penceresi sonuna kalan sn>)` ile reddedilir (çağıran taramayı atlar); `≥ weight_hard` → yalnız `protective=True` istekler geçer. Emir sayısı: `X-MBX-ORDER-COUNT-10S/1M` okunur; yerel tavan (`20/10 sn`, `100/dk`) aşılırsa `protective=False` emir **gönderilmeden** `ExchangeReject(code=None, msg="order_rate_cap")`; koruyucu emirler borsa sınırının %80'ine kadar geçer. Beklenen kullanım sınırların %5'inin altındadır; 429/418 görülmesi **hatadır** (§10).
+
+**Gönderim öncesi `ExchangeBan`** (sessizlik penceresi, `weight_hard`, `weight_soft`) = istek borsaya **kesinlikle gönderilmedi**. Çağrı başına `attempts=` (yalnız anahtar sözcük; `request`, `query_order`, `query_conditional`) `max_attempts`'i geçersiz kılar; WP-B3/B4 durdurma süresi sınırı için `attempts=1` geçer. İstemci tek iş parçacıklıdır.
 
 `protective=True` yalnız şunlardır: stop kurma, `reduceOnly` piyasa çıkışı, bunların sorgusu ve `protect_first`/mutabakatın pozisyon-emir okumaları.
 

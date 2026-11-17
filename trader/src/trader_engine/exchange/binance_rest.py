@@ -12,6 +12,17 @@ YENİDEN DENEME: okuma/iptal/ayar istekleri ağ hatası, HTTP 5xx, -1001, -1007 
 EMİR POST'LARI (kind="order") ağ hatası/zaman aşımı/5xx'te ASLA tekrar edilmez: sonuç belirsizdir (ExchangeUncertain); çağıran emri
 kimlikle sorgular. Yalnız -1021 (işlenmedi) emirde de tek kez güvenle tekrar edilir.
 
+ÖN-GÖNDERİM ExchangeBan'ları (sessizlik penceresi, weight_hard, weight_soft) isteğin borsaya HİÇ gönderilmediği anlamına gelir
+(kesin "gönderilmedi"; çağıran güvenle yeniden deneyebilir/taramayı atlayabilir). weight_soft uyumaz: gönderilmeden
+ExchangeBan(http=None, retry_after_s=dakika penceresi sonuna kalan sn) yükseltir. 429'da yalnız Retry-After <= 5 sn ise okuma
+satır içi uyuyup tekrar edilir; daha uzunsa ExchangeBan hemen yükselir (pencere saatle kapanır). Emirde (kind="order") ExchangeReject
+yalnız 4xx + tamsayı borsa kodu varsa; aksi halde (408, HTML 404, 302 ...) ExchangeUncertain.
+
+`attempts=` (yalnız anahtar sözcük; request/query_order/query_conditional) o çağrı için `max_attempts`'i geçersiz kılar.
+
+İSTEMCİ İŞ PARÇACIĞI GÜVENLİ DEĞİLDİR (tek iş parçacığı varsayımı). Üretimde `urllib3` günlükçüsü >= INFO tutulmalı (DEBUG URL/imza
+yazar).
+
 Saat (`now_ms`) ve uyku (`sleep`) zorunlu enjekte edilir; bu modül gerçek saati okumaz. Taşıma (`session`) enjekte edilebilir:
 `session.request(method, url, headers=..., timeout=...)` -> yanıt (`status_code`, `headers`, `json()`, `text`); verilmezse `requests`
 tembel içe aktarılır.
@@ -21,9 +32,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-import os
 import re
-import threading
 from collections.abc import Callable, Mapping
 from decimal import Decimal
 from typing import Any, Literal
@@ -123,6 +132,12 @@ def _int_or(v: Any, default: int | None = None) -> int | None:
         return default
 
 
+def _retry_after(headers: Any) -> int:
+    """Retry-After saniye; ayrıştırılamazsa 60; [1, 3600] aralığına kısılır."""
+    v = _int_or(_hdr(headers, "Retry-After"), 60)
+    return max(1, min(3600, 60 if v is None else v))
+
+
 class SignedRestClient:
     def __init__(self, *, env: Literal["testnet", "live"], api_key: str, api_secret: str, session=None,
                  now_ms: Callable[[], int], sleep: Callable[[float], None], recv_window_ms: int = 5000,
@@ -138,6 +153,7 @@ class SignedRestClient:
         if session is None:
             import requests  # tembel: içe aktarma anında yüklenmez
             session = requests.Session()
+            session.max_redirects = 0            # yönlendirme izlenmez (imzalı istek başka adrese gitmez)
         self.env = env
         self._base = BASES[env]
         self._api_key, self._api_secret = api_key, api_secret
@@ -163,19 +179,6 @@ class SignedRestClient:
         return f"SignedRestClient(env={self.env!r})"
 
     # ------------------------------------------------------------------ yardımcılar
-    def _log(self, level: int, msg: str, *args: Any) -> None:
-        """Günlük kaydı; kayıt zamanı enjekte saatten gelir (LogRecord.__init__ gerçek saati okuyacağı için atlanır)."""
-        if not log.isEnabledFor(level):
-            return
-        rec = logging.LogRecord.__new__(logging.LogRecord)
-        t = self.now_ms() / 1000.0
-        rec.__dict__.update(name=log.name, msg=msg, args=args or None, levelno=level, levelname=logging.getLevelName(level),
-                            pathname=__file__, filename=os.path.basename(__file__), module=__name__.rsplit(".", 1)[-1],
-                            exc_info=None, exc_text=None, stack_info=None, lineno=0, funcName="_log", created=t,
-                            msecs=(t % 1) * 1000.0, relativeCreated=0.0, thread=threading.get_ident(),
-                            threadName="", processName="", process=os.getpid(), taskName=None)
-        log.handle(rec)
-
     def _bump(self, name: str) -> None:
         self.counters[name] = self.counters.get(name, 0) + 1
 
@@ -216,30 +219,39 @@ class SignedRestClient:
 
     # ------------------------------------------------------------------ saat
     def sync_time(self) -> int:
+        return self._sync(attempts=None, timeout=None)
+
+    def _sync(self, *, attempts: int | None, timeout: Any) -> int:
         t0 = self.now_ms()
-        r = self._send("GET", "/fapi/v1/time", None, kind="read", signed=False, protective=True, base=self._base)
+        r = self._send("GET", "/fapi/v1/time", None, kind="read", signed=False, protective=True, base=self._base,
+                       attempts=attempts, timeout=timeout)
         t1 = self.now_ms()
-        self.clock_offset_ms = int(r["serverTime"]) - (t0 + t1) // 2
+        st = r.get("serverTime") if isinstance(r, dict) else None
+        if isinstance(st, bool) or not isinstance(st, (int, float, str)) or _int_or(st) is None:
+            raise ExchangeUncertain(self._fmt("GET", "/fapi/v1/time", 200, None, "bad_server_time"), http=200)
+        self.clock_offset_ms = int(_int_or(st)) - (t0 + t1) // 2
         self.last_sync_ms = t1
         off = abs(self.clock_offset_ms)
         if off > 5000:
             self._bump("clock_offset")
-            self._log(logging.CRITICAL, "saat farkı %d ms > 5000 (sunucu NTP'si bozuk olabilir)", self.clock_offset_ms)
+            log.log(logging.CRITICAL, "saat farkı %d ms > 5000 (sunucu NTP'si bozuk olabilir)", self.clock_offset_ms)
         elif off > 1000:
             self._bump("clock_offset")
-            self._log(logging.WARNING, "saat farkı %d ms > 1000", self.clock_offset_ms)
+            log.log(logging.WARNING, "saat farkı %d ms > 1000", self.clock_offset_ms)
         return self.clock_offset_ms
 
     # ------------------------------------------------------------------ çekirdek
     def request(self, method: str, path: str, params: dict | None, *, kind: Literal["read", "cancel", "setup", "order"],
-                signed: bool = True, protective: bool = False) -> Any:
-        return self._send(method, path, params, kind=kind, signed=signed, protective=protective, base=self._base)
+                signed: bool = True, protective: bool = False, attempts: int | None = None) -> Any:
+        return self._send(method, path, params, kind=kind, signed=signed, protective=protective, base=self._base, attempts=attempts)
 
-    def _send(self, method: str, path: str, params: dict | None, *, kind: str, signed: bool, protective: bool, base: str) -> Any:
+    def _send(self, method: str, path: str, params: dict | None, *, kind: str, signed: bool, protective: bool, base: str,
+              attempts: int | None = None, timeout: Any = None) -> Any:
         if kind not in ("read", "cancel", "setup", "order"):
             raise ValueError(f"kind: {kind!r}")
         is_order = kind == "order"
         now = self.now_ms()
+        max_attempts = self.max_attempts if attempts is None else max(1, int(attempts))
         # 1) sessizlik penceresi (429/418/403): koruyucular dahil hiçbir istek gitmez
         if now < self._ban_until_ms:
             left = -(-(self._ban_until_ms - now) // 1000)
@@ -249,10 +261,9 @@ class SignedRestClient:
         if w >= self.weight_hard and not protective:
             raise ExchangeBan(self._fmt(method, path, None, None, f"weight_hard {w}"), http=None)
         if w >= self.weight_soft and not protective and kind == "read":
-            wait = max(1.0, 60 - (now - self._weight_ts_ms) / 1000)
-            self._log(logging.WARNING, "ağırlık %d >= %d; %.0f sn bekleniyor", w, self.weight_soft, wait)
-            self.sleep(wait)
-            self._used_weight = 0
+            left = max(1, -(-(self._weight_ts_ms + 60_000 - now) // 1000))
+            log.log(logging.WARNING, "ağırlık %d >= %d; okuma gönderilmedi (%d sn)", w, self.weight_soft, left)
+            raise ExchangeBan(self._fmt(method, path, None, None, f"weight_soft {w}"), http=None, retry_after_s=left)
         # 3) emir tavanı
         if is_order:
             c10, c1m = self._order_counts(now)
@@ -267,7 +278,7 @@ class SignedRestClient:
         resynced = False
         attempt = 0
         last_err: ExchangeError | None = None
-        while attempt < self.max_attempts:
+        while attempt < max_attempts:
             attempt += 1
             query = encode_params(params)
             headers: dict[str, str] = {}
@@ -278,66 +289,77 @@ class SignedRestClient:
                 query += "&signature=" + sign(query, self._api_secret)
                 headers["X-MBX-APIKEY"] = self._api_key
             url = base + path + ("?" + query if query else "")
-            timeout = self.order_timeout_s if is_order else self.read_timeout_s
+            timeout_v = timeout if timeout is not None else (self.order_timeout_s if is_order else self.read_timeout_s)
             if is_order:
                 self._order_sent_ms.append(self.now_ms())
             exc_name = None
             r = None
             try:
-                r = self.session.request(method, url, headers=headers, timeout=timeout)
+                r = self.session.request(method, url, headers=headers, timeout=timeout_v)
             except Exception as e:  # noqa: BLE001  (yalnız tür adı; metin URL/imza taşıyabilir)
                 exc_name = type(e).__name__
             if r is None:
                 last_err = ExchangeUncertain(self._fmt(method, path, None, None, f"network_error {exc_name}"), http=None)
                 if is_order:
                     raise last_err
-                if attempt < self.max_attempts:
+                if attempt < max_attempts:
                     wait = 2 ** (attempt - 1)
-                    self._log(logging.WARNING, "%s (%d/%d); %d sn sonra tekrar", last_err, attempt, self.max_attempts, wait)
+                    log.log(logging.WARNING, "%s (%d/%d); %d sn sonra tekrar", last_err, attempt, max_attempts, wait)
                     self.sleep(wait)
                 continue
 
             status = int(r.status_code)
             h = getattr(r, "headers", None)
             self._read_counters(h)
+            body: Any = None
+            code, msg = None, ""
+            eff = status                               # sınıflandırma durumu (200 + gövdede hata kodu -> 4xx gibi)
             if status == 200:
+                bad_json = False
                 try:
                     body = r.json()
                 except Exception:  # noqa: BLE001
+                    bad_json = True
+                if bad_json:
                     last_err = ExchangeUncertain(self._fmt(method, path, 200, None, "bad_json"), http=200)
                     if is_order:
-                        raise last_err
-                    if attempt < self.max_attempts:
+                        raise last_err from None
+                    if attempt < max_attempts:
                         self.sleep(2 ** (attempt - 1))
                     continue
-                self._last_ok_ms = self.now_ms()
-                self._ban_403_s = 0
-                return body
-
-            code, msg = None, ""
-            try:
-                j = r.json()
-                if isinstance(j, dict):
+                bc = body.get("code") if isinstance(body, dict) else None
+                if is_order and isinstance(bc, int) and not isinstance(bc, bool) and bc < 0:
+                    code, msg, eff = bc, str(body.get("msg", "")), 400
+                else:
+                    self._last_ok_ms = self.now_ms()
+                    self._ban_403_s = 0
+                    return body
+            else:
+                bad_json = False
+                try:
+                    j = r.json()
+                except Exception:  # noqa: BLE001
+                    bad_json = True
+                if bad_json:
+                    msg = str(getattr(r, "text", "") or "")
+                elif isinstance(j, dict):
                     code, msg = _int_or(j.get("code")), str(j.get("msg", ""))
-            except Exception:  # noqa: BLE001
-                msg = str(getattr(r, "text", "") or "")
             text = self._fmt(method, path, status, code, msg)
 
             if status == 429:
-                ra = _int_or(_hdr(h, "Retry-After"), 60) or 60
+                ra = _retry_after(h)
                 self._ban_until_ms, self._ban_http = self.now_ms() + ra * 1000, 429
                 self._bump("http_429")
-                self._log(logging.WARNING, "%s", text)
+                log.log(logging.WARNING, "%s", text)
                 if is_order:
                     raise ExchangeReject(self._fmt(method, path, 429, code, "rate_limited"), code=None, http=429, msg="rate_limited")
                 last_err = ExchangeBan(text, http=429, retry_after_s=ra)
-                if attempt < self.max_attempts:
-                    self.sleep(ra)
-                    self._ban_until_ms = 0
+                if ra <= 5 and attempt < max_attempts:
+                    self.sleep(ra)                    # yalnız kısa Retry-After satır içi beklenir; pencere saatle kapanır
                     continue
                 raise last_err
             if status == 418:
-                ra = _int_or(_hdr(h, "Retry-After"), 60) or 60
+                ra = _retry_after(h)
                 self._ban_until_ms, self._ban_http = self.now_ms() + ra * 1000, 418
                 self._bump("http_418")
                 raise ExchangeBan(text, http=418, retry_after_s=ra)
@@ -349,11 +371,14 @@ class SignedRestClient:
                 self._ban_until_ms, self._ban_http = self.now_ms() + self._ban_403_s * 1000, 403
                 self._bump("http_403")
                 raise ExchangeBan(text, http=403, retry_after_s=self._ban_403_s)
-            if code == -1021 and not resynced:
+            if code == -1021 and not resynced and status < 500:
                 resynced = True
                 attempt -= 1                      # yeniden eşitleme deneme hakkı tüketmez
-                self._log(logging.WARNING, "%s; saat eşitleniyor", text)
-                self.sync_time()
+                log.log(logging.WARNING, "%s; saat eşitleniyor", text)
+                try:                              # tek deneme, geri çekilme yok; emirde emir zaman aşımı
+                    self._sync(attempts=1, timeout=self.order_timeout_s if is_order else None)
+                except Exception:  # noqa: BLE001
+                    raise ExchangeReject(text, code=-1021, http=400, msg=self._scrub(msg)) from None
                 continue
             if status == 401 or code in AUTH_CODES:
                 raise ExchangeAuth(text, code=code, http=status)
@@ -361,15 +386,17 @@ class SignedRestClient:
                 last_err = ExchangeUncertain(text, http=status)
                 if is_order:
                     raise last_err
-                if attempt < self.max_attempts:
+                if attempt < max_attempts:
                     wait = 2 ** (attempt - 1)
-                    self._log(logging.WARNING, "%s (%d/%d); %d sn sonra tekrar", text, attempt, self.max_attempts, wait)
+                    log.log(logging.WARNING, "%s (%d/%d); %d sn sonra tekrar", text, attempt, max_attempts, wait)
                     self.sleep(wait)
                 continue
             if kind == "cancel" and code in CANCEL_OK_CODES:
                 return None
             if kind == "setup" and code in SETUP_OK_CODES:
                 return None
+            if is_order and not (400 <= eff < 500 and code is not None):
+                raise ExchangeUncertain(text, http=status)     # 408, HTML 404, 302 ...: işlendi mi bilinmez
             raise ExchangeReject(text, code=code, http=status, msg=self._scrub(msg))
         raise last_err if last_err is not None else ExchangeUncertain(self._fmt(method, path, None, None, "exhausted"))
 
@@ -430,21 +457,21 @@ class SignedRestClient:
              "workingType": working_type, "reduceOnly": "true", "newClientOrderId": client_id}
         return self.request("POST", "/fapi/v1/order", p, kind="order", protective=prot)
 
-    def _query(self, path: str, params: dict, protective: bool) -> dict | None:
+    def _query(self, path: str, params: dict, protective: bool, attempts: int | None = None) -> dict | None:
         try:
-            return self.request("GET", path, params, kind="read", protective=protective)
+            return self.request("GET", path, params, kind="read", protective=protective, attempts=attempts)
         except ExchangeReject as e:
             if e.code == -2013:
                 return None
             raise
 
-    def query_order(self, symbol, client_id: str, *, protective: bool = True) -> dict | None:
-        return self._query("/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}, protective)
+    def query_order(self, symbol, client_id: str, *, protective: bool = True, attempts: int | None = None) -> dict | None:
+        return self._query("/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}, protective, attempts)
 
-    def query_conditional(self, symbol, client_id: str, *, protective: bool = True) -> dict | None:
+    def query_conditional(self, symbol, client_id: str, *, protective: bool = True, attempts: int | None = None) -> dict | None:
         if self.conditional_mode == "algo":
-            return self._query("/fapi/v1/algoOrder", {"clientAlgoId": client_id}, protective)
-        return self.query_order(symbol, client_id, protective=protective)
+            return self._query("/fapi/v1/algoOrder", {"clientAlgoId": client_id}, protective, attempts)
+        return self.query_order(symbol, client_id, protective=protective, attempts=attempts)
 
     def cancel_order(self, symbol, client_id: str, *, protective: bool = False) -> None:
         self.request("DELETE", "/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}, kind="cancel", protective=protective)
@@ -476,6 +503,8 @@ class SignedRestClient:
                 if len(page) < 1000:
                     break
                 last_t = max(int(x["time"]) for x in page)
+                # Not: aynı ms'de >1000 dolum varsa last_t + 1 bazılarını atlar; bu yüzden yeni kayıt geldikçe cur=last_t (kayıt tekrarı
+                # id ile elenir). Tek ms'de 1000'den fazla dolum pratikte yok; gerekirse fromId ile sayfalanmalı.
                 cur = last_t if new and last_t > cur else last_t + 1
                 if cur > stop:
                     break

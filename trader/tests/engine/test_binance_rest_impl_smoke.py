@@ -116,8 +116,8 @@ def test_read_retries_with_backoff():
 
 
 def test_429_silence_window():
-    c, net, clock = mk([Resp(429, {"code": -1003, "msg": "too many"}, {"Retry-After": "7"}), Resp(200, [])])
-    assert c.open_orders() == [] and clock["sleeps"] == [7]
+    c, net, clock = mk([Resp(429, {"code": -1003, "msg": "too many"}, {"Retry-After": "3"}), Resp(200, [])])
+    assert c.open_orders() == [] and clock["sleeps"] == [3]
     c, net, clock = mk([Resp(429, None, {"Retry-After": "7"})])
     with pytest.raises(ExchangeReject) as ei:
         c.new_market("X", "BUY", "1", "cid", False)
@@ -169,12 +169,13 @@ def test_idempotent_and_none_codes():
 
 
 def test_weight_thresholds_and_protective():
-    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"}), Resp(200, []), Resp(200, [])])
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"}), Resp(200, [])])
     c.account()
-    c.position_risk()                                  # soft: ertelenir
-    assert clock["sleeps"] and net.calls.__len__() == 2
+    with pytest.raises(ExchangeBan):                   # soft: gönderilmeden ban (uyku yok)
+        c.position_risk()
+    assert clock["sleeps"] == [] and len(net.calls) == 1
     c.position_risk(protective=True)
-    assert len(clock["sleeps"]) == 1
+    assert clock["sleeps"] == [] and len(net.calls) == 2
     c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(200, {"orderId": 1})])
     c.account()
     with pytest.raises(ExchangeBan):
@@ -257,3 +258,156 @@ def test_health_and_constructor_guards():
         SignedRestClient(env="prod", api_key=KEY, api_secret=SECRET, now_ms=lambda: 0, sleep=lambda s: None)
     with pytest.raises(ValueError):
         SignedRestClient(env="live", api_key="", api_secret=SECRET, now_ms=lambda: 0, sleep=lambda s: None)
+
+
+# ---------------------------------------------------------------- mentor düzeltmeleri (B1 madde 1-13)
+def test_1021_resync_failure_raises_reject_1021_for_original():
+    for bad in (Resp(200, {"nothing": 1}), Resp(200, None), Resp(500, None), ConnectionError("x")):
+        c, net, clock = mk([err(-1021), bad, Resp(200, {"orderId": 1})])
+        with pytest.raises(ExchangeReject) as ei:
+            c.new_market("X", "BUY", "1", "cid", False)
+        assert ei.value.code == -1021 and ei.value.http == 400
+        assert len(net.calls) == 2 and clock["sleeps"] == []       # tek sync denemesi, geri çekilme yok
+    c, net, _ = mk([err(-1021), Resp(200, {"serverTime": clock_t()}), Resp(200, {"orderId": 1})])
+    c.new_market("X", "BUY", "1", "cid", False)
+    assert net.calls[1][3] == (2.0, 3.0)                           # emirde sync emir zaman aşımıyla
+    c, net, _ = mk([err(-1021), Resp(200, {"serverTime": clock_t()}), Resp(200, [])])
+    c.open_orders()
+    assert net.calls[1][3] == 10.0
+
+
+def test_1021_not_resynced_on_5xx():
+    c, net, _ = mk([err(-1021, status=502), Resp(200, [])])
+    assert c.open_orders() == [] and [u[1].split("?")[0].rsplit("/", 1)[-1] for u in net.calls] == ["openOrders", "openOrders"]
+
+
+def test_sync_time_bad_server_time_is_uncertain():
+    for body in ({}, {"serverTime": "abc"}, [], {"serverTime": None}):
+        c, _, _ = mk([Resp(200, body)])
+        with pytest.raises(ExchangeUncertain):
+            c.sync_time()
+
+
+def test_weight_soft_raises_ban_without_sending_and_pre_send_bans_not_sent():
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"})])
+    c.account()
+    clock["t"] += 20_000
+    with pytest.raises(ExchangeBan) as ei:
+        c.position_risk()
+    assert ei.value.http is None and ei.value.retry_after_s == 40 and "weight_soft" in str(ei.value)
+    assert len(net.calls) == 1 and clock["sleeps"] == [] and c._used_weight == 1250
+    # weight_hard ve sessizlik penceresi de gönderilmeden yükselir
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(418, None, {"Retry-After": "30"})])
+    c.account()
+    with pytest.raises(ExchangeBan):
+        c.new_market("X", "BUY", "1", "cid", False)
+    assert len(net.calls) == 1
+    with pytest.raises(ExchangeBan):
+        c.account(protective=True)                                 # 418
+    n = len(net.calls)
+    with pytest.raises(ExchangeBan):
+        c.new_market("X", "BUY", "1", "cid2", True)                # pencere
+    assert len(net.calls) == n
+
+
+def test_429_long_retry_after_raises_immediately_and_clamps():
+    c, net, clock = mk([Resp(429, None, {"Retry-After": "6"}), Resp(200, [])])
+    with pytest.raises(ExchangeBan) as ei:
+        c.open_orders()
+    assert ei.value.http == 429 and ei.value.retry_after_s == 6 and clock["sleeps"] == [] and len(net.calls) == 1
+    assert c.health()["ban_until_ms"] == clock["t"] + 6000
+    c, _, _ = mk([Resp(429, None, {"Retry-After": "999999"})])
+    with pytest.raises(ExchangeBan) as ei:
+        c.open_orders()
+    assert ei.value.retry_after_s == 3600
+    c, _, _ = mk([Resp(418, None, {"Retry-After": "0"})])
+    with pytest.raises(ExchangeBan) as ei:
+        c.open_orders()
+    assert ei.value.retry_after_s == 1
+    c, _, _ = mk([Resp(418, None, {"Retry-After": "-5"})])
+    with pytest.raises(ExchangeBan) as ei:
+        c.open_orders()
+    assert ei.value.retry_after_s == 1
+
+
+def test_429_short_retry_keeps_window_until_clock_expiry():
+    c, net, clock = mk([Resp(429, None, {"Retry-After": "2"}), Resp(200, [])])
+    assert c.open_orders() == [] and clock["sleeps"] == [2]
+    assert c.health()["ban_until_ms"] == clock["t"] + 2000        # sıfırlanmadı; saatle kapanır
+
+
+@pytest.mark.parametrize("resp", [Resp(408, None, text="timeout"), Resp(404, None, text="<html>nf</html>"),
+                                  Resp(302, None, text=""), Resp(400, {"msg": "no code"}), Resp(400, {"code": "x", "msg": "m"}),
+                                  Resp(404, {"code": None, "msg": "m"})])
+def test_order_4xx_without_int_code_is_uncertain(resp):
+    c, net, _ = mk([resp])
+    with pytest.raises(ExchangeUncertain) as ei:
+        c.new_market("X", "BUY", "1", "cid", False)
+    assert ei.value.http == resp.status_code and len(net.calls) == 1
+    c, _, _ = mk([resp])
+    with pytest.raises(ExchangeReject):                            # okuma davranışı korunur
+        c.account()
+
+
+def test_order_200_with_error_code_body_classified():
+    c, net, _ = mk([Resp(200, {"code": -2019, "msg": "margin"})])
+    with pytest.raises(ExchangeReject) as ei:
+        c.new_market("X", "BUY", "1", "cid", False)
+    assert ei.value.code == -2019 and len(net.calls) == 1
+    c, _, _ = mk([Resp(200, {"code": -2015, "msg": "k"})])
+    with pytest.raises(ExchangeAuth):
+        c.new_market("X", "BUY", "1", "cid", False)
+    c, net, _ = mk([Resp(200, {"code": -1021, "msg": "t"}), Resp(200, {"serverTime": clock_t() + 10}), Resp(200, {"orderId": 5})])
+    assert c.new_market("X", "BUY", "1", "cid", False) == {"orderId": 5} and len(net.calls) == 3
+    c, _, _ = mk([Resp(200, {"code": -1001, "msg": "u"})])
+    with pytest.raises(ExchangeUncertain):
+        c.new_market("X", "BUY", "1", "cid", False)
+    c, _, _ = mk([Resp(200, {"code": 200, "msg": "ok-ish"})])       # pozitif kod hata değil
+    assert c.new_market("X", "BUY", "1", "cid", False)["code"] == 200
+    c, _, _ = mk([Resp(200, {"code": -2019})])                      # okuma: dokunulmaz
+    assert c.account() == {"code": -2019}
+
+
+def test_attempts_override():
+    c, net, clock = mk([ConnectionError()] * 4)
+    with pytest.raises(ExchangeUncertain):
+        c.request("GET", "/fapi/v2/account", None, kind="read", attempts=1)
+    assert len(net.calls) == 1 and clock["sleeps"] == []
+    c, net, _ = mk([Resp(502)] * 4)
+    with pytest.raises(ExchangeUncertain):
+        c.query_order("X", "cid", attempts=1)
+    assert len(net.calls) == 1
+    c, net, _ = mk([Resp(502)] * 4)
+    with pytest.raises(ExchangeUncertain):
+        c.query_conditional("X", "cid", attempts=2)
+    assert len(net.calls) == 2
+    c, net, _ = mk([Resp(502)] * 4, conditional_mode="classic")
+    with pytest.raises(ExchangeUncertain):
+        c.query_conditional("X", "cid", attempts=1)
+    assert len(net.calls) == 1
+    with pytest.raises(TypeError):
+        c.request("GET", "/x", None, "read")                        # kind anahtar sözcük zorunlu
+
+
+def test_bad_json_not_chained():
+    c, _, _ = mk([Resp(200, None)])
+    with pytest.raises(ExchangeUncertain) as ei:
+        c.new_market("X", "BUY", "1", "cid", False)
+    assert ei.value.__cause__ is None and ei.value.__context__ is None and ei.value.__suppress_context__
+
+
+def test_no_custom_log_and_no_os_threading_imports():
+    import trader_engine.exchange.binance_rest as m
+    assert not hasattr(SignedRestClient, "_log") and not hasattr(m, "os") and not hasattr(m, "threading")
+
+
+def test_self_created_session_does_not_follow_redirects():
+    requests = pytest.importorskip("requests")
+    c = SignedRestClient(env="testnet", api_key=KEY, api_secret=SECRET, now_ms=lambda: 0, sleep=lambda s: None)
+    assert isinstance(c.session, requests.Session) and c.session.max_redirects == 0
+
+
+def test_docstring_notes():
+    import trader_engine.exchange.binance_rest as m
+    d = m.__doc__
+    assert "İŞ PARÇACIĞI GÜVENLİ DEĞİLDİR" in d and "urllib3" in d and "HİÇ gönderilmediği" in d
