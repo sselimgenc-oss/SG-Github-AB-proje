@@ -1,11 +1,14 @@
-# DD-4 (O13): her gonderimde testler + statik kontroller. Gizli anahtar kullanmaz; yalniz okuma izni.
+# DD-4 (O13): gunluk + elle testler ve statik kontroller. Gizli anahtar kullanmaz; yalniz okuma izni.
 # Eylemler tam commit SHA ile sabit (git ls-remote ile dogrulandi): checkout v4.2.2, setup-python v5.6.0.
 # Python 3.12 = Ubuntu 24.04 sunucusunun sistem python3'u (deploy/install.sh en az 3.11 ister).
 name: tests
 
+# Tetik: gunde bir (TSI 05:17) + elle. Her gonderimde kosmaz: tam takim ~25 dk, gunde onlarca gonderim
+# ozel depoda ucretsiz Actions dakikasini (2000/ay) birkac gunde bitirirdi.
 on:
-  push:
-    branches: [claude/charming-hawking-ab5w5q]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
   pull_request:
 
 permissions:
