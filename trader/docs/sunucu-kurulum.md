@@ -252,3 +252,26 @@ sudo -u trader nice -n 15 .venv/bin/python scripts/fetch_binance_vision.py --sta
 - Bosluk raporu: `var/gap_report.json` ve `var/gap_report.md` (cift/kind/tf basina eksik aylar, eksik gunler, kismi gunler). Kosudan sonra okuyun; eksik gun varsa nedeni arsivde yok demektir (uydurulmaz).
 - Boyut (mevcut 2024-11 -> 2026-04 dosyalarindan olcekli tahmin; 46 ay eklenir): `--tfs all` ~ +3,2 GB (feather ~ +2,0 GB, onun ~ +1,9 GB'i 1m; ham zip onbellegi ~ +1,2 GB); 1m'siz (`--tfs 15m,1h,4h,1d`) ~ +0,3 GB. Baslamadan once `df -h /home/trader`.
 - Sure: ~7.400 istek (3.700 zip + checksum); `--rate 4` ile ~30 dk + indirme/donusturme, toplam ~45-60 dk (2 GB sunucuda `--workers 2`; bellek `MemoryMax=450M` icinde kalacak sekilde 1m dosyalari en buyuk bellek kullanicisidir, gerekirse `--tfs 15m,1h,4h,1d` ve ardindan `--only-1m` ayri kosun).
+
+
+## Testnet yoklama, duman ve tatbikat betigi (WP-B7; `scripts/smoke_testnet.py`)
+
+Ne zaman: Binance vadeli TESTNET anahtari gelince (B0 yoklamasi). **Durum: B0 yoklamasi anahtar gelince kosulabilir; T-13...T-16 ve D-1...D-8 adimlari yazildi ama duzeltme turu yeniden incelemesi (re-review) bitene kadar KAYIT ICIN KOSULMAZ (mentor karari).** Dry-run (plan yazdirma) her zaman serbesttir.
+
+Guvenlik (kodda zorunlu, testli): yalniz `https://testnet.binancefuture.com`; `--env live` reddedilir; anahtar yalniz `BINANCE_API_KEY` / `BINANCE_API_SECRET` ortam degiskenlerinden okunur (hicbir yere yazilmaz, raporlarda maskelenir); testnette `apiRestrictions` olmadigindan cekme izninin KAPALI oldugunu `--ack-no-withdraw` ile siz onaylarsiniz (onay yoksa reddeder; live'da izin acik gorunurse reddeder); tek cift (`XRP/USDT`), asgari miktar, en fazla 1 acik pozisyon (hesapta baska pozisyon/emir varsa baslamaz); her kosu sonunda (hata olsa da) kendi emirlerini iptal eder ve actigi pozisyonu duzlestirir; `var-testnet/` ve `shared/testnet/KILL|PAUSE` yollari kullanilir.
+
+```
+cd /home/trader/SG-Github-AB-proje/trader
+# anahtarlar: sudo -u trader icinde, dosyadan (komut satirina/gecmise yazmayin)
+set -a; . /etc/trader-testnet.env; set +a       # BINANCE_API_KEY=... BINANCE_API_SECRET=...  (chmod 600, kok sahibi)
+.venv/bin/python scripts/smoke_testnet.py --env testnet --list
+.venv/bin/python scripts/smoke_testnet.py --env testnet --step b0 --dry-run              # once plan
+.venv/bin/python scripts/smoke_testnet.py --env testnet --step b0-preflight --ack-no-withdraw   # salt okuma
+.venv/bin/python scripts/smoke_testnet.py --env testnet --step b0 --ack-no-withdraw       # B0 yoklamasi (T-01..T-11 alt kumesi)
+```
+- Adimlar: `b0-preflight, b0-t01, b0-t02, b0-t03, b0-t05, b0-t06, b0-t09, b0-t10, b0-t11` (grup `b0`); `t13, t14, t15, t16` (grup `t`); `d1 ... d8` (grup `drills`). `--step` virgulle ya da tekrarla. T-04, T-07, T-08, T-12 bu betikte YOK (ham yoklama; ayrica gerekir).
+- Cikti: `var-testnet/smoke/<zaman>/result.json` ve `result.md` (adim, durum GECTI/KALDI/FARKLI/ATLANDI/BEKLEMEDE, olculen sureler, temizlik kaydi). Gercek yanitlari `tests/engine/fixtures/binance/testnet/` altina kaydetmek ve sonucu `docs/motor/11-testnet-sonuc.md`'ye yazmak elle yapilir (anahtar/imza/hesap kimligi silinerek).
+- Cikis kodu: 0 hepsi GECTI/ATLANDI; 1 KALDI/FARKLI/BEKLEMEDE var; 2 guvenlik korkulugu (hicbir emir gitmedi).
+- Etkilesimli adimlar (`t15, t16, d1...d7`): betik pozisyonu/stopu kurar ya da motorun varligini bekler, ne yapacaginizi yazar (iptables, `kill -9`, testnet arayuzunden elle iptal/emir) ve Enter bekler; sonra olculen kosullari dogrular. D-8 otomatiktir (sahte anahtarla `run`, cikis kodu 8 ve anahtar sizintisi denetimi).
+- T-14: varsayilan ATLANDI (asgari miktarla kismi dolum olusmaz). Denemek icin `--partial-fill-multiple N` (N<=20, notional <= 200 USDT).
+- Bilinen sinirlar: T-15 tek pozisyonla denenir (kural: en fazla 1 acik pozisyon); "neden `trail_stop`" gibi defter alanlari motor tarafinda oldugundan elle `ledger` okunarak dogrulanir.
