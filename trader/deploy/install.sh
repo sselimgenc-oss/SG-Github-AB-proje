@@ -204,6 +204,10 @@ if has_value /etc/trader-telegram.env TELEGRAM_BOT_TOKEN && has_value /etc/trade
   enable_now trader-telegram-report.timer
 else MISSING+=("/etc/trader-telegram.env -> TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID (Telegram)"); fi
 
+# Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
+if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
+  MISSING+=("/etc/trader-health.env   -> HEARTBEAT_URL (https:// dis nabiz adresi; ZORUNLU: bos iken trader-health her 5 dk basarisiz olur)"); fi
+
 # Panel yayini: Cloudflare anahtarlari yer tutucuyken zamanlayici ACILMAZ
 CF_TODO=()
 if has_value /etc/trader-panel-cf.env CLOUDFLARE_API_TOKEN && has_value /etc/trader-panel-cf.env CLOUDFLARE_ACCOUNT_ID; then

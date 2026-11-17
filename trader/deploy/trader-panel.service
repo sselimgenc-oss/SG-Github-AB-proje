@@ -22,8 +22,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-# Veri dizinleri salt okunur (panel hicbir seye yazmaz; kill dosyasi dizini dahil)
-ReadOnlyPaths=/opt/trader/var /opt/trader/user_data /opt/trader/shared /opt/trader/config /var/lib/trader-health
+# Veri dizinleri salt okunur (panel hicbir seye yazmaz; kill dosyasi dizini dahil). '-' oneki: /var/lib/trader-health ilk saglik
+# kosusuna kadar yok (StateDirectory); onekisiz olsaydi ilk acilista 226/NAMESPACE ile panel baslamazdi
+ReadOnlyPaths=/opt/trader/var /opt/trader/user_data /opt/trader/shared /opt/trader/config -/var/lib/trader-health
 RestrictAddressFamilies=AF_INET AF_UNIX
 IPAddressAllow=localhost
 IPAddressDeny=any
