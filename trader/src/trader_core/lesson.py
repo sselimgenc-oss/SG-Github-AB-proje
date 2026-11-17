@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from trader_core import budget as _budget_mod
+from trader_core import counterfactual as _cf_mod
 from trader_core import ledger as L
 
 log = logging.getLogger("trader_core.lesson")
@@ -254,6 +255,10 @@ class LessonConfig:
     notifier: str | None = None                      # Revizyon 3: NOTIFIER_FACTORIES adi (orn. "telegram")
     reject_cooldown_days: int = 7                    # Revizyon 3: acik kullanici reddinden sonra ayni oneri beklemesi
     calibration_file: str | None = field(default=None, compare=False)   # Revizyon 3: kalibrasyon sonuc dosyasi
+    counterfactual_enabled: bool = True              # Revizyon 4: alinmayan sinyal kaniti (salt okunur, 17)
+    counterfactual_path: str | None = None           # None => <ledger_path'in dizini>/counterfactual.sqlite
+    counterfactual_min_n: int = 30                   # kilit: >= 30 hesaplanmis satir (barrier)
+    counterfactual_days: int = 28                    # karar zamanina gore pencere (gun); kilit >= 7
 
     def __post_init__(self) -> None:
         def bad(msg):
@@ -345,6 +350,11 @@ class LessonConfig:
         isint(self.blind_days, "blind_days", 2)
         isbool(self.report_show_twin, "report_show_twin")
         isint(self.reject_cooldown_days, "reject_cooldown_days", 0)
+        isbool(self.counterfactual_enabled, "counterfactual_enabled")
+        if self.counterfactual_path is not None:
+            isstr(self.counterfactual_path, "counterfactual_path")
+        isint(self.counterfactual_min_n, "counterfactual_min_n", 30)
+        isint(self.counterfactual_days, "counterfactual_days", 7)
         if self.notifier is not None:
             isstr(self.notifier, "notifier")
         if self.calibration_file is not None:
@@ -1476,11 +1486,14 @@ class Snapshot:
     capabilities: list
     stats_hash: str = ""
     new_checkpoints: list = field(default_factory=list, compare=False, repr=False)
+    counterfactual: dict | None = None                # Revizyon 4: alinmayan sinyal kaniti (yoksa None)
 
     def core_dict(self) -> dict:
         d = {f.name: getattr(self, f.name) for f in dataclasses.fields(self)
-             if f.name not in ("stats_hash", "new_checkpoints", "menu")}
+             if f.name not in ("stats_hash", "new_checkpoints", "menu", "counterfactual")}
         d["menu"] = [m.to_dict() for m in self.menu]
+        if self.counterfactual:                        # yoksa ozet/hash bit duzeyinde eskisiyle ayni
+            d["counterfactual"] = self.counterfactual
         return d
 
     def to_dict(self) -> dict:
@@ -1568,6 +1581,104 @@ def _recent_rows(rows_by_scope: Sequence[TradeRow], cfg: LessonConfig, as_of: da
             d["stop_dist_atr"] = r4(r.stop_dist_atr)
         out.append(d)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Alinmayan sinyal kaniti (Revizyon 4; docs/ders-spec.md "Karsi-olgusal kanit"). SALT OKUNUR, yalnizca DESTEK.
+# ---------------------------------------------------------------------------
+
+CF_WEIGHT = 0.5                      # varsayimsal kanit agirligi (alinan islemler birincil, agirlik 1)
+CF_METHOD = "barrier"
+CF_Z90 = 1.2815515655446004          # tek tarafli %90 sinir
+CF_REASONS = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
+              "entry_gate_closed", "order_failed", "ml_filter", "other")
+# skip_reason -> menu girdisi YALNIZCA belirsizlik yoksa. rr_below_min: rr_min esigi (signals.py) -> gevsetme rr_min:down.
+# stop_width sabit sabitlerle (lesson parametresi degil), vol_ratio_max rejim parametresi (atlama nedeni uretmez),
+# veto_*/risk_denied/ml_filter/entry_gate_closed/order_failed/other lesson menusunde karsiligi yok => esleme yok.
+CF_REASON_MENU = {"rr_below_min": "rr_min:down"}
+CF_VERDICTS = ("supports_relaxing", "filter_works", "inconclusive", "insufficient_n", "insufficient_days")
+
+
+def counterfactual_path(cfg: LessonConfig) -> str:
+    if cfg.counterfactual_path:
+        return cfg.counterfactual_path
+    return os.path.join(os.path.dirname(os.path.abspath(cfg.ledger_path)), "counterfactual.sqlite")
+
+
+def build_counterfactual(cfg: LessonConfig, as_of: datetime, path=None) -> dict | None:
+    """Defterin yanindaki `counterfactual.sqlite`ten (salt okunur) skip_reason basina net R kaniti. Dosya yok / kapali /
+    okunamiyor => None (kanit yok; hata yok, davranis degismez). Yalnizca `decision_ts < as_of` (gelecegi gorme yok)."""
+    if not cfg.counterfactual_enabled:
+        return None
+    p = path or counterfactual_path(cfg)
+    if not os.path.exists(p):
+        return None
+    try:
+        rows = _cf_mod.outcomes(p, cfg.bot, now=as_of, days=cfg.counterfactual_days, method=CF_METHOD)
+    except Exception as e:  # noqa: BLE001  fail-safe: kanit yok sayilir
+        log.warning("counterfactual okunamadi: %s", scrub(e))
+        return None
+    groups: dict[str, list] = {}
+    for r in rows:
+        if r["skip_reason"] in CF_REASONS and r["hyp_r_net"] is not None:
+            groups.setdefault(r["skip_reason"], []).append((float(r["hyp_r_net"]), str(r["decision_ts"])[:10]))
+    by_reason: dict[str, dict] = {}
+    for reason in sorted(groups):
+        x = groups[reason]
+        n = len(x)
+        zr = cluster_mean(x, 0.0, cfg.min_distinct_days)
+        m = zr.mean
+        lb = ub = None
+        if zr.z is not None:
+            lb, ub = m - CF_Z90 * zr.se, m + CF_Z90 * zr.se
+        if n < cfg.counterfactual_min_n:
+            verdict = "insufficient_n"
+        elif lb is None:
+            verdict = "insufficient_days"
+        elif lb > 0:
+            verdict = "supports_relaxing"
+        elif ub < 0:
+            verdict = "filter_works"
+        else:
+            verdict = "inconclusive"
+        by_reason[reason] = {"n": n, "mean_r_net": r4(m), "lb90": r4(lb), "ub90": r4(ub), "days": zr.g,
+                             "verdict": verdict, "menu_id": CF_REASON_MENU.get(reason)}
+    n_all = sum(b["n"] for b in by_reason.values())
+    mean_all = (sum(b["n"] * b["mean_r_net"] for b in by_reason.values()) / n_all) if n_all else None
+    return {"available": True, "method": CF_METHOD, "days": cfg.counterfactual_days, "min_n": cfg.counterfactual_min_n,
+            "weight": CF_WEIGHT, "n": n_all, "mean_r_net": r4(mean_all), "by_reason": by_reason}
+
+
+def counterfactual_extra(cf: Mapping | None, menu_id: str, n_a=None, mean_a=None) -> dict:
+    """Menu girdisine yalnizca BILGI olarak eklenen alanlar (uygunluk/skor/kontrol noktasi bunlardan etkilenmez)."""
+    if not cf:
+        return {}
+    out: dict[str, float | int] = {}
+    for reason, b in cf.get("by_reason", {}).items():
+        if b.get("menu_id") != menu_id or not b["n"]:
+            continue
+        out["cf_n"] = b["n"]
+        out["cf_n_eff"] = round(CF_WEIGHT * b["n"], 4)
+        out["cf_mean_r_net"] = b["mean_r_net"]
+        if b["lb90"] is not None:
+            out["cf_lb90"] = b["lb90"]
+        out["cf_support"] = 1 if b["verdict"] == "supports_relaxing" else 0
+        if n_a and mean_a is not None:
+            out["cf_combined_mean_r"] = r4((n_a * mean_a + CF_WEIGHT * b["n"] * b["mean_r_net"])
+                                           / (n_a + CF_WEIGHT * b["n"]))
+    return out
+
+
+def counterfactual_line(cf: Mapping | None) -> str:
+    """Gunluk ozet icin tek satir (Telegram)."""
+    if not cf:
+        return "Alinmayan sinyaller: henuz hesaplanmadi"
+    sup = sorted(b["menu_id"] for b in cf["by_reason"].values() if b["verdict"] == "supports_relaxing" and b["menu_id"])
+    tail = f"; gevsetmeyi destekleyen: {', '.join(sup)}" if sup else ""
+    if not cf["n"]:
+        return f"Alinmayan sinyaller (son {cf['days']} gun): 0"
+    return (f"Alinmayan sinyaller (son {cf['days']} gun): {cf['n']}, ort. varsayimsal net R "
+            f"{cf['mean_r_net']:+.2f} (kanit agirligi {CF_WEIGHT}){tail}")
 
 
 def build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None, twin_code: str | None = None,
@@ -1719,6 +1830,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         results_by_stream[key] = res
         for r in sorted(res.values(), key=lambda r: r.c):
             cp_summary.append({"stream": r.stream_key, "c": r.c, "passed": r.passed, "valid_until": r.valid_until})
+    cf = build_counterfactual(cfg, as_of)
     menu: list[MenuEntry] = []
     for pl in plans:
         rule, p, from_v, to_v, eclass = pl["rule"], pl["p"], pl["from"], pl["to"], pl["eclass"]
@@ -1740,6 +1852,8 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         auto_cap = (eligible and eclass in ("observed_subset", "twin_observed") and not always_user
                     and checks["checkpoint_passed"] and cg_ok and n_scope >= cfg.checkpoints[0])
         extra = dict(stats.get("extra", {})) if stats else {}
+        extra.update(counterfactual_extra(cf, rule.menu_id, stats.get("n_a") if stats else None,
+                                          stats.get("mean_a") if stats else None))
         if pl["twin"]:
             extra["n_twin"] = n_scope
             extra.setdefault("n_only_twin", sum(1 for u in units if u.category == "only_twin"))
@@ -1777,7 +1891,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         counters=counters, twin=twin_block, checkpoints=cp_summary,
         shadow={"active": run_day < shadow_end, "ends_on": shadow_end, "start_day": shadow_start},
         calibration={"ok": cal_ok, "code": cal_code, "provisional": not cal_ok}, facts={},
-        max_source_ts=src.max, capabilities=caps.missing(), new_checkpoints=new_cps)
+        max_source_ts=src.max, capabilities=caps.missing(), new_checkpoints=new_cps, counterfactual=cf)
     snap.facts = build_facts(snap)
     assert_no_future(snap, as_of)
     snap.stats_hash = sha256_hex(canon(snap.core_dict()))
@@ -1815,6 +1929,11 @@ def build_facts(snap: Snapshot) -> dict:
         put(b + "z", m.z)
         for k, v in m.extra.items():
             put(b + k, v)
+    if snap.counterfactual:
+        for reason, b in snap.counterfactual["by_reason"].items():
+            put(f"cf.{reason}.n", b["n"])
+            put(f"cf.{reason}.mean_r_net", b["mean_r_net"])
+            put(f"cf.{reason}.lb90", b["lb90"])
     rep = snap.twin.get("report", {})
     if snap.twin.get("available"):
         for k_out, k_in in (("n_keys", "n_keys"), ("adv_mean", "adv_mean"), ("z", "z_twin"),
@@ -1936,6 +2055,16 @@ def _render_user(snap: Snapshot, recent_n: int) -> str:
         rep.pop(k, None)
     _flatten("twin", {"available": snap.twin.get("available"), "verdict": snap.twin.get("verdict"), **rep}, flat)
     lines += sorted(flat)
+    cfb = snap.counterfactual
+    if cfb and cfb.get("by_reason"):
+        lines.append("[counterfactual]")
+        lines.append(f"note: hypothetical net-of-cost outcomes of skipped signals (method={cfb['method']}, "
+                     f"days={cfb['days']}); supporting evidence only, weight={_fv(cfb['weight'])}; "
+                     f"never a sole basis; min_n={cfb['min_n']}")
+        for reason, b in cfb["by_reason"].items():
+            lines.append(f"cf reason={reason} param_menu={b['menu_id'] or '-'} n={b['n']} "
+                         f"mean_net_r={_fv(b['mean_r_net'])} lb90={_fv(b['lb90'])} ub90={_fv(b['ub90'])} "
+                         f"verdict={b['verdict']}")
     lines.append("[recent_trades]")
     for r in snap.recent[:recent_n]:
         parts = [f"{k}={_fv(r[k])}" for k in ("idx", "setup", "side", "regime", "r", "exit_reason", "atr_ratio")]
@@ -2119,7 +2248,8 @@ def propose_rule_proxy(snapshot: Snapshot, cfg: LessonConfig) -> ProposalDraft:
 # ---------------------------------------------------------------------------
 
 REASON_PRIORITY = ("shadow_period", "calibration_required", "twin_unavailable", "always_user", "ledger_needs_user",
-                   "exit_proxy", "weak_evidence", "extrapolated", "ratchet_guard", "off_menu")
+                   "exit_proxy", "weak_evidence", "extrapolated", "ratchet_guard", "counterfactual_support",
+                   "off_menu")
 
 
 @dataclass(frozen=True)
@@ -2156,6 +2286,8 @@ def classify_route(snapshot: Snapshot, draft: ProposalDraft, cfg: LessonConfig) 
             reasons.add("weak_evidence")
         if entry.evidence_class == "extrapolated":
             reasons.add("extrapolated")
+        if entry.extra.get("cf_support") == 1:
+            reasons.add("counterfactual_support")          # varsayimsal kanit ASLA otomatik uygulama yolu acmaz
         now_s, after = entry.extra.get("steps_from_twin_now"), entry.extra.get("steps_from_twin_after")
         if now_s is not None and after is not None and after > now_s and after > cfg.max_steps_from_twin:
             reasons.add("ratchet_guard")
@@ -4048,10 +4180,15 @@ class LessonService:
         # yapisal engel: golge donemde otomatik yol hic kurulmaz
         if snap.shadow["active"] and route.klass == "auto":
             route = dataclasses.replace(route, klass="ask_user", reason_code="shadow_period")
+        # yapisal engel: karsi-olgusal destek tasiyan oneri hicbir zaman otomatik uygulanmaz
+        if route.klass == "auto" and entry is not None and entry.extra.get("cf_support") == 1:
+            route = dataclasses.replace(route, klass="ask_user", reason_code="counterfactual_support")
         require_user = route.klass != "auto"
         ev = self._evidence(snap, entry)
         claimed = {"n_closed": entry.n_scope if entry else None, "scope": entry.scope if entry else None,
                    "menu_id": draft.menu_id, **({"z": entry.z, "gap": entry.gap} if entry else {})}
+        if entry is not None:
+            claimed.update({k: v for k, v in entry.extra.items() if k.startswith("cf_")})
         claimed = {k: v for k, v in claimed.items() if v is not None}
         source = "rule-proxy" if draft.source == "rule-proxy" else f"{cfg.model}-batch"
         rationale = draft.rationale or "ders onerisi"
@@ -4294,6 +4431,13 @@ class LessonService:
             out["shadow_period"] = {"active": run_day < ends, "ends_on": ends,
                                     "days_left": max(0, (date.fromisoformat(ends) - date.fromisoformat(run_day)).days)}
             out["checkpoints"] = list(snap.checkpoints) if snap else []
+            cfb = snap.counterfactual if snap else None
+            out["counterfactual"] = {
+                "available": bool(cfb), "n": cfb["n"] if cfb else None, "mean_r_net": cfb["mean_r_net"] if cfb else None,
+                "weight": CF_WEIGHT,
+                "supports": sorted(b["menu_id"] for b in cfb["by_reason"].values()
+                                   if b["verdict"] == "supports_relaxing" and b["menu_id"]) if cfb else [],
+                "by_reason": dict(cfb["by_reason"]) if cfb else {}, "line": counterfactual_line(cfb)}
             rep = (snap.twin.get("report", {}) if snap else {})
             day_info = {"n_learner_entered": None, "n_twin_entered": None, "trade_count_diff": None}
             with contextlib.suppress(Exception):

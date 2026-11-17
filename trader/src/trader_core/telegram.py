@@ -7,6 +7,7 @@ HTTP enjekte edilir: `http_post(url, json=..., timeout=...) -> (status_code, bod
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -1069,6 +1070,11 @@ def section_lesson(cfg: TelegramConfig, now: datetime) -> str:
             lines.append(f"  son çalışma: {rows[0]['run_day']} {res}")
         else:
             lines.append("  son çalışma: yok")
+        if rows:
+            with contextlib.suppress(Exception):
+                snap = store.get_snapshot(rows[0]["id"])
+                if snap is not None and snap.counterfactual:
+                    lines.append("  " + LS.counterfactual_line(snap.counterfactual))
         return "\n" + "\n".join(lines)
     except SectionError:
         raise

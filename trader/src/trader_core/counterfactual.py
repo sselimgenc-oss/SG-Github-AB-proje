@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 __all__ = ["VERSION", "HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
-           "run_once", "summary", "RunResult", "CounterfactualError"]
+           "run_once", "summary", "outcomes", "RunResult", "CounterfactualError"]
 
 VERSION = 1
 # --- trader_ml.config'in KOPYASI (parite testi esitligi kilitler); ML etiketi degisirse VERSION artar
@@ -324,3 +324,20 @@ def summary(path, bot: str, *, now: datetime, days: int = 7, method: str = "barr
     n = sum(r["n"] for r in rows)
     mean = sum(r["n"] * r["m"] for r in rows) / n if n else None
     return {"n": n, "mean_r_net": mean, "by_reason": {r["skip_reason"]: {"n": r["n"], "mean_r_net": r["m"]} for r in rows}}
+
+
+def outcomes(path, bot: str, *, now: datetime, days: int = 28, method: str = "barrier") -> list[dict]:
+    """Ders servisi icin ham satirlar: [{"skip_reason", "decision_ts", "hyp_r_net"}] (karar zamani `[now-days, now)`,
+    hesaplanmis r_net, deterministik sira). Salt okunur; depo yoksa/okunamazsa CounterfactualError."""
+    if method not in METHODS:
+        raise CounterfactualError("gecersiz yontem", "bad_method")
+    since, until = _fmt(_utc(now) - timedelta(days=days)), _fmt(_utc(now))
+    with CounterfactualStore(path, read_only=True) as st:
+        try:
+            rows = st._db.execute(
+                "SELECT skip_reason, decision_ts, hyp_r_net FROM cf_outcomes WHERE bot=? AND method=? "
+                "AND hyp_r_net IS NOT NULL AND decision_ts>=? AND decision_ts<? ORDER BY decision_ts, decision_id",
+                (bot, method, since, until)).fetchall()
+        except sqlite3.Error as e:
+            raise CounterfactualError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+    return [{"skip_reason": r["skip_reason"], "decision_ts": r["decision_ts"], "hyp_r_net": r["hyp_r_net"]} for r in rows]
