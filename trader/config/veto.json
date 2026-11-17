@@ -2,7 +2,7 @@
   "version": 1,
   "model": "claude-haiku-5-5",
   "ttl_s": 2700,
-  "max_tokens": 1200,
+  "max_tokens": 2000,
   "temperature": 0,
   "request_timeout_s": 30,
   "parse_retries": 1,

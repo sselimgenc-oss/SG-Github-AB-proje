@@ -229,7 +229,7 @@ def test_run_success(env, capsys):
     assert st.ok and V.lookup(st, "ETH/USDT", "short", T0).blocks
     kw = c.calls[0]
     assert kw["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
-    assert kw["model"] == "claude-haiku-5-5" and kw["max_tokens"] == 1200
+    assert kw["model"] == "claude-haiku-5-5" and kw["max_tokens"] == 2000
     log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert log["blocked"] == 1 and log["cost_micro"] == 895
     assert env.guard.status().services["veto"].calls_today == 1
