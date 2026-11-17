@@ -22,17 +22,25 @@ MAX_FEATURES = 40
 BTC, ETH = "BTC/USDT:USDT", "ETH/USDT:USDT"
 OHLC = {"open": "first", "high": "max", "low": "min", "close": "last"}
 
-FEATURE_NAMES = [
+# Mentor karari 2a (ml-faz-tasarimi §11): motor BTC/ETH capraz cift, fonlama ve son-cikis bilgisini canli baglama
+# koyana kadar bu ozellikler AKTIF listede DEGILDIR (NaN ile egitilmez). Kod yolu bayrak arkasinda durur;
+# motor baglami genisleyince (karar 2b) bayrak acilir -- golgeden once zorunlu, egitim/canli esitlik testiyle.
+INCLUDE_ENGINE_CONTEXT_FEATURES = False
+SLOPE_1D_WINDOW = 1500        # canli yolun 1s pencere uzunlugu (trader_engine.bars.WINDOW_TRIGGER["1h"]); egitimde de AYNI
+
+CORE_FEATURE_NAMES = [
     "f_atr_ratio", "f_reg_trend_up", "f_reg_trend_down", "f_reg_range", "f_reg_volatile",
     "f_stop_dist_atr", "f_rr", "f_is_t1", "f_side_sign", "f_edge_dist_atr", "f_rh_touches", "f_rl_touches",
     "f_range_width_atr", "f_entry_to_rh_atr", "f_entry_to_rl_atr",
     "f_slope_1h", "f_slope_4h", "f_slope_1d", "f_slope_4h_aligned",
     "f_vol_1h", "f_vol_4h", "f_vol_1d", "f_atr_pct_1h",
-    "f_btc_slope_4h", "f_btc_vol_4h", "f_eth_slope_4h", "f_eth_vol_4h", "f_funding",
     "f_hour_sin", "f_hour_cos", "f_dow_sin", "f_dow_cos",
     "f_ret_lag1", "f_ret_lag2", "f_ret_lag3", "f_atr_ratio_lag1", "f_atr_ratio_lag2", "f_atr_ratio_lag3",
-    "f_bars_since_exit",
 ]
+ENGINE_CONTEXT_FEATURE_NAMES = [
+    "f_btc_slope_4h", "f_btc_vol_4h", "f_eth_slope_4h", "f_eth_vol_4h", "f_funding", "f_bars_since_exit",
+]
+FEATURE_NAMES = CORE_FEATURE_NAMES + (ENGINE_CONTEXT_FEATURE_NAMES if INCLUDE_ENGINE_CONTEXT_FEATURES else [])
 assert len(FEATURE_NAMES) <= MAX_FEATURES
 
 
@@ -61,7 +69,18 @@ def _market_state(df: pd.DataFrame, base_index: pd.DatetimeIndex) -> pd.DataFram
     return _asof_close(_htf(df, "4h", 20, 3, 12), base_index)
 
 
-def feature_frame(df: pd.DataFrame, btc: pd.DataFrame | None = None, eth: pd.DataFrame | None = None) -> pd.DataFrame:
+def _slope_1d_windowed(df: pd.DataFrame, rows: np.ndarray, window: int) -> np.ndarray:
+    """Satir t icin 1g egimi, CANLI yolun gordugu pencereden (son `window` 1s mum) hesaplanir: ATR/EMA isinma etkisi
+    egitimde de canliyla ayni olur. Yalniz `rows` (konum dizisi) icin hesaplanir; digerleri NaN."""
+    out = np.full(len(df), np.nan)
+    for t in rows:
+        w = df.iloc[max(0, t + 1 - window):t + 1]
+        out[t] = _asof_close(_htf(w, "1D", 10, 3, 14), w.index[-1:])["slope"].iloc[0]
+    return out
+
+
+def feature_frame(df: pd.DataFrame, btc: pd.DataFrame | None = None, eth: pd.DataFrame | None = None,
+                  *, slope_1d_window: int = SLOPE_1D_WINDOW) -> pd.DataFrame:
     """Her 1s mum icin sinyal sutunlari + f_* ozellikleri (f_bars_since_exit tablo duzeyinde eklenir).
     Kilitli donem korumasi YOK (motor canli veriyle cagirir); egitim yolu trader_ml.features.feature_frame'i kullanir."""
     idx = df.index
@@ -92,14 +111,21 @@ def feature_frame(df: pd.DataFrame, btc: pd.DataFrame | None = None, eth: pd.Dat
     d1f = _asof_close(_htf(df, "1D", 10, 3, 14), idx)
     f["f_slope_4h"], f["f_vol_4h"] = h4f["slope"], h4f["vol"]
     f["f_slope_1d"], f["f_vol_1d"] = d1f["slope"], d1f["vol"]
+    if len(df) > slope_1d_window:
+        # tam gecmis (egitim): aday-benzeri (yon + planli giris olan; sinyal True ya da on-filtreyle elenmis) satirlarda 1g
+        # egimi canli pencereyle yeniden hesaplanir; digerleri NaN (aday olmayan satir egitime girmez).
+        # len(df) <= pencere (canli yol): ayni sonuc, ek hesap yok.
+        rows = np.flatnonzero(sig["side"].notna().to_numpy() & sig["planned_entry"].notna().to_numpy())
+        f["f_slope_1d"] = _slope_1d_windowed(df, rows, slope_1d_window)
     f["f_slope_4h_aligned"] = h4f["slope"] * side_sign
     f["f_vol_1h"] = np.log(c).diff().rolling(24, min_periods=24).std()
     f["f_atr_pct_1h"] = a1 / c
-    for nm, ref in (("btc", btc), ("eth", eth)):
-        ms = _market_state(ref, idx) if ref is not None else None
-        f[f"f_{nm}_slope_4h"] = ms["slope"] if ms is not None else np.nan
-        f[f"f_{nm}_vol_4h"] = ms["vol"] if ms is not None else np.nan
-    f["f_funding"] = df["funding"] if "funding" in df.columns else np.nan
+    if INCLUDE_ENGINE_CONTEXT_FEATURES:                  # bayrak kapali: aktif listede yok (karar 2a)
+        for nm, ref in (("btc", btc), ("eth", eth)):
+            ms = _market_state(ref, idx) if ref is not None else None
+            f[f"f_{nm}_slope_4h"] = ms["slope"] if ms is not None else np.nan
+            f[f"f_{nm}_vol_4h"] = ms["vol"] if ms is not None else np.nan
+        f["f_funding"] = df["funding"] if "funding" in df.columns else np.nan
     close_t = idx + BAR
     f["f_hour_sin"] = np.sin(2 * np.pi * close_t.hour / 24)
     f["f_hour_cos"] = np.cos(2 * np.pi * close_t.hour / 24)
@@ -109,7 +135,8 @@ def feature_frame(df: pd.DataFrame, btc: pd.DataFrame | None = None, eth: pd.Dat
     for k in (1, 2, 3):
         f[f"f_ret_lag{k}"] = r1.shift(k)
         f[f"f_atr_ratio_lag{k}"] = ratio.shift(k)
-    f["f_bars_since_exit"] = np.nan
+    if INCLUDE_ENGINE_CONTEXT_FEATURES:
+        f["f_bars_since_exit"] = np.nan                  # tablo duzeyinde (trader_ml.features.add_bars_since_exit) doldurulur
     f = f[FEATURE_NAMES]
     keep = ["setup", "side", "signal", "planned_entry", "planned_stop", "planned_target"]
     return pd.concat([sig[keep], f], axis=1)

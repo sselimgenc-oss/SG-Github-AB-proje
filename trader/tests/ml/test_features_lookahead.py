@@ -37,7 +37,7 @@ def test_future_bars_do_not_change_features(candles):
         pd.testing.assert_frame_equal(a, b, check_exact=True)
     # duyarlilik kontrolu: bozulan bolgede ozellikler GERCEKTEN degisiyor (test bos degil)
     assert not ref.iloc[cut:].equals(got.iloc[cut:])
-    assert ref[FEATURE_NAMES[:-1]].iloc[:cut].notna().any().any()
+    assert ref[FEATURE_NAMES].iloc[:cut].notna().any().any()
 
 
 def test_bars_since_exit_uses_only_real_exits_of_taken_trades(table):

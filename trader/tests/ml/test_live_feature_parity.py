@@ -21,7 +21,6 @@ from trader_ml import features as train_feat
 from trader_ml.features import FEATURE_NAMES, candidate_rows, feature_frame
 
 PAIR = "SOL/USDT:USDT"
-BSE = FEATURE_NAMES.index("f_bars_since_exit")
 OHLC = {"open": "first", "high": "max", "low": "min", "close": "last"}
 
 
@@ -79,15 +78,10 @@ def test_live_path_features_equal_training_path_for_same_bar(candles):
         live = model.X[0]
         train = r[FEATURE_NAMES].to_numpy(dtype=float)
         nan_l, nan_t = np.isnan(live), np.isnan(train)
-        nan_l[BSE], nan_t[BSE] = False, False
-        assert (nan_l == nan_t).all(), "NaN deseni ayni olmali (BTC/ETH/fonlama canlida NaN, egitimde BTC/ETH yok -> ayni)"
-        for j, nm in enumerate(FEATURE_NAMES):
-            if j == BSE or nan_l[j]:
-                continue
-            # 1g egimi ATR(14) Wilder ozyinelemesi: 1500 saatlik canli pencerede (62 gun) isinma farki <= ~%2 (belgeli sinir)
-            tol = 3e-2 if nm == "f_slope_1d" else 1e-6
-            np.testing.assert_allclose(live[j], train[j], rtol=tol, atol=tol, err_msg=nm)
-        assert np.isnan(live[BSE])    # canlida tablo duzeyinde bilinmez (belgeli sinir)
+        assert (nan_l == nan_t).all(), "NaN deseni ayni olmali"
+        assert not nan_l[FEATURE_NAMES.index("f_slope_1d")], "f_slope_1d aday satirda dolu olmali (1500 bar penceresi)"
+        # karar 2a: 1g egimi egitimde de canli pencereyle hesaplanir -> tum ozellikler ayni siki toleransta
+        np.testing.assert_allclose(live, train, rtol=1e-6, atol=1e-6, equal_nan=True)
         assert str(out["reasons"].iloc[-1]).startswith("ml:p=0.600000|")
         checked += 1
     assert checked >= 3
@@ -108,3 +102,26 @@ def test_live_path_never_leaks_future(candles):
     df2.loc[df2.index > open_t, ["open", "high", "low", "close"]] *= 3.0
     strat.compute(_ctx(df2, open_t, m2))
     np.testing.assert_array_equal(m1.X, m2.X)
+
+
+def test_active_feature_list_excludes_engine_context_features():
+    """Karar 2a: motor saglamayan ozellikler aktif listede yok; kod yolu bayrak arkasinda (geri getirilebilir)."""
+    assert core_feat.INCLUDE_ENGINE_CONTEXT_FEATURES is False
+    banned = set(core_feat.ENGINE_CONTEXT_FEATURE_NAMES)
+    assert {"f_funding", "f_bars_since_exit", "f_btc_slope_4h", "f_eth_vol_4h"} <= banned
+    assert not banned & set(FEATURE_NAMES)
+    assert FEATURE_NAMES == core_feat.CORE_FEATURE_NAMES
+
+
+def test_training_candidate_rows_have_no_nan_only_columns_and_slope_1d_uses_live_window(candles):
+    df = candles[PAIR]
+    rows = candidate_rows(feature_frame(df, None, None), PAIR)
+    late = rows[rows["ts"] >= df.index[0] + pd.Timedelta(hours=1600)]       # penceresi dolmus adaylar
+    assert len(late) >= 10
+    all_nan = [c for c in FEATURE_NAMES if rows[c].isna().all()]
+    assert not all_nan, f"yalniz-NaN sutun: {all_nan}"
+    for r in late.head(5).itertuples():                                       # f_slope_1d == tek-pencere hesabi
+        open_t = r.ts - pd.Timedelta(hours=1)
+        w = df.loc[:open_t].tail(1500)
+        want = core_feat.feature_frame(w).iloc[-1]["f_slope_1d"]
+        assert r.f_slope_1d == pytest.approx(want, rel=1e-12, abs=1e-12)

@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 
 from .config import BAR, DATA_START, HOLDOUT_START
+from trader_core.ml_features import INCLUDE_ENGINE_CONTEXT_FEATURES
+
 from .features import BTC, ETH, add_bars_since_exit, candidate_rows, feature_frame
 from .labels import label_candidates
 from .schema import validate_candidates
@@ -78,5 +80,6 @@ def build_candidate_table(candles: dict[str, pd.DataFrame], *, source: str = "ba
     t["taken"] = rng.random(len(t)) < 0.8
     t.loc[~t["taken"], "exit_ts"] = pd.NaT                 # alinmayanin gercek cikisi yok
     t = t.sort_values(["ts", "pair"], kind="mergesort").reset_index(drop=True)
-    t = add_bars_since_exit(t)
+    if INCLUDE_ENGINE_CONTEXT_FEATURES:                    # karar 2a: motor baglami gelene dek aktif listede yok
+        t = add_bars_since_exit(t)
     return validate_candidates(t)

@@ -19,3 +19,7 @@ user_data/backtest_results/
 var/
 shared/KILL
 research/crosscheck/
+
+# ML 19b aday seti (buyuk dosya; manifest commit edilir)
+research/ml/*.parquet
+research/ml/*.csv
