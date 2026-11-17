@@ -18,6 +18,7 @@ from .clock import Clock
 from .errors import DataError, StateError
 from .killswitch import Killswitch
 from .numeric import round_tight
+from .order_manager import _EXIT_RETRY_LIMIT as EXIT_RETRY_LIMIT
 from .pause import EntryPause
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
                                build_trade_exit, close_position, fill_risk_violation)
@@ -31,7 +32,7 @@ LATE_FILL_WINDOW = timedelta(hours=24)
 EXIT_UNRESOLVED_CRIT_S = 600.0
 ENTRY_DRIFT = 0.001
 _BLOCK_ORDER = ("reconcile_unknown_position", "reconcile_state_orphan", "reconcile_foreign_order",
-                "reconcile_account_mode_drift", "reconcile_ledger_orphan", "stop_failed")
+                "reconcile_account_mode_drift", "reconcile_ledger_orphan", "stop_failed", "exit_unknown")
 _LIVE_AUTO = _AUTO_CLEAR + ("reconcile_",)
 
 
@@ -68,16 +69,14 @@ class LiveReconciler(Reconciler):
     def protect_first(self) -> ReconcileReport:
         """Acilis (veri kapisindan ONCE, piyasa verisi istemez): L1, L2a/L2 bulgusu, adopt, L5 + register_position."""
         now = self.clock.now()
-        ctx = self._read(now, full_scan=False)
-        if ctx is None:
-            return self._unreachable()
-        bpos, oo = ctx
         acts: list[str] = []
         finds: list[str] = []
         reasons: list[str] = []
-        if self.state.unresolved_orders():
-            acts.append("resolve_unresolved")
-            self.orders.resolve_unresolved()
+        self._l1(acts)                                    # once coz (11 §8 L1 HER ZAMAN), sonra oku
+        ctx = self._read(now, full_scan=False)
+        if ctx is None:
+            return self._unreachable(acts)
+        bpos, oo = ctx
         fatal = False
         for pair in sorted(bpos):
             sp = self._state_pos(pair)
@@ -87,30 +86,37 @@ class LiveReconciler(Reconciler):
                 fatal |= self._unknown(pair, bpos[pair], now, acts, finds, reasons, kill_close=False)
         for pair in sorted(bpos):
             sp = self._state_pos(pair)
-            if sp is None or sp.side != bpos[pair].side:
+            if sp is None or (sp.status != "opening" and sp.side != bpos[pair].side):
                 continue
             if sp.status == "opening":
-                sp = self._adopt_opening(sp, bpos[pair], now, acts, finds, oo.get(pair, []))
+                kind, sp = self._adopt_opening(sp, bpos[pair], now, acts, finds, oo.get(pair, []))
+                if kind == "unknown":
+                    fatal |= self._unknown(pair, bpos[pair], now, acts, finds, reasons, kill_close=False)
                 if sp is None:
                     continue
             self._register(sp, bpos[pair], oo.get(pair, []))
             self._stops(sp, bpos[pair], oo.get(pair, []), now, acts, finds, reasons, protect_only=True)
+        self._exit_unknown_hold(reasons)
         self._apply_blocks(reasons, acts)
         return ReconcileReport(ok=not finds, fatal=fatal, actions=tuple(acts), findings=tuple(finds))
 
+    def _l1(self, acts: list[str]) -> None:
+        """L1: HER tur kosulsuz (11 §8): pending/unknown satirlar + yolda kalmis giris/cikis (L3c) cozulur; borsa okumasindan ONCE."""
+        had = bool(self.state.unresolved_orders())
+        self.orders.resolve_unresolved()
+        if had:
+            acts.append("resolve_unresolved")
+
     def run(self, now: datetime) -> ReconcileReport:
-        ctx = self._read(now, full_scan=None)
-        if ctx is None:
-            return self._unreachable()
-        bpos, oo = ctx
         acts: list[str] = []
         finds: list[str] = []
         reasons: list[str] = []
+        self._l1(acts)                                    # once coz, sonra oku (anlik goruntu bayatlamaz)
+        ctx = self._read(now, full_scan=None)
+        if ctx is None:
+            return self._unreachable(acts)
+        bpos, oo = ctx
         fatal = False
-        # L1
-        if self.state.unresolved_orders():
-            acts.append("resolve_unresolved")
-            self.orders.resolve_unresolved()
         spos = {p.pair: p for p in self.state.open_positions()}
         margins = self._margins()
         unresolved_l3: set[str] = set()
@@ -132,7 +138,9 @@ class LiveReconciler(Reconciler):
                 fatal |= self._unknown(pair, bp, now, acts, finds, reasons, kill_close=True)
                 continue
             if sp.status == "opening":
-                sp = self._adopt_opening(sp, bp, now, acts, finds, oo.get(pair, []))
+                kind, sp = self._adopt_opening(sp, bp, now, acts, finds, oo.get(pair, []))
+                if kind == "unknown":
+                    fatal |= self._unknown(pair, bp, now, acts, finds, reasons, kill_close=True)
                 if sp is None:
                     continue
             self._register(sp, bp, oo.get(pair, []))
@@ -153,12 +161,13 @@ class LiveReconciler(Reconciler):
         if self._flat:                                    # duz kip: sembolsuz tam tarama (yabanci emirler burada bulunur)
             self._foreign(finds, reasons)
         self._ledger_checks(acts, finds, reasons)
+        self._exit_unknown_hold(reasons)
         self._apply_blocks(reasons, acts)
         return ReconcileReport(ok=not finds, fatal=fatal, actions=tuple(acts), findings=tuple(finds))
 
     # ================================================================== okuma
-    def _unreachable(self) -> ReconcileReport:
-        return ReconcileReport(ok=False, fatal=False, actions=(), findings=("exchange_unreachable",))
+    def _unreachable(self, acts=()) -> ReconcileReport:
+        return ReconcileReport(ok=False, fatal=False, actions=tuple(acts), findings=("exchange_unreachable",))
 
     def _read(self, now: datetime, full_scan: bool | None):
         """(borsa_pozisyonlari, {pair: [acik emirler]}) ya da None (herhangi okuma basarisiz: hicbir eylem yok)."""
@@ -225,8 +234,19 @@ class LiveReconciler(Reconciler):
         if not qty > 0:
             return
         info = self.kill.info() or {}
-        at = str(info.get("at") or "unknown")
+        at = info.get("at")
+        if not isinstance(at, str) or not at:
+            log.critical("mutabakat: KILL kapanisi reddedildi (%s): kill dosyasinda `at` yok, kimlik uretilemez", pair)
+            acts.append(f"kill_close_refused:{pair}")
+            self.counters["kill_close_refused"] += 1
+            return
         cid = kill_close_client_id(self.cfg.bot, pair_symbol(pair), at)
+        if self.state.get_order(cid) is not None:
+            # KILL etkinlestirmesi basina TEK deneme (kimlik kill.at'ten): pozisyon duruyorsa her turda CRIT
+            log.critical("mutabakat: KILL kapanisi sonuclanmadi, %s hala acik (emir %s)", pair, cid)
+            acts.append(f"kill_close_pending:{pair}")
+            self.counters["kill_close_pending"] += 1
+            return
         req = OrderRequest(client_id=cid, pair=pair, role="exit", order_side=order_side_for(bp.side, "exit"), qty=qty,
                            trigger_price=None, reduce_only=True, leverage=None, signal_bar_close_ts=now, created_ts=now)
         out = self.orders._submit(req, 0, None)       # noqa: SLF001
@@ -242,6 +262,7 @@ class LiveReconciler(Reconciler):
             for r in self.state.orders_for_trade(p.trade_id):
                 if r.role == "entry" and r.status in ("failed", "unknown"):
                     cands.append((p, r))
+        unverified = False
         for p, r in sorted(cands, key=lambda x: x[1].created_ts, reverse=True):
             try:
                 bo = self.broker.query(pair, r.client_id)
@@ -249,6 +270,7 @@ class LiveReconciler(Reconciler):
                 raise
             except Exception as e:  # noqa: BLE001
                 log.warning("L2a sorgu basarisiz %s: %r", r.client_id, e)
+                unverified = True
                 continue
             if bo is None or bo.status != "filled":
                 continue
@@ -275,28 +297,55 @@ class LiveReconciler(Reconciler):
             self._register(pos, bp, [])
             self._stops(pos, bp, [], now, acts, finds, [], protect_only=True)
             return True
+        if unverified:
+            # sorgu verisi eksik: tutus/KILL kapanisi YOK; sonraki turda yeniden denenir (11 §8 L2a)
+            finds.append(f"late_fill_unverified:{pair}")
+            self.counters["late_fill_unverified"] += 1
+            return True
         return False
 
-    # ================================================================== opening -> open benimseme (F4/F5/F6)
-    def _adopt_opening(self, sp: Position, bp: BrokerPosition, now, acts, finds, orders_open) -> Position | None:
+    # ================================================================== opening -> open benimseme (L2b; F4/F5/F6)
+    def _adopt_opening(self, sp: Position, bp: BrokerPosition, now, acts, finds, orders_open):
+        """(kind, pozisyon). Kanit sarti (11 §8 L2b): giris emri satiri VAR + `query(cid)` terminal ve filled_qty > 0 + yon
+        eslesir + bp.qty <= filled_qty + step/2. Satir yok / "emir yok" / terminal-dolumsuz / yon uyusmaz => ("unknown", None):
+        L2 (dokunulmaz, tutus). Sorgu HATASI => `opening_unverified` bulgusu, eylem yok. Emir hala `new` => poll'a birakilir.
+        kind: "adopted" (pozisyon doner) | "skip" | "unknown"."""
         rows = [r for r in self.state.orders_for_trade(sp.trade_id) if r.role == "entry"]
         row = rows[-1] if rows else None
-        price = bp.entry_price
-        ts = bp.opened_ts if bp.opened_ts and bp.opened_ts <= now else now
-        cid = row.client_id if row else f"adopted-{sp.trade_id}"
-        fee = bp.qty * price * float(self.cfg.cost.taker_fee)
-        fill = Fill(client_id=cid, pair=sp.pair, role="entry", order_side=row.order_side if row else order_side_for(sp.side, "entry"),
-                    qty=bp.qty, price=price, fee=fee, ts=ts, reason="market")
+        if row is None or sp.side != bp.side or row.order_side != order_side_for(bp.side, "entry"):
+            return "unknown", None
+        try:
+            bo = self.broker.query(sp.pair, row.client_id)
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("L2b sorgu basarisiz %s: %r", row.client_id, e)
+            finds.append(f"opening_unverified:{sp.trade_id}")
+            self.counters["opening_unverified"] += 1
+            return "skip", None
+        if bo is None:
+            return "unknown", None
+        if bo.status == "new":
+            return "skip", None
+        filled = float(bo.filled_qty or 0.0)
+        step = self._rules(sp.pair)[1]
+        if not filled > 0 or bp.qty > filled + step / 2:
+            return "unknown", None
+        price = bo.avg_price or bp.entry_price
+        ts = bo.updated_ts if bo.updated_ts and bo.updated_ts <= now else now
+        fee = filled * price * float(self.cfg.cost.taker_fee)
+        fill = Fill(client_id=row.client_id, pair=sp.pair, role="entry", order_side=row.order_side,
+                    qty=filled, price=price, fee=fee, ts=ts, reason="market")
         with self.state.tx():
             newp = apply_entry_fill(sp, fill, None, now)
             self._persist(sp, newp)
-            if row is not None and row.status in ("pending", "unknown", "accepted"):
+            if row.status != "filled":
                 self.state.update_order(row.client_id, status="filled", updated_ts=now)
             self.state.outbox_add("entry", sp.trade_id, build_trade_entry(newp))
             self.state.kv_set(f"entry_fee_estimated:{sp.trade_id}", True)
         self.counters["opening_adopted"] += 1
         acts.append(f"opening_adopted:{sp.trade_id}")
-        log.warning("mutabakat: opening pozisyon borsada bulundu, dolum benimsendi (trade %s qty %s)", sp.trade_id, bp.qty)
+        log.warning("mutabakat: opening pozisyon sorguyla dogrulandi, dolum benimsendi (trade %s qty %s)", sp.trade_id, filled)
         cur = self.state.get_position(sp.trade_id)
         eq = self.state.kv_get(f"eq:{sp.trade_id}")
         if cur is not None and eq:
@@ -309,9 +358,9 @@ class LiveReconciler(Reconciler):
                 self._stops(cur, bp, orders_open, now, acts, finds, [], protect_only=True)
                 again = self.state.get_position(sp.trade_id)
                 if again is not None and again.status == "open":
-                    self.orders.submit_exit(replace(again, qty=bp.qty), "other", now)
-                return None
-        return cur
+                    self.orders.market_exit(replace(again, qty=bp.qty), "other", now)
+                return "skip", None
+        return "adopted", cur
 
     # ================================================================== L3 / L3b
     def _hint_ids(self, sp: Position) -> list[str]:
@@ -392,7 +441,6 @@ class LiveReconciler(Reconciler):
             log.critical("mutabakat: dis azaltma trade %s (state qty %s -> borsa %s); qty korunuyor, stop yeni miktarla",
                          sp.trade_id, sp.qty, bp.qty)
             self.counters["qty_reduced_external"] += 1
-        finds.append(f"qty_reduced_external:{sp.trade_id}")
 
     def _clear_reduction(self, sp: Position) -> None:
         if self.state.kv_get(f"ext_reduction:{sp.trade_id}") is not None:
@@ -405,10 +453,13 @@ class LiveReconciler(Reconciler):
         if sp.status not in ("open", "closing"):
             return
         tick, step = self._rules(sp.pair)
-        tracked = [o for o in orders_open if o.role == "stop" and o.pair == sp.pair and self.state.get_order(o.client_id)]
+        tracked = [o for o in orders_open if o.role == "stop" and o.pair == sp.pair
+                   and self._row_trade(o.client_id) == sp.trade_id]
         untracked = [o for o in orders_open if o.role == "stop" and o.pair == sp.pair
                      and not self.state.get_order(o.client_id)]
         qty = self._floor(bp.qty, step)                 # borsa miktari adimin tam kati olmali (asagi)
+        if skip_requantity and sp.qty is not None:
+            qty = self._floor(min(bp.qty, sp.qty), step)  # fazla miktar (L2): stop YALNIZ bizim (state) miktarimiz icin
         if not tracked:
             ok = self._reinstall(sp, qty, tick, now, acts, finds, reasons, why="missing")
             if ok:
@@ -454,6 +505,10 @@ class LiveReconciler(Reconciler):
             if self._reinstall(cur, qty, tick, now, acts, finds, reasons, why="requantity", replace_ids=[kept.client_id]):
                 acts.append(f"stop_requantified:{cur.trade_id}")
 
+    def _row_trade(self, cid: str):
+        r = self.state.get_order(cid)
+        return None if r is None else r.trade_id
+
     @staticmethod
     def _floor(qty: float, step: float) -> float:
         return round(int(qty / step + 1e-9) * step, 12) if step > 0 else qty
@@ -493,7 +548,7 @@ class LiveReconciler(Reconciler):
                          sp.trade_id)
             cur = self.state.get_position(sp.trade_id) or sp
             if cur.status in ("open", "closing"):
-                self.orders.submit_exit(replace(cur, qty=qty), "force_exit", now)
+                self.orders.market_exit(replace(cur, qty=qty), "force_exit", now)
             if last is None or last.note != "would_trigger":
                 reasons.append("stop_failed")
                 self._block("stop_failed")
@@ -555,7 +610,7 @@ class LiveReconciler(Reconciler):
     def _price_drift(self, sp: Position, bp: BrokerPosition, finds) -> None:
         if sp.entry_price and abs(bp.entry_price - sp.entry_price) / sp.entry_price > ENTRY_DRIFT:
             log.warning("mutabakat: entry_price_drift %s state=%s borsa=%s", sp.pair, sp.entry_price, bp.entry_price)
-            finds.append(f"entry_price_drift:{sp.trade_id}")
+            self.counters["entry_price_drift"] += 1          # uyari + sayac; bulgu degil (11 §8 tolerans)
 
     def _register(self, sp: Position, bp: BrokerPosition, orders_open: list[BrokerOrder]) -> None:
         reg = getattr(self.broker, "register_position", None)
@@ -570,6 +625,14 @@ class LiveReconciler(Reconciler):
             log.warning("register_position basarisiz %s: %r", sp.pair, e)
 
     # ================================================================== L11 + blokaj
+    def _exit_unknown_hold(self, reasons: list[str]) -> None:
+        """F16: cikis denemeleri `_EXIT_RETRY_LIMIT`'e vardiysa ve pozisyon hala duruyorsa `exit_unknown` mandali, otomatik
+        temizlemeyle titrememeli: pozisyon kapanana dek korunur."""
+        for p in self.state.open_positions():
+            if p.status in ("open", "closing") and int(self.state.kv_get(f"exit_retry:{p.trade_id}", 0) or 0) >= EXIT_RETRY_LIMIT:
+                reasons.append("exit_unknown")
+                return
+
     def _ledger_checks(self, acts, finds, reasons) -> None:
         pending = self.state.outbox_pending()
         if pending:

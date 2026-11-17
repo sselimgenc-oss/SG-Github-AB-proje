@@ -584,7 +584,7 @@ def test_L4_state_qty_stays_original_override_and_audit_kv(rig, caplog):
     rep = rig.run()
     cur = rig.state.get_position(p.trade_id)
     assert cur.qty == pytest.approx(10.0), "state qty ORIJINAL giris miktari olarak kalir"
-    assert f"qty_reduced_external:{p.trade_id}" in rep.findings
+    assert f"qty_reduced_external:{p.trade_id}" not in rep.findings, "B5 fix 10: uyari + sayac, bulgu degil"
     assert rig.rec.counters["qty_reduced_external"] == 1
     kv = rig.state.kv_get(f"ext_reduction:{p.trade_id}")
     assert isinstance(kv, dict) and float(kv["exch_qty"]) == pytest.approx(6.0)
@@ -952,7 +952,7 @@ def test_tolerance_position_qty_step_half(rig, exch_qty, expect_l4):
     at_run(rig)
     m = rig.mark()
     rep = rig.run()
-    got = any(f.startswith("qty_reduced_external") for f in rep.findings)
+    got = rig.state.kv_get(f"ext_reduction:{p.trade_id}") is not None      # B5 fix 10: L4 bulgu degil; kv + sayac
     assert got is expect_l4
     if not expect_l4:
         assert rig.writes(m) == [] and rig.state.kv_get(f"ext_reduction:{p.trade_id}") is None

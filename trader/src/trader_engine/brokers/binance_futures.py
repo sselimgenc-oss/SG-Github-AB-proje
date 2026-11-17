@@ -273,6 +273,17 @@ class LiveBroker:
             self._ctr["exchange_bans"] += 1
             self._ban_until = now + timedelta(seconds=float(ra) if ra else 1.0)
 
+    def _note_429_reject(self) -> None:
+        """Emir yolundaki 429 (rate_limited reti): pencere REST istemcisinde acildi; motor `last_ban`dan gorsun (F8)."""
+        ra: int | None = None
+        try:
+            h = self._rest.health()
+            left = (int(h.get("ban_until_ms", 0)) - int(self._rest.now_ms())) / 1000.0
+            ra = max(1, int(-(-left // 1)))
+        except Exception:  # noqa: BLE001
+            ra = None
+        self.last_ban = (429, ra)
+
     def _read(self, name: str, *args: Any, protective: bool | None = None) -> Any:
         try:
             return self._rc(name, *args, protective=protective)
@@ -667,6 +678,7 @@ class LiveBroker:
             if e.msg == "order_rate_cap" or "order_rate_cap" in str(e):
                 return self._rej(cid, "order_rate_cap")
             if e.http == 429 or e.msg == "rate_limited":
+                self._note_429_reject()
                 return self._rej(cid, "rate_limited")
             return self._unknown(cid, "none")
         if code in _KNOWN_REASON:

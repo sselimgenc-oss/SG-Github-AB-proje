@@ -266,7 +266,7 @@ def test_l4_external_reduction_keeps_entry_qty_restops_and_exit_matches_state(tm
     assert p.qty == 10.0 and exchange_qty_override(w.state, 1) == 6.0       # orijinal miktar korunur
     s = stops(w)
     assert len(s) == 1 and s[0].qty == 6.0 and s[0].client_id != old and p.stop_client_id == s[0].client_id
-    assert "qty_reduced_external:1" in rep.findings
+    assert "qty_reduced_external:1" not in rep.findings and w.rec.counters["qty_reduced_external"] == 1   # fix 10: bulgu degil
     w.ex.set_mark("XRPUSDT", "1.85")
     w.rec.run(w.clock.now())
     q = w.state.get_position(1)

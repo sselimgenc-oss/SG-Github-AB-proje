@@ -1,5 +1,5 @@
 # Portions of this file (`efficiency_ratio`, `variance_ratio`, `_safe_div`) are adapted from Aurum v2
-# (https://github.com/zero-was-here/aurum -- local clone `sselimgenc-oss/inceleme/tradingbot`), file
+# (https://github.com/zero-was-here/tradingbot), file
 # `aurum/features/regime.py` lines 113-134 (+ `safe_div` from `aurum/features/volatility.py`), commit
 # 49f073dfdb2f8831e2fcb39b321c1a02bc4bba5f, licensed under the MIT License, Copyright (c) 2025 zero-was-here.
 # Read-only adaptation (the clone was never run or imported). Modifications: safe_div inlined, type hints trimmed.

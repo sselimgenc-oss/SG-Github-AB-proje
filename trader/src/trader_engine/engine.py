@@ -48,7 +48,8 @@ _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_fai
 STARTUP_MAX_AGE_S = 300          # acilis kapisi: son kapanmis 1m (last+mark) en fazla bu kadar eski olabilir
 EXIT_STARTUP_GATE = 7
 FEED_MODES = ("paper", "testnet", "live")        # 11 §6.1: "feed'li canli dongu" (benzetimli broker ayrimi: is_paper)
-_BROKER_REASONS = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
+_BROKER_REASONS = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable",
+                   "exchange_rate_limited")
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,8 @@ class Engine:
                 self.orders.entry_resolve_window_s = float(live.entry_resolve_window_s)
             self.orders.on_entry_adopted = self._on_adopted_entry
             self.orders.on_ban = self._note_ban
+            self.orders.exit_fn = self._submit_exit                 # 11 §6.4/§8: piyasa cikislari tek yoldan (poll + ban penceresi)
+            self.orders.close_unopened_fn = self._close_unopened    # giris penceresi kapanisi: defter duzeltmesi + _entry_events
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
         self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause)
@@ -117,6 +120,8 @@ class Engine:
         self._params_ok = False
         self._active_tf: str | None = None
         self._consec_errors = 0
+        self._consec: dict[str, int] = {}                       # canli: adim etiketi basina ardisik hata (merdiven)
+        self._ban_seen: tuple | None = None                     # son islenen broker.last_ban belirteci
         self._stop = False
         self._last_now: datetime | None = None
         self._last_minute: datetime | None = None
@@ -409,8 +414,8 @@ class Engine:
             if not self.state.integrity_check():
                 raise StateError("state integrity_check basarisiz")
             self.protect_first()
-        if cfg.mode == "paper":
-            self._startup_gate()
+        if cfg.mode == "paper" or (live_loop and cfg.mode in ("testnet", "live")):
+            self._startup_gate()                                  # 11 §6.2: canlida protect_first'ten SONRA, ayni 10/10 kapisi
         if cfg.bot == "twin" and cfg.start_delay_s > 0:
             self.clock.sleep(cfg.start_delay_s)
         if not self.state.integrity_check():
@@ -529,11 +534,17 @@ class Engine:
             self._after_failure(label, e)
             return False
         self._consec_errors = 0
+        self._consec[label] = 0
         return True
 
     def _after_failure(self, label: str, e: Exception) -> None:
         self._c["callback_errors"] += 1
-        self._consec_errors += 1
+        if self.is_paper:
+            self._consec_errors += 1                          # kagit/backtest: eski davranis (herhangi bir basari sifirlar)
+        else:
+            # canli: basarili bir alt adim baska adimin hata sayacini sifirlayamaz (etiket basina sayac)
+            self._consec[label] = self._consec.get(label, 0) + 1
+            self._consec_errors = max(self._consec.values())
         log.critical("%s adimi basarisiz (%d. ardisik): %r", label, self._consec_errors, e, exc_info=True)
         if self.is_paper:
             snap = self.state.kv_get("broker_snapshot")
@@ -746,6 +757,8 @@ class Engine:
         elif row.role == "exit" and pos.status == "closing" and pos.exit_client_id == row.client_id:
             with self.state.tx():
                 self.state.update_position(pos.trade_id, status="open", exit_client_id=None, exit_reason=None)
+            if not self.is_paper:
+                self.orders._count_exit_failure(pos.trade_id)       # noqa: SLF001  F16: reddedilen cikis de sayilir
         elif row.role == "stop" and pos.status == "open":
             log.critical("stop reddedildi trade %s (%s): mutabakat yeniden kuracak", pos.trade_id, e.detail)
             self._block("stop_failed")
@@ -1002,7 +1015,7 @@ class Engine:
 
     def _periodic_input_check(self, now: datetime) -> None:
         """Calisirken kural/veri sayaclarini (`rules_missing`, `data_stale`) dakikada bir tazeler; karar vermez."""
-        if self.cfg.mode != "paper":              # canli: veri kapisi/girdi sayaclari feed'e baglidir; live_tick'te ayri
+        if self.cfg.mode not in ("paper", "testnet", "live"):
             return
         last = getattr(self, "_last_input_check", None)
         if last is not None and (now - last).total_seconds() < 60:
@@ -1038,7 +1051,9 @@ class Engine:
         self._guard("events", lambda: self._drain_events())
         self._post_commit()
         self._guard("watchdog", lambda: self._stop_watchdog(self.clock.now()))
+        self._guard("bans", self._sync_bans)
         self._mirror_broker_blocks()
+        self._periodic_input_check(now)                        # 11 §6.3: kural/veri sayaclari dakikada bir
         every = self.cfg.reconcile_open_s if self.state.open_positions() or self.state.unresolved_orders() \
             else self.cfg.reconcile_flat_s
         if self._last_reconcile is None or (now - self._last_reconcile).total_seconds() >= every:
@@ -1119,14 +1134,43 @@ class Engine:
         fee = float(qty) * float(price) * self.cfg.cost.taker_fee
         fill = Fill(client_id=row.client_id, pair=row.pair, role="entry", order_side=row.order_side, qty=float(qty),
                     price=float(price), fee=fee, ts=bo.updated_ts or now, reason="market")
+        with self.state.tx():
+            self.state.kv_set(f"entry_fee_estimated:{row.trade_id}", True)      # ucret tahmini (gercek komisyon bilinmiyor)
         self._on_entry_fill(BrokerEvent("fill", fill.ts, row.pair, row.client_id, fill), None, now)
 
+    def _ban_token(self) -> tuple:
+        lb = getattr(self.broker, "last_ban", None)
+        bans = 0
+        bc = getattr(self.broker, "counters", None)
+        if callable(bc):
+            try:
+                bans = int(bc().get("exchange_bans", 0))
+            except Exception:  # noqa: BLE001
+                bans = 0
+        return (lb, bans)
+
     def _note_ban(self) -> None:
-        """exchange_ban reti hemen sonrasi: broker.last_ban'dan (http, retry_after_s) zamanla (11 §10 F8-F10)."""
+        """exchange_ban / rate_limited reti hemen sonrasi (emir yolu)."""
+        self._apply_ban()
+        self._ban_seen = self._ban_token()
+
+    def _sync_bans(self) -> None:
+        """11 §10 F8-F11: ban HER yolda (okuma dahil) gorulur: her live_tick'te broker.last_ban son gorulenle karsilastirilir."""
+        tok = self._ban_token()
+        if tok == self._ban_seen:
+            return
+        self._ban_seen = tok
+        if tok[0] is not None or tok[1]:
+            self._apply_ban()
+
+    def _apply_ban(self) -> None:
+        """broker.last_ban'dan (http, retry_after_s) zamanla: 429 -> engel + pencere; 418/403/451 -> exchange_ban tutusu."""
         now = self.clock.now()
         lb = getattr(self.broker, "last_ban", None)
         http, ra = (lb if lb else (None, None))
-        self._ban_until = now + timedelta(seconds=float(ra if ra else 1.0))
+        until = now + timedelta(seconds=float(ra if ra else 1.0))
+        if self._ban_until is None or until > self._ban_until:
+            self._ban_until = until
         self._c["exchange_ban_rejects"] += 1
         if http == 429 and not self.state.kv_get("entries_blocked_reason"):
             self._block("exchange_rate_limited")
@@ -1144,7 +1188,14 @@ class Engine:
                 self.state.kv_set("entries_blocked_reason", None)
 
     def _mirror_broker_blocks(self) -> None:
-        """Brokerin giris engeli (exchange_auth, ...) kapi icin kv'ye yansitilir (baska nedeni ezmez)."""
+        """Brokerin giris engeli (exchange_auth, ...) kapi icin kv'ye yansitilir (baska nedeni ezmez). exchange_auth ayrica
+        yapiskan duraklatma tutusu olarak EKLENIR (11 §10 F9; kaldirma yalniz cli)."""
+        brs = tuple(getattr(self.broker, "entries_blocked_reasons", ()) or ())
+        if "exchange_auth" in brs and self.pause is not None:
+            try:
+                self.pause.add("exchange_auth", by="engine:broker", note="broker exchange_auth")
+            except Exception as e:  # noqa: BLE001
+                log.error("pause.add basarisiz: %r", e)
         br = getattr(self.broker, "entries_blocked_reason", None)
         if not br:
             return
@@ -1160,7 +1211,9 @@ class Engine:
             if cur is None:
                 self._block("exchange_unreachable")
             return
-        if cur == "exchange_unreachable" and getattr(rep, "ok", False):
+        # tur okumalarini tamamladi (temiz mutabakat = okumalar bitti; bulgu varligi temizlemeyi engellemez, 11 §8)
+        if cur == "exchange_unreachable" or (cur == "exchange_rate_limited" and (
+                self._ban_until is None or self.clock.now() >= self._ban_until)):
             with self.state.tx():
                 self.state.kv_set("entries_blocked_reason", None)
         self._mirror_broker_blocks()
@@ -1211,11 +1264,8 @@ def _build_live_broker(cfg: EngineConfig, clock: Clock | None, env: Mapping[str,
     from .exchange.binance_rest import SignedRestClient
     if cfg.live is None:
         raise ConfigError("live blogu yok")
-    check_live_confirm(cfg, env)
-    try:
-        key, secret = load_keys(env)
-    except ConfigError as e:
-        raise ConfigError(f"faz_b: LiveBroker kurulamadi ({e})") from None
+    check_live_confirm(cfg, env)                     # kanonik sira: once onay, sonra anahtarlar (11 §3)
+    key, secret = load_keys(env)                     # ConfigError("keys_missing: ...") aynen
     clk = clock or SystemClock()
     rest = SignedRestClient(env=cfg.mode, api_key=key, api_secret=secret,
                             now_ms=lambda: int(clk.now().timestamp() * 1000), sleep=clk.sleep,
@@ -1244,15 +1294,12 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     from .marketdata.sources import StoreSource
 
     env = os.environ if env is None else env
-    if cfg.mode in ("testnet", "live") and broker is None:
-        from .config import load_keys
-        try:
-            load_keys(env)
-        except ConfigError as e:
-            raise ConfigError(f"faz_b: LiveBroker kurulamadi ({e})") from None
     if cfg.mode == "live":
         from .config import check_live_confirm
         check_live_confirm(cfg, env)                 # ag oncesi cift onay (11 §3.1)
+    if cfg.mode in ("testnet", "live") and broker is None:
+        from .config import load_keys
+        load_keys(env)                               # ConfigError("keys_missing: ...") aynen (11 §3.2)
     live_broker_new = False
     if cfg.mode in ("testnet", "live") and broker is None:
         broker, live_broker_new = _build_live_broker(cfg, clock, env), True

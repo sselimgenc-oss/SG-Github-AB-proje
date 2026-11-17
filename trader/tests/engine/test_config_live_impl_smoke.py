@@ -196,9 +196,14 @@ def test_backtest_build_config_under_live_bot_file(tmp_path):
 
 def test_build_engine_refuses_testnet_live_without_broker(tmp_path):
     from trader_engine.engine import build_engine
+    # B4 fix 11 (B4-10): kanonik sira once onay (yalniz live), sonra anahtarlar; "faz_b" sarmalayicisi yok, duz keys_missing
     for m in ("testnet", "live"):
-        with pytest.raises(ConfigError, match="faz_b"):
-            build_engine(_base(mode=m, live=LIVE, var_dir=str(tmp_path / "v")))
+        env = {"LIVE_CONFIRM": LIVE["account_tag"]} if m == "live" else {}
+        with pytest.raises(ConfigError, match="keys_missing") as ei:
+            build_engine(_base(mode=m, live=LIVE, var_dir=str(tmp_path / "v")), env=env)
+        assert "faz_b" not in str(ei.value)
+    with pytest.raises(ConfigError, match="live_confirm"):            # onay anahtarlardan ONCE denetlenir
+        build_engine(_base(mode="live", live=LIVE, var_dir=str(tmp_path / "v")), env={})
 
 
 def test_entry_leverage_wired(tmp_path):

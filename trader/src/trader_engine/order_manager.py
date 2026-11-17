@@ -65,7 +65,10 @@ class OrderManager:
         self.stop_deadline_s = float(stop_deadline_s)
         self.entry_resolve_window_s = float(entry_resolve_window_s)
         self.on_entry_adopted: Callable[[OrderRow, BrokerOrder], None] | None = None   # sorguyla bulunan giris dolumu
-        self.on_ban: Callable[[], None] | None = None                                    # exchange_ban retinden sonra
+        self.on_ban: Callable[[], None] | None = None                                    # exchange_ban / rate_limited retinden sonra
+        # 11 §6.4/§8: canli piyasa cikislari ve giris-penceresi kapanisi motorun kendi yolundan gecer
+        self.exit_fn: Callable[[Position, str, datetime], object] | None = None          # Engine._submit_exit
+        self.close_unopened_fn: Callable[[Position, datetime], None] | None = None       # Engine._close_unopened
 
     def _eff_qty(self, pos: Position) -> float:
         """Canli: L4 (dis azaltma) sonrasi state qty ORIJINAL kalir; emir miktari min(pos.qty, borsa miktari) (11 §8 L4)."""
@@ -154,7 +157,7 @@ class OrderManager:
                 if bo is not None:
                     return self._adopt(row, bo, "duplicate_adopted")
             row = self._upd(row.client_id, status="rejected", detail=res.reason)
-            if res.reason == "exchange_ban" and self.on_ban is not None:
+            if res.reason in ("exchange_ban", "rate_limited") and self.on_ban is not None:
                 self.on_ban()
             if note is None and res.reason == "would_trigger":
                 note = "would_trigger"
@@ -280,11 +283,13 @@ class OrderManager:
         return out
 
     def _entry_failed(self, row: OrderRow) -> None:
+        p = self.state.get_position(row.trade_id) if row.trade_id is not None else None
+        if p is not None and p.status == "opening" and self.close_unopened_fn is not None:
+            self.close_unopened_fn(p, self.clock.now())       # canli: defter duzeltmesi + _entry_events temizligi motorda
+            p = None
         with self.state.tx():
-            if row.trade_id is not None:
-                p = self.state.get_position(row.trade_id)
-                if p is not None and p.status == "opening":
-                    self.state.update_position(p.trade_id, status="closed", exit_reason="other", closed_ts=self.clock.now())
+            if p is not None and p.status == "opening":
+                self.state.update_position(p.trade_id, status="closed", exit_reason="other", closed_ts=self.clock.now())
             self.state.kv_set("entries_blocked_reason", "order_unknown")
         log.error("giris emri basarisiz: %s", row.client_id)
 
@@ -293,6 +298,11 @@ class OrderManager:
             return
         p = self.state.get_position(row.trade_id)
         if p is None or p.status == "closed":
+            return
+        if self.live_mode and (out.status == "rejected" or (out.status == "failed" and row.status == "failed")):
+            # 11 §8 L3c / F16: reddedilen, iptal/suresi dolan (kismi dahil) ya da iki sorguda da bulunamayan cikis:
+            # `closing`te beklemez, `open`a doner ve deneme sayilir
+            self._revert_exit(row)
             return
         if out.ok or out.status == "failed":
             # kabul: closing; basarisiz: closing kalir, resolve_unresolved yeniden dener
@@ -365,6 +375,35 @@ class OrderManager:
             self._exit_failed_effects(pos)
         return out
 
+    def market_exit(self, pos: Position, reason: str, at: datetime):
+        """Canli: stop/mutabakat yollarindaki piyasa cikislari motorun `_submit_exit`'inden (hemen poll + ban penceresi) gecer."""
+        if self.exit_fn is not None:
+            return self.exit_fn(pos, reason, at)
+        return self.submit_exit(pos, reason, at)
+
+    def _count_exit_failure(self, trade_id: int) -> int:
+        """F16: reddedilen / bulunamayan / kismi cikis denemesi sayilir; limite varinca exit_unknown + CRIT."""
+        n = int(self.state.kv_get(f"exit_retry:{trade_id}", 0)) + 1
+        with self.state.tx():
+            self.state.kv_set(f"exit_retry:{trade_id}", n)
+        if n >= _EXIT_RETRY_LIMIT:
+            p = self.state.get_position(trade_id)
+            if p is not None:
+                self._exit_failed_effects(p)
+        return n
+
+    def _revert_exit(self, row: OrderRow) -> None:
+        """`closing` pozisyonu `open`a dondur (cikis satiri sonuclanmadi) ve denemeyi say."""
+        if row.trade_id is None:
+            return
+        p = self.state.get_position(row.trade_id)
+        if p is None or p.status == "closed":
+            return
+        if p.status == "closing" and p.exit_client_id == row.client_id:
+            with self.state.tx():
+                self.state.update_position(p.trade_id, status="open", exit_client_id=None, exit_reason=None)
+        self._count_exit_failure(p.trade_id)
+
     def _exit_failed_effects(self, pos: Position) -> None:
         n = int(self.state.kv_get(f"exit_retry:{pos.trade_id}", 0))
         if n >= _EXIT_RETRY_LIMIT:
@@ -396,7 +435,7 @@ class OrderManager:
             return out
         log.critical("stop kurulamadi: trade %s kapatiliyor", pos.trade_id)
         cur = self.state.get_position(pos.trade_id) or pos
-        self.submit_exit(cur, "other", self.clock.now())
+        self.market_exit(cur, "other", self.clock.now())
         self._block("stop_failed")
         return SubmitOutcome(False, out.status, out.order, out.result, "stop_failed_closed")
 
@@ -410,7 +449,7 @@ class OrderManager:
             would = out.note == "would_trigger"
         log.critical("stop kurulamadi (%s): trade %s piyasada kapatiliyor", out.note, pos.trade_id)
         cur = self.state.get_position(pos.trade_id) or pos
-        self.submit_exit(cur, "other", self.clock.now())
+        self.market_exit(cur, "other", self.clock.now())
         if not would:
             self._block("stop_failed")
         return SubmitOutcome(False, out.status, out.order, out.result, "would_trigger_closed" if would else "stop_failed_closed")
@@ -483,8 +522,65 @@ class OrderManager:
             if row.role == "stop" and out.ok and row.trade_id is not None:
                 self._adopt_stop(row)
             outs.append(out)
-        outs.extend(self._retry_failed_exits())
+        outs.extend(self._resolve_in_flight_live() if self.live_mode else self._retry_failed_exits())
         return outs
+
+    # 11 §8 L3c: canli `opening`/`closing` pozisyonlarin yolda kalmis piyasa emirleri (her tur, tek sorgu)
+    def _resolve_in_flight_live(self) -> list[SubmitOutcome]:
+        outs: list[SubmitOutcome] = []
+        for p in self.state.open_positions():
+            if p.status == "opening":
+                for r in self.state.orders_for_trade(p.trade_id):
+                    if r.role == "entry" and r.status == "accepted":
+                        o = self._requery_entry(r)
+                        if o is not None:
+                            outs.append(o)
+            elif p.status == "closing":
+                o = self._resolve_closing(p)
+                if o is not None:
+                    outs.append(o)
+        return outs
+
+    def _requery_entry(self, row: OrderRow) -> SubmitOutcome | None:
+        ok, bo = self._query(row.pair, row.client_id)
+        if not ok:
+            return None                                   # sorgu HATASI: eylem yok
+        if bo is None:
+            row = self._upd(row.client_id, status="failed", detail="gone_on_query")
+            return self._after(self._outcome(row, None, "failed"), row.trade_id)
+        if bo.status == "new":
+            return None                                   # hala calisiyor: poll'a birak
+        return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
+
+    def _resolve_closing(self, p: Position) -> SubmitOutcome | None:
+        """`closing` pozisyon: cikis satiri failed/rejected/canceled/expired ya da yolda kalmis (accepted + terminal/yok) ise `open`a
+        doner. Sorgu HATASI eylemsizdir. Dolmus satir poll/L3'e birakilir."""
+        row = self.state.get_order(p.exit_client_id) if p.exit_client_id else None
+        if row is None:
+            with self.state.tx():
+                self.state.update_position(p.trade_id, status="open", exit_client_id=None, exit_reason=None)
+            self._count_exit_failure(p.trade_id)
+            return None
+        if row.status in ("pending", "unknown", "filled"):
+            return None                                   # pending/unknown: unresolved dongusu; filled: olay/L3
+        if row.status in ("rejected", "canceled", "expired"):
+            self._revert_exit(row)
+            return self._outcome(row, None, "exit_not_filled")
+        ok, bo = self._query(row.pair, row.client_id)     # failed | accepted
+        if not ok:
+            return None
+        if bo is None:
+            if row.status == "accepted":
+                row = self._upd(row.client_id, status="failed", detail="gone_on_query")
+            self._revert_exit(row)
+            return self._outcome(row, None, "exit_not_found")
+        if bo.status == "new":
+            if row.status == "failed":
+                row = self._upd(row.client_id, status="accepted")
+            return None
+        if bo.status == "filled" and row.status == "accepted":
+            return None                                   # dolum olayi poll'dan / L3'ten gelir
+        return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
 
     def _adopt_stop(self, row: OrderRow) -> None:
         p = self.state.get_position(row.trade_id) if row.trade_id is not None else None
@@ -512,28 +608,9 @@ class OrderManager:
                 continue
             with self.state.tx():
                 self.state.kv_set(f"exit_retry:{p.trade_id}", n + 1)
-            if self.live_mode:
-                outs.append(self._retry_failed_exit_live(p, row, n))
-                continue
             row = self._upd(row.client_id, status="unknown", attempts=0)
             out = self._resolve_row(row)
             if out.status == "failed" and out.order.status == "failed":
                 self._exit_failed_effects(self.state.get_position(p.trade_id) or p)
             outs.append(out)
         return outs
-
-    def _retry_failed_exit_live(self, p: Position, row: OrderRow, n: int) -> SubmitOutcome:
-        """Canli: kimlikle tek sorgu; emir varsa benimse (dolum poll'dan), yoksa pozisyon `open`a doner (yeni kimlikle yeniden)."""
-        with self.state.tx():
-            self.state.kv_set(f"exit_retry:{p.trade_id}", n + 1)
-        ok, bo = self._query(row.pair, row.client_id)
-        if ok and bo is not None:
-            row = self._upd(row.client_id, status="unknown", attempts=0)
-            return self._after(self._adopt(row, bo, "adopted_after_unknown"), row.trade_id)
-        if ok:
-            with self.state.tx():
-                self.state.update_position(p.trade_id, status="open", exit_client_id=None, exit_reason=None)
-        out = self._outcome(row, None, "exit_not_found" if ok else "query_uncertain")
-        if n + 1 >= _EXIT_RETRY_LIMIT:
-            self._exit_failed_effects(self.state.get_position(p.trade_id) or p)
-        return out
