@@ -796,6 +796,7 @@ def test_weight_threshold_waits_for_minute():
 
 # =========================================================================== sources
 pd = pytest.importorskip("pandas")
+np = pytest.importorskip("numpy")
 pytest.importorskip("pyarrow")
 import pandas.testing as pdt  # noqa: E402
 
@@ -1048,7 +1049,7 @@ def test_historical_rules_missing_and_synthetic(tmp_path):
         HistoricalSource(str(hd)).rules(BTC)
     # synthetic rules: prices with 2 decimals, volumes with 3 -> tick 0.01, step 0.001
     n = 300
-    idx = pd.DatetimeIndex([D0 + timedelta(hours=i) for i in range(n)], name="date")
+    idx = pd.DatetimeIndex([dt(2025, 6, 1) + timedelta(hours=i) for i in range(n)], name="date")
     df = pd.DataFrame({"open": [100.25 + (i % 7) for i in range(n)], "high": [105.5 + (i % 7) for i in range(n)],
                        "low": [99.75 + (i % 7) for i in range(n)], "close": [101.0 + (i % 7) for i in range(n)],
                        "volume": [12.345 + (i % 5) for i in range(n)]}, index=idx)
@@ -1057,7 +1058,7 @@ def test_historical_rules_missing_and_synthetic(tmp_path):
     write_feather(h3 / "BTC_USDT_USDT-1h-futures.feather", df)
     r = HistoricalSource(str(h3), granularity="15m", synthetic_rules=True).rules(BTC)
     assert r.tick == pytest.approx(0.01) and r.step == pytest.approx(0.001)
-    assert r.min_notional == 5.0 and r.min_qty == pytest.approx(r.step) and r.max_qty == 1e12
+    assert r.min_notional == 100.0 and r.min_qty == pytest.approx(r.step) and r.max_qty == 1e12   # BTC/USDT: muhafazakar 100
 
 
 @pytest.mark.parametrize("mode", ["garbage", "missing_column"])

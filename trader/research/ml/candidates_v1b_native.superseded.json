@@ -251,5 +251,8 @@
    "label_unresolved": 1
   }
  },
- "peak_rss_mb": 169
+ "peak_rss_mb": 169,
+ "superseded": true,
+ "superseded_by": "candidates_v1b_native.manifest.json (ml1-r01-v1b-native33; rebuild pending)",
+ "superseded_reason": "19b yeniden kurulumu (mentor, 17 Kasim 2026): kirli agac damgasi, spec disi --synthetic-rules (son 2000 mum kilitli doneme dokunuyordu), backtest riski 0.014"
 }

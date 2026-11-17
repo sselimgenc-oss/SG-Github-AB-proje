@@ -28,3 +28,6 @@ research/ml/*.csv
 # Genel kurallar (*.sqlite*, *.csv, *.zip, crosscheck/) bunu dislamasin diye acik istisna:
 !research/reference/
 !research/reference/**
+
+# ML 19b/19c dondurulmus yedek (sha256 manifestte)
+research/ml/frozen/

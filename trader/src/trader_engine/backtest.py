@@ -179,6 +179,7 @@ class BacktestSpec:
     out_root: str | None = None
     config_dir: str = "config"
     pairs: tuple[str, ...] | None = None
+    target_trade_risk: float | None = None      # None -> kilitli hedef risk (LOCKED_CFG); verilirse yalniz daha SIKI (<=) deger
     flags: dict = field(default_factory=dict)
 
 
@@ -329,7 +330,7 @@ class BacktestRunner:
         cost = build_cost(s.fill_model, s.fee_mult, s.slip_bps, s.granularity, s.trigger_source)
         # backtest/capraz dogrulama kilitli hedef riskle kosar (taban yapilandirmadaki paper degeri 0.005 sonuclari kaydirmasin)
         kw = dict(mode="backtest", veto_mode="off", bot="learner", strategy=s.strategy, cost=cost,
-                  target_trade_risk=K.LOCKED_CFG.target_trade_risk,
+                  target_trade_risk=(K.LOCKED_CFG.target_trade_risk if s.target_trade_risk is None else s.target_trade_risk),
                   record_filtered_candidates=bool(s.record_filtered))
         if s.pairs:
             kw["pairs"] = tuple(canon_pair(p) for p in s.pairs)
@@ -723,6 +724,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--market-db", default=None)
     ap.add_argument("--history-dir", default=None)
     ap.add_argument("--synthetic-rules", action="store_true")
+    ap.add_argument("--target-trade-risk", type=float, default=None,
+                    help="varsayilan: kilitli hedef risk (0.014); verilirse (0, 0.014] icinde, orn. kagit 0.005")
     ap.add_argument("--veto", default="none")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--record-filtered", dest="record_filtered", action="store_true", default=True)
@@ -762,6 +765,7 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         record_filtered=a.record_filtered, skip_flat=not a.no_skip_flat, paranoid=a.paranoid, seed=a.seed,
         truncate_check=trunc, from_paper_ledger=a.from_paper_ledger, out_root=a.out_root, config_dir=a.config_dir,
         pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None,
+        target_trade_risk=a.target_trade_risk,
         flags=dict(argv=list(argv)))
 
 

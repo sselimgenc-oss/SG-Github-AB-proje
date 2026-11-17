@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""ML 19b: tarihsel aday seti (NATIVE kip) -- motor backtester'indan (v1b = price_action_v1, paper yapilandirmasi).
+"""ML 19b: tarihsel aday seti (NATIVE kip) -- motor backtester'indan (v1b = price_action_v1; kagit riski target_trade_risk=0.005).
+
+Tarif `ml1-r01-v1b-native33`. KAYITLI ISTISNA: gercek borsa kurallari anlik goruntusu yok (bu ortam Binance'ten 451 aliyor);
+kurallar `--synthetic-rules` ile YALNIZ 2026-05-01 oncesi mumlardan sentetik uretilir (min_notional: BTC 100, ETH 20, digerleri 5);
+manifestte `rules_source: synthetic-preholdout`. Sunucuda gercek anlik goruntu gelince yalniz fark karsilastirmasi yapilir.
+Kosu basinda git commit damgalanir; kirli agac reddedilir (yalniz research/ml/ ve research/logs/ altinda izlenmeyen dosya serbest).
 
 Akis: (1) `trader_engine.backtest` ile [2024-11-01, 2026-05-01) araligini kosar (KILITLI DONEM 2026-05..10 okunmaz/kosulmaz),
 (2) ledger'daki TUM karar olaylarini (alinan + atlanan; `v_decisions`) toplar, (3) alinan islemlerin GERCEK cikis zamani
@@ -37,11 +42,91 @@ from trader_ml.guards import assert_pre_holdout  # noqa: E402
 from trader_ml.labels import cost_in_r, label_candidates  # noqa: E402
 from trader_ml.schema import REQUIRED, feature_columns, validate_candidates  # noqa: E402
 
-RUN_ID = "ml_cand_v1b_native"
+RUN_ID = "ml_cand_v1b_native33"
+RECIPE_ID = "ml1-r01-v1b-native33"
+TARGET_TRADE_RISK = 0.005                         # kagit riski (backtest varsayilani 0.014 DEGIL); alinan/atlanan ayrimi kagidi yansitir
+RULES_SOURCE = "synthetic-preholdout"
+RULES_EXCEPTION = ("gercek borsa kurallari anlik goruntusu yok (bu ortam Binance'ten 451 aliyor); sentetik kurallar yalniz "
+                   "2026-05-01 oncesi mumlardan, min_notional BTC 100 / ETH 20 / digerleri 5 (mentor karari, 17 Kasim 2026)")
+ALLOWED_UNTRACKED = ("research/ml/", "research/logs/")
 PERIOD = "20241101-20260501"                      # bitis dislayici = HOLDOUT_START
 OUT_DIR = ROOT / "research" / "ml"
 HISTORY = ROOT / "user_data" / "data" / "binance" / "futures"
-BT_ARGS = ["--period", PERIOD, "--tf", "1h", "--fill-model", "native", "--strategy", "price_action_v1", "--synthetic-rules"]
+BT_ARGS = ["--period", PERIOD, "--tf", "1h", "--fill-model", "native", "--strategy", "price_action_v1", "--synthetic-rules",
+           "--target-trade-risk", str(TARGET_TRADE_RISK)]
+
+
+def git_stamp(root: Path = ROOT) -> tuple[str, list[str]]:
+    """(HEAD kisa commit, izin disi kirli yollar). Izinli: research/ml/ ve research/logs/ altinda IZLENMEYEN (??) dosyalar.
+    Izlenen dosyada her degisiklik, baska yerde izlenmeyen dosya kirlidir."""
+    def git(*a):
+        r = subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"git basarisiz ({' '.join(a)}): {r.stderr.strip()}")
+        return r.stdout
+    commit = git("rev-parse", "--short=12", "HEAD").strip()
+    prefix = git("rev-parse", "--show-prefix").strip()
+    dirty = []
+    for line in git("status", "--porcelain=v1", "--untracked-files=all").splitlines():
+        code, path = line[:2], line[3:]
+        rel = path[len(prefix):] if prefix and path.startswith(prefix) else path
+        if code == "??" and rel.startswith(ALLOWED_UNTRACKED) and (not prefix or path.startswith(prefix)):
+            continue
+        dirty.append(line)
+    return commit, dirty
+
+
+def require_clean_tree(root: Path = ROOT) -> str:
+    commit, dirty = git_stamp(root)
+    if dirty:
+        raise SystemExit("KIRLI AGAC: commit'lenmemis degisiklik var, derlem uretilmez:\n  " + "\n  ".join(dirty[:20]))
+    return commit
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def check_run_meta(run_dir: Path, commit: str) -> dict:
+    """Hazir kosu (--run-dir) da kayitli kosulla ayni olmali: sentetik kural, kagit riski, ayni (temiz) commit."""
+    meta = json.loads((run_dir / "meta.json").read_text())
+    argv = meta.get("flags", {}).get("argv", [])
+    if "--synthetic-rules" not in argv or meta.get("rules_source") != "synthetic":
+        raise SystemExit("kosu --synthetic-rules ile degil")
+    if "--target-trade-risk" not in argv or float(argv[argv.index("--target-trade-risk") + 1]) != TARGET_TRADE_RISK:
+        raise SystemExit(f"kosu target_trade_risk={TARGET_TRADE_RISK} ile kosulmamis")
+    gc = str(meta.get("git_commit", ""))
+    if gc.endswith("+dirty") or not gc.startswith(commit[:7]):
+        raise SystemExit(f"kosu commit'i ({gc}) baslangic damgasi ({commit}) ile uyusmuyor ya da kirli")
+    return meta
+
+
+def supersede_previous(out_dir: Path, name: str, superseded_by: str) -> list[str]:
+    """Onceki derlemi SILMEDEN 'yerini aldi' isaretler: manifest -> *.superseded.json (+alan), parquet -> *.superseded.parquet."""
+    moved = []
+    man = out_dir / f"{name}.manifest.json"
+    if man.exists():
+        d = json.loads(man.read_text())
+        if not d.get("superseded"):
+            d.update(superseded=True, superseded_by=superseded_by,
+                     superseded_reason="19b yeniden kurulumu (mentor, 17 Kasim 2026): kirli agac damgasi, spec disi --synthetic-rules "
+                                       "(son 2000 mum kilitli doneme dokunuyordu), backtest riski 0.014")
+            dst = out_dir / f"{name}.superseded.json"
+            dst.write_text(json.dumps(d, indent=1, default=str))
+            man.unlink()
+            moved.append(dst.name)
+    for suf in ("", "_prefiltered"):
+        src = out_dir / f"{name}{suf}.parquet"
+        if src.exists():
+            dst = out_dir / f"{name}{suf}.superseded.parquet"
+            if not dst.exists():
+                src.rename(dst)
+                moved.append(dst.name)
+    return moved
 
 
 def to_ml_pair(p: str) -> str:
@@ -183,11 +268,17 @@ def main(argv=None) -> int:
     ap.add_argument("--run-dir", default=None)
     ap.add_argument("--out", default="candidates_v1b_native")
     a = ap.parse_args(argv)
+    commit = require_clean_tree()                       # KOSU BASINDA damga + kirli agac reddi
+    print(f"git commit (baslangic damgasi): {commit}; agac temiz", flush=True)
     run_dir = Path(a.run_dir) if a.run_dir else ROOT / "var" / "backtests" / RUN_ID
     if not (run_dir / "ledger.sqlite").exists():
         run_backtest(run_dir)
+    check_run_meta(run_dir, commit)
+    if git_stamp()[0] != commit or git_stamp()[1]:
+        raise SystemExit("kosu sirasinda agac/commit degisti")
     t, stats = build(run_dir, a.out)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    superseded = supersede_previous(OUT_DIR, a.out, f"{a.out}.manifest.json ({RECIPE_ID}, commit {commit})")
     t_all = t
     t, pre = split_eligible(t_all)
     pq = OUT_DIR / f"{a.out}.parquet"
@@ -198,6 +289,11 @@ def main(argv=None) -> int:
     lab = t["label"].dropna()
     taken = t["taken"]
     manifest = {
+        "recipe_id": RECIPE_ID, "target_trade_risk": TARGET_TRADE_RISK,
+        "rules_source": RULES_SOURCE, "rules_exception": RULES_EXCEPTION,
+        "git_commit_start": commit, "tree_clean_at_start": True, "run_id": run_dir.name,
+        "sha256": {pq.name: sha256_file(pq), f"{a.out}_prefiltered.parquet": sha256_file(OUT_DIR / f"{a.out}_prefiltered.parquet")},
+        "superseded_previous": superseded,
         "file": pq.name, "mode": "native", "source": "backtest", "schema": "trader_ml.schema (19b)",
         "engine_git_commit": meta["git_commit"], "engine_version": meta["engine_version"],
         "strategy": meta["strategy_label"], "config_hash_sha256": chash,

@@ -7,7 +7,7 @@ import logging
 import os
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
@@ -93,6 +93,10 @@ def _tail_run(ms: Sequence[int], tf_ms: int) -> int:
             break
         n += 1
     return n
+
+
+_HOLDOUT_START = datetime(2026, 5, 1, tzinfo=timezone.utc)
+_SYNTH_MIN_NOTIONAL = {"BTC/USDT": 100.0, "ETH/USDT": 20.0}
 
 
 def _step_dec(values) -> float:
@@ -412,12 +416,18 @@ class HistoricalSource:
         return v if v is not None else self.rules(p).tick
 
     def _synthetic_rules(self, p: str) -> SymbolRules:
-        """SENTETIK kurallar (gercek borsa kurallari degil; raporda etiketlenmeli): son 2000 1h bar ondaliklari."""
+        """SENTETIK kurallar (gercek borsa kurallari degil; raporda etiketlenmeli): ondaliklar KILITLI DONEM ONCESI
+        (ms < 2026-05-01) son 2000 1h bardan; dosya sonu (kilitli doneme uzanan veri) hicbir zaman okunmaz -> deterministik.
+        min_notional muhafazakar: BTC/USDT 100, ETH/USDT 20, digerleri 5."""
         s = self._series(p, "1h")
-        k = slice(max(0, len(s.ms) - 2000), None)
+        cut = int(np.searchsorted(s.ms, to_ms(_HOLDOUT_START), "left"))
+        if cut <= 0:
+            raise DataError(f"{p}: sentetik kural icin kilitli donem oncesi 1h bar yok")
+        k = slice(max(0, cut - 2000), cut)
         tick = _step_dec(np.concatenate([s.o[k], s.c[k], s.h[k], s.l[k]]))
         lot = _step_dec(s.v[k])
-        return SymbolRules(pair=p, symbol=pair_symbol(p), tick=tick, step=lot, min_qty=lot, max_qty=1e12, min_notional=5.0)
+        return SymbolRules(pair=p, symbol=pair_symbol(p), tick=tick, step=lot, min_qty=lot, max_qty=1e12,
+                           min_notional=_SYNTH_MIN_NOTIONAL.get(p, 5.0))
 
     def data_range(self, pair: str, tf: str) -> tuple[datetime, datetime] | None:
         _check_tf(tf)
