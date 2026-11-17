@@ -16,7 +16,8 @@ def _fmt(v, nd=4):
 def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb: float, synthetic: bool,
                   selected_reason: str, n_trials: int | None = None, lightgbm_version: str | None = None,
                   corpus_sha256: str | None = None, diagnostics: dict | None = None,
-                  health: dict | None = None, power: dict | None = None) -> str:
+                  health: dict | None = None, power: dict | None = None,
+                  calibration: dict | None = None) -> str:
     L = []
     verdict = "KABUL (gölgeye girişe uygun)" if res.passed else "RED"
     L += [f"# ML terfi kapısı raporu — {verdict}", ""]
@@ -59,6 +60,12 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
               f"kopya={[f'{a}=={b}' for a, b in health['duplicate']] or '-'} -> {'TEMİZ' if health['ok'] else 'SAĞLIKSIZ ÖZELLİK VAR (sentetik koşuda yalnız uyarı)'}"]
         if power is not None:
             L += ["- " + power_line.strip() if i == 0 else "  " + power_line.strip() for i, power_line in enumerate(_pre.power_lines(power))]
+    if calibration is not None:
+        cf = calibration["clamped_folds"]
+        L += ["", "## Kalibrasyon (yalnız bilgi)", "",
+              f"- Ağırlık şeması: `{calibration['weight_scheme']}` | Platt eğimi a>=0 kısıtı: {'AÇIK' if calibration['nonneg_slope'] else 'kapalı'}",
+              "- Eğimi kısıtlanan (a<0 -> sabit p = taban oran) ileri yönlü dilim sayısı: "
+              + (", ".join(f"{k}={v}/{calibration['n_folds']}" for k, v in cf.items()) or "-")]
     if diagnostics is not None:
         L += ["", "## Tanı satırları (yalnız bilgi; geçti/kaldı rolü yok)", ""] + _diag.lines(diagnostics)
     L += ["", "## Test dilimleri (genişleyen pencere, 72 mum arındırma + 24 mum ambargo)", "",

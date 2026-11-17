@@ -20,6 +20,19 @@ def sample_weights(df: pd.DataFrame, ref_ts: pd.Timestamp) -> np.ndarray:
     return base * 0.5 ** (age / AGE_HALF_LIFE_DAYS)
 
 
+def training_weights(df: pd.DataFrame, scheme: str | None = None) -> np.ndarray:
+    """Egitim agirliklari; `df` = bir dilimin (arindirma/ambargo sonrasi) EGITIM satirlari ya da nihai tablo.
+    scheme "age_decay" (r01, varsayilan = config.WEIGHT_SCHEME) -> sample_weights; "uniq_decay" -> sample_weights_v2."""
+    from . import config
+    scheme = scheme or config.WEIGHT_SCHEME
+    if scheme == "age_decay":
+        return sample_weights(df, df["ts"].max())
+    if scheme == "uniq_decay":
+        from .weights import sample_weights_v2
+        return sample_weights_v2(df)
+    raise ValueError(f"bilinmeyen agirlik semasi: {scheme!r}")
+
+
 # ------------------------------------------------------------------------------------- lojistik
 def fit_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, l2: float = LOGIT_PARAMS["l2"],
                  max_iter: int = LOGIT_PARAMS["max_iter"]) -> dict:
@@ -49,11 +62,11 @@ def fit_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, l2: float = LOGIT_
 
 
 # ------------------------------------------------------------------------------------- Platt
-def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bool = False) -> dict:
+def fit_platt_info(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bool = False) -> tuple[dict, bool]:
     """p = sigmoid(a*z + b); Newton. Dejenere durumda (a,b)=(1,0). nonneg_slope: a<0 ise a=0 ve
-    b = logit(mean(y)) (yalniz kesen)."""
+    b = logit(mean(y)) (yalniz kesen => sabit p = taban oran). Ikinci deger: egim KISILDI mi (clamped)."""
     if len(z) < 20 or y.min() == y.max() or np.std(z) < 1e-12:
-        return {"a": 1.0, "b": 0.0}
+        return {"a": 1.0, "b": 0.0}, False
     A = np.column_stack([z, np.ones_like(z)])
     beta = np.array([1.0, 0.0])
     for _ in range(iters):
@@ -66,8 +79,12 @@ def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bo
             break
     if nonneg_slope and beta[0] < 0:
         m = float(np.clip(np.mean(y), 1e-6, 1 - 1e-6))
-        return {"a": 0.0, "b": float(np.log(m / (1 - m)))}
-    return {"a": float(beta[0]), "b": float(beta[1])}
+        return {"a": 0.0, "b": float(np.log(m / (1 - m)))}, True
+    return {"a": float(beta[0]), "b": float(beta[1])}, False
+
+
+def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bool = False) -> dict:
+    return fit_platt_info(z, y, iters, nonneg_slope=nonneg_slope)[0]
 
 
 # ------------------------------------------------------------------------------------- LightGBM

@@ -63,6 +63,10 @@ def time_decay_weights(uniqueness, ts, oldest: float = 0.3) -> np.ndarray:
     t = _to_ns(ts, "ts")
     order = np.argsort(t, kind="stable")
     x = np.cumsum(u[order])
+    # ayni ts'li olaylar ESIT agirlik alir (satir sirasindan bagimsiz): her olay, kendi grubunun SONUNDAki
+    # kumulatif degeri alir (mentor G2 duzeltme 1)
+    _, inv, cnt = np.unique(t[order], return_inverse=True, return_counts=True)
+    x = x[np.cumsum(cnt) - 1][inv.ravel()]
     slope = (1.0 - oldest) / x[-1]
     const = 1.0 - slope * x[-1]
     w_sorted = np.maximum(const + slope * x, 0.0)
@@ -72,6 +76,12 @@ def time_decay_weights(uniqueness, ts, oldest: float = 0.3) -> np.ndarray:
 
 
 def sample_weights_v2(df: pd.DataFrame, *, oldest: float = 0.3) -> np.ndarray:
+    """Kaynak x benzersizlik (havuz, ortalama 1) x dogrusal azalma (en eski `oldest`, ayni-ts esit).
+
+    DIKKAT (mentor G2 duzeltme 2): bu fonksiyon HER DILIMIN EGITIM satirlarina (arindirma/ambargo SONRASI) cagrilir,
+    asla tum tabloya degil. Benzersizlik ortalamasi ve azalma egimi cagrilan satir kumesine gore normalleshir; tum
+    tabloda hesaplayip dilime kesmek test/gelecek satirlarin kapsama bilgisini egitim agirligina sizdirir.
+    """
     base = df["source"].map(SOURCE_WEIGHTS).to_numpy(float)
     ts, end = df["ts"], df["label_end_ts"]
     u = average_uniqueness(ts, end)

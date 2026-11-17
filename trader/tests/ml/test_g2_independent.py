@@ -138,9 +138,10 @@ def test_sample_weights_v2_small_frame():
         "ts": [T0, T0],
         "label_end_ts": [T0 + 2 * H, T0 + 2 * H],
     })
-    # u=[.5,.5]; uniqueness weight [1,1]; decay: x=[.5,1], slope .7, const .3 -> [.65, 1.0]
+    # u=[.5,.5]; uniqueness weight [1,1]; decay: same-ts tie rule (mentor G2-1) -> both get end-of-group value 1.0
+    # (was [.65, 1.0] with row-order-dependent cumulation)
     w = sample_weights_v2(df, oldest=0.3)
-    np.testing.assert_allclose(w, [config.SOURCE_WEIGHTS["real"] * 0.65,
+    np.testing.assert_allclose(w, [config.SOURCE_WEIGHTS["real"] * 1.0,
                                    config.SOURCE_WEIGHTS["backtest"] * 1.0])
 
 

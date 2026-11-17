@@ -60,6 +60,7 @@ LGBM_PARAMS = {
     "num_threads": TRAIN_THREADS, "deterministic": True, "force_row_wise": True,
     "seed": 7, "verbosity": -1,
 }
+WEIGHT_SCHEME = "age_decay"           # ML-G2: r01 = kaynak x yasa gore ussel azalma; "uniq_decay" = weights.sample_weights_v2
 PLATT_NONNEG_SLOPE = False            # ML-G2: True -> Platt egimi >= 0 (opt-in)
 LOGIT_PARAMS = {"l2": 1.0, "max_iter": 100}
 RECIPE_ID = "ml1-r01-v1b-native33"

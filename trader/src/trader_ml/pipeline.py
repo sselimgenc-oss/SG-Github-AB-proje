@@ -30,6 +30,10 @@ from .walkforward import make_folds
 MODELS = ("logistic", "lgbm")
 
 
+class CalibrationClamped(RuntimeError):
+    """Paket duzeyi Platt egimi kisitlandi (a<0 -> a=0): sinyalsiz model, paket URETILMEZ (mentor G2-4)."""
+
+
 class LightGBMRequired(RuntimeError):
     """Gercek (sentetik olmayan) kosuda lightgbm yuklenemedi: kosu BASARISIZ sayilir (sessizce lojistige dusmez)."""
 
@@ -50,7 +54,7 @@ def _fold_models(X, y, w, tr, ts=None, ends=None, *, require_lightgbm: bool = Tr
     return out
 
 
-def run_oof(t: pd.DataFrame, names: list[str], *, require_lightgbm: bool = True):
+def run_oof(t: pd.DataFrame, names: list[str], *, require_lightgbm: bool = True, weight_scheme: str | None = None):
     X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
     folds = make_folds(t)
     ts_arr, ends_arr = t["ts"].to_numpy("datetime64[ns]"), t["label_end_ts"].to_numpy("datetime64[ns]")
@@ -59,7 +63,7 @@ def run_oof(t: pd.DataFrame, names: list[str], *, require_lightgbm: bool = True)
         tr, te = f["train_rows"], f["test_rows"]
         if len(tr) < 100 or len(te) == 0:
             continue
-        w = models.sample_weights(t.iloc[tr], t["ts"].iloc[tr].max())
+        w = models.training_weights(t.iloc[tr], weight_scheme)       # dilimin EGITIM satirlari (arindirma sonrasi)
         fm = _fold_models(X, y, w, tr, ts_arr, ends_arr, require_lightgbm=require_lightgbm)
         d = t.iloc[te][["ts", "pair", "taken", "label", "net_r", "cost_r", "label_end_ts", "exit_ts"]].copy()
         d["fold"] = f["fold"]
@@ -76,13 +80,14 @@ def run_oof(t: pd.DataFrame, names: list[str], *, require_lightgbm: bool = True)
     return folds, pd.concat(rows), last, bests
 
 
-def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
+def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> dict[str, int]:
     """Platt ve esik ILERI YONLU uydurulur: k. dilimin satirlari icin yalniz, etiketi/cikisi k. dilimin
     baslangicindan ONCE bilinen onceki dilim satirlari kullanilir (gate'in kendi test satirlarina uydurma yok).
     Ilk dilim: Platt = ozdeslik (a=1,b=0), esik = BURN_IN_THRESHOLD (onceden yazili sabit). Onceki veri var ama
     uygun esik yoksa esik NaN (o dilimde islem alinmaz). Sonuc oof'a yazilir: p_<m> (ileri
     yonlu kalibre olasilik) ve th_<m> (satira ozgu ileri yonlu esik)."""
     oof["known_ts"] = oof[["label_end_ts", "exit_ts"]].max(axis=1)
+    n_clamped = {m: 0 for m in kinds}
     for m in kinds:
         z = oof[f"z_{m}"].to_numpy()
         p = np.full(len(oof), np.nan)
@@ -95,17 +100,21 @@ def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
                 a, b, th[cur] = 1.0, 0.0, BURN_IN_THRESHOLD
                 p[cur] = 1.0 / (1.0 + np.exp(-(a * z[cur] + b)))
                 continue
-            c = models.fit_platt(z[prior], oof["label"].to_numpy()[prior], nonneg_slope=config.PLATT_NONNEG_SLOPE)
+            c, clamped = models.fit_platt_info(z[prior], oof["label"].to_numpy()[prior],
+                                               nonneg_slope=config.PLATT_NONNEG_SLOPE)
+            n_clamped[m] += int(clamped)
             p[cur] = 1.0 / (1.0 + np.exp(-(c["a"] * z[cur] + c["b"])))
             pt = prior & oof["taken"].to_numpy()
             thr, _ = select_threshold(p[pt], oof["net_r"].to_numpy()[pt]) if pt.any() else (None, None)
             th[cur] = np.nan if thr is None else thr
         oof[f"p_{m}"], oof[f"th_{m}"] = p, th
+    return n_clamped
 
 
 def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool = False, n_boot: int = 2000,
         now: datetime | None = None, corpus_sha256: str | None = None, health_strict: bool | None = None,
-        expected_daily_sr: float | None = None, expected_ic: float | None = None) -> dict:
+        expected_daily_sr: float | None = None, expected_ic: float | None = None,
+        weight_scheme: str | None = None) -> dict:
     """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry).
     synthetic=False (gercek kosu): lightgbm yuklenemezse LightGBMRequired (lojistige dusmez).
     ML-G1: ozellik sagligi (bos/sabit/kopya) gercek kosuda REDDEDER (health_strict varsayilan = not synthetic), sentetikte
@@ -125,11 +134,11 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     for ln in prechecks.power_lines(power):
         print(ln, flush=True)
     X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
-    folds, oof, last, bests = run_oof(t, names, require_lightgbm=not synthetic)
+    folds, oof, last, bests = run_oof(t, names, require_lightgbm=not synthetic, weight_scheme=weight_scheme)
     kinds = [m for m in MODELS if f"z_{m}" in oof.columns]
 
     # kapi icin ILERI YONLU Platt + esik (A1); paket icin tum-OOF Platt asagida ayrica uydurulur
-    forward_calibrate(oof, kinds)
+    n_clamped = forward_calibrate(oof, kinds)
     pcols = [f"p_{m}" for m in kinds]
 
     # model secimi: LightGBM net R'de lojistigi gecemezse lojistik (§3.3 adim 3)
@@ -144,13 +153,15 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
 
     # paket kalibrasyonu + esigi: tum OOF'a uydurulur (uretim artefakti; kapi bunu SKORLAMAZ)
     z_sel = oof[f"z_{selected}"].to_numpy()
-    cal_pkg = models.fit_platt(z_sel, oof["label"].to_numpy(), nonneg_slope=config.PLATT_NONNEG_SLOPE)
+    cal_pkg, pkg_clamped = models.fit_platt_info(z_sel, oof["label"].to_numpy(), nonneg_slope=config.PLATT_NONNEG_SLOPE)
+    if pkg_clamped:
+        raise CalibrationClamped("paket kalibrasyonunda Platt egimi a<0 kisitlandi (sinyalsiz model): paket uretilmez")
     p_pkg = 1.0 / (1.0 + np.exp(-(cal_pkg["a"] * z_sel + cal_pkg["b"])))
     tk = oof["taken"].to_numpy()
     th, _ = select_threshold(p_pkg[tk], oof["net_r"].to_numpy()[tk])
 
     # nihai model: tum egitim penceresi (kilitli donem yok)
-    w_all = models.sample_weights(t, t["ts"].max())
+    w_all = models.training_weights(t, weight_scheme)
     if selected == "lgbm":
         booster, _ = models.fit_lgbm(X, y, w_all, num_rounds=max(10, int(np.median(bests))))
         model = models.lgbm_dump(booster)
@@ -189,14 +200,16 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     diag = diagnostics.compute(oof, f"p_{selected}")
     md = render_report(res, meta=pkg["meta"], folds=folds, peak_rss_mb=peak_rss_mb(), synthetic=synthetic,
                        selected_reason=reason, n_trials=n_trials, lightgbm_version=lightgbm_version(),
-                       corpus_sha256=corpus_sha256, diagnostics=diag, health=health, power=power)
+                       corpus_sha256=corpus_sha256, diagnostics=diag, health=health, power=power,
+                       calibration={"nonneg_slope": config.PLATT_NONNEG_SLOPE, "clamped_folds": n_clamped,
+                                    "n_folds": int(oof["fold"].nunique()), "weight_scheme": weight_scheme or config.WEIGHT_SCHEME})
     (out_dir / "gate_report.md").write_text(md, encoding="utf-8")
     summary = {"passed": res.passed, "model": selected, "threshold": th, "parity_max_abs_diff": parity,
                "checks": [{"name": c.name, "ok": c.ok, "value": c.value} for c in res.checks],
                "package": str(pkg_path), "report": str(out_dir / "gate_report.md"), "peak_rss_mb": peak_rss_mb(),
                "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials,
                "recipe_id": RECIPE_ID, "lightgbm_version": lightgbm_version(), "corpus_sha256": corpus_sha256,
-               "feature_health": health, "power_precheck": power, "diagnostics": diag, "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
+               "feature_health": health, "power_precheck": power, "diagnostics": diag, "platt_clamped_folds": n_clamped, "weight_scheme": weight_scheme or config.WEIGHT_SCHEME, "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
     return summary
@@ -252,6 +265,9 @@ def main(argv=None) -> int:
     except prechecks.FeatureHealthError as e:
         print(f"REDDEDILDI: {e}", file=sys.stderr)
         return 3
+    except CalibrationClamped as e:
+        print(f"REDDEDILDI: {e}", file=sys.stderr)
+        return 4
     except LightGBMRequired as e:
         print(f"BASARISIZ: {e}", file=sys.stderr)
         return 2

@@ -39,7 +39,12 @@ def _cands():
     ts = [pd.Timestamp("2024-03-01", tz="UTC") + (k + 1) * BAR for k in pos]   # kapanis zamani
     pr = [PAIRS[rng.integers(0, len(PAIRS))] for _ in pos]
     pr[2], pr[3] = PAIRS[2], PAIRS[3]
-    return pd.DataFrame({"ts": ts, "pair": pr, "side": ["long", "short"] * 4}, index=range(10, 18))
+    df = pd.DataFrame({"ts": ts, "pair": pr, "side": ["long", "short"] * 4}, index=range(10, 18))
+    px = _make()
+    ent = np.array([px[p]["close"].iloc[k] for p, k in zip(pr, pos)])           # sinyal mumu kapanisi
+    df["planned_entry"] = ent
+    df["planned_stop"] = np.where(df["side"] == "long", ent * 0.985, ent * 1.015)
+    return df
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +76,7 @@ def test_bad_recipe_and_missing_btc(data):
 
 
 def test_features_mostly_finite(full):
-    f = full["r02"].drop(columns=["f_stop_dist_atr"])     # stop_dist_atr yalniz v1 sinyal mumlarinda dolu
+    f = full["r02"]                                       # f_stop_dist_atr artik planned_entry/stop'tan: hep dolu
     assert f.notna().all().all()
     assert full["r03"].notna().all().all()
     assert np.isfinite(full["r02"].to_numpy(float)[~np.isnan(full["r02"].to_numpy(float))]).all()
@@ -137,10 +142,11 @@ def test_funding_values_and_nan_when_absent(data, full):
         full["r02"].drop(columns=["f_funding_last", "f_funding_sum3"]))
     row = cands.iloc[0]
     fr = fund[row["pair"]]["rate"]
-    past = fr[fr.index <= row["ts"]]
+    past = fr[fr.index < row["ts"]]                       # KESINLIKLE < ts (mentor G4-3)
+    win = fr[(fr.index > row["ts"] - pd.Timedelta(hours=24)) & (fr.index < row["ts"])]
     sgn = 1.0 if row["side"] == "long" else -1.0
     assert full["r02"].loc[cands.index[0], "f_funding_last"] == pytest.approx(sgn * past.iloc[-1])
-    assert full["r02"].loc[cands.index[0], "f_funding_sum3"] == pytest.approx(sgn * past.iloc[-3:].sum())
+    assert full["r02"].loc[cands.index[0], "f_funding_sum3"] == pytest.approx(sgn * win.sum())
 
 
 def test_rank_breadth_ranges_and_same_bar(full, data):
@@ -149,7 +155,7 @@ def test_rank_breadth_ranges_and_same_bar(full, data):
     for c in ("f_rank_ret_24h", "f_rank_ret_7d"):
         assert f[c].between(0, 1).all()
     for r in full.values():
-        assert r["f_breadth"].between(0, len(PAIRS)).all()
+        assert r["f_breadth"].between(0, 1).all()
     expect = cands.groupby("ts")["pair"].transform("size").astype(float)
     np.testing.assert_array_equal(f["f_same_bar_signals"], expect)
     assert f["f_same_bar_signals"].max() == 2
@@ -162,3 +168,135 @@ def test_er_vr_basic():
     rng = np.random.default_rng(1)
     lp = pd.Series(np.cumsum(rng.normal(0, 0.01, 5000)))
     assert 0.8 < variance_ratio(lp, 4, 2000).iloc[-1] < 1.2
+
+
+# ------------------------------------------------------------------ mentor G4 duzeltmeleri (17 Kas)
+def _long_data(days=260, seed=21):
+    n = days * 24
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-01-01", periods=n, freq="1h", tz="UTC")
+    common = rng.normal(0, 0.004, n)
+    out = {}
+    for i, p in enumerate(PAIRS):
+        c = 100 * (i + 1) * np.exp(np.cumsum(common * (1 + 0.1 * i) + rng.normal(0, 0.006, n)))
+        o = np.concatenate([[c[0]], c[:-1]])
+        h = np.maximum(o, c) * (1 + np.abs(rng.normal(0, 0.003, n)))
+        l = np.minimum(o, c) * (1 - np.abs(rng.normal(0, 0.003, n)))
+        out[p] = pd.DataFrame({"open": o, "high": h, "low": l, "close": c, "volume": rng.uniform(50, 150, n)}, index=idx)
+    return out
+
+
+def _cand_rows(pairs, tss, pair=BTC, side="long"):
+    rows = []
+    for ts in tss:
+        e = float(pairs[pair]["close"].loc[ts - BAR])
+        rows.append({"ts": ts, "pair": pair, "side": side, "planned_entry": e, "planned_stop": e * 0.99})
+    return pd.DataFrame(rows)
+
+
+ONE_D = ["f_btc_slope_1d", "f_btc_vol_1d", "f_eth_slope_1d", "f_slope_1d", "f_vol_1d"]
+
+
+def test_g4_1_daily_context_identical_when_history_before_200d_dropped():
+    pairs = _long_data()
+    t0 = pairs[BTC].index[0]
+    tss = [t0 + pd.Timedelta(days=d, hours=h) for d, h in ((230, 5), (240, 0), (250, 23), (255, 13))]
+    for pair in (BTC, "SOL/USDT:USDT"):
+        cands = _cand_rows(pairs, tss, pair)
+        full2 = feature_frame_v2(pairs, cands, recipe="r02")
+        full3 = feature_frame_v2(pairs, cands, recipe="r03")
+        for i, ts in enumerate(tss):
+            cut = {k: v[v.index >= ts - pd.Timedelta(days=200)] for k, v in pairs.items()}
+            sub = cands.iloc[[i]]
+            a2 = feature_frame_v2(cut, sub, recipe="r02")
+            a3 = feature_frame_v2(cut, sub, recipe="r03")
+            for c in ONE_D:
+                np.testing.assert_allclose(a2[c].to_numpy(), full2.loc[[i], c].to_numpy(), rtol=1e-12, atol=1e-14)
+            np.testing.assert_allclose(a3[["f_btc_slope_1d", "f_btc_vol_1d_pct90"]].to_numpy(),
+                                       full3.loc[[i], ["f_btc_slope_1d", "f_btc_vol_1d_pct90"]].to_numpy(),
+                                       rtol=1e-12, atol=1e-14)
+    assert np.isfinite(full3["f_btc_vol_1d_pct90"]).all() and np.isfinite(full2[ONE_D].to_numpy()).all()
+
+
+def test_g4_2_percentile_divides_by_nonnan_count():
+    from trader_core.ml_features_v2 import _pct_last
+    v = np.r_[np.full(60, np.nan), np.arange(35.0)]            # 35 gecerli, son = en buyuk
+    assert _pct_last(v) == 1.0                                 # eski: 35/90
+    v2 = np.r_[np.full(60, np.nan), np.arange(35.0)[::-1]]     # son = en kucuk
+    assert _pct_last(v2) == pytest.approx(1 / 35)
+    assert np.isnan(_pct_last(np.r_[np.full(80, np.nan), np.arange(10.0)]))   # < 30 gecerli
+    assert _pct_last(np.arange(100.0)) == 1.0
+
+
+def test_g4_3_funding_strictly_before_ts_and_24h_window(data):
+    pairs, _, cands = data
+    ts = cands["ts"].iloc[1]
+    sub = cands.iloc[[1]].copy()
+    ft = pd.date_range(ts - pd.Timedelta(hours=40), ts + pd.Timedelta(hours=16), freq="8h")   # ts uzerinde bir olay var
+    assert ts in ft
+    rates = pd.Series(np.arange(1.0, len(ft) + 1.0) * 1e-4, index=ft)
+    fund = {p: pd.DataFrame({"funding_rate": rates}) for p in pairs}
+    out = feature_frame_v2(pairs, sub, funding=fund, recipe="r02")
+    sgn = -1.0 if sub["side"].iloc[0] == "short" else 1.0
+    before = rates[rates.index < ts]
+    assert out["f_funding_last"].iloc[0] == pytest.approx(sgn * before.iloc[-1])           # ts'deki olay HARIC
+    in_win = rates[(rates.index > ts - pd.Timedelta(hours=24)) & (rates.index < ts)]
+    assert len(in_win) == 2                                    # ts-16s, ts-8s (ts-24s ve ts haric)
+    assert out["f_funding_sum3"].iloc[0] == pytest.approx(sgn * in_win.sum())
+    fund2 = {p: d.copy() for p, d in fund.items()}
+    for d in fund2.values():
+        d.loc[ts, "funding_rate"] = 9.9                        # ts'deki olay degisse sonuc ayni
+    out2 = feature_frame_v2(pairs, sub, funding=fund2, recipe="r02")
+    assert out2[["f_funding_last", "f_funding_sum3"]].equals(out[["f_funding_last", "f_funding_sum3"]])
+
+
+def test_g4_4_funding_column_required(data):
+    pairs, fund, cands = data
+    sub = cands.iloc[[0]]
+    a = feature_frame_v2(pairs, sub, funding=fund, recipe="r02")                         # `rate`
+    fr = {p: d.rename(columns={"rate": "funding_rate"}) for p, d in fund.items()}
+    b = feature_frame_v2(pairs, sub, funding=fr, recipe="r02")
+    pd.testing.assert_frame_equal(a, b)
+    bad = {p: d.rename(columns={"rate": "oran"}) for p, d in fund.items()}
+    with pytest.raises(ValueError, match="funding_rate"):
+        feature_frame_v2(pairs, sub, funding=bad, recipe="r02")
+
+
+def test_g4_5_breadth_fraction_and_min_valid_pairs(data, full):
+    pairs, fund, cands = data
+    b = full["r02"]["f_breadth"]
+    assert np.allclose(b * 5, np.round(b * 5)) and b.between(0, 1).all()
+    # son cift 30 Nis'tan once verisiz: erken adaylarda 4 gecerli cift -> NaN (genislik ve siralama), sonra dolu
+    late = {k: (v[v.index >= pd.Timestamp("2024-04-30", tz="UTC")] if k == PAIRS[4] else v) for k, v in pairs.items()}
+    sub = cands[cands["pair"] != PAIRS[4]]
+    out = feature_frame_v2(late, sub, recipe="r02")
+    early = (sub["ts"] < pd.Timestamp("2024-05-03", tz="UTC")).to_numpy()
+    assert early.any() and (~early).any()
+    assert out.loc[early, "f_breadth"].isna().all() and out.loc[~early, "f_breadth"].notna().all()
+    assert out.loc[early, "f_rank_ret_7d"].isna().all() and out.loc[~early, "f_rank_ret_7d"].notna().all()
+    # tamamen 4 cift -> hep NaN
+    only4 = {k: v for k, v in pairs.items() if k != PAIRS[4]}
+    o4 = feature_frame_v2(only4, cands[cands["pair"] != PAIRS[4]], recipe="r03")
+    assert o4["f_breadth"].isna().all()
+
+
+def test_g4_6_stop_dist_from_planned_entry_stop(data, full):
+    from trader_core.indicators import atr
+    pairs, _, cands = data
+    f = full["r02"]["f_stop_dist_atr"]
+    for i, r in cands.iterrows():
+        a = atr(pairs[r["pair"]], 14).loc[r["ts"] - BAR]
+        assert f.loc[i] == pytest.approx(abs(r["planned_entry"] - r["planned_stop"]) / a)
+    with pytest.raises(ValueError, match="planned_entry"):
+        feature_frame_v2(pairs, cands.drop(columns=["planned_entry", "planned_stop"]), recipe="r02")
+    feature_frame_v2(pairs, cands.drop(columns=["planned_entry", "planned_stop"]), recipe="r03")   # r03 gerekmez
+
+
+def test_g4_7_volume_zscore_no_inf_on_flat_volume(data):
+    pairs, _, cands = data
+    p2 = {k: v.copy() for k, v in pairs.items()}
+    for v in p2.values():
+        v["volume"] = 100.0                                    # std = 0
+    out = feature_frame_v2(p2, cands, recipe="r02")
+    assert not np.isinf(out.to_numpy(float)).any()
+    assert out["f_vol_z_24"].isna().all() and out["f_vol_z_168"].isna().all()
