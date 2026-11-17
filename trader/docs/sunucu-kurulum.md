@@ -363,3 +363,30 @@ set -a; . /etc/trader-testnet.env; set +a       # BINANCE_API_KEY=... BINANCE_AP
 - T-14: varsayilan ATLANDI (asgari miktarla kismi dolum olusmaz). Denemek icin `--partial-fill-multiple N` (N<=20, notional <= 200 USDT).
 - T-15: betik KILL oncesi hesap genelinde pozisyon ve stop sayisini kaydeder; en az 2 acik pozisyon yoksa sonuc `KISMI` olur (GECTI degil). Motor iki pozisyon actiktan sonra kosulur.
 - Bilinen sinirlar: "neden `trail_stop`" gibi defter alanlari motor tarafinda oldugundan elle `ledger` okunarak dogrulanir.
+
+## Canli duman testi (28-29 Aralik; `scripts/smoke_live.py`)
+
+**UYARI: testnet golge kosusu KABUL EDILMEDEN bu betik KOSULMAZ.** Once `docs/motor/11-testnet-sonuc.md` icinde acik KALDI olmamali, golge kosu (WP-B8) mentor tarafindan kabul edilmis olmali (11 §11-§12). Gercek para kullanir (asgari tutar; beklenen maliyet < 0,10 USD). Bir kez, 28-29 Aralik'ta, sizin basinda oldugunuz bir oturumda kosulur; cron/systemd ile calistirilmaz. Dry-run (`--dry-run`, `--list`) her zaman serbesttir.
+
+Betigin sert kurallari (kodda, testli; atlatma bayragi YOKTUR):
+- Yalniz uretim vadeli adresi (`https://fapi.binance.com`); `--env live` yazilmali, `--env testnet` reddedilir.
+- `LIVE_CONFIRM` canli katmandaki `live.account_tag` ile ayni olmali; anahtarlar yalniz ortamdan (`BINANCE_API_KEY` / `BINANCE_API_SECRET`), her cikti ve raporda maskelenir.
+- `api_restrictions()` para cekme ACIK ya da IP kisiti YOK diyorsa (ya da okunamazsa) **cikis kodu 8**; `LIVE_PERMISSION_ATTESTED` beyani bu betikte gecerli degildir.
+- Risk kademe gunlugu (`<canli var_dir>/learner/risk_ladder.jsonl`) var ve gecerli olmali (`capital init` yapilmis) ve kademe durumu `ok`; KILL ya da herhangi bir giris duraklatma tutusu (`drawdown_review`, `capital_floor`, `user_cmd`...) varsa baslamaz.
+- Tek cift (`XRP/USDT`), asgari tutar (tavan: min notional'in 2 kati, en cok 25 USDT), en fazla 1 pozisyon; hesapta baska pozisyon ya da acik emir varsa baslamaz. Yalniz betigin kendi emirleri/pozisyonu: `finally` blogunda yalniz kendi emirleri iptal edilir, yalniz kendi pozisyonu `reduceOnly` piyasa ile duzlenir (duz degilse koruyucu stop birakilir ve elle kapatma uyarisi yazilir).
+- Her adimdan once `evet` beklenir; `evet` disindaki her yanit "simdi her seyi kapat"tir. Ilk gercek emirden once yazili ifade istenir: `GERCEK EMIR <account_tag>` (tam olarak). Otomatik onay bayragi yoktur.
+
+Hazirlik (sunucuda, `trader` kullanicisi; motor ve telegram kosarken duman testi ayri `var-live/smoke/` rapor dizini kullanir, kagit botlari calismaya devam eder):
+```
+cd /home/trader/SG-Github-AB-proje/trader
+# canli katman: config/engine.live.json (mode=live, live bloku, canli var_dir; kaldirac KONMAZ) go-live oncesi hazir olmali (11 §12, O-2)
+# kademe gunlugu: capital init (12 §14) duman testinden ONCE, motor acilmadan once
+.venv/bin/python -m trader_engine capital init --bot learner --env live --by <ad> --amount <alt hesaptaki tutar>
+set -a; . /etc/trader-live.env; set +a         # BINANCE_API_KEY, BINANCE_API_SECRET, LIVE_CONFIRM (chmod 600; komut satirina/gecmise YAZMAYIN)
+.venv/bin/python scripts/smoke_live.py --env live --dry-run          # once plan
+.venv/bin/python scripts/smoke_live.py --env live                    # gercek kosu; istemleri okuyarak ilerleyin
+```
+- Adimlar: S-0 acilis denetimi, S-1 kurallar/asgari miktar, S-2 izole marjin + kaldirac, (yazili onay), S-3 long giris, S-4 stop (%1, MARK_PRICE, reduceOnly), S-6 stop sikilastirma (yeni kabul, sonra eski iptal), S-9 hedef kur/iptal, S-C kendi pozisyonunu kapat, S-12 komisyon/kayit denetimi, S-13 cuzdan denetimi. Tek cift kurali nedeniyle S-5 (2. cift), S-7 (`kill -9`), S-8 (stop tetik bekleme), S-10/S-11 (duraklatma/KILL) betikte YOKTUR; elle/motorla `11-canli-broker.md` §12'ye gore yapilir.
+- Cikti: `var-live/smoke/<zaman>/result.json` ve `result.md`. Sonuc `11-duman-testi-sonuc.md`'ye elle yazilir; mentor onayi olmadan canliya gecilmez.
+- Cikis kodu: 0 tum adimlar GECTI; 1 KALDI/FARKLI (kalan adimlar atlanir, temizlik yapilir); 2 guvenlik korkulugu / operator durdurdu; 8 anahtar izni ya da acilis denetimi 8.
+- Betik yanit vermez/kapanirsa elle yol: Binance uygulamasi -> alt hesap -> Vadeli -> Pozisyonlar -> "Tumunu kapat"; sonra sunucuda KILL kurulur.
