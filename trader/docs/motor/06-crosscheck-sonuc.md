@@ -142,3 +142,85 @@ Sonuç: **kanıt tam değil**. Zincirsiz tahmin yüksek (%85-97) ama kalan satı
 | (3) native_mark (1m, mark) | 573 | -0,014 | -7,19 | 0,913 |
 
 (2)→(3) mark↔last: last stop 325, mark stop 312; mark'ın kaldırdığı stop **6**, eklediği **0**; ΔΣR = **+13,59** (eşleşen 563 işlemde ort. ΔR +0,043). Önceki (tick öncesi/A öncesi) tablo: n 620/610/602, ΔΣR +35,8; hedef riskin 0,014'e kilitlenmesi ve zincir nedeniyle sayılar kaydı, mark'ın yönü aynı (last tetik fitil stoplarıyla ΣR'yi düşürür). Ham: `research/crosscheck/1h_IS_f1_s0_model_diff.json`.
+
+## Kapı kanıt turu (17 Kasım 2026, mentor "Çapraz doğrulama kapısı" listesi, adım 1–7)
+
+Kapsam: yalnız tanı + `legacy_compat` bayrağı; native/paper değişmedi (`tests/engine/test_engine_compat_equity.py::test_native_ledger_hash_unchanged_by_compat_work` yeşil). HOLDOUT çalıştırılmadı. Yeni araçlar: `research/bt_chainfree_diag.py` (yükseltildi), `research/bt_gate_checks.py` (fee / funding / stakecut / closing). Ham çıktılar: `research/crosscheck/<ID>_chainfree.json` (iz gecikmesi KAPALI motor), `<ID>_chainfree_lag.json`, `<ID>_lag.{md,json}` (bayrak AÇIK 4 koşu), `gate_{fee,funding,stakecut,closing_native_*}.json`. Kapalı-bayrak koşuları önceki "adım 2 sonrası" tabloyu birebir yeniden üretti (1h_IS 597 işlem, C %96,13).
+
+### Kapı koşulları a–d: geçti / kaldı
+
+| Koşul | Eşik | Sonuç | Karar |
+|---|---|---|---|
+| (a) zincirsiz girişler, tam referans cüzdan | 1h ≥ %99, 15m ≥ %97 | 1h_IS 629/630 (%99,84); 1h_WF 376/379 (%99,21); 1h_IS_f2_s5 611/615 (%99,35); 15m_IS 2152/2195 (%98,04) | **GEÇTİ** |
+| (b) çıkışlar, anahtarı eşleşen işlemler (zincirsiz: çıkış nedeni/zamanı/fiyatı doğrudan karşılaştırılır) | 1h: neden+zaman ≥ %97, fiyat ≤ 1 tik | bayrak KAPALI: neden+zaman %99,82 / %99,39 / %99,81 (geçti); fiyat ≤ 1 tik %96,13 / %96,34 / %96,10 (**eşiğin 0,7-0,9 puan altı**). Bayrak AÇIK: neden+zaman %91,68 / %92,33 / %91,76; fiyat ≤ 1 tik %84,4 / %86,5 / %84,3 (kötüleşti) | **KALDI** (fiyat; bayrakla daha kötü) |
+| (c) freqtrade stake kısma kuralı, ≥ 20 satır, tek kural | ≥ 20 satır | Tek kural bulundu, 4 koşuda 192 kısılmış satırın 185'ini birebir (miktar) tanımlıyor (aşağıda); 1h'de 49 kısma satırının 47'si | **GEÇTİ** |
+| (d) ücret oranı + f2_s5 funding ±%5 | oran eşit; funding ±%5 | Ücret ÷ nominal: referans = motor, 4 koşuda 0,0005 (f2_s5: 0,0015), fark ≤ 7e-19 → **geçti**. f2_s5 funding (eşleşen 538 işlem, `funding_boundary` 78 satır hariç): ref 6,652 / motor 7,348 → **+%10,5 (kaldı)**; motor funding'i referans miktarına ölçeklenince −%0,6; miktarı eşit 42 işlemde +%0,01 | ücret GEÇTİ; funding KALDI (aşağıda neden) |
+
+Mentor kararı notu: (a) ve (c) tamam, (d) ücret tamam; (b) fiyat ve (d) funding harfi tutmuyor. Nedenler ve ölçülen açıklamalar aşağıda; "açıklanmış eşdeğerlik" kararı mentora kalır.
+
+### Adım 1 — ücret oranı (kapıyı bloke eden hata YOK)
+
+Anahtarı eşleşen işlemlerde (1h_IS 569, 1h_WF 328, 15m_IS 1878, f2_s5 538) ücret ÷ nominal (nominal = miktar × (giriş + çıkış fiyatı); ayrıca bacak başına): referans ve motor 0,0005 (f2_s5 0,0015 = 3×); referans `fee_open/fee_close` ile işlem başına `fee_paid` yeniden hesabı birebir; max |oran farkı| 6,5e-19. Oran farkı yok, STOP gerekmedi. (Önceki "15m'de komisyon +%27" farkı oran değil, işlem kümesi/boyut zinciridir.)
+
+### Adım 2 — funding (eşleşen işlemler, `funding_boundary` hariç)
+
+| Çalışma | eşleşen | sınır hariç | ref | motor | fark | motor, ref miktarına ölçekli | miktarı eşit işlemler |
+|---|---|---|---|---|---|---|---|
+| 1h_IS_f1_s0 | 569 | 80 | 13,091 | 13,354 | +%2,0 | −%0,9 | 67 işlem, +%1,7 |
+| 1h_WF_f1_s0 | 328 | 34 | 7,901 | 8,852 | +%12,0 | +%4,6 | 27 işlem, +%0,4 |
+| 15m_IS_f1_s0 | 1878 | 111 | 5,819 | 8,143 | +%39,9 | — | 20 işlem |
+| 1h_IS_f2_s5 | 538 | 78 | 6,652 | 7,348 | **+%10,5** | −%0,6 | 42 işlem, +%0,01 |
+
+f2_s5 yazıldığı gibi ±%5'i **geçmedi** (+%10,5). Fark funding kuralından değil, eşleşen işlemlerde motorun boyut zincirinden (daha büyük miktar → daha çok funding) ve çıkış zamanı farklarından gelir: miktarı eşit işlemlerde fark +%0,01, miktara ölçekleyince −%0,6. (Giriş anı fonlaması `funding_boundary` ayrı; net etkisi +0,04.)
+
+### Adım 3 — uyum kipinde iz gecikmesi bayrağı (`--compat-trail-lag`)
+
+Uygulama (yarım gün): `backtest --fill-model legacy_compat --compat-trail-lag`; yalnız uyum kipinde (native ile verilirse `bad_args`), `ExitContext.trail_lag` (varsayılan kapalı) ile iz-stop yolu son kapanmış barı hariç hesaplanır (stop bir bar eski ATR/uçla güncellenir/denetlenir). Native kod yolu değişmedi (golden hash testi yeşil); testler: `tests/engine/test_engine_compat_trail_lag.py` (5). Dört koşu bayrak kapalı → açık:
+
+| Çalışma | C (kesin / ±1 bar dahil) kapalı → açık | `price_rounding` | `gap_fill` | `trail_timing` | açıklanamayan | işlem sayısı | expectancy_R |
+|---|---|---|---|---|---|---|---|
+| 1h_IS_f1_s0 | %96,13 → **%81,42** | 2 → 19 | 19 → 44 | 0 → 5 | 0 → 39 | 597 → 595 | 0,001 → −0,005 |
+| 1h_WF_f1_s0 | %95,73 → **%84,05** | 2 → 8 | 10 → 25 | 0 → 5 | 0 → 17 | 341 → 340 | 0,108 → 0,105 |
+| 15m_IS_f1_s0 | %85,57 → **%97,96** (kesin %94,75) | 80 → 7 | 191 → 4 | 0 → 60 | 0 → 24 | 2143 → 2135 | −0,061 → −0,060 |
+| 1h_IS_f2_s5 | %96,10 → **%81,27** | 2 → 19 | 18 → 42 | 0 → 5 | 0 → 37 | 574 → 572 | −0,127 → −0,122 |
+
+Sonuç: bayrak **15m'de C'yi %85,6 → %98,0'a taşıdı** (`gap_fill` 191 → 4, `price_rounding` 80 → 7; kalan fark 60 satır bir mum kayması + 24 satır 1 bar ötesi) ama **1h'de C'yi düşürdü** (%96 → %81-84; çıkış zamanı bir 15 dk adım geç, çünkü motor stopu 1h bar kadar gevşek tutuyor). Yani 1h'de "bir bar" referansın gerçek gecikmesinden büyük (hipotez: freqtrade 15 dk ayrıntı mumuyla çalıştığı için gecikme 1h kosusunda bir 1h mum değil, bir ayrıntı mumu; denenmedi). Talimat gereği **dur: 1h için C tutmuyor, başka uyum kuralı eklenmedi**; ayrıca stopun yalnız güncelleme değil çapraz-çıkış denetimini de geciktirmesi (alt yorum) 1h_WF'de denendi, C aynı (%84,05). Bayrak varsayılan kapalı kalır; 1h karşılaştırmalarda kullanılmamalı.
+
+### Adım 4 — zincirsiz tanı yükseltmesi (`bt_chainfree_diag.py`)
+
+Boyutlandırma her referans girişi için referansın kendi durumundan: cüzdan = 1000 + giriş anında kapanmış referans işlemlerin `profit_abs` toplamı (komisyon + funding dahil); özsermaye = cüzdan + açık referans pozisyonların `calc_profit`'i (son kapanmış ana-tf mumu, komisyonlu); gün başı özsermaye = cüzdan − bugünkü (UTC) kapanan K/Z; açık pozisyon riski/stake referanstan; ardından adım 5'teki kısma kuralı ve stake→miktar kesmesi. Eşleşme ölçütü eskisiyle aynı (miktar ±%0,5); birebir miktar eşitliği: 1h_IS %87,5, WF %82,9, f2_s5 %89,3, 15m %93,9 (fark ≤ %0,5 küçük özsermaye farkı). Ampirik iki model bulgusu: (i) freqtrade ayni sinyal mumunda stop sonrası yeniden girer (giriş :15/:30/:45, ledgerda karar satırı yok; 1h'de 1+1 satır); planlı stop/risk önceki aynı mum-aynı çift işleminden alınır; (ii) aynı mumda kapanan işlemlerin cüzdana yazılması çift sırasına bağlı (backtest döngüsü çift başına çıkış+giriş): 1h'de ayni mumdaki tüm kapanışlar cüzdanda, 15m'de yalnız giriş yapan çiftten ÖNCE gelen çiftlerin kapanışları (4 koşuda deneysel en iyi uyum; sıra = `engine.base` çift listesi).
+
+Kalan satırlar (hepsi nedenli):
+- 1h_IS_f1_s0 (1): BNB short 2025-10-30 02:00 ref 0,71 / tahmin 0,72: tek adım kesme (kayan nokta).
+- 1h_WF_f1_s0 (3): XRP short 2025-11-02 23:00 ref 370,3 / 358,7 ve ADA long 2026-02-19 13:00 ref 4219,9 / 4115,3: kısma kuralı kalanı (cüzdan farkı ~%2-3; açık pozisyon funding'i/ayrıntı sırası); BNB short 2026-04-07 21:00 ref 2,26 / 2,24: özsermaye tanımı (−%0,9).
+- 1h_IS_f2_s5 (4): SOL long 2025-04-30 12:30 (ref 4,36): zincirsiz motor "günlük zarar bütçesi" reddeder, referans girmiş (gün başı özsermaye tanımı farkı); AVAX short 2025-05-20 19:45 (−%0,85) ve ADA long 2025-08-29 07:00 (−%1,5): özsermaye tanımı (açık pozisyon calc_profit/funding); ETH short 2025-06-19 02:00 (0,123/0,124): tek adım.
+- 15m_IS_f1_s0 (43): riskte red 23, kısma kuralı kalanı 10, özsermaye tanımı 5, tek adım 4, ayni mum giriş sırası 1 (satır listesi: `15m_IS_f1_s0_chainfree.json:remaining`, her satırda `cause`).
+
+Çıkış karşılaştırması (b): tablo yukarıda. Bayrak kapalıyken 1h neden+zaman %99,4-99,8, fiyat ≤ 1 tik %96,1-96,3 (kalan %3,7-3,9 = iz stop ham değer farkı: `gap_fill`/`price_rounding` satırları); 15m kapalı fiyat ≤ 1 tik %86,6, açık %97,6 (neden+zaman %95,0).
+
+### Adım 5 — freqtrade'in stake kısma kuralı (yalnız belgelenir, uygulanmaz)
+
+Kural (`Wallets.validate_stake_amount` / `tradable_balance_ratio = 0,99`, dry-run cüzdan): karar marjı `size_margin` (TraderV1 `custom_stake_amount`) yerine
+
+    margin_final = min(karar marjı, 0,99 × cüzdan − Σ açık stake'ler)     cüzdan = 1000 + Σ kapanmış profit_abs (komisyon+funding dahil)
+
+ve ardından `amount = trunc(margin_final × kaldıraç / fiyat, adım)` (adım-2 kesmesi). Yani serbest bakiye = %99 × (başlangıç + gerçekleşmiş K/Z) − açık işlemlerin teminatı. Doğrulama (`bt_gate_checks.py stakecut`, referans ledger karar marjinden, kısılmış = ref miktarı kural-dışı miktarın altında):
+
+| Çalışma | karar satırı | kısılmış | kural miktarı birebir | kuralın bağladığı | kural bağlıyor, ref kısmamış |
+|---|---|---|---|---|---|
+| 1h_IS_f1_s0 | 627 | 13 | 13 | 13 | 0 |
+| 1h_WF_f1_s0 | 372 | 27 | 25 | 27 | 0 |
+| 15m_IS_f1_s0 | 2195 | 143 | 138 | 174 | 31 |
+| 1h_IS_f2_s5 | 607 | 9 | 9 | 9 | 0 |
+
+Toplam 192 kısılmış satırın 185'i (%96,4) birebir; 1h'de kuralın dışında kısma yok ve kural varken kısmama yok (1h_IS: 627/627 satırda miktar birebir). 15m'deki 31 "kural bağlar ama ref kısmamış" ve 5 uyuşmaz satır, ayni mumda giriş/çıkış sırası kaynaklıdır. Sonuç: engine'in `insufficient_margin` reddi yerine freqtrade stake'i kısar; kapıda (c) için tek kural bu. Uygulanmadı.
+
+### Adım 6 — native defterde `closing` varken reddedilen giriş (salt okunur, 1h_IS native)
+
+Karar kaynaklı çıkışlar (`regime_flip`, `target`, `time_stop`, planlı çıkış fiyatı olmayan `trail_stop`) D'de emir verilir, pozisyon dolum anına kadar `closing` (yer + risk tutar). `var/backtests/1h_IS_f1_s0_native_mark` (1m, mark): 1863 karar, 364 `risk_denied`; 27 adımda 27 `closing` pozisyon; bu adımlarda reddedilen giriş **5** (hepsi "aynı yön risk sınırı aşılır": short 4, long 1), bunların **3'ü** closing pozisyonla aynı yönde (serbest bırakılırsa girebilirdi: ETH/LINK short ↔ kapanan ADA short 2025-02-16 14:00; ADA long ↔ kapanan AVAX long 2025-04-27 01:00), 2'si karşı yönde (serbest bırakma etkisiz). `native_last`: 23 closing, reddedilen 3 (3'ü aynı yön). Pozisyon sayısı üst sınırı kaynaklı red: **0** (böyle bir sınır yok, `max_open_trades=-1`; `max pozisyon` reddi hiç yok). Toplam etki: 1h_IS'de 1863 karardan en çok 3 giriş (%0,16); native davranış mentor kararı gereği değişmedi, kağıt 4. haftasında yeniden bakılır. Ham: `research/crosscheck/gate_closing_native_{mark,last}.json`.
+
+### Adım 7 — özet / sonraki adım
+
+- (a) geçti, (c) geçti, (d) ücret geçti; (b) fiyat ≤ 1 tik (%96,1-96,3 < %97) ve (d) f2_s5 funding (+%10,5, ölçekli −%0,6) harfi **tutmadı**. İz gecikmesi 15m'de C'yi geçirdi (%97,96) ama 1h'de kötüleştirdi; bu turda başka uyum kuralı eklenmedi.
+- Açıklanmış eşdeğerlik adayları (mentor kararı): kalan 1h çıkış fiyatı farkı iz-stop ham değeri (adım 3'te 5/5 satır bir-bar-eski yol; 1h'de bayrakla genel uyum bozuluyor, hipotez: 1h koşuda gecikme bir ayrıntı mumu); funding farkı miktar zinciri (miktarı eşit işlemlerde +%0,01).
+- Tüm testler: `tests/engine` (mentor kararı gereği `test_engine_ml_filter.py`, `test_engine_05_impl_smoke.py::test_end_to_end_one_month_backtest` ve `::test_paper_replay_and_kill` çalıştırılmadı): 626 geçti, 1 atlandı.
