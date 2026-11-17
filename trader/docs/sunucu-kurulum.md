@@ -266,6 +266,27 @@ sudo -u trader nice -n 15 .venv/bin/python scripts/fetch_binance_vision.py --sta
 - Sure: ~7.400 istek (3.700 zip + checksum); `--rate 4` ile ~30 dk + indirme/donusturme, toplam ~45-60 dk (2 GB sunucuda `--workers 2`; bellek `MemoryMax=450M` icinde kalacak sekilde 1m dosyalari en buyuk bellek kullanicisidir, gerekirse `--tfs 15m,1h,4h,1d` ve ardindan `--only-1m` ayri kosun).
 
 
+## Derlem v2 kurulumu (ML-G6; `scripts/build_corpus_v2.py`)
+
+Amac: 2021-01 -> 2026-04 gecmisinden (yukaridaki indirme bittikten SONRA) r02/r03 icin uzun donem aday derlemi uretmek. Model egitilmez, kapi calistirilmaz. Aday tanimi 19b ile ayni kod (`trader_ml.features.feature_frame` + `candidate_rows`): **post_filter oncesi yerel v1b adaylari** (signal True, setup T1, iki yon, 10 cift; alinmis/alinmamis ayrimi ve ledger yok). Etiketler `multi_r_labels` (1R/1,5R/2R, 72 mum, `label_end_ts` her R icin), ozellikler `trader_ml.features_v2` korumali sarmalayici (r02 40 + r03 ek 3 sutun), fonlama `var/history/*-1h-funding_rate.feather`. Kilitli donem: `--end` 2026-05-01'den buyukse sert red; dosyalar okunurken `date >= 2026-05-01` satirlari hic yuklenmez.
+
+```
+cd /home/trader/SG-Github-AB-proje/trader
+git status --short                      # TEMIZ olmali (kirli agacta betik reddeder)
+df -h /home/trader                      # derlem + gecici ~ <100 MB
+sudo systemd-run --uid=trader --gid=trader --unit=trader-corpus-v2 --collect --wait --pty \
+  -p Nice=15 -p MemoryMax=900M -p MemorySwapMax=0 -p CPUQuota=100% \
+  -p WorkingDirectory=/home/trader/SG-Github-AB-proje/trader -p Environment=PYTHONPATH=src \
+  .venv/bin/python scripts/build_corpus_v2.py --start 2021-01-01 --end 2026-05-01 --sample-check 50
+```
+- Ayni komut `nohup` ile arka planda da calisir: `sudo -u trader nice -n 15 env PYTHONPATH=src .venv/bin/python scripts/build_corpus_v2.py ... > research/logs/corpus_v2.log 2>&1 &`. Indirme (`fetch_binance_vision.py`) calisirken BASLATMAYIN (feather dosyalari yeniden yazilir; `var/history/.fetch.lock` yoksa bitmistir). Gerekli dosyalar cift basina `1h-futures` ve `1h-funding_rate` (1m dosyalari gerekmez).
+- Cikti (`research/ml/`): `corpus_v2.parquet` (git'e girmez), `corpus_v2.manifest.json` (commit edilir), `corpus_v2.sample_check.md`. Ayni girdi + ayni kod = ayni `corpus.sha256` (iki kez kosup karsilastirin: `sha256sum research/ml/corpus_v2.parquet`; farkli pyarrow surumunde bayt farkini `corpus.content_sha256` ayirt eder).
+- Manifest: her girdi dosyasinin sha256'si ve kullanilan dilimin karmasi, kod dosyalarinin sha256'si ve git commit'i, cift/yil satir sayilari, her R icin etiket cozulme sayilari (cozulmemis = son 72 mum), 43 ozelligin NaN oranlari (toplam ve yil bazinda; 2021 basinda 200 gunluk 1g baglam yuzunden yuksek NaN beklenir), `candle_gaps` (cift basina 1s mum boslugu: > 0 ise nedeni arsiv bosluk raporuna bakarak yazin), `same_bar` (satirlar `(pair, ts)` tekil; `f_same_bar_signals` = ayni ts'deki ayri cift sayisi), `funding_stale_count`, `peak_rss_mb`, `runtime_s`.
+- **Elle kontrol (50 etiket):** `corpus_v2.sample_check.md` 50 rastgele (seed 20261117, sabit) etiketli aday icin giris/stop/1R-1,5R-2R hedefleri, bariyer temaslari isaretli mum penceresi ve `labels.py`'den bagimsiz yeniden hesabi icerir. Her basliktaki `[ ]` kutusunu elle isaretleyin; sonunda "Bagimsiz yeniden hesap uyumu: 150/150" olmalidir. Tek hatali etiket varsa derlem kullanilmaz, mentora yazilir. Isaretli dosya ile manifest birlikte commit edilir.
+- Bellek (2 GB sunucu): cift cift (aday + etiket) ve yil yil (ozellik, parquet satir grubu); mum cercevesi 10 cift x ~46 bin satir (~25 MB). Yerel olcum (2024-11..2026-04, 10 cift, 2.021 aday): tepe 194 MB RSS, 60 sn (tek cekirdek). 2021'e uzayinca sure ~3-4 kat, bellek ~ <400 MB beklenir; `MemoryMax=900M` bu yuzden guvenli tavandir. Gercek sunucu tepe degeri manifestteki `peak_rss_mb`'ye yazilir; farkliysa buraya not edin.
+- Yeniden uretim: `--skip-build --sample-check 50` var olan derlemden yalniz kontrol dosyasini yeniden yazar. Yerel duman kosusu icin `--allow-dirty --history-dir ... --out-dir ...` (sunucuda KULLANILMAZ).
+
+
 ## Testnet yoklama, duman ve tatbikat betigi (WP-B7; `scripts/smoke_testnet.py`)
 
 Ne zaman: Binance vadeli TESTNET anahtari gelince (B0 yoklamasi). **Durum: B0 yoklamasi anahtar gelince kosulabilir; T-13...T-16 ve D-1...D-8 adimlari yazildi ama duzeltme turu yeniden incelemesi (re-review) bitene kadar KAYIT ICIN KOSULMAZ (mentor karari).** Dry-run (plan yazdirma) her zaman serbesttir.
