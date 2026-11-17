@@ -20,14 +20,25 @@ Depo **ozel** (private) olursa bu komut sifre sorar ve olmaz. O durumda bir "dep
 4. Kodu `/home/trader/SG-Github-AB-proje` icine indirir (tekrar calistirinca gunceller).
 5. Yalniz calisma bagimliliklarini kurar (requests, websockets, pandas, numpy, pyarrow, anthropic, ccxt); freqtrade ve test paketleri yok.
 6. Dizinleri ve ayar dosyalarini (`/etc/trader-*.env`, yoksa) olusturur; var olan ayar dosyasini asla ezmez.
-7. systemd birimlerini kurar. **Ogrenen motor** (`trader-engine@learner`, en fazla 350 MB), saglik kontrolu ve gunluk yedek acilir. Ikiz motor (`--with-twin`, en fazla 350 MB) bellek kontrol edildikten sonra ayrica acilir.
+7. systemd birimlerini kurar. **Veri akisi** (`trader-feed.service`, en fazla 350 MB; Binance herkese acik REST -> `var/market.sqlite`) motordan once acilir. **Ogrenen motor** (`trader-engine@learner`, en fazla 350 MB), saglik kontrolu ve gunluk yedek acilir. Ikiz motor (`--with-twin`, en fazla 350 MB) bellek kontrol edildikten sonra ayrica acilir.
 8. Gecmis fiyat verisi yoksa Binance'in acik arsivinden indirir.
 9. Veto, ders ve Telegram **anahtarlar doldurulana kadar kapali** kalir; sonda Turkce bir "yapilacaklar" listesi basar. Anahtarlari sohbete yazmayin: `nano /etc/trader-telegram.env` ile dosyayi acip degeri yapistirin, sonra `bash /home/trader/SG-Github-AB-proje/trader/deploy/install.sh` komutunu yeniden calistirin.
+
+## Ilk baslatma sirasi (feed -> kurallar 10/10 -> motor)
+
+`install.sh` birimleri bu sirayla acar; motor birimi `After=/Wants=trader-feed.service` ile feed'e baglidir.
+
+1. **Feed baslar**: ilk acilista borsa kurallarini (`exchangeInfo`) ceker (basarisizsa sinirli yeniden dener; olmazsa sifirdan farkli kodla cikar, HTTP 451 icin ayri kod/mesaj: bu sunucudan Binance vadeli erisimi yok), sonra gecmis mumlari doldurur (`backfill`, ilk seferde birkac dakika).
+2. **Kurallar 10/10**: `config/engine.base.json` icindeki 10 ciftin hepsinin kurali `var/market.sqlite` icinde olmali. Elle denetim: `sqlite3 var/market.sqlite 'select pair, fetched_ms from rules'` (10 satir).
+3. **Motor baslar** ve acilis kapisini calistirir: tum ciftlerde gecerli kural **ve** taze 1m last+mark verisi yoksa en fazla `startup_wait_s` (varsayilan 600 sn) bekler, sonra tek bir CRITICAL satiriyla cikis kodu 7 ile durur; birim `failed` olur ve `OnFailure` Telegram CRIT uyarisi gonderir (kod 7 icin otomatik yeniden baslatma yoktur: once feed'i duzeltin, sonra `systemctl start trader-engine@learner`). 10/10 degilse hicbir sey acilmaz.
+
+Komutlar: `python -m trader_engine feed --config-dir config` (feed), `python -m trader_engine rules-snapshot --config-dir config [--out yol]` (kurallari `rules.json` + `rules.json.meta.json` olarak yazar: zaman, sha256, kaynak adresi). Durum: `status.json` icindeki `counters.rules_missing` ve `counters.data_stale` sifir olmali.
 
 ## Durum kontrolu
 
 ```
-systemctl status trader-engine@learner
+systemctl status trader-feed trader-engine@learner
+journalctl -u trader-feed -n 50 --no-pager
 journalctl -u trader-engine@learner -n 50 --no-pager
 systemctl list-timers 'trader-*'
 free -m

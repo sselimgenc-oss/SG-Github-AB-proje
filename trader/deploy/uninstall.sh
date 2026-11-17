@@ -16,7 +16,7 @@ for arg in "$@"; do
 done
 [ "$(id -u)" -eq 0 ] || { echo "HATA: root olarak calistirin." >&2; exit 1; }
 
-echo "==> trader-* birimleri durduruluyor (trader-panel.service dahil)"
+echo "==> trader-* birimleri durduruluyor (trader-feed.service ve trader-panel.service dahil)"
 for u in $(systemctl list-unit-files 'trader-*' --no-legend --plain 2>/dev/null | awk '{print $1}'); do
   case "$u" in trader-*) systemctl disable --now "$u" >/dev/null 2>&1 || true ;; esac
 done

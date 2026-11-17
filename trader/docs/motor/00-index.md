@@ -101,7 +101,7 @@ Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1
 
 ## 7. Şartname dışı Faz A işleri (sahibi bu 8 birimden hiçbiri değil)
 
-`deploy/trader-feed.service`, `trader-engine@.service`, `MemoryMax=400M`, swap, systemd kurulumu (§2.9, P7); `scripts/health_run.py` ve `health` toplayıcısının `status.json` okuyucusuna uyarlanması; `veto.json.pairs_from` yeniden işaretlenmesi; `ledger` `find_unledgered_trades` parametre adı ve `strateji-spec` §4–6 işaretlemesi (§4.3 madde 5); freqtrade silme commit'i (§4.3). Bunlar ayrı iş paketleridir ve ilgili şartname revizyonu + bağımsız test güncellemesiyle yapılır.
+`deploy/trader-feed.service` (**17 Kas 2026: yazildi, ertelenmis degil**; `feed.main`/`rules_snapshot_main` giris noktalari, acilista kural cekimi yeniden deneme/451, motor `After=/Wants=` bagi ve paper acilis kapisi: `engine.start()` kural + taze 1m verisi 10/10 degilse `startup_wait_s` sonra cikis kodu 7), `trader-engine@.service`, `MemoryMax=400M`, swap, systemd kurulumu (§2.9, P7); `scripts/health_run.py` ve `health` toplayıcısının `status.json` okuyucusuna uyarlanması; `veto.json.pairs_from` yeniden işaretlenmesi; `ledger` `find_unledgered_trades` parametre adı ve `strateji-spec` §4–6 işaretlemesi (§4.3 madde 5); freqtrade silme commit'i (§4.3). Bunlar ayrı iş paketleridir ve ilgili şartname revizyonu + bağımsız test güncellemesiyle yapılır.
 
 ## 8. Testlerin yazımı
 

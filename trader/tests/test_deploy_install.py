@@ -57,6 +57,62 @@ def test_engine_unit():
     assert (ROOT / "config/engine.base.json").exists()
 
 
+def test_feed_unit_and_engine_ordering():
+    f = (DEPLOY / "trader-feed.service").read_text(encoding="utf-8")
+    assert "-m trader_engine feed --config-dir config" in f
+    assert "User=trader" in f and "Restart=always" in f
+    assert re.search(r"^OnFailure=trader-health-fail@%n\.service", f, re.M)
+    assert re.search(r"^MemoryMax=350M$", f, re.M) and re.search(r"^Nice=\d+", f, re.M)
+    assert re.search(r"^ReadWritePaths=.*/opt/trader/var", f, re.M)
+    e = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
+    for key in ("ProtectSystem=strict", "NoNewPrivileges=true", "PrivateTmp=true", "ProtectHome=read-only"):
+        assert key in f and key in e, key
+    assert re.search(r"^After=.*trader-feed\.service", e, re.M) and re.search(r"^Wants=.*trader-feed\.service", e, re.M)
+
+
+def test_install_enables_feed_before_engine_and_uninstall_covers_it():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert t.index("enable_now trader-feed.service") < t.index("enable_now trader-engine@learner.service")
+    u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
+    assert "trader-feed.service" in u and "trader-*.service" in u
+
+
+def _exec_lines():
+    for u in UNITS:
+        if u.suffix != ".service":
+            continue
+        for ln in u.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"(ExecStart|ExecStartPre)=-?(.*)", ln)
+            if m:
+                yield u.name, m.group(2)
+
+
+def test_every_unit_exec_target_resolves():
+    """`python3 -m X <altkomut>` modulu/alt komutu ve betik yollari gercekten var (feed alt komutu dahil)."""
+    import importlib.util
+    if True:
+        from trader_engine import cli
+        subcmds = set(cli.build_parser()._subparsers._group_actions[0].choices)
+        seen_mod = 0
+        for name, cmd in _exec_lines():
+            toks = cmd.split()
+            if "-m" in toks:
+                i = toks.index("-m")
+                mod = toks[i + 1]
+                assert importlib.util.find_spec(mod) is not None, f"{name}: modul yok: {mod}"
+                seen_mod += 1
+                if mod == "trader_engine":
+                    assert toks[i + 2] in subcmds, f"{name}: trader_engine alt komutu yok: {toks[i + 2]}"
+                    if toks[i + 2] in ("feed", "rules-snapshot"):
+                        from trader_engine.marketdata import feed as F
+                        assert callable(getattr(F, "main" if toks[i + 2] == "feed" else "rules_snapshot_main"))
+            for t in toks:
+                m = re.match(r"/opt/trader/((?:scripts|config|src|docs)/[\w./-]+)", t)
+                if m:
+                    assert (ROOT / m.group(1)).exists(), f"{name}: {m.group(1)}"
+        assert seen_mod >= 4
+
+
 def test_units_reference_existing_paths():
     for u in UNITS:
         for m in re.finditer(r"/opt/trader/((?:scripts|config|src|docs)/[\w./-]+)", u.read_text(encoding="utf-8")):

@@ -89,8 +89,12 @@ def _cmd_init_ledger(a) -> int:
 
 def _cmd_reconcile(a) -> int:
     from .engine import build_engine
+    from .engine import EngineExit
     eng = build_engine(_load_cfg(a))
-    eng.start()
+    try:
+        eng.start()
+    except EngineExit as e:
+        return e.code
     rep = eng.reconciler.run(eng.clock.now())
     print(json.dumps({"ok": rep.ok, "fatal": rep.fatal, "actions": rep.actions, "findings": rep.findings}))
     return EXIT_OK if rep.ok else EXIT_FINDINGS
@@ -138,6 +142,9 @@ def _cmd_smoke(a) -> int:
     return EXIT_FAZ_B
 
 
+_PASSTHROUGH = {"feed": _cmd_feed, "backtest": _cmd_backtest, "rules-snapshot": _cmd_rules}
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="trader_engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -174,5 +181,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in _PASSTHROUGH:
+        # argparse.REMAINDER `--secenek` ile baslayan kalani (ornegin `feed --config-dir config`) reddeder: dogrudan ilet
+        return int(_PASSTHROUGH[argv[0]](argparse.Namespace(cmd=argv[0], rest=argv[1:])))
     a = build_parser().parse_args(argv)
     return int(a.fn(a))

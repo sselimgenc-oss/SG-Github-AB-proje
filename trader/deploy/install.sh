@@ -183,6 +183,7 @@ has_value() { # dosyada ANAHTAR= bos degilse 0
 MISSING=()
 enable_now() { systemctl enable --now "$1" >/dev/null 2>&1 && echo "Etkin: $1" || echo "UYARI: $1 baslatilamadi (systemctl status $1)"; }
 
+enable_now trader-feed.service     # veri akisi once: motor kural + taze veri gormeden baslamaz (acilis kapisi)
 enable_now trader-engine@learner.service
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali: sonra 'bash $TRADER_DIR/deploy/install.sh --with-twin'."; fi
 enable_now trader-health.timer

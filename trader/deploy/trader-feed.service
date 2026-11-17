@@ -1,0 +1,35 @@
+[Unit]
+Description=Trader veri akisi (feed): Binance herkese acik REST -> var/market.sqlite (tek yazar)
+Documentation=file:///opt/trader/docs/motor/01-feed.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+# Hizli tekrar basarisizlikta (kural alinamiyor, bozuk ayar) sonsuz dongu olmasin; limite varinca OnFailure alarmi calisir
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONUNBUFFERED=1
+# Acilista borsa kurallari (sinirli yeniden denemeyle) alinamazsa surec sifirdan farkli kodla cikar.
+ExecStart=/usr/bin/python3 -m trader_engine feed --config-dir config
+Restart=always
+RestartSec=20
+# 6 = HTTP 451 (konum kisiti): tekrar denemek anlamsiz; dogrudan 'failed' olup OnFailure alarmini tetikler
+RestartPreventExitStatus=6
+MemoryHigh=280M
+MemoryMax=350M
+CPUQuota=60%
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var /opt/trader/shared /opt/trader/user_data
+
+[Install]
+WantedBy=multi-user.target

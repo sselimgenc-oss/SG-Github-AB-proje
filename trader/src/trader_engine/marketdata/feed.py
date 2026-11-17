@@ -4,10 +4,14 @@ Saat yalnizca enjekte edilen Clock'tan okunur; sleep da Clock.sleep. Tasarim yal
 """
 from __future__ import annotations
 
+import argparse
 import fcntl
+import hashlib
 import json
 import logging
 import os
+import signal
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -28,6 +32,8 @@ SERIES_TFS = ("1m", "15m", "1h", "4h")
 TF_CLOSE_TFS = ("15m", "1h", "4h")
 EXIT_BAN = 3
 EXIT_STORE = 4
+EXIT_RULES = 5          # acilista kurallar (retry sonrasi) alinamadi
+EXIT_GEOBLOCK = 6       # HTTP 451: bu makineden Binance vadeli erisimi yok (tekrar denemek anlamsiz)
 MAX_CONSEC_BANS = 6
 MAX_CONSEC_STORE_FAIL = 3
 CLOCK_WARN_MS = 60_000
@@ -66,6 +72,23 @@ class FeedConfig:
     funding_boundary_delay_s: float = 5.0  # 00/08/16 UTC + birkac saniye
     rules_refresh_s: float = 3600.0
     retention_1m_days: int = 14
+    rules_start_backoff_s: tuple[float, ...] = (5.0, 15.0, 45.0)   # acilis kural cekimi: len+1 deneme, sonra cikis
+
+
+class RulesFetchError(FailClosed):
+    """Acilista borsa kurallari alinamadi (feed baslamaz; surec sifirdan farkli kodla cikar)."""
+
+    def __init__(self, message: str, *, geoblock: bool = False) -> None:
+        super().__init__(message)
+        self.geoblock = geoblock
+
+    @property
+    def exit_code(self) -> int:
+        return EXIT_GEOBLOCK if self.geoblock else EXIT_RULES
+
+
+GEOBLOCK_MSG = ("HTTP 451: Binance vadeli (fapi) bu makinenin bulundugu konumdan engelli; kurallar alinamaz. "
+                "Sunucuyu/bolgeyi degistirmeden feed ve paper baslatilamaz")
 
 
 @dataclass(frozen=True)
@@ -191,15 +214,29 @@ class Feed:
             self._lock_fd = fd
         self._measure_offset()
         self.store.meta_set("started_ms", str(to_ms(self.clock.now())))
-        try:
-            self._refresh_rules()
-        except ExchangeBan:
-            raise
-        except (ExchangeError, DataError) as e:
-            log.warning("acilista kurallar cekilemedi: %s", e)
+        self._fetch_rules_at_start()
         self._started = True
         if not self._clock_fatal:
             self.backfill()
+
+    def _fetch_rules_at_start(self) -> None:
+        """Acilis kural cekimi: sinirli geri cekilmeyle yeniden dener; olmazsa RulesFetchError (10/10 ya da hicbiri)."""
+        waits = tuple(self.cfg.rules_start_backoff_s)
+        last = ""
+        for attempt in range(len(waits) + 1):
+            try:
+                self._refresh_rules(strict=True)
+                return
+            except ExchangeBan as e:
+                if e.http == 451:
+                    raise RulesFetchError(GEOBLOCK_MSG, geoblock=True) from e
+                raise
+            except (ExchangeError, DataError, RulesError) as e:
+                last = str(e)
+                log.warning("acilista kurallar cekilemedi (%d/%d): %s", attempt + 1, len(waits) + 1, e)
+            if attempt < len(waits):
+                self.clock.sleep(waits[attempt])
+        raise RulesFetchError(f"acilista borsa kurallari {len(waits) + 1} denemede alinamadi: {last}")
 
     def close(self) -> None:
         if self._lock_fd is not None:
@@ -440,9 +477,24 @@ class Feed:
             log.warning("agg_mismatch %s %s %d: 1m toplami REST barindan farkli", bar.pair, bar.tf, s)
 
     # -------------------------------------------------------- kurallar, funding
-    def _refresh_rules(self) -> None:
-        snapshot_rules(self.rest, self.pairs, self.clock, store=self.store)
-        self._c["requests"] += 1
+    def _refresh_rules(self, *, strict: bool = False) -> None:
+        """exchangeInfo -> rules tablosu. Basari `rules_fetched_at`; her deneme `rules_attempt_at`; hata `rules_last_error`
+        (feed_meta). strict (acilis): eksik cift de hata sayilir. Saatlik yenilemede hata yalniz WARN (`_guard`)."""
+        now_ms = to_ms(self._now_server())
+        self.store.meta_set("rules_attempt_at", str(now_ms))
+        try:
+            res = snapshot_rules(self.rest, self.pairs, self.clock, store=self.store)
+            self._c["requests"] += 1
+            if strict and res.errors:
+                raise DataError("kural eksik: " + "; ".join(f"{p}: {m}" for p, m in sorted(res.errors.items())))
+        except Exception as e:  # noqa: BLE001
+            try:
+                self.store.meta_set("rules_last_error", str(e)[:300])
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+        self.store.meta_set("rules_fetched_at", str(now_ms))
+        self.store.meta_set("rules_last_error", "")
 
     def _mark_at(self, pair: str, ts_ms: int) -> float | None:
         m0 = ts_ms - ts_ms % 60_000
@@ -483,3 +535,133 @@ class Feed:
             self.store.meta_set("counters", json.dumps(self._c, sort_keys=True))
         except Exception as e:  # noqa: BLE001  (durum yazilamamasi feed'i dusurmez)
             log.warning("durum yazilamadi: %s", e)
+
+
+# ====================================================================== giris noktalari
+RULES_SOURCE_PATH = "/fapi/v1/exchangeInfo"
+
+
+def _read_base(config_dir: str) -> dict:
+    """engine.base.json'dan yalniz feed'in ihtiyaci olan alanlar (EngineConfig/pandas yuklenmez; bot gerekmez)."""
+    path = os.path.join(config_dir, "engine.base.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise FailClosed(f"engine.base.json okunamadi: {path}: {e}") from e
+    pairs = raw.get("pairs")
+    if not isinstance(pairs, list) or not pairs:
+        raise FailClosed(f"{path}: pairs bos olmayan liste olmali")
+    for k in ("var_dir", "market_db", "history_dir"):
+        if not isinstance(raw.get(k), str) or not raw[k]:
+            raise FailClosed(f"{path}: {k} bos olmayan str olmali")
+    return raw
+
+
+def feed_config_from_base(config_dir: str) -> FeedConfig:
+    raw = _read_base(config_dir)
+    var = raw["var_dir"].rstrip("/")
+    return FeedConfig(pairs=tuple(canon_pair(p) for p in raw["pairs"]), db_path=raw["market_db"],
+                      lock_path=f"{var}/feed.lock", status_path=f"{var}/feed-status.json")
+
+
+def _make_rest(clock: Clock) -> PublicRestClient:
+    return PublicRestClient(now_s=lambda: clock.now().timestamp(), sleep=clock.sleep)
+
+
+def _parse(argv: Sequence[str] | None, prog: str, extra=None) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(prog=prog)
+    ap.add_argument("--config-dir", default="config")
+    if extra:
+        extra(ap)
+    return ap.parse_args(list(argv) if argv is not None else None)
+
+
+def _on_term(signum, frame) -> None:
+    raise SystemExit(0)
+
+
+def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = None, clock: Clock | None = None,
+         max_ticks: int | None = None) -> int:
+    """`trader_engine feed`: kilidi al, kurallari cek (10/10), backfill, sonra run_forever. Donus = cikis kodu."""
+    a = _parse(argv, "trader_engine feed")
+    from trader_engine.clock import SystemClock
+    clock = clock or SystemClock()
+    try:
+        cfg = feed_config_from_base(a.config_dir)
+    except FailClosed as e:
+        log.critical("feed baslamadi: %s", e)
+        return EXIT_STORE
+    rest = rest or _make_rest(clock)
+    try:
+        store = MarketStore(cfg.db_path)
+    except DataError as e:
+        log.critical("feed baslamadi: %s", e)
+        return EXIT_STORE
+    feed = Feed(cfg, rest, store, clock)
+    prev = {}
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            prev[sig] = signal.signal(sig, _on_term)
+        except ValueError:      # ana is parcacigi degil (test)
+            pass
+    try:
+        feed.start()
+        feed.run_forever(max_ticks=max_ticks)
+        return 0
+    except RulesFetchError as e:
+        log.critical("feed baslamadi: %s", e)
+        return e.exit_code
+    except ExchangeBan as e:
+        log.critical("feed durdu: ban/kisit (HTTP %s): %s", e.http, e)
+        return EXIT_GEOBLOCK if e.http == 451 else EXIT_BAN
+    except FailClosed as e:
+        log.critical("feed baslamadi: %s", e)
+        return EXIT_STORE
+    except SystemExit as e:
+        return int(e.code or 0)
+    finally:
+        feed.close()
+        store.close()
+        for sig, h in prev.items():
+            signal.signal(sig, h)
+
+
+def rules_snapshot_main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = None,
+                        clock: Clock | None = None) -> int:
+    """`trader_engine rules-snapshot`: exchangeInfo -> rules.json (+ `rules.json.meta.json`: fetched_at, sha256, kaynak).
+    Cikis: 0 tamam, 1 bazi ciftler eksik (dosya yine de yazilir), 5 alinamadi, 6 HTTP 451."""
+    def extra(ap):
+        ap.add_argument("--out", default=None, help="varsayilan: <history_dir>/rules.json")
+    a = _parse(argv, "trader_engine rules-snapshot", extra)
+    from trader_engine.clock import SystemClock
+    clock = clock or SystemClock()
+    try:
+        raw = _read_base(a.config_dir)
+    except FailClosed as e:
+        print(f"rules-snapshot: {e}", file=sys.stderr)
+        return EXIT_STORE
+    out = a.out or os.path.join(raw["history_dir"], "rules.json")
+    pairs = [canon_pair(p) for p in raw["pairs"]]
+    rest = rest or _make_rest(clock)
+    try:
+        res = snapshot_rules(rest, pairs, clock, out_json_path=out)
+    except ExchangeBan as e:
+        if e.http == 451:
+            print(f"rules-snapshot: {GEOBLOCK_MSG}", file=sys.stderr)
+            return EXIT_GEOBLOCK
+        print(f"rules-snapshot: ban/kisit: {e}", file=sys.stderr)
+        return EXIT_RULES
+    except (ExchangeError, DataError, RulesError) as e:
+        print(f"rules-snapshot: kurallar alinamadi: {e}", file=sys.stderr)
+        return EXIT_RULES
+    with open(out, "rb") as fh:
+        digest = hashlib.sha256(fh.read()).hexdigest()
+    meta = {"schema": "engine/rules-snapshot/1", "fetched_at": fmt_ts(clock.now()), "sha256": digest,
+            "source_url": getattr(rest, "base_url", "") + RULES_SOURCE_PATH, "file": os.path.basename(out),
+            "pairs": sorted(res), "errors": dict(res.errors)}
+    atomic_write_json(out + ".meta.json", meta)
+    print(f"rules-snapshot: {len(res)}/{len(pairs)} cift -> {out} (sha256 {digest[:12]})")
+    for p, m in sorted(res.errors.items()):
+        print(f"rules-snapshot: EKSIK {p}: {m}", file=sys.stderr)
+    return res.exit_code

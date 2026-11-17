@@ -43,6 +43,8 @@ ENGINE_VERSION = "05.1"
 _REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit", "liquidation", "other")
 _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_failed", "unknown_orders", "mark_fallbacks",
                     "minute_gaps", "funding_missing", "exit_data_gap")
+STARTUP_MAX_AGE_S = 300          # acilis kapisi: son kapanmis 1m (last+mark) en fazla bu kadar eski olabilir
+EXIT_STARTUP_GATE = 7
 
 
 class EngineExit(Exception):
@@ -212,7 +214,7 @@ class Engine:
             "entries_open": code == "ok",
             "kill": killed, "kill_state": self.kill_state(), "wallet": acct.wallet, "equity": acct.equity,
             "day_start_equity": ds if ds is not None else acct.equity, "open_positions": self.state.open_positions(),
-            "counters": self.counters(), "last_minute_ts": self._last_minute,
+            "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
         }
@@ -275,8 +277,58 @@ class Engine:
             return m
 
     # ================================================================== baslatma
+    # ---------------------------------------------------------------- acilis kapisi (yalniz paper)
+    def check_inputs(self) -> tuple[list[str], list[str]]:
+        """(kurali eksik/bozuk ciftler, 1m last+mark verisi bayat/eksik ciftler). Kapi ve canli sayaclar kullanir."""
+        now = self.clock.now()
+        missing: list[str] = []
+        for p in self.cfg.pairs:
+            try:
+                self.view.rules(p)
+            except Exception:  # noqa: BLE001 - DataError/RulesError/baska: kural yok sayilir
+                missing.append(p)
+        fresh_last: dict[str, datetime] = {}
+        fresh_mark: dict[str, datetime] = {}
+        try:
+            a = floor_tf(now - timedelta(seconds=STARTUP_MAX_AGE_S + 120), "1m")
+            for st in self.view.minute_steps(self.cfg.pairs, a, now):
+                for p, b in st.bars.items():
+                    fresh_last[p] = max(fresh_last.get(p, b.open_ts), b.open_ts)
+                    if b.mark_c is not None:
+                        fresh_mark[p] = max(fresh_mark.get(p, b.open_ts), b.open_ts)
+        except Exception as e:  # noqa: BLE001
+            log.error("veri taze mi kontrolu okunamadi: %r", e)
+        limit = timedelta(seconds=STARTUP_MAX_AGE_S)
+        stale = [p for p in self.cfg.pairs
+                 if not (p in fresh_last and p in fresh_mark
+                         and now - (fresh_last[p] + timedelta(seconds=60)) <= limit
+                         and now - (fresh_mark[p] + timedelta(seconds=60)) <= limit)]
+        self._c["rules_missing"], self._c["data_stale"] = len(missing), len(stale)
+        return missing, stale
+
+    def _startup_gate(self) -> None:
+        """10/10 ya da hicbiri: tum ciftlerde kural + taze 1m last/mark yoksa sinirli bekler, sonra EngineExit(7)."""
+        waited = 0.0
+        step = max(1.0, min(15.0, self.cfg.loop_sleep_s * 3))
+        while True:
+            missing, stale = self.check_inputs()
+            if not missing and not stale:
+                log.info("acilis kapisi tamam: %d/%d cift kural+taze veri", len(self.cfg.pairs), len(self.cfg.pairs))
+                return
+            if waited >= self.cfg.startup_wait_s:
+                msg = (f"acilis kapisi: {self.cfg.startup_wait_s:.0f} sn sonra hazir degil; "
+                       f"kural eksik={missing or '-'} veri bayat={stale or '-'}; motor baslamiyor (feed calisiyor mu?)")
+                log.critical("%s", msg)
+                raise EngineExit(EXIT_STARTUP_GATE, msg)
+            if waited == 0.0:
+                log.warning("acilis kapisi bekliyor: kural eksik=%s veri bayat=%s", missing or "-", stale or "-")
+            self.clock.sleep(step)
+            waited += step
+
     def start(self) -> RecoveryReport:
         cfg = self.cfg
+        if cfg.mode == "paper":
+            self._startup_gate()
         if cfg.bot == "twin" and cfg.start_delay_s > 0:
             self.clock.sleep(cfg.start_delay_s)
         if not self.state.integrity_check():
@@ -763,11 +815,25 @@ class Engine:
                 except ClockError as e:
                     log.critical("%s", e)
                 self._periodic_reconcile(now)
+                self._periodic_input_check(now)
                 if self.status is not None:
                     self.status.write(self)
                 self.clock.sleep(self.cfg.loop_sleep_s)
         finally:
             self.shutdown("stop")
+
+    def _periodic_input_check(self, now: datetime) -> None:
+        """Calisirken kural/veri sayaclarini (`rules_missing`, `data_stale`) dakikada bir tazeler; karar vermez."""
+        if self.cfg.mode != "paper":
+            return
+        last = getattr(self, "_last_input_check", None)
+        if last is not None and (now - last).total_seconds() < 60:
+            return
+        self._last_input_check = now
+        try:
+            self.check_inputs()
+        except Exception as e:  # noqa: BLE001
+            log.error("girdi kontrolu hatasi: %r", e)
 
     def _periodic_reconcile(self, now: datetime) -> None:
         every = self.cfg.reconcile_open_s if self.state.open_positions() else self.cfg.reconcile_flat_s
