@@ -390,3 +390,208 @@ Kurtarma (§7): R5 `open_trade_ids`; R7 `open_positions[].stop` boş/≤0 → FA
 **Döngü gecikmesi** için yeni kontrol eklenmedi: `bot_loop_age` (WARN > 120 sn, CRIT > `loop_crit_s` = 300 sn, `status.loop_at`) ve `container_restarts` (`not_running` ⇔ `loop_at` > 300 sn) zaten karşılıyor.
 
 **Ortam** (`deploy/trader-health.env.example`): `MARKET_DB` (etkinleştirir), çift listesi `MARKET_PAIRS` (virgüllü) ya da `ENGINE_CONFIG_DIR/engine.base.json` `pairs`; ikisi de yoksa `feed-status.json` içindeki liste; `MARKET_FEED_STATUS` (varsayılan `$ENGINE_VAR_DIR/feed-status.json`). Testler: `tests/test_health_market_spec.py`.
+
+## 16. ML model paketi süresi/tazeliği ve sapma izleyicisi kancası (ek, 17 Kasım 2026; onay listesi madde 8 ve 3)
+
+Kaynak: `repo-denetim-onay-listesi.md` madde 8 (A-18, D-06, B-25). Bu bölüm yalnız şartnamedir; uygulama WP-1 (ML kontrolü, rapor satırı, kanca yer tutucusu) ve WP-2'dir (kancanın doldurulması). Motor ve `trader_ml` kodu **değişmez**: kontrol yalnız okur.
+
+### 16.1 Doğrulanmış olgular (kodda okundu)
+
+1. `ml_mode ∈ {off, shadow, active}`. `status.json` `ml` bloğu (`strategy_runner.py:258-277`): `mode`, `state` (`off` | `ok` | `no_model` | `expired`), `model_id`, `threshold`, `expires_at` (ISO), `error`, `features`, `v2_error`, `v2_errors`, `entries_blocked`. ML'siz stratejide blok `null`'dır.
+2. `entries_blocked = (mode == "active" ve state ∈ {no_model, expired})`. Bu durumda motor `entries_open=false` ve `gate.code = "ml_no_model"` / `"ml_expired"` yazar (`status.py`); yeni giriş açılmaz, açık pozisyonlar yönetilmeye devam eder.
+3. Paket süresi: `min(meta.expires_at, meta.created_at + 21 gün)` (`ml_package.py` `expires_at`, `MODEL_EXPIRY_DAYS = 21`); `now >= sınır` ise dolmuştur.
+4. **Motor paketi yalnız başlangıçta yükler** (`engine.py` kurulum; yeniden yükleme yok). Diske yeni paket koymak motor yeniden başlatılmadan etki etmez; süre ise her karar anında yeniden sınanır. Yani "yeniden eğitim başarılı ama motor yeniden başlatılmadı" durumunda da girişler 21. günde kesilir. Motor süresi dolmuş bir paketle **başlatılırsa** yükleme reddedilir ve durum `expired` değil `no_model` olur (`error` metninde neden yazar).
+5. Paket `meta` alanları (`trader_ml/package.py`): `pkg_version`, `version`, `kind`, `created_at`, `expires_at`, `expiry_days`, `features`, `feature_list_hash`, `feature_ranges`, `train_window.{start,end}`, `n_train`, `data_hash`, `code_hash`, `model_hash`; ayrıca `gate_passed`, `user_approved`. `model_id = "<version>@<model_hash ilk 12>"`. Pakette "hangi piyasa anlık görüntüsünden üretildi" alanı **yoktur**; veri soyu için bugün yalnız `data_hash` ve `train_window.end` kullanılabilir.
+6. `active` kipte puanlanamayan aday elenir (`price_action_v1_ml.py`: puanlama hatası → etiket yok → eleme); hatalar `counters.ml_score_errors` ve `ml.v2_errors` sayaçlarına yazılır. Bu da sessiz giriş kaybıdır.
+7. Bugün `health.py`'de ML kontrolü ve günlük raporda ML satırı yoktur; kapı kapalıyken rapor yalnız "yapay zekâ filtresi hazır değil" der (`telegram.neden_tr`).
+
+### 16.2 Veri yapıları
+
+`health.py`'ye (yalnız stdlib; `trader_core.ml_package` **içe aktarılmaz**, numpy gerektirir):
+
+```
+MlProbe (frozen dataclass; ölçülemeyen alan None)
+  # status.json `ml` bloğundan (motorun gerçekte kullandığı)
+  present: bool | None            # blok var mı (None = status okunamadı)
+  mode: str | None
+  state: str | None
+  model_id: str | None
+  expires_at: datetime | None     # tz-aware UTC
+  error: str | None
+  score_errors: int | None        # counters.ml_score_errors + ml.v2_errors
+  # diskteki paket dosyasından (meta; model gövdesi doğrulanmaz)
+  file_state: str                 # "ok" | "missing" | "unreadable" | "not_configured"
+  file_model_id: str | None
+  file_created_at: datetime | None
+  file_expires_at: datetime | None    # min(meta.expires_at, created_at + 21 gün)
+  file_data_hash: str | None
+  file_train_end: datetime | None     # meta.data_snapshot_at varsa o, yoksa train_window.end
+  file_gate_passed: bool | None
+  file_user_approved: bool | None
+```
+
+`HealthSnapshot.ml: Mapping[str, MlProbe] | None` (bot → yoklama). `None` ise bu bölümdeki kontrol hiç üretilmez ve `REQUIRED_CHECKS` değişmez (§15 ile aynı opt-in kalıbı).
+
+`HealthConfig` yeni alanlar: `ml_warn_days = (7, 3, 1)`, `ml_data_max_age_days: float | None = None`, `drift_max_age_s = 129600` (36 saat), `drift_check_enabled = False`.
+
+Runner (`scripts/health_run.py`): paket yolu `ML_MODEL_PATH_<BOT>` ortam anahtarından, yoksa `ENGINE_CONFIG_DIR/engine.base.json` + `engine.<bot>.json` birleşiminin `ml_model_path` alanından; ikisi de yoksa `file_state="not_configured"`. Dosya salt okunur, en çok 32 MB okunur (üstü `unreadable`). Zaman alanı tz'siz ise UTC sayılır (motorla aynı). Önceki tur bilgisi `state.json` içinde: `ml_seen[bot] = {model_id, created_at, data_hash, train_end, stale}` ve `ml_score_errors[bot]`.
+
+### 16.3 Kontrol: `ml_package:<bot>` (zorunlu değil; bot bazlı)
+
+Aşağıdaki satırlar sırayla değerlendirilir; birden çok satır tutarsa **en ağır** durum sonuçtur, `code` en ağır satırın kodudur, `detail` tutan bütün satırları listeler. Ağırlık: CRIT > UNKNOWN > WARN > OK.
+
+| # | Koşul | Sonuç (kod) |
+|---|---|---|
+| 1 | `present is None` (status okunamadı) | UNKNOWN `ml_status_unreadable` |
+| 2 | `present is False` ya da `mode == "off"` | SKIPPED `ml_off` (başka satır değerlendirilmez) |
+| 3 | `mode == "active"` ve `state == "expired"` | CRIT `ml_expired` |
+| 4 | `mode == "active"` ve `state == "no_model"` | CRIT `ml_no_model` (`detail` içinde `error`) |
+| 5 | `mode == "shadow"` ve `state ∈ {expired, no_model}` | WARN `ml_shadow_down` |
+| 6 | `state == "ok"` ve `kalan = expires_at − now`: `kalan ≤ 1 gün` | WARN `ml_expiring_1d` |
+| 7 | aynı, `1 gün < kalan ≤ 3 gün` | WARN `ml_expiring_3d` |
+| 8 | aynı, `3 gün < kalan ≤ 7 gün` | WARN `ml_expiring_7d` |
+| 9 | `state == "ok"` ve `expires_at is None` ya da bilinmeyen `mode`/`state` metni | UNKNOWN `ml_status_invalid` |
+| 10 | `file_state == "ok"`, `file_model_id != model_id`, dosya geçerli (`now < file_expires_at`, `file_gate_passed is True`, `active` ise `file_user_approved is True`) | WARN `ml_restart_needed` (yeni paket diskte, motor eskisini kullanıyor ya da hiç yükleyememiş) |
+| 11 | `file_state == "ok"` ve dosya "bayat veri" işaretli (§16.4) | WARN `ml_stale_data` |
+| 12 | `file_state ∈ {missing, unreadable}` ya da zorunlu meta alanı eksik/çözümlenemiyor ya da `file_created_at > now + 5 dk` | WARN `ml_file_invalid` |
+| 13 | `score_errors` önceki turdakinden **büyük** | WARN `ml_score_errors` (iki kipte de; ilk turda taban alınır, alarm yok; sayaç azalırsa taban güncellenir, alarm yok) |
+| 14 | hiçbiri | OK |
+
+Notlar:
+
+- Eşitlik iyi tarafa düşmez burada: süre için `kalan ≤ eşik` uyarır (son gün dahil); `kalan` negatifse motor zaten `expired` yazmıştır (satır 3/5). Motor `state == "ok"` derken `expires_at ≤ now` görülürse (yarış) satır 6 uygulanır.
+- 7 / 3 / 1 gün ayrı kodlardır; böylece §5 tekrar bastırması her eşikte **yeni** bir uyarı çıkarır. 7 günün gerekçesi: haftalık yenilemede paket normalde 7 günlükken değişir; 14 günlük paket iki yenilemenin kaçtığını gösterir.
+- `IMMEDIATE_CODES`'a eklenir: `ml_expired`, `ml_no_model` (girişler kesildi; ilk turda uyarır).
+- `not_configured` dosya durumu tek başına sonuç üretmez (satır 10–12 atlanır); `detail`e "paket yolu bilinmiyor" yazılır.
+- CRIT nabzı keser (mevcut kural; `veto_file_age` ve `budget_status` ile aynı sınıf: giriş durdu). WARN nabzı kesmez.
+- Isınma (§3.3) uygulanmaz.
+
+### 16.4 "Yeni dosya, eski veri" (B-25)
+
+Amaç: yenileme işi çalışıp yeni tarihli paket ürettiği halde veri ilerlemediyse (toplayıcı durmuş, derlem yeniden kurulmamış) bunu yakalamak. Dosya değişiklik zamanı (mtime) **kullanılmaz**; yalnız paket içindeki kayıtlar.
+
+Runner her turda diskteki paketi `ml_seen[bot]` ile karşılaştırır:
+
+1. `ml_seen[bot]` yok → taban olarak kaydedilir (`stale=false`); alarm yok.
+2. `file_model_id` aynı → değişiklik yok; `stale` bayrağı korunur.
+3. `file_model_id` farklı ve `file_created_at > ml_seen.created_at`: `file_data_hash == ml_seen.data_hash` **ve** `file_train_end <= ml_seen.train_end` ise yeni kayıt `stale=true`; aksi halde `stale=false`. Kayıt yeni paketle güncellenir.
+4. `file_model_id` farklı ve `file_created_at <= ml_seen.created_at` (eski pakete dönülmüş) → `stale=true` ("daha eski paket konmuş").
+5. Mutlak yaş (isteğe bağlı): `ml_data_max_age_days` verilmişse ve `file_created_at − file_train_end > sınır` → `stale=true`. **Varsayılan `None`**: kilitli dönem (2026-05-01 → 2026-11-01) eğitimde kullanılamadığı için bugün her paketin eğitim sonu aylar öncesidir; sabit bir yaş eşiği sürekli çalardı. Değeri haftalık yeniden eğitim şartnamesi (plan maddesi I) belirler.
+
+`stale=true` olduğu sürece satır 11 WARN verir; veri ilerlemiş yeni bir paket gelince kendiliğinden kapanır.
+
+**Paket şemasına öneri (bu iş paketinde yapılmaz; `trader_ml` r02/r03 raporları işlenene kadar dondurulmuştur):** r04+ şablonunda `meta.data_snapshot_at` (derlemin kurulduğu piyasa verisinin en yeni mum zamanı) ve `meta.corpus_sha256`. Kontrol bu alan varsa onu, yoksa `train_window.end`i kullanır (ileri uyumlu).
+
+### 16.5 Telegram: uyarı metinleri ve günlük rapor satırı
+
+`health.py` `_HEALTH_TR` / `_HEALTH_TR_CODE` (sorun, düzeldi, anlamı); ham kod, model kimliği, dosya yolu kullanıcıya gösterilmez:
+
+| Anahtar | Sorun | Düzeldi | Anlamı |
+|---|---|---|---|
+| `ml_package` (genel) | "Yapay zekâ modeli sorunlu" | "Yapay zekâ modeli yeniden normal" | "Modelin durumu için günlük rapora bak." |
+| `ml_expired` | "Modelin süresi doldu — yeni işlemler durdu" | "Model yenilendi, yeni işlemler yeniden açık" | "Model 21 günden eski olduğu için bot yeni işlem açmıyor; açık pozisyonlar korunuyor. Model yenilenip motor yeniden başlatılmalı." |
+| `ml_no_model` | "Model yüklenemedi — yeni işlemler durdu" | "Model yüklendi, yeni işlemler yeniden açık" | "Model dosyası yok, geçersiz ya da süresi dolmuş; bot yeni işlem açmıyor, açık pozisyonlar korunuyor." |
+| `ml_shadow_down` | "Gölgedeki model çalışmıyor" | "Gölgedeki model yeniden çalışıyor" | "İşlemler etkilenmiyor; yalnız modelin izleme kaydı duruyor." |
+| `ml_expiring_7d` | "Modelin süresi 7 gün içinde doluyor" | "Model yenilendi" | "Yenilenmezse süre dolduğunda yeni işlemler durur." |
+| `ml_expiring_3d` | "Modelin süresi 3 gün içinde doluyor" | "Model yenilendi" | aynı |
+| `ml_expiring_1d` | "Modelin süresi yarın doluyor!" | "Model yenilendi" | "Bugün yenilenmezse yeni işlemler durur." |
+| `ml_restart_needed` | "Yeni model hazır ama devrede değil" | "Yeni model devrede" | "Motor yeniden başlatılana kadar eski model kullanılır." |
+| `ml_stale_data` | "Yeni model eski veriyle üretilmiş" | "Model güncel veriyle yenilendi" | "Model dosyası yeni ama içindeki veri ilerlememiş; veri toplama ve eğitim hattı kontrol edilmeli." |
+| `ml_file_invalid` | "Model dosyası okunamıyor" | "Model dosyası yeniden okunuyor" | "Sıradaki yeniden başlatmada model yüklenemeyebilir." |
+| `ml_score_errors` | "Model bazı fırsatları puanlayamıyor" | "Model yeniden puanlıyor" | "Puanlanamayan fırsatlar alınmaz; işlem sayısı düşebilir." |
+
+`shadow` kipte `ml_expiring_*` "anlamı" metni: "Yenilenmezse gölge izleme durur; işlemler etkilenmez."
+
+**Günlük rapor** (`telegram.default_sections` yeni bölüm `"Model"`; `build_report` sıralamasında "Risk kademesi"nden hemen önce). Kaynak yalnız `status.json` `ml` bloğu ve sağlık `state.json` (`ml_seen[bot].stale`, son rapordaki `ml_package:<bot>` kodu). Bot başına tek satır; ikiz bot için sonuna " (ikiz bot)". Kalan süre: `g = floor(kalan_saniye / 86400)`; `g ≥ 1` ise "g gün", değilse "s saat" (`s = floor(kalan_saniye / 3600)`, en az 1).
+
+| Durum | Satır |
+|---|---|
+| blok yok / `off` | `🤖 Model filtresi kapalı (bot filtresiz çalışıyor)` |
+| `shadow`, `ok`, kalan > 7 gün | `🤖 Model gölgede izliyor, kararları etkilemiyor · süresi 12 gün sonra doluyor` |
+| `active`, `ok`, kalan > 7 gün | `🤖 Model filtresi açık · süresi 12 gün sonra doluyor` |
+| `active`, `ok`, kalan ≤ 7 gün | `⚠️ Model filtresi açık ama süresi 5 gün sonra doluyor; yenilenmezse yeni işlemler durur` |
+| `shadow`, `ok`, kalan ≤ 7 gün | `⚠️ Gölgedeki modelin süresi 5 gün sonra doluyor (işlemler etkilenmez)` |
+| `active`, `expired` | `🚨 Modelin süresi doldu: yeni işlem açılmıyor, açık pozisyonlar korunuyor` |
+| `active`, `no_model` | `🚨 Model yüklenemedi: yeni işlem açılmıyor, açık pozisyonlar korunuyor` |
+| `shadow`, `expired` / `no_model` | `⚠️ Gölgedeki model çalışmıyor (işlemler etkilenmiyor)` |
+
+Ek cümleler (satırın sonuna, " · " ile): `ml_restart_needed` → "yeni model hazır, motorun yeniden başlatılması gerekiyor"; `ml_stale_data` → "yeni model eski veriyle üretilmiş görünüyor"; `ml_score_errors` → "bazı fırsatlar puanlanamadı". Bölüm okunamazsa mevcut kural geçerlidir (genel "Bazı bilgiler okunamadı" satırı; ham hata yok).
+
+`active` + girişler kesikken `_risk_satirlari` zaten "🛑 Yeni işlemler kapalı: yapay zekâ filtresi hazır değil" yazar; `neden_tr` için özel metinler eklenir: `ml_expired` → "modelin süresi doldu", `ml_no_model` → "model yüklenemedi" (diğer `ml_*` kodları mevcut genel metinde kalır).
+
+### 16.6 Sapma izleyicisi kancası: `drift_monitor:<bot>` (WP-2 için yer tutucu)
+
+İzleyicinin kuralları ve eşikleri `docs/kagit-degerlendirme-plani.md` §4'tedir; sağlık yalnız onun çıktı dosyasını (`<var>/<bot>/drift.json`, şema `drift/1`) okur, hiçbir istatistik hesaplamaz.
+
+`HealthSnapshot.drift: Mapping[str, DriftProbe] | None`; `DriftProbe(file_state: "ok"|"missing"|"unreadable", generated_at: datetime | None, overall: str | None, rules_at_uyari: tuple[str, ...])`.
+
+| Koşul | Sonuç (kod) |
+|---|---|
+| `drift_check_enabled is False` ya da `snap.drift is None` | SKIPPED `placeholder` (WP-1 teslimindeki tek davranış) |
+| `file_state == "missing"` / `"unreadable"` / şema ya da `bot` uyuşmuyor | WARN `drift_missing` / WARN `drift_unreadable` |
+| `now − generated_at > drift_max_age_s` (36 sa) | WARN `drift_stale` |
+| `overall == "UYARI"` | WARN `drift_alert` (`detail`: kural kimlikleri; yalnız günlükte/panoda, Telegram metninde değil) |
+| `overall ∈ {OK, IZLE, YETERSIZ}` | OK |
+| bilinmeyen `overall` | WARN `drift_unreadable` |
+
+**Bilinçli istisna (fail-closed kuralından):** bu kontrol hiçbir koşulda `CRIT` ya da `UNKNOWN` üretmez ve nabzı kesmez. Gerekçe: izleyici para koruması değil istatistiksel bir bilgi aracıdır ve kullanıcı kararıyla proje durdurma ölçütü değildir; dosyasının eksikliği "sunucu öldü" alarmını tetiklememelidir. Eksik/bayat dosya yine de WARN ile görünür kalır.
+
+`_HEALTH_TR`: `drift_monitor` → ("Bot beklenenden farklı davranıyor", "Bot yeniden beklendiği gibi davranıyor", "Bot durdurulmadı; ayrıntı günlük raporda. İnceleme gerekir."); `drift_missing` / `drift_stale` / `drift_unreadable` → ("Davranış izleyicisi çalışmıyor", "Davranış izleyicisi yeniden çalışıyor", "Günlük karşılaştırma yapılamıyor; işlemler etkilenmez.").
+
+**Tek gönderici:** izleyici Telegram'a kendisi mesaj atmaz, yalnız `drift.json` yazar. Anlık `UYARI` mesajı bu kontrolün `drift_alert` sonucu üzerinden, mevcut uyarı yolu ve §5 tekrar bastırmasıyla gider (aynı olay iki kez gönderilmez); kural bazlı ayrıntı günlük rapordadır. `drift_check_enabled` WP-2 tesliminde açılır; o zamana kadar anlık mesaj yoktur.
+
+### 16.7 Kabul testleri (bağımsız test yazarı için; `tests/test_health_ml_spec.py`, `tests/test_telegram_ml_spec.py`)
+
+Hepsinde `now = 2026-12-10T12:00:00Z`, bot `learner`, aksi yazılmadıkça `file_state="not_configured"`, `score_errors` değişmemiş.
+
+Sağlık kontrolü (`evaluate` sonucu içinde `ml_package:learner`):
+
+1. `snap.ml is None` → sonuçlarda `ml_package` adlı kontrol **yok**; `REQUIRED_CHECKS` değişmemiş.
+2. `present=False` → SKIPPED `ml_off`. `mode="off"` → SKIPPED `ml_off`.
+3. `present=None` → UNKNOWN `ml_status_unreadable`.
+4. `active`, `ok`, `expires_at = now + 7 gün + 1 sn` → OK.
+5. `active`, `ok`, `expires_at = now + 7 gün` → WARN `ml_expiring_7d`.
+6. `active`, `ok`, `expires_at = now + 3 gün` → WARN `ml_expiring_3d`; `now + 3 gün + 1 sn` → `ml_expiring_7d`.
+7. `active`, `ok`, `expires_at = now + 1 gün` → WARN `ml_expiring_1d`; `now + 1 sn` → `ml_expiring_1d`.
+8. `active`, `expired` → CRIT `ml_expired`; `overall` CRIT; `ml_expired ∈ IMMEDIATE_CODES`.
+9. `active`, `no_model`, `error="PackageError: model suresi dolmus"` → CRIT `ml_no_model`; `detail` hata metnini içerir.
+10. `shadow`, `expired` → WARN `ml_shadow_down` (CRIT değil); `shadow`, `no_model` → aynı.
+11. `shadow`, `ok`, `expires_at = now + 2 gün` → WARN `ml_expiring_3d`.
+12. `active`, `ok`, `expires_at=None` → UNKNOWN `ml_status_invalid`; `mode="turbo"` → UNKNOWN `ml_status_invalid`.
+13. Yeniden başlatma gerekli: `active`, `ok`, `expires_at = now + 10 gün`, `model_id="r02@aaaaaaaaaaaa"`, dosya `ok`, `file_model_id="r02@bbbbbbbbbbbb"`, `file_expires_at = now + 20 gün`, `file_gate_passed=True`, `file_user_approved=True` → WARN `ml_restart_needed`. Aynı girdi `file_user_approved=False` → OK (dosya `active` için geçerli değil). Aynı girdi `shadow` ve `file_user_approved=False` → WARN `ml_restart_needed`.
+14. En ağır kazanır: 13'teki dosya + `active`, `expired` → CRIT `ml_expired`; `detail` her iki durumu da anar.
+15. Dosya geçersiz: `file_state="missing"` (`active`, `ok`, kalan 10 gün) → WARN `ml_file_invalid`; `file_created_at = now + 6 dk` → WARN `ml_file_invalid`; `now + 4 dk` → tetiklemez.
+16. Bayat veri (runner düzeyi, `ml_seen` ile): (a) ilk tur, `ml_seen` yok → alarm yok, taban yazıldı; (b) ikinci tur, yeni `file_model_id`, daha yeni `created_at`, **aynı** `data_hash` ve **aynı** `train_end` → WARN `ml_stale_data`; (c) üçüncü tur, yeni paket, farklı `data_hash`, daha ileri `train_end` → OK; (d) yeni paket, farklı `data_hash` ama `train_end` aynı → OK; (e) yeni `file_model_id` ama `created_at` öncekinden eski → WARN `ml_stale_data`; (f) (b)'den sonra dosya değişmeden bir tur daha → WARN sürer.
+17. Mutlak yaş: `ml_data_max_age_days=None` iken `created_at − train_end = 220 gün` → tetiklemez; `ml_data_max_age_days=14` iken 15 gün → WARN `ml_stale_data`, 14 gün → tetiklemez.
+18. Puanlama hataları: önceki 3, şimdi 5 → WARN `ml_score_errors`; önceki yok, şimdi 5 → tetiklemez; önceki 5, şimdi 0 → tetiklemez ve taban 0 olur; `score_errors=None` → tetiklemez, `detail`de "sayaç okunamadı".
+19. Dosya meta okuma (runner): tz'siz `created_at` UTC sayılır; `meta.expires_at = created_at + 40 gün` olan dosyada `file_expires_at = created_at + 21 gün`; `meta.data_snapshot_at` varsa `file_train_end` odur, yoksa `train_window.end`; 32 MB üstü dosya → `unreadable`; dosya okunurken yazılmaz (sha256 önce/sonra aynı).
+20. `health.py` içe aktarıldığında `numpy`, `trader_core.ml_package`, `trader_engine` yüklenmiş olmaz (`sys.modules` denetimi).
+
+Uyarı metinleri:
+
+21. `plan_alerts` çıktısındaki Telegram metinlerinde `ml_expired`, `ml_no_model`, `ml_package`, model kimliği ve dosya yolu **geçmez**; 16.5 tablosundaki Türkçe "sorun" cümlesi geçer; düzelince "düzeldi" cümlesi gönderilir.
+22. 7 gün eşiğinde uyarı gönderildikten sonra aynı durumda sonraki turlarda §5 kurallarına göre bastırılır; 3 gün eşiğine girildiğinde **yeni** uyarı çıkar; 1 günde yine yeni uyarı.
+23. `ml_expired` ilk turda uyarır (IMMEDIATE).
+
+Günlük rapor (`build_report` çıktısı; `status.json` sentetik):
+
+24. `ml` bloğu `null` → çıktıda `🤖 Model filtresi kapalı (bot filtresiz çalışıyor)`.
+25. `shadow`, `ok`, kalan 12 gün 5 saat → `🤖 Model gölgede izliyor, kararları etkilemiyor · süresi 12 gün sonra doluyor`.
+26. `active`, `ok`, kalan 5 gün 23 saat → `⚠️ Model filtresi açık ama süresi 5 gün sonra doluyor; yenilenmezse yeni işlemler durur`; kalan 20 saat → "… 20 saat sonra doluyor …"; kalan 20 dakika → "… 1 saat sonra doluyor …".
+27. `active`, `expired` → `🚨 Modelin süresi doldu: yeni işlem açılmıyor, açık pozisyonlar korunuyor` ve risk satırında "modelin süresi doldu" ("yapay zekâ filtresi hazır değil" değil).
+28. `shadow`, `no_model` → `⚠️ Gölgedeki model çalışmıyor (işlemler etkilenmiyor)`; raporda "🛑 Yeni işlemler kapalı" satırı ML yüzünden çıkmaz.
+29. Sağlık durumunda `ml_restart_needed` varken satırın sonunda " · yeni model hazır, motorun yeniden başlatılması gerekiyor".
+30. Rapor metninde `expired`, `no_model`, `shadow`, `active`, `model_id` değeri ve İngilizce alan adı geçmez; `ml` bloğu bozuk tipteyse (ör. dizi) rapor çökmeden üretilir ve "Bazı bilgiler okunamadı" satırı çıkar.
+
+Sapma kancası:
+
+31. `drift_check_enabled=False` → `drift_monitor:learner` SKIPPED `placeholder`; `overall` etkilenmez.
+32. Açıkken: dosya yok → WARN `drift_missing`; `generated_at = now − 36 sa` → OK; `now − 36 sa − 1 sn` → WARN `drift_stale`; `overall="UYARI"` → WARN `drift_alert`; `"IZLE"` / `"YETERSIZ"` / `"OK"` → OK; `overall="CRIT"` (bilinmeyen) → WARN `drift_unreadable`.
+33. 32'deki hiçbir girdide sonuç CRIT ya da UNKNOWN olmaz ve nabız kararı (`should_send_ok`) bu kontrol yüzünden değişmez.
+
+### 16.8 Kapsam dışı / açık noktalar
+
+- Motorun paketi çalışırken yeniden yüklemesi (yeniden başlatma gereksinimini kaldırır) ayrı bir motor işidir; bu ek onu gerektirmez, yalnız görünür kılar.
+- `meta.data_snapshot_at` alanı (§16.4) r04+ şablonuna kadar yoktur; o zamana dek soy kontrolü `data_hash` + `train_window.end` ile sınırlıdır.
+- Veto dosyası ve rejim girdileri için aynı soy kontrolü (B-25'in kalanı) ve "her açık pozisyonun güncel veto/rejim girdisi var mı" kontrolü bu ekte yoktur; ayrı iş.
+- Strateji parametre sürümünün yaşı (D-06'nın ikinci yarısı) için eşik konmadı: ders servisi değişikliği zorunlu değildir, yaş tek başına sorun göstermez.
