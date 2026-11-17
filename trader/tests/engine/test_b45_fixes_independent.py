@@ -301,22 +301,55 @@ def test_b45ind_f3_query_error_gives_opening_unverified_finding_no_action(rig):
 
 
 # ================================================================================================ FIX 4
-def test_b45ind_f4_accepted_entry_market_row_requeried_opening_position_resolved(rig):
-    pos, ecid = _opening_with_entry_row(rig, status="accepted")
-    rig.ex.fill_market("XRPUSDT", "BUY", 10, cid=ecid)
-    rig.run()
-    p = rig.state.get_position(pos.trade_id)
-    assert p.status == "open", f"opening'de takildi: {p.status}"
-    assert len(rig.live_stops(R.XRP)) == 1
+def _rig_real(tmp_path, **kw):
+    """Sahte geri cagrilar olmadan (handle_events / close_unopened varsayilan) gercek durum degisimi gozlemlenir."""
+    r = R.Rig(tmp_path, **kw)
+    R.set_t(r.clock, R.T0 + timedelta(seconds=5))
+    return r
 
 
-def test_b45ind_f4_accepted_exit_market_row_requeried_closing_position_resolved(rig):
-    p, xcid = _closing_with_exit_row(rig, "accepted")
-    rig.ex.fill_market("XRPUSDT", "SELL", 10, cid=xcid)    # cikis borsada dolmus, bildirim kacmis
-    rig.run()
-    cur = rig.state.get_position(p.trade_id)
-    assert cur.status != "closing" or rig.events, "kabul edilmis cikis satiri yeniden sorgulanmadi"
-    assert rig.state.get_order(xcid).status != "accepted" or rig.events
+def _terminal_entry(rig, ecid, status):
+    rig.ex.orders[ecid] = {"clientOrderId": ecid, "symbol": "XRPUSDT", "side": "BUY", "type": "MARKET", "orderId": 9,
+                           "reduceOnly": False, "origQty": "10", "status": status, "executedQty": "0", "avgPrice": "0",
+                           "time": 0, "updateTime": 0}
+
+
+def test_b45ind_f4_accepted_entry_row_exchange_flat_order_gone_row_failed_position_closed(tmp_path):
+    rig = _rig_real(tmp_path, close_unopened=False)
+    try:
+        pos, ecid = _opening_with_entry_row(rig, status="accepted")      # borsada ne emir ne pozisyon var
+        m = rig.mark()
+        rig.run(advance=61 + 60)                                         # entry_resolve_window_s doldu
+        assert rig.state.get_order(ecid).status == "failed", rig.state.get_order(ecid).status
+        assert rig.state.get_position(pos.trade_id).status == "closed"
+        assert rig.posts(m) == []
+    finally:
+        rig.state.close()
+
+
+def test_b45ind_f4_accepted_entry_expired_unfilled_closed_after_window(tmp_path):
+    rig = _rig_real(tmp_path, close_unopened=False)
+    try:
+        pos, ecid = _opening_with_entry_row(rig, status="accepted")
+        _terminal_entry(rig, ecid, "EXPIRED")                            # executedQty = 0
+        rig.run(advance=61 + 60)
+        assert rig.state.get_order(ecid).status in ("expired", "failed"), rig.state.get_order(ecid).status
+        assert rig.state.get_position(pos.trade_id).status == "closed"
+        assert rig.live_stops(R.XRP) == {}
+    finally:
+        rig.state.close()
+
+
+def test_b45ind_f4_accepted_exit_filled_on_exchange_position_closed(tmp_path):
+    rig = _rig_real(tmp_path, handle=False)
+    try:
+        p, xcid = _closing_with_exit_row(rig, "accepted")
+        rig.ex.fill_market("XRPUSDT", "SELL", 10, cid=xcid)              # cikis borsada dolmus, bildirim kacmis
+        rig.run()
+        assert rig.state.get_position(p.trade_id).status == "closed"
+        assert rig.state.get_order(xcid).status == "filled"
+    finally:
+        rig.state.close()
 
 
 # ================================================================================================ FIX 5

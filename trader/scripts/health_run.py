@@ -74,10 +74,21 @@ def probe_veto_mtime(path: str):
         return None
 
 
+def _env_num(env, name, cast, default, *, minimum=0):
+    try:
+        v = cast(str(env.get(name) or "").strip())
+    except ValueError:
+        return default
+    return v if v >= minimum and v == v and v not in (float("inf"),) else default
+
+
 def make_cfg(env) -> H.HealthConfig:
     import dataclasses
     return dataclasses.replace(H.DEFAULT_CFG, require_bots=bots_from_env(env),
-                               veto_max_age_s=veto_max_age_from_env(env), veto_strict=True)
+                               veto_max_age_s=veto_max_age_from_env(env), veto_strict=True,
+                               naked_alarm_s=_env_num(env, "NAKED_ALARM_S", float, H.DEFAULT_CFG.naked_alarm_s),
+                               exchange_unreachable_s=_env_num(env, "EXCHANGE_UNREACH_S", int,
+                                                               H.DEFAULT_CFG.exchange_unreachable_s, minimum=1))
 
 
 class NoHeartbeat:
@@ -184,9 +195,72 @@ def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | 
         except (KeyError, TypeError, ValueError):
             unprot = None
     dry = d.get("dry_run") if isinstance(d.get("dry_run"), bool) else None
+    mode = d.get("mode") if isinstance(d.get("mode"), str) else None
+    ex = d.get("exchange")
+    has_ex = isinstance(ex, dict)
+    reach = ex.get("reachable") if has_ex and isinstance(ex.get("reachable"), bool) else None
+    last_sync = _parse_dt(ex.get("last_sync")) if has_ex else None
+    naked = _naked_rows(ex.get("naked")) if has_ex else None
     probe = H.ApiProbe(ping, loop_at, _parse_dt(d.get("last_candle_open")), _ids(d.get("open_trade_ids")), dry,
-                       gate_code, kill, le, unprot)
+                       gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked)
     return probe, timeframe_to_s(d.get("trigger_tf"))
+
+
+def _naked_rows(v):
+    """status.exchange.naked = [{trade_id, pair, seconds}] -> ((id, cift, sn), ...); bozuksa None (UNKNOWN)."""
+    if not isinstance(v, list):
+        return None
+    out = []
+    for r in v:
+        try:
+            sec = float(r["seconds"])
+            if isinstance(r["seconds"], bool) or sec != sec or sec < 0:
+                return None
+            out.append((int(r["trade_id"]), str(r["pair"]), sec))
+        except (KeyError, TypeError, ValueError):
+            return None
+    return tuple(out)
+
+
+# --------------------------------------------------------------------------- PAUSE / denetim gunlugu (11 §9.2)
+def pause_base(env) -> str:
+    """PAUSE_FILE (varsayilan shared/PAUSE; goreli -> repo koku) + `.<bot>` = motorun/telegram'in yazdigi dosya.
+    Canliya cikista motor `shared/live/PAUSE` kullanirsa PAUSE_FILE o yola cevrilir (docs/sunucu-kurulum.md)."""
+    v = (env.get("PAUSE_FILE") or "").strip() or "shared/PAUSE"
+    return v if os.path.isabs(v) else str(_ROOT / v)
+
+
+def probe_pause(base: str, audit_path: str, bot: str) -> H.PauseProbe:
+    holds = None
+    try:
+        with open(f"{base}.{bot}", "rb") as f:
+            raw = f.read(STATUS_MAX_BYTES).decode("utf-8", errors="replace")
+        try:
+            d = json.loads(raw)
+            hs = d["holds"]
+            holds = tuple(str(h["reason"]) for h in hs) if isinstance(hs, list) and hs else ("unreadable",)
+        except (ValueError, KeyError, TypeError):
+            holds = ("unreadable",)
+    except FileNotFoundError:
+        holds = ()
+    except OSError:
+        holds = None
+    ops: dict[str, str] = {}
+    audit_ok = True
+    try:
+        with open(audit_path, "rb") as f:
+            for line in f.read(STATUS_MAX_BYTES * 5).decode("utf-8", errors="replace").splitlines():
+                try:
+                    r = json.loads(line)
+                    if r.get("op") in ("add", "remove") and isinstance(r.get("reason"), str):
+                        ops[r["reason"]] = r["op"]
+                except (ValueError, AttributeError):
+                    continue
+    except FileNotFoundError:
+        pass
+    except OSError:
+        audit_ok = False
+    return H.PauseProbe(holds, ops, audit_ok)
 
 
 def engine_container(path: str, bot: str, now: datetime, state: dict, key: str) -> H.ContainerProbe:
@@ -383,6 +457,19 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
             containers[f"trader-{bot}"] = engine_container(sp, bot, now, state, f"trader-{bot}")
         except Exception:  # noqa: BLE001
             containers[f"trader-{bot}"] = H.ContainerProbe()
+    pause = {}
+    pbase = pause_base(env)
+    for bot in bots_from_env(env):
+        try:
+            pause[bot] = probe_pause(pbase, os.path.join(var_dir, bot, "pause_audit.jsonl"), bot)
+        except Exception:  # noqa: BLE001
+            pause[bot] = H.PauseProbe()
+    shadow = (env.get("HEALTH_SHADOW_VAR_DIR") or "").strip()
+    if shadow:   # testnet golge motoru (var-testnet): yalniz status.json tabanli kontroller (dongu/mum/stopsuz/borsa)
+        try:
+            api["learner@testnet"], _ = probe_status(status_path(shadow, "learner"), "learner", now)
+        except Exception:  # noqa: BLE001
+            api["learner@testnet"] = H.ApiProbe()
     free = probe_disk([var_dir, env["BACKUP_DIR"]])
     mem, swap_t, swap_u = probe_mem()
     last_backup = None
@@ -399,7 +486,8 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
         prev_restart_counts=dict(state.get("restart_counts", {})),
         consecutive_restart_runs=dict(state.get("consecutive_restart_runs", {})),
         installed_at=H._from_iso(state.get("installed_at")), last_backup_at=last_backup,
-        veto_file_mtime=probe_veto_mtime(veto_file_from_env(env)))
+        veto_file_mtime=probe_veto_mtime(veto_file_from_env(env)),
+        pause=pause, prev_pause_holds={b: tuple(v) for b, v in (state.get("pause_holds") or {}).items()})
 
 
 def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifier=None, sender=None,
@@ -442,6 +530,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
             starts[k] = H._iso(c.started_at)
     new_state["engine_started_at"] = starts
     new_state["installed_at"] = state["installed_at"]
+    new_state["pause_holds"] = {b: list(p.holds) for b, p in snap.pause.items() if p.holds is not None}
     if snap.market is not None:   # rules_missing artis tespiti icin son gorulen sayaclar
         rm = dict(state.get("rules_missing", {}))
         rm.update({b: v for b, v in snap.market.rules_missing.items() if v is not None})
@@ -491,6 +580,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
 
 def main() -> int:
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(message)s")
+    H.quiet_http_loggers()
     try:
         env = load_env()
         return run_once(env)

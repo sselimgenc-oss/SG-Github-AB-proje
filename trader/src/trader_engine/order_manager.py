@@ -20,9 +20,10 @@ _ROLE_LETTER = {"entry": "e", "stop": "s", "target": "t", "exit": "x"}
 _BO_STATUS = {"filled": "filled", "new": "accepted", "canceled": "canceled", "rejected": "rejected",
               "expired": "expired"}
 _OK = ("accepted", "filled")
-_EXIT_RETRY_LIMIT = 3
+EXIT_RETRY_LIMIT = 3          # kamusal sabit (reconcile_live ve testler ice aktarir)
+_EXIT_RETRY_LIMIT = EXIT_RETRY_LIMIT
 
-__all__ = ["make_client_id", "OrderRow", "SubmitOutcome", "OrderManager"]
+__all__ = ["EXIT_RETRY_LIMIT", "make_client_id", "OrderRow", "SubmitOutcome", "OrderManager"]
 
 
 def make_client_id(bot: str, role: Role, pair: str, side: Side, signal_bar_close_ts: datetime, seq: int) -> str:

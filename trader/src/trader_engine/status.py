@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .clock import Clock
@@ -16,6 +16,39 @@ SCHEMA = "engine-status/1"
 
 def _z(t: datetime | None) -> str | None:
     return None if t is None else fmt_ts(t)
+
+
+def _ms_to_z(ms) -> str | None:
+    if isinstance(ms, bool) or not isinstance(ms, (int, float)) or ms <= 0:
+        return None
+    try:
+        return fmt_ts(datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc))
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _exchange_block(engine, f: dict, mode: str) -> dict | None:
+    """11 §9.4: canli kiplerde (testnet/live) `exchange` blogu; kagit kipinde yok. naked = [{trade_id, pair, seconds}]
+    (saglik denetcisi bos degilse CRIT), reachable = borsa okunabiliyor mu, last_ban = broker'in son yasagi
+    ({"http", "retry_after_s"}) ya da None. Eksik alan None; blok asla yazimi bozmaz."""
+    ex = f.get("exchange")
+    if not isinstance(ex, dict):
+        return None
+    naked = []
+    for r in ex.get("naked") or []:
+        try:
+            naked.append({"trade_id": int(r["trade_id"]), "pair": str(r["pair"]), "seconds": float(r["seconds"])})
+        except (KeyError, TypeError, ValueError):
+            continue
+    lb = getattr(getattr(engine, "broker", None), "last_ban", None)
+    last_ban = None
+    if isinstance(lb, (tuple, list)) and len(lb) == 2:
+        last_ban = {"http": lb[0], "retry_after_s": lb[1]}
+    reach = ex.get("reachable")
+    return {"env": mode, "reachable": reach if isinstance(reach, bool) else None,
+            "last_sync": ex.get("last_sync_ts"), "clock_offset_ms": ex.get("clock_offset_ms"),
+            "used_weight": ex.get("used_weight"), "ban_until": _ms_to_z(ex.get("ban_until_ms")),
+            "last_ban": last_ban, "naked": naked}
 
 
 class StatusWriter:
@@ -48,9 +81,10 @@ class StatusWriter:
             "strategy": {"name": f["strategy_name"], "version": f["strategy_version"]},
             "entries_open": bool(f["entries_open"]) and not ml_blocked, "gate": {"ok": gate_code == "ok", "code": gate_code},
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
-            "dry_run": True, "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
+            "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),
+            **({"exchange": xb} if (xb := _exchange_block(engine, f, self.cfg.mode)) is not None else {}),
         }
 
     def write(self, engine, *, force: bool = False, stopped: bool = False) -> bool:

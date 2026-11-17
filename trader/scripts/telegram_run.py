@@ -76,6 +76,7 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
         return EXIT_CONFIG if e.code else EXIT_OK
     env = os.environ if env is None else env
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("urllib3").setLevel(logging.INFO)    # DEBUG istek satirlari (sorgu dizgisi) yazilmasin
     cfg = T.TelegramConfig.from_env(env)
     if cfg is None:
         print("telegram yapilandirilmamis (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)", file=sys.stderr)

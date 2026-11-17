@@ -289,6 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    logging.getLogger("urllib3").setLevel(logging.INFO)     # DEBUG istek satirlari (imzali sorgu dizgisi) yazilmasin
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in _PASSTHROUGH:
         # argparse.REMAINDER `--secenek` ile baslayan kalani (ornegin `feed --config-dir config`) reddeder: dogrudan ilet

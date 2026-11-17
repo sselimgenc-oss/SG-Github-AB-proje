@@ -91,7 +91,8 @@ def test_module_units_have_workingdirectory_and_pythonpath(rendered):
 def test_environment_files_are_created_by_install(rendered):
     t = install_text()
     created = set(re.findall(r'copy_env "[^"]+"\s+(/etc/trader-[\w-]+\.env)', t))
-    assert len(created) == 6, created
+    assert len(created) == 7, created            # WP-B8: + /etc/trader-testnet.env
+    assert "/etc/trader-testnet.env" in created
     assert "/etc/trader-veto-hmac.env" in created
     for name, txt in rendered.items():
         for k, v in unit_kv(txt):

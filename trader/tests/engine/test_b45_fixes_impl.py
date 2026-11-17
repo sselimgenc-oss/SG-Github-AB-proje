@@ -226,19 +226,36 @@ def pos_entry_cid(e, tid):
 
 
 # ------------------------------------------------------------------ fix 11: dusuk maddeler
-def test_b45i_kill_close_one_attempt_per_activation_and_refuses_without_at(tmp_path):
+def test_b45i_kill_close_one_attempt_per_activation_and_mtime_fallback_without_at(tmp_path):
+    """Fix 3: operatorun bos/`{}` KILL dosyasi (`at` yok) -> kimlik dosya mtime'indan; etkinlestirme basina TEK deneme."""
     e = LiveEnv(tmp_path).boot()
     try:
         e.ex.fill_market(SYM, "BUY", "7")                     # state'te olmayan pozisyon
-        Path(e.cfg.kill_file).write_text("{}")
+        kf = Path(e.cfg.kill_file)
+        kf.parent.mkdir(parents=True, exist_ok=True)
+        kf.write_text("")                                     # `touch KILL`
         rep = e.engine.reconciler.run(e.clock.now())
-        assert f"kill_close_refused:{XRP}" in rep.actions and not e.posted("x")
-        Path(e.cfg.kill_file).write_text('{"at": "2026-12-28T10:00:00Z"}')
-        e.engine.reconciler.run(e.clock.now())
+        assert f"kill_close_refused:{XRP}" not in rep.actions
         assert len(e.posted("x")) == 1
         e.ex.fill_market(SYM, "BUY", "7")                     # pozisyon yeniden belirdi: ayni etkinlestirme, yeni deneme YOK
         rep = e.engine.reconciler.run(e.clock.now())
         assert f"kill_close_pending:{XRP}" in rep.actions and len(e.posted("x")) == 1
+    finally:
+        e.close()
+
+
+def test_b45i_kill_close_refused_only_when_kill_file_unreadable(tmp_path):
+    e = LiveEnv(tmp_path).boot()
+    try:
+        e.ex.fill_market(SYM, "BUY", "7")
+        Path(e.cfg.kill_file).write_text("{}")
+        e.engine.reconciler._kill_mtime_at = lambda: None     # noqa: SLF001  (stat hatasi)
+        rep = e.engine.reconciler.run(e.clock.now())
+        assert f"kill_close_refused:{XRP}" in rep.actions and not e.posted("x")
+        del e.engine.reconciler._kill_mtime_at
+        Path(e.cfg.kill_file).write_text('{"at": "2026-12-28T10:00:00Z"}')   # `at` varsa o kullanilir
+        e.engine.reconciler.run(e.clock.now())
+        assert len(e.posted("x")) == 1
     finally:
         e.close()
 
@@ -268,3 +285,61 @@ def test_b45i_adopted_entry_sets_fee_estimated_flag(tmp_path):
         assert e2.kv("entry_fee_estimated:1") is True
     finally:
         e2.close()
+
+
+# ------------------------------------------------------------------ fix 4: filled giris satiri + opening + borsa duz
+def test_b45i_opening_with_filled_entry_row_and_flat_exchange_is_closed_after_window(tmp_path):
+    """Benimseme satiri `filled` yazdi, `on_entry_adopted` calismadan cokus, sonra dis kapanis: pozisyon `opening`da
+    takilmamali; pencereden sonra dolum sorgudan uygulanir ve L3 kapatir."""
+    e = LiveEnv(tmp_path, reconcile_open_s=15.0).boot()
+    e.wire.on(entry_post, after=raising(Crash()))
+    e.signal(DEC)
+    with pytest.raises(Crash):
+        e.decide()
+    e.hard_close()
+    e2 = LiveEnv(e.tmp, ex=e.ex, clock=e.clock)
+    e2.broker.startup_check()
+    e2.engine.orders.on_entry_adopted = lambda row, bo: (_ for _ in ()).throw(Crash())     # satir guncellendi, olay yok
+    with pytest.raises(Crash):
+        e2.engine.start()
+    e2.hard_close()
+    e.ex.fill_market(SYM, "SELL", str(e.ex.pos[SYM]["amt"]))   # dis kapanis: borsa duz
+    assert e.ex_qty() == 0
+    e3 = LiveEnv(e.tmp, ex=e.ex, clock=e.clock)
+    try:
+        assert e3.state.get_position(1).status == "opening"
+        assert e3.order_status(pos_entry_cid(e3, 1)) == "filled"
+        e3.broker.startup_check()
+        e3.engine.start()
+        for _ in range(12):
+            e3.tick(16)
+        assert e3.state.get_position(1).status == "closed", "filled satirli opening pozisyon takildi"
+        assert e3.ex_qty() == 0
+    finally:
+        e3.close()
+
+
+# ------------------------------------------------------------------ fix 5: cikis limiti dolunca yeniden gonderim kisitlamasi
+def test_b45i_exit_repost_throttled_after_retry_limit_under_kill(tmp_path):
+    e = LiveEnv(tmp_path, reconcile_open_s=30.0).boot()
+    try:
+        pos = e.enter()
+        with e.state.tx():
+            e.state.kv_set(f"exit_retry:{pos.trade_id}", 3)
+        e.wire.on(exit_post, before=raising(TimeoutError("x")), once=False)
+        Path(e.cfg.kill_file).write_text("{}")
+        for _ in range(10):                                   # 60 sn, 6 sn'lik adimlar
+            e.tick(6)
+        n = len([r for r in e.wire.log if exit_post(r)])
+        assert 1 <= n <= 3, f"limit sonrasi KILL cikisi reconcile_open_s basina 1 olmali, {n} POST"
+        assert e.engine.counters().get("exit_throttled", 0) >= 5
+    finally:
+        e.close()
+
+
+def test_b45i_exit_retry_limit_is_public_constant():
+    import trader_engine.order_manager as om
+    import trader_engine.reconcile_live as rl
+    assert om.EXIT_RETRY_LIMIT == 3 and "EXIT_RETRY_LIMIT" in om.__all__
+    assert rl.EXIT_RETRY_LIMIT is om.EXIT_RETRY_LIMIT or rl.EXIT_RETRY_LIMIT == om.EXIT_RETRY_LIMIT
+    assert "_EXIT_RETRY_LIMIT" not in open(rl.__file__, encoding="utf-8").read().replace("`EXIT_RETRY_LIMIT`", "")

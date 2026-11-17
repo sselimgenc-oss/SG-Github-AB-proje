@@ -1,0 +1,44 @@
+[Unit]
+Description=Trader motoru (learner) - Binance TESTNET golge kosusu (gercek para yok, canli anahtar yok)
+Documentation=file:///opt/trader/docs/motor/11-canli-broker.md
+After=network-online.target trader-feed.service
+Wants=network-online.target trader-feed.service
+OnFailure=trader-health-fail@%n.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
+# Anahtarlar bos iken birim ACILMAZ (install.sh denetler); elle baslatilirsa da dosya yoksa/bossa baslamaz
+ConditionPathExists=/etc/trader-testnet.env
+
+[Service]
+Slice=trader.slice
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+# Testnet anahtarlari: AYRI dosya (root:root 0600; systemd root olarak okur). Canli anahtar dosyasi BURADA ASLA kullanilmaz.
+EnvironmentFile=/etc/trader-testnet.env
+# Veto belgesini dogrulayan HMAC anahtari (kagit motoruyla ayni; Anthropic anahtari degil)
+EnvironmentFile=/etc/trader-veto-hmac.env
+Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONUNBUFFERED=1
+# config/engine.testnet.json: var_dir=var-testnet, kill=shared/testnet/KILL, pause=shared/testnet/PAUSE
+ExecStartPre=/bin/sh -c 'i=0; while [ ! -e var/market.sqlite ] && [ $i -lt 60 ]; do i=$((i+1)); sleep 1; done; [ -e var/market.sqlite ]'
+ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot learner --env testnet --config-dir config
+ExecStart=/usr/bin/python3 -m trader_engine run --bot learner --env testnet --config-dir config
+Restart=on-failure
+RestartSec=20
+# 2 = anahtar/ayar eksik, 7 = acilis kapisi, 8 = borsa yetki/izin/bolge reddi: yeniden deneme dongusu yok, OnFailure alarmi gider
+RestartPreventExitStatus=2 7 8
+# Dedicated 2 GB sunucu: kagit motorundan kucuk tavan (golge; ikiz yok, tek bot). Olcum: docs/sunucu-kurulum.md "Bellek ölçümü"
+MemoryHigh=250M
+MemoryMax=320M
+CPUQuota=60%
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var /opt/trader/var-testnet /opt/trader/shared /opt/trader/user_data
+
+[Install]
+WantedBy=multi-user.target

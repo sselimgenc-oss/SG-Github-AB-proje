@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import ROUND_FLOOR, Decimal
@@ -100,6 +101,30 @@ class Ctx:
     def conditionals(self) -> list[dict]:
         return self.rest.open_conditionals(self.sym)
 
+    def open_positions(self) -> list[dict]:
+        """Hesap geneli (tum semboller) sifirdan farkli pozisyon satirlari (T-15 / R1)."""
+        return [r for r in self.rest.position_risk() if Decimal(str(r["positionAmt"])) != 0]
+
+    def last_price(self) -> Decimal | None:
+        """Son islem fiyati (best-effort; okunamazsa None). Tetik gozleminde mark ile birlikte kaydedilir (R4)."""
+        try:
+            r = self.rest.request("GET", "/fapi/v1/ticker/price", {"symbol": self.sym}, kind="read", signed=False)
+            return Decimal(str(r["price"]))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def observe(self) -> dict:
+        return {"mark": self.mark(), "last": self.last_price()}
+
+    def watch_trigger(self, trig: float, timeout_s: float, every_s: float = 2.0) -> tuple[float | None, list[dict]]:
+        """Pozisyon duzlenene kadar bekler; her turda (mark, son fiyat) orneklenir (R4). (gecen_sn | None, ornekler)."""
+        samples: list[dict] = []
+
+        def pred() -> bool:
+            samples.append(self.observe())
+            return self.pos_qty() == 0
+        return self.wait_until(pred, timeout_s, every_s), samples
+
     def wait_until(self, pred: Callable[[], bool], timeout_s: float, every_s: float = 1.0) -> float | None:
         t = 0.0
         while t <= timeout_s:
@@ -122,6 +147,32 @@ def _cid_of(row: dict) -> str:
 
 def _stops(ctx: Ctx) -> list[dict]:
     return [r for r in ctx.conditionals() if _cid_of(r).startswith(OURS_PREFIX)]
+
+
+def _stops_all(ctx: Ctx) -> list[dict]:
+    """Hesap geneli kendi (tr-onekli) kosullu emirleri."""
+    return [r for r in ctx.rest.open_conditionals() if _cid_of(r).startswith(OURS_PREFIX)]
+
+
+def trigger_verdict(samples: list[dict], trig: float) -> tuple[bool | None, dict]:
+    """R4: long'un SELL stop'u icin mark <= tetik gozlendi mi. (mark_gecti | None=gozlem yok, veri). Son fiyat yalniz kayit."""
+    marks = [x["mark"] for x in samples if x.get("mark") is not None]
+    if not marks:
+        return None, {}
+    t = Decimal(str(trig))
+    crossed = any(m <= t for m in marks)
+    last = samples[-1]
+    first_cross = next((x for x in samples if x["mark"] <= t), last)
+    lasts = [x["last"] for x in samples if x.get("last") is not None]
+    data = {"tetik": str(trig), "mark_son": str(last["mark"]), "mark_min": str(min(marks)),
+            "son_fiyat_son": None if last.get("last") is None else str(last["last"]),
+            "son_fiyat_min": str(min(lasts)) if lasts else None,
+            "mark_esik_gecis_ornegi": {"mark": str(first_cross["mark"]),
+                                       "son_fiyat": None if first_cross.get("last") is None else str(first_cross["last"])}
+            if crossed else None,
+            "son_fiyat_once_gecti": bool(lasts) and any(x.get("last") is not None and x["last"] <= t and x["mark"] > t
+                                                         for x in samples)}
+    return crossed, data
 
 
 def _R(status: str, *notes: str, **data) -> tuple[str, list[str], dict]:
@@ -181,6 +232,34 @@ def b0_t03(ctx: Ctx):
               "yalniz alan dogrulandi (tetik zamanlamasi gozlemi bu adimda yok)", trigger=trig)
 
 
+def _fate(row: dict | None) -> str:
+    if row is None:
+        return "yok(-2013)"
+    return str(row.get("algoStatus") or row.get("status") or "?")
+
+
+def b0_t04(ctx: Ctx):
+    """T-04 [V-3]: ayni pozisyona iki reduceOnly stop; biri tetiklenince digerinin akibeti kaydedilir."""
+    ctx.open_long()
+    far_cid, far_trig, fr = ctx.stop(0.05)
+    tight_cid, tight_trig, tr = ctx.stop(float(ctx.args.t13_stop_pct))
+    if fr.status != "accepted" or tr.status != "accepted":
+        return _R("FARKLI", f"iki_stop_kabul: gevsek={fr.status} siki={tr.status} (11 §6.6 son satiri devreye girer; mentor karari)",
+                  gevsek=fr.status, siki=tr.status)
+    n = len(_stops(ctx))
+    gone, samples = ctx.watch_trigger(tight_trig, float(ctx.args.trigger_wait_s), 2.0)
+    crossed, mdata = trigger_verdict(samples, tight_trig)
+    if gone is None:
+        return _R("BEKLEMEDE", f"iki stop kabul edildi (sayi={n}); siki stop bekleme suresinde tetiklenmedi: akibet gozlenemedi "
+                  "(--trigger-wait-s artirin)", iki_stop_kabul=True, **mdata)
+    fate = _fate(ctx.rest.query_conditional(ctx.sym, far_cid))
+    left = [_cid_of(x) for x in _stops(ctx)]
+    st = "GECTI" if crossed is not False else "FARKLI"
+    return _R(st, f"iki_stop_kabul=True stop_sayisi={n}", f"gevsek_stopun_akibeti={fate}", f"tetikten_sonra_acik_stop={len(left)}",
+              *(["mark esigi gecmeden tetiklendi (FARKLI)"] if crossed is False else []), iki_stop_kabul=True,
+              gevsek_akibet=fate, acik_stop_sonra=len(left), **mdata)
+
+
 def b0_t05(ctx: Ctx):
     from trader_engine.exchange.binance_rest import ExchangeReject
     out = {}
@@ -209,6 +288,68 @@ def b0_t06(ctx: Ctx):
     except ExchangeReject as e:
         res = f"ret:{e.code}"
     return _R("GECTI", f"hemen_tetik_sonucu={res}", result=res)
+
+
+def b0_t07(ctx: Ctx):
+    """T-07 [V-7]: tetiklenen stop <-> gercek (cocuk) emir <-> userTrades; likidasyon sorgulanabilirligi yalniz okunur."""
+    t_ms = int(ctx.now().timestamp() * 1000) - 5000
+    ctx.open_long()
+    cid, trig, _ = ctx.stop(float(ctx.args.t13_stop_pct))
+    gone, samples = ctx.watch_trigger(trig, float(ctx.args.trigger_wait_s), 2.0)
+    if gone is None:
+        return _R("BEKLEMEDE", "stop bekleme suresinde tetiklenmedi (--trigger-wait-s artirin / --t13-stop-pct daraltin)")
+    _, mdata = trigger_verdict(samples, trig)
+    row = ctx.rest.query_conditional(ctx.sym, cid) or {}
+    oid = row.get("actualOrderId") or row.get("orderId")
+    child = ctx.rest.query_order_by_id(ctx.sym, oid) if oid not in (None, "", 0, "0") else None
+    trades = [t for t in ctx.rest.user_trades(ctx.sym, t_ms) if oid is not None and str(t.get("orderId")) == str(oid)]
+    ccid = (child or {}).get("clientOrderId")
+    force = ctx.rest.force_orders(ctx.sym, t_ms)
+    data = {"algo_alanlari": sorted(row), "gercek_emir_id": oid, "cocuk_clientOrderId": ccid,
+            "cocuk_kimlik_modu": "same" if ccid == cid else "auto", "userTrades_eslesen": len(trades),
+            "commission": [t.get("commission") for t in trades], "commissionAsset": sorted({str(t.get("commissionAsset")) for t in trades}),
+            "realizedPnl": [t.get("realizedPnl") for t in trades], "forceOrders_satir": len(force),
+            "forceOrders_alanlari": sorted(force[0]) if force else None,
+            "liquidation_queryable": "gozlenemedi (testnette likidasyon uretilmez)"}
+    ok = bool(oid) and child is not None and bool(trades)
+    return _R("GECTI" if ok else "FARKLI", f"cocuk_clientOrderId={ccid} (stop kimligiyle {'AYNI' if ccid == cid else 'FARKLI/otomatik'})",
+              f"userTrades_eslesen={len(trades)}", "likidasyon sorgulanabilirligi testnette gozlenemez (fake_exchange kaniti)", **data, **mdata)
+
+
+def b0_t08(ctx: Ctx):
+    """T-08 [V-5]: kimlik tekrari ve belirsizlik; yalniz gozlem (kabul/ret kodu kaydedilir)."""
+    from trader_engine.exchange.binance_rest import ExchangeReject
+    rest, out = ctx.rest, {}
+    r = ctx.open_long()
+    scid, trig, _ = ctx.stop(0.03)
+    try:    # (a) acik emirle ayni kimlik
+        rest.new_conditional(ctx.sym, "STOP_MARKET", "SELL", ctx.qty, trig, scid, "MARK_PRICE")
+        out["a_acik_emirle_ayni_kimlik"] = "kabul"
+    except ExchangeReject as e:
+        out["a_acik_emirle_ayni_kimlik"] = e.code
+    try:    # (b) dolmus piyasa emrinin kimligiyle ikinci emir (reduceOnly: ters pozisyon acilamaz)
+        rr = rest.new_market(ctx.sym, "SELL", ctx.qty, r.client_id, True)
+        out["b_dolmus_kimlikle_ikinci"] = f"kabul:{rr.get('status')}"
+    except ExchangeReject as e:
+        out["b_dolmus_kimlikle_ikinci"] = e.code
+    old = rest.read_timeout_s       # (c) 1 ms okuma suresi: istemci zaman asimi; sonra kimlikle sorgu
+    try:
+        rest.read_timeout_s = 0.001
+        try:
+            rest.query_order(ctx.sym, r.client_id, attempts=1)
+            out["c_zaman_asimi"] = "zaman asimi olusmadi"
+        except Exception as e:  # noqa: BLE001
+            out["c_zaman_asimi"] = type(e).__name__
+    finally:
+        rest.read_timeout_s = old
+    found = rest.query_order(ctx.sym, r.client_id)
+    t1 = time.monotonic()
+    missing = rest.query_order(ctx.sym, OURS_PREFIX + "Lx-yok-" + str(int(t1)))
+    out["c_kimlikle_sorgu_buldu"] = found is not None
+    out["c_yok_yaniti_sn"] = round(time.monotonic() - t1, 3)
+    out["c_yok_yaniti_bos"] = missing is None
+    return _R("GECTI" if found is not None and missing is None else "FARKLI",
+              f"sonuclar={out}", "kabulse max_attempts=1 kalicidir (11 §11 T-08)", **out)
 
 
 def b0_t09(ctx: Ctx):
@@ -242,6 +383,17 @@ def b0_t11(ctx: Ctx):
     return _R("GECTI" if w else "FARKLI", f"used_weight_1m={w}", f"emir_sayaclari={sorted(cnt)}")
 
 
+def b0_t12(ctx: Ctx):
+    """T-12: yalniz OKUMA; funding gelir kaydi gozlenir (pozisyon acilmaz). Engelleyici DEGIL (durum GOZLEM)."""
+    now_ms = int(ctx.now().timestamp() * 1000)
+    rows = ctx.rest.income(ctx.sym, "FUNDING_FEE", now_ms - 3 * 86400 * 1000, now_ms)
+    rows = list(rows) if isinstance(rows, list) else []
+    last = rows[-1] if rows else None
+    return _R("GOZLEM", f"son_3_gun_FUNDING_FEE_satir={len(rows)}",
+              "funding anini gecen bir pozisyonla isaret (odenen negatif) ve gecikme elle dogrulanir (11 §11 T-12); engelleyici degil",
+              satir=len(rows), son=None if last is None else {k: last.get(k) for k in ("income", "asset", "time")})
+
+
 # ---------------------------------------------------------------------------------------------- T-13..T-16
 def t13(ctx: Ctx):
     notes, data = [], {}
@@ -263,19 +415,26 @@ def t13(ctx: Ctx):
     left = [_cid_of(x) for x in _stops(ctx)]
     notes.append(f"sikilastirma_sonrasi_stop_sayisi={len(left)}")
     ok = ok and left == [cid]
-    # tetik: son stop mark'a cok yakin; belirli sure beklenir
-    tight_cid, _, _ = ctx.stop(0.0003)
+    # tetik: son stop mark'a cok yakin (--t13-stop-pct); belirli sure beklenir (--trigger-wait-s)
+    tight_cid, tight_trig, _ = ctx.stop(float(ctx.args.t13_stop_pct))
     ctx.broker.cancel(ctx.pair, cid)
-    gone = ctx.wait_until(lambda: ctx.pos_qty() == 0, float(ctx.args.trigger_wait_s), 2.0)
+    gone, samples = ctx.watch_trigger(tight_trig, float(ctx.args.trigger_wait_s), 2.0)
+    crossed, mdata = trigger_verdict(samples, tight_trig)
+    data.update(mdata)
     if gone is None:
-        notes.append("stop bekleme suresinde tetiklenmedi; kosu sonu temizligi duzlestirecek (T-13 tamamlanmadi)")
+        notes.append("stop bekleme suresinde tetiklenmedi; kosu sonu temizligi duzlestirecek (T-13 tamamlanmadi; "
+                     "--trigger-wait-s artirin / --t13-stop-pct daraltin)")
         return _R("BEKLEMEDE", *notes, **data)
     evs = ctx.broker.poll(ctx.now())
     kinds = [e.kind for e in evs]
     notes.append(f"olaylar={kinds}")
+    notes.append(f"tetik_ani mark={mdata.get('mark_son')} son_fiyat={mdata.get('son_fiyat_son')} tetik={mdata.get('tetik')}")
     ev_ok = "fill" in kinds or bool(ctx.broker.closing_events(ctx.pair, t_fill, [tight_cid]))
     orphan = ctx.rest.open_orders(ctx.sym) + ctx.rest.open_conditionals(ctx.sym)
     notes.append("neden 'trail_stop' defter kaydi motor tarafindadir; burada yalniz kapanis olayi + yetim emir yok denetlenir")
+    if crossed is False:
+        notes.append("FARKLI: stop mark esigi gecilmeden tetiklendi (MARK_PRICE varsayimi dogrulanmadi)")
+        return _R("FARKLI", *notes, orphans=len(orphan), **data)
     return _R("GECTI" if ok and ev_ok and not orphan else "KALDI", *notes, orphans=len(orphan), **data)
 
 
@@ -310,16 +469,24 @@ def _engine_status(ctx: Ctx) -> dict:
 
 
 def t15(ctx: Ctx):
-    ctx.confirm("T-15 (KILL): motor `systemctl start trader-engine@learner` ile testnette calisiyor ve motorun actigi pozisyon "
-                "(+stop) borsada olmali. Betik KILL'i CLI ile koyar.")
-    if ctx.pos_qty() == 0:
+    ctx.confirm("T-15 (KILL): motor `systemctl start trader-engine@learner` ile testnette calisiyor ve motorun actigi EN AZ 2 pozisyon "
+                "(+stoplari) borsada olmali. Betik KILL'i CLI ile koyar.")
+    pos0 = ctx.open_positions()                       # hesap geneli (R1): yalniz tek sembol sayilmaz
+    stops0 = _stops_all(ctx)
+    n_pos, n_stops = len(pos0), len(stops0)
+    if n_pos == 0:
         return _R("ATLANDI", "motor pozisyonu yok; 2 acik pozisyon kosulu saglanmadi")
     rc = _cli(["kill", "--env", "testnet", "--by", "smoke", "--reason", "T-15"])
-    flat = ctx.wait_until(lambda: ctx.pos_qty() == 0 and not _stops(ctx), 60.0, 2.0)
+    flat = ctx.wait_until(lambda: not ctx.open_positions() and not _stops_all(ctx), 60.0, 2.0)
     ks = _engine_status(ctx).get("kill_state")
     rc2 = _cli(["kill", "--env", "testnet", "--clear"])
-    st = "GECTI" if rc == 0 and flat is not None and ks in ("flat", None) else "KALDI"
-    return _R(st, f"duzlenme_s={flat}", f"kill_state={ks}", "KILL kalkinca giris acilmasi + duraklatma gozlemi elle (11 §11 T-15)")
+    ok = rc == 0 and flat is not None and ks in ("flat", None)
+    st = ("GECTI" if n_pos >= 2 else "KISMI") if ok else "KALDI"
+    notes = [f"kill_oncesi_pozisyon={n_pos}", f"kill_oncesi_stop={n_stops}", f"duzlenme_s={flat}", f"kill_state={ks}"]
+    if ok and n_pos < 2:
+        notes.append("KISMI: 11 §11 T-15 en az 2 acik pozisyon ister; sayi yetersiz, kosu yinelenmeli")
+    notes.append("KILL kalkinca giris acilmasi + duraklatma gozlemi elle (11 §11 T-15)")
+    return _R(st, *notes, pozisyon_oncesi=n_pos, stop_oncesi=n_stops, duzlenme_s=flat, kill_state=ks, clear_rc=rc2)
 
 
 def t16(ctx: Ctx):
@@ -372,11 +539,18 @@ def d4(ctx: Ctx):
     ctx.open_long()
     t0 = ctx.now()
     cid, trig, _ = ctx.stop(0.0005)
+    samples = [ctx.observe()]
     _need_engine(ctx, "D-4: motor KAPALI olmali (ya da D-1 kesintisi). Stop mark'a cok yakin; tetiklenmesini bekleyin, sonra motoru baslatin.")
+    samples.append(ctx.observe())
     flat = ctx.pos_qty() == 0
     ev = ctx.broker.closing_events(ctx.pair, t0, [cid]) if flat else []
     orphan = ctx.rest.open_orders(ctx.sym) + ctx.conditionals()
-    return _R("GECTI" if flat and ev and not orphan else "KALDI", f"tetiklendi={flat}", f"kapanis_olayi={len(ev)}", f"yetim={len(orphan)}")
+    crossed, mdata = trigger_verdict(samples, trig)
+    notes = [f"tetiklendi={flat}", f"kapanis_olayi={len(ev)}", f"yetim={len(orphan)}",
+             f"mark_son={mdata.get('mark_son')} son_fiyat_son={mdata.get('son_fiyat_son')} tetik={mdata.get('tetik')}"]
+    if flat and crossed is False:
+        return _R("FARKLI", *notes, "stop mark esigi gecilmeden tetiklenmis gorunuyor (ornekler onceki/sonraki; elle dogrulayin)", **mdata)
+    return _R("GECTI" if flat and ev and not orphan else "KALDI", *notes, **mdata)
 
 
 def d5(ctx: Ctx):
@@ -432,11 +606,15 @@ STEPS: dict[str, Step] = {s.name: s for s in [
     Step("b0-t01", "T-01", "Kosullu emir ucu (algo/classic) yanit alanlari", b0_t01, "b0"),
     Step("b0-t02", "T-02", "Hesap hazirligi: ISOLATED, one-way, kaldirac; pozisyonlu ret kodlari", b0_t02, "b0"),
     Step("b0-t03", "T-03", "workingType=MARK_PRICE alani", b0_t03, "b0"),
+    Step("b0-t04", "T-04", "Iki stop ayni pozisyonda (tetik bekler: --trigger-wait-s)", b0_t04, "b0"),
     Step("b0-t05", "T-05", "reduceOnly davranisi (a, b)", b0_t05, "b0"),
     Step("b0-t06", "T-06", "Hemen tetiklenecek stop", b0_t06, "b0"),
+    Step("b0-t07", "T-07", "Tetiklenen stop <-> cocuk emir <-> userTrades (tetik bekler)", b0_t07, "b0"),
+    Step("b0-t08", "T-08", "Kimlik tekrari ve zaman asimi sorgusu", b0_t08, "b0"),
     Step("b0-t09", "T-09", "Ret kodlari: min notional, adim disi", b0_t09, "b0"),
     Step("b0-t10", "T-10", "Piyasa emri yaniti ve komisyon", b0_t10, "b0"),
     Step("b0-t11", "T-11", "Hiz basliklari", b0_t11, "b0"),
+    Step("b0-t12", "T-12", "Funding gelir kaydi (yalniz okuma, engelleyici degil)", b0_t12, "b0", trades=False),
     Step("t13", "T-13", "Tam yasam dongusu (motor sinifi LiveBroker)", t13, "t"),
     Step("t14", "T-14", "Kismi dolum", t14, "t"),
     Step("t15", "T-15", "KILL", t15, "t", interactive=True, trades=False),
@@ -525,6 +703,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--pair", default=DEFAULT_PAIR)
     ap.add_argument("--ack-no-withdraw", action="store_true", help="testnet anahtarinda para cekme izni YOK (apiRestrictions testnette yok)")
     ap.add_argument("--trigger-wait-s", type=float, default=120.0)
+    ap.add_argument("--t13-stop-pct", type=float, default=0.0003,
+                    help="T-04/T-07/T-13 siki stop uzakligi (mark'tan oran; 0.00005..0.02); tetik icin daraltilabilir")
     ap.add_argument("--wait-s", type=float, default=20.0)
     ap.add_argument("--partial-fill-multiple", type=int, default=0)
     ap.add_argument("--out-root", default=None, help="varsayilan: yapilandirmadaki var_dir")
@@ -544,6 +724,10 @@ def main(argv: list[str] | None = None, *, environ=None, rest_factory=None, cloc
         if not a.step:
             raise S.SafetyError("--step gerekli (bkz. --list)")
         steps = resolve_steps(a.step)
+        if not 0.00005 <= a.t13_stop_pct <= 0.02:
+            raise S.SafetyError("--t13-stop-pct 0.00005..0.02 araliginda olmali")
+        if not 1 <= a.trigger_wait_s <= 3600:
+            raise S.SafetyError("--trigger-wait-s 1..3600 sn araliginda olmali")
         if a.dry_run:
             print_plan(steps, a.pair, say)
             return 0
@@ -613,7 +797,7 @@ def _run(a, steps, environ, rest_factory, clock, input_fn, say, runner, on_wait)
         root = Path(a.out_root or cfg.var_dir)
         out = report.write(root, stamp)
         say(f"rapor: {out}")
-    bad = [r for r in report.results if r.status in ("KALDI", "FARKLI", "BEKLEMEDE")]
+    bad = [r for r in report.results if r.status in ("KALDI", "FARKLI", "BEKLEMEDE", "KISMI")]
     return 1 if bad else 0
 
 

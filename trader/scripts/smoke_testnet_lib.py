@@ -14,7 +14,7 @@ from typing import Any, Mapping
 # Sabit izin listesi: yalniz Binance vadeli TESTNET. Yapilandirmadan/komut satirindan eklenemez.
 ALLOWED_BASES = frozenset({"https://testnet.binancefuture.com"})
 KEY_VARS = ("BINANCE_API_KEY", "BINANCE_API_SECRET")
-STATUSES = ("GECTI", "KALDI", "FARKLI", "ATLANDI", "BEKLEMEDE")
+STATUSES = ("GECTI", "KALDI", "FARKLI", "ATLANDI", "BEKLEMEDE", "KISMI", "GOZLEM")
 _HEX = re.compile(r"[0-9a-fA-F]{32,}")
 
 

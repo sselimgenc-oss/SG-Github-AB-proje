@@ -26,7 +26,7 @@ from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_
 from .killswitch import Killswitch
 from .pause import EntryPause
 from .marketdata.sources import MarketView, MinuteStep
-from .order_manager import OrderManager
+from .order_manager import EXIT_RETRY_LIMIT, OrderManager
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
                                build_trade_exit, close_position, evaluate_exit, fill_risk_violation,
                                update_excursion)
@@ -132,6 +132,7 @@ class Engine:
         self._entry_events: dict[int, object] = {}
         self._started = False
         self._ban_until: datetime | None = None
+        self._exit_throttle: dict[int, datetime] = {}
         self._naked_rows: list[dict] = []
         self._in_drain = 0
 
@@ -645,6 +646,16 @@ class Engine:
         if not self.is_paper and self._ban_until is not None and self.clock.now() < self._ban_until:
             self._c["ban_skipped_exits"] += 1          # pencere icinde gonderim zaten reddedilir; yeni kimlik/satir uretme
             return None
+        if not self.is_paper and self.cfg.live is not None:
+            # Fix 5: deneme limiti doldu (exit_unknown) -> KILL/watchdog her dakika degil `reconcile_open_s`te BIR gonderim
+            n = int(self.state.kv_get(f"exit_retry:{pos.trade_id}", 0) or 0)
+            if n >= EXIT_RETRY_LIMIT:
+                now = self.clock.now()
+                last = self._exit_throttle.get(pos.trade_id)
+                if last is not None and (now - last).total_seconds() < float(self.cfg.reconcile_open_s):
+                    self._c["exit_throttled"] += 1
+                    return None
+                self._exit_throttle[pos.trade_id] = now
         out = self.orders.submit_exit(pos, reason, at)
         if not self.is_paper:
             self._register(pos.trade_id)

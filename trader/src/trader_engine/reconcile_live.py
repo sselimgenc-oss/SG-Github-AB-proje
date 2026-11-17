@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from collections import Counter
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -18,7 +19,7 @@ from .clock import Clock
 from .errors import DataError, StateError
 from .killswitch import Killswitch
 from .numeric import round_tight
-from .order_manager import _EXIT_RETRY_LIMIT as EXIT_RETRY_LIMIT
+from .order_manager import EXIT_RETRY_LIMIT
 from .pause import EntryPause
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
                                build_trade_exit, close_position, fill_risk_violation)
@@ -128,7 +129,7 @@ class LiveReconciler(Reconciler):
                 if not self._l3(sp, now, acts, finds, reasons):
                     unresolved_l3.add(pair)
             elif sp.status == "opening":
-                self._l3b(sp, now, acts, finds)
+                self._l3b(sp, now, acts, finds, reasons)
         # L2 / adopt / L4-L7, L10
         for pair, bp in sorted(bpos.items()):
             sp = self._state_pos(pair)
@@ -228,6 +229,12 @@ class LiveReconciler(Reconciler):
             self._kill_close(pair, bp, excess, now, acts)
         return True
 
+    def _kill_mtime_at(self) -> str | None:
+        try:
+            return "mtime:%d" % os.stat(self.kill.path).st_mtime_ns
+        except OSError:
+            return None
+
     def _kill_close(self, pair: str, bp: BrokerPosition, excess: float | None, now: datetime, acts: list[str]) -> None:
         step = self._rules(pair)[1]
         qty = self._floor(bp.qty if excess is None else excess, step)          # adima asagi
@@ -236,7 +243,9 @@ class LiveReconciler(Reconciler):
         info = self.kill.info() or {}
         at = info.get("at")
         if not isinstance(at, str) or not at:
-            log.critical("mutabakat: KILL kapanisi reddedildi (%s): kill dosyasinda `at` yok, kimlik uretilemez", pair)
+            at = self._kill_mtime_at()                 # operatorun bos `touch KILL`i: mtime, etkinlestirme basina sabit
+        if not at:
+            log.critical("mutabakat: KILL kapanisi reddedildi (%s): kill dosyasi okunamiyor, kimlik uretilemez", pair)
             acts.append(f"kill_close_refused:{pair}")
             self.counters["kill_close_refused"] += 1
             return
@@ -403,10 +412,14 @@ class LiveReconciler(Reconciler):
             log.critical("mutabakat: cikis 10 dk'dan uzun suredir turetilemiyor trade %s", sp.trade_id)
         return False
 
-    def _l3b(self, sp: Position, now, acts, finds) -> None:
+    def _l3b(self, sp: Position, now, acts, finds, reasons) -> None:
         win = float(getattr(getattr(self.cfg, "live", None), "entry_resolve_window_s", 60.0) or 60.0)
         rows = [r for r in self.state.orders_for_trade(sp.trade_id) if r.role == "entry"]
-        if any(r.status in ("accepted", "filled") for r in rows):
+        if any(r.status == "accepted" for r in rows):
+            return
+        filled = [r for r in rows if r.status == "filled"]
+        if filled:
+            self._l3b_filled(sp, filled[-1], rows, now, win, acts, finds, reasons)
             return
         t0 = max([r.created_ts for r in rows], default=sp.signal_bar_close_ts)
         if (now - t0).total_seconds() < win:
@@ -424,6 +437,27 @@ class LiveReconciler(Reconciler):
                     self.state.update_order(r.client_id, status="failed", detail="unopened_window", updated_ts=now)
         self._close_unopened_cb(sp, now)
         acts.append(f"close_unopened:{sp.trade_id}")
+
+    def _l3b_filled(self, sp: Position, row, rows, now, win: float, acts, finds, reasons) -> None:
+        """Fix 4: giris satiri `filled` ama pozisyon `opening` ve borsa duz (benimseme satiri guncelledi, `on_entry_adopted`
+        cagrilmadan cokus + dis kapanis). Pencereden sonra dolum sorgudan uygulanir; pozisyon `open` olunca L3 kapatir."""
+        t0 = max([r.created_ts for r in rows], default=sp.signal_bar_close_ts)
+        cb = getattr(self.orders, "on_entry_adopted", None)
+        if (now - t0).total_seconds() < win or cb is None:
+            return
+        try:
+            bo = self.broker.query(sp.pair, row.client_id)
+        except StateError:
+            raise
+        except Exception:  # noqa: BLE001
+            return                                        # okunamadi: tahmin yok, sonraki tur
+        if bo is None or bo.status != "filled":
+            return
+        cb(row, bo)
+        acts.append(f"entry_fill_applied:{sp.trade_id}")
+        cur = self.state.get_position(sp.trade_id)
+        if cur is not None and cur.status in ("open", "closing"):
+            self._l3(cur, now, acts, finds, reasons)
 
     # ================================================================== L4
     def _l4(self, sp: Position, bp: BrokerPosition, now, acts, finds) -> None:
@@ -626,7 +660,7 @@ class LiveReconciler(Reconciler):
 
     # ================================================================== L11 + blokaj
     def _exit_unknown_hold(self, reasons: list[str]) -> None:
-        """F16: cikis denemeleri `_EXIT_RETRY_LIMIT`'e vardiysa ve pozisyon hala duruyorsa `exit_unknown` mandali, otomatik
+        """F16: cikis denemeleri `EXIT_RETRY_LIMIT`'e vardiysa ve pozisyon hala duruyorsa `exit_unknown` mandali, otomatik
         temizlemeyle titrememeli: pozisyon kapanana dek korunur."""
         for p in self.state.open_positions():
             if p.status in ("open", "closing") and int(self.state.kv_get(f"exit_retry:{p.trade_id}", 0) or 0) >= EXIT_RETRY_LIMIT:

@@ -45,7 +45,7 @@ def run(tmp_path, argv, ex=None, environ=ENV, mode="algo", on_wait=None, inputs=
         return r
     out = []
     rc = M.main(["--config-dir", str(ROOT / "config"), "--out-root", str(tmp_path), "--ack-no-withdraw", *argv],
-                environ=environ, rest_factory=factory, clock=clock, input_fn=lambda *_: "", say=out.append,
+                environ=environ, rest_factory=factory, clock=clock, input_fn=inputs or (lambda *_: ""), say=out.append,
                 on_wait=(lambda: on_wait(ex)) if on_wait else None, **kw)
     return rc, ex, out, made
 
@@ -207,3 +207,250 @@ def test_uses_testnet_paths_only():
     cfg = load_engine_config(d / "engine.base.json", d / "engine.learner.json", overlay_path=d / "engine.testnet.json")
     L.guard_config(cfg)
     assert cfg.var_dir == "var-testnet" and cfg.kill_file == "shared/testnet/KILL"
+
+
+# ====================================================================================== B7 mentor kararlari (R1-R7)
+def _res(tmp_path, name=None):
+    j = json.loads(next((tmp_path / "smoke").iterdir()).joinpath("result.json").read_text())["results"]
+    return j[0] if name is None else next(r for r in j if r["name"] == name)
+
+
+def test_new_b0_steps_registered_and_in_group():
+    for n in ("b0-t04", "b0-t07", "b0-t08", "b0-t12"):
+        assert n in M.STEPS and M.STEPS[n].group == "b0"
+    names = [s.name for s in M.resolve_steps(["b0"])]
+    assert names.index("b0-t04") < names.index("b0-t05") < names.index("b0-t07") < names.index("b0-t08") < names.index("b0-t12")
+    assert M.STEPS["b0-t12"].trades is False
+    for st in ("KISMI", "GOZLEM"):
+        assert st in L.STATUSES
+
+
+def test_t04_two_stops_accepted_and_fate_of_loose_stop_recorded(tmp_path):
+    def nudge(ex):                      # siki stop (1.9994) tetiklenir, gevsek (1.9000) tetiklenmez
+        ex.set_mark("XRPUSDT", "1.99")
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "b0-t04", "--trigger-wait-s", "6"], on_wait=nudge)
+    assert rc == 0, out
+    r = _res(tmp_path)
+    assert r["status"] == "GECTI" and r["data"]["iki_stop_kabul"] is True
+    assert r["data"]["gevsek_akibet"] == "NEW"          # fake: digeri tetiklenmedi, duruyor -> akibet kaydedildi
+    assert r["data"]["mark_son"] and "tetik" in r["data"]
+
+
+def test_t04_second_stop_rejected_is_farkli(tmp_path, monkeypatch):
+    orig = M.Ctx.stop
+    calls = []
+
+    def stop(self, pct, qty=None, role="stop"):
+        calls.append(pct)
+        if len(calls) == 2:                                     # ikinci stop kabul edilmez
+            class R:
+                status = "rejected"
+            return "x", 0.0, R()
+        return orig(self, pct, qty, role)
+    monkeypatch.setattr(M.Ctx, "stop", stop)
+    rc, ex, out, made = run(tmp_path, ["--env", "testnet", "--step", "b0-t04"])
+    assert rc == 1 and _res(tmp_path)["status"] == "FARKLI"
+    assert float(made["rest"].position_risk("XRPUSDT")[0]["positionAmt"]) == 0
+
+
+def test_t07_records_child_order_id_usertrades_and_force_orders(tmp_path):
+    rc, ex, out, made = run(tmp_path, ["--env", "testnet", "--step", "b0-t07", "--trigger-wait-s", "6"],
+                            on_wait=lambda ex: ex.set_mark("XRPUSDT", "1.0"))
+    assert rc == 0, out
+    d = _res(tmp_path)["data"]
+    assert _res(tmp_path)["status"] == "GECTI"
+    assert d["userTrades_eslesen"] >= 1 and d["commissionAsset"] == ["USDT"] and d["realizedPnl"]
+    assert d["cocuk_kimlik_modu"] == "auto" and d["cocuk_clientOrderId"].startswith("algo_auto_")   # fake temkinli varsayilan
+    assert "likidasyon" in d["liquidation_queryable"] or "gozlenemedi" in d["liquidation_queryable"]
+    assert ex.count("forceOrders") == 1
+    assert float(made["rest"].position_risk("XRPUSDT")[0]["positionAmt"]) == 0
+
+
+def test_t07_no_trigger_is_beklemede_and_flat(tmp_path):
+    rc, ex, out, made = run(tmp_path, ["--env", "testnet", "--step", "b0-t07", "--trigger-wait-s", "3"])
+    assert rc == 1 and _res(tmp_path)["status"] == "BEKLEMEDE"
+    assert float(made["rest"].position_risk("XRPUSDT")[0]["positionAmt"]) == 0
+    assert not made["rest"].open_conditionals("XRPUSDT")
+
+
+def test_t08_identity_reuse_codes_and_timeout_query(tmp_path):
+    rc, ex, out, made = run(tmp_path, ["--env", "testnet", "--step", "b0-t08"])
+    assert rc == 0, out
+    d = _res(tmp_path)["data"]
+    assert d["a_acik_emirle_ayni_kimlik"] == -4116
+    assert "b_dolmus_kimlikle_ikinci" in d
+    assert d["c_kimlikle_sorgu_buldu"] is True and d["c_yok_yaniti_bos"] is True and "c_yok_yaniti_sn" in d
+    assert float(made["rest"].position_risk("XRPUSDT")[0]["positionAmt"]) == 0
+    assert not made["rest"].open_conditionals("XRPUSDT")
+
+
+def test_t12_funding_is_read_only_and_non_blocking(tmp_path):
+    clock = SimClock(T0)
+    ex = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+    ex.add_funding("XRPUSDT", "-0.0123", int(clock.now().timestamp() * 1000) - 3600_000)
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "b0-t12"], ex=ex)
+    assert rc == 0, out                                         # GOZLEM engelleyici degil
+    r = _res(tmp_path)
+    assert r["status"] == "GOZLEM" and r["data"]["satir"] == 1 and r["data"]["son"]["income"] == "-0.0123"
+    assert not [x for x in ex.requests if x[0] == "POST" and "order" in x[1].lower()]       # emir yok (yalniz okuma)
+
+
+def _two_positions(ex, n=2):
+    from decimal import Decimal as D
+    for sym, qty in (("XRPUSDT", "10"), ("DOGEUSDT", "40"))[:n]:
+        ex.fill_market(sym, "BUY", qty)
+        ex._new_cond(sym, "SELL", "STOP_MARKET", D(qty), D("1.0"), "MARK_PRICE", f"trTx-engine-{sym}")
+
+
+def _kill_cli(ex, calls):
+    def cli(args):
+        calls.append(args)
+        if args[0] == "kill" and "--clear" not in args:         # motorun KILL tepkisi: her seyi duzle, stoplari iptal et
+            for sym in list(ex.pos):
+                ex.external_close(sym)
+            for a in ex.algos.values():
+                a["algoStatus"] = "CANCELED"
+        return 0
+    return cli
+
+
+def test_t15_counts_positions_account_wide_and_passes_with_two(tmp_path, monkeypatch):
+    calls = []
+    clock = SimClock(T0)
+    ex = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+    monkeypatch.setattr(M, "_cli", _kill_cli(ex, calls))
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t15"], ex=ex, inputs=lambda *_: _two_positions(ex) or "")
+    assert rc == 0, out
+    r = _res(tmp_path)
+    assert r["status"] == "GECTI" and r["data"]["pozisyon_oncesi"] == 2 and r["data"]["stop_oncesi"] == 2
+    assert ["kill", "--env", "testnet", "--clear"] in calls
+
+
+def test_t15_single_position_is_kismi_not_gecti(tmp_path, monkeypatch):
+    calls = []
+    clock = SimClock(T0)
+    ex = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+    monkeypatch.setattr(M, "_cli", _kill_cli(ex, calls))
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t15"], ex=ex, inputs=lambda *_: _two_positions(ex, 1) or "")
+    r = _res(tmp_path)
+    assert r["status"] == "KISMI" and rc == 1 and r["data"]["pozisyon_oncesi"] == 1
+    assert any("KISMI" in n for n in r["notes"])
+
+
+def test_t15_second_symbol_still_open_is_kaldi(tmp_path, monkeypatch):
+    """Tek sembol (XRP) bakmak yetmez: KILL yalniz XRP'yi duzlerse DOGE hesap genelinde gorulur ve KALDI olur."""
+    clock = SimClock(T0)
+    ex = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+
+    def cli(args):
+        if args[0] == "kill" and "--clear" not in args:
+            ex.external_close("XRPUSDT")
+            for a in ex.algos.values():
+                a["algoStatus"] = "CANCELED"
+        return 0
+    monkeypatch.setattr(M, "_cli", cli)
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t15"], ex=ex, inputs=lambda *_: _two_positions(ex) or "")
+    assert rc == 1 and _res(tmp_path)["status"] == "KALDI"
+
+
+def test_t13_records_mark_and_last_price_at_trigger(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.Ctx, "last_price", lambda self: M.Decimal("1.0001"))
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t13", "--trigger-wait-s", "6"],
+                         on_wait=lambda ex: ex.set_mark("XRPUSDT", "1.0"))
+    d = _res(tmp_path)["data"]
+    assert rc == 0 and _res(tmp_path)["status"] == "GECTI"
+    assert d["mark_son"] == "1.0" and d["son_fiyat_son"] == "1.0001" and d["tetik"] == "1.9994"
+    assert M.Decimal(d["mark_min"]) <= M.Decimal(d["tetik"]) and d["mark_esik_gecis_ornegi"]["mark"] == "1.0"
+
+
+def test_t13_fires_without_mark_crossing_is_farkli(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.Ctx, "observe", lambda self: {"mark": M.Decimal("2.0"), "last": M.Decimal("1.0")})   # mark hic gecmedi
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t13", "--trigger-wait-s", "6"],
+                         on_wait=lambda ex: ex.set_mark("XRPUSDT", "1.0"))
+    r = _res(tmp_path)
+    assert rc == 1 and r["status"] == "FARKLI" and any("mark esigi" in n for n in r["notes"])
+    assert r["data"]["son_fiyat_once_gecti"] is True            # son fiyat esigi gecti, mark gecmedi: kayit altinda
+
+
+def test_t13_tight_stop_and_wait_are_tunable_with_limits(tmp_path):
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t13", "--trigger-wait-s", "6", "--t13-stop-pct", "0.001"],
+                         on_wait=lambda ex: ex.set_mark("XRPUSDT", "1.0"))
+    assert rc == 0 and _res(tmp_path)["data"]["tetik"] == "1.998"
+    for bad in (["--t13-stop-pct", "0.5"], ["--t13-stop-pct", "0"], ["--trigger-wait-s", "99999"]):
+        rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t13", *bad])
+        assert rc == 2 and not ex.requests
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "t13", "--trigger-wait-s", "600"],
+                         on_wait=lambda ex: ex.set_mark("XRPUSDT", "1.0"))
+    assert rc == 0                                              # uzun bekleme izinli (tetikte hemen biter)
+
+
+def test_d4_without_mark_crossing_is_farkli(tmp_path):
+    def trigger_without_mark(*_):
+        ex_.external_close("XRPUSDT")                           # pozisyon kapandi ama mark hic esigi gecmedi
+        return ""
+    clock = SimClock(T0)
+    ex_ = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "d4"], ex=ex_, inputs=trigger_without_mark)
+    r = _res(tmp_path)
+    assert rc == 1 and r["status"] == "FARKLI" and r["data"]["mark_son"] == "2.0"
+    assert any(n.startswith("mark_son=2.0") for n in r["notes"])
+
+
+def test_d4_records_mark_when_stop_fires(tmp_path):
+    clock = SimClock(T0)
+    ex_ = FakeExchange(lambda: int(clock.now().timestamp() * 1000))
+    rc, ex, out, _ = run(tmp_path, ["--env", "testnet", "--step", "d4"], ex=ex_, inputs=lambda *_: ex_.set_mark("XRPUSDT", "1.0") or "")
+    r = _res(tmp_path)
+    assert r["data"]["mark_son"] == "1.0" and r["status"] != "FARKLI"
+
+
+def test_results_template_lists_manual_ledger_checks_with_exact_commands():
+    doc = (ROOT / "docs" / "motor" / "11-testnet-sonuc.md").read_text(encoding="utf-8")
+    assert "sqlite3 var-testnet/learner/ledger.sqlite" in doc
+    for ref in ("T-13", "T-15", "T-16", "D-4", "trail_stop", "force_exit"):
+        assert ref in doc
+    for ref in ("T-04", "T-07", "T-08", "T-12"):
+        assert ref in doc
+    spec = (ROOT / "docs" / "motor" / "11-canli-broker.md").read_text(encoding="utf-8")
+    assert "probe_testnet" not in spec
+
+
+# ---- R7: canli acilis izin denetimi: sert hata, onay ile asilamaz
+@pytest.mark.parametrize("restr", [{"enableWithdrawals": True},                                   # kismi govde: yalniz ihlal
+                                   {"enableReading": True, "enableFutures": True, "enableWithdrawals": False,
+                                    "enableInternalTransfer": False, "permitsUniversalTransfer": False, "ipRestrict": False},
+                                   {"enableReading": True, "enableFutures": True, "enableWithdrawals": True,
+                                    "enableInternalTransfer": False, "permitsUniversalTransfer": False, "ipRestrict": True}])
+def test_live_startup_hard_fails_on_withdrawals_or_no_ip_restriction_even_with_attestation(restr, monkeypatch):
+    from test_live_broker_spec import FakeRest, make_broker, T0 as BT0
+    from trader_engine.errors import EngineExit
+    monkeypatch.setenv("LIVE_PERMISSION_ATTESTED", BT0.date().isoformat())       # beyan ihlali ASAMAZ
+    rest = FakeRest(SimClock(BT0), "live")
+    rest.restr.clear()
+    rest.restr.update(restr)
+    b, _, _ = make_broker("live", startup=False, rest=rest)
+    with pytest.raises(EngineExit) as ei:
+        b.startup_check()
+    assert ei.value.code == 8 and "key_permission:" in str(ei.value)
+    assert not [c for c in rest.calls if c[0] == "account"]                       # hesap/emir yoluna hic gecilmedi
+
+
+def test_live_startup_unverifiable_restrictions_without_attestation_exits_8(monkeypatch):
+    from test_live_broker_spec import FakeRest, make_broker, T0 as BT0
+    from trader_engine.errors import EngineExit
+    from trader_engine.exchange.binance_rest import ExchangeUncertain
+    monkeypatch.delenv("LIVE_PERMISSION_ATTESTED", raising=False)
+    rest = FakeRest(SimClock(BT0), "live")
+    rest.sticky["api_restrictions"] = ExchangeUncertain("down")
+    b, _, _ = make_broker("live", startup=False, rest=rest)
+    with pytest.raises(EngineExit) as ei:
+        b.startup_check()
+    assert ei.value.code == 8 and "key_permission_unverifiable" in str(ei.value)
+
+
+def test_smoke_testnet_ack_flag_never_applies_to_live(tmp_path):
+    """`--ack-no-withdraw` yalniz testnet betigindedir: live reddedilir (onay bayragi canli yolu acmaz); cli run'da yok."""
+    rc, ex, out, _ = run(tmp_path, ["--env", "live", "--step", "b0-preflight"])
+    assert rc == 2 and not ex.requests
+    import trader_engine.cli as cli
+    assert "ack" not in open(cli.__file__, encoding="utf-8").read().lower().replace("backtest", "")

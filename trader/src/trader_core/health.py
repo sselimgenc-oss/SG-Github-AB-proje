@@ -26,11 +26,19 @@ __all__ = [
     "Status", "CheckResult", "HealthReport", "HealthSnapshot", "ApiProbe", "LedgerProbe",
     "ContainerProbe", "HealthConfig", "DEFAULT_CFG", "evaluate", "combine", "Alert", "Notifier",
     "LogNotifier", "NullNotifier", "plan_alerts", "revert_failed_alerts", "empty_state",
-    "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
+    "PauseProbe", "quiet_http_loggers", "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
     "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS", "MarketProbe",
 ]
 
 log = logging.getLogger("trader.health")
+
+def quiet_http_loggers() -> None:
+    """urllib3/requests gunlukleri en az INFO (DEBUG istek satirlarini ve sorgu dizgilerini yazar; imza/anahtar sizmasin)."""
+    for n in ("urllib3", "requests"):
+        lg = logging.getLogger(n)
+        if lg.getEffectiveLevel() < logging.INFO:
+            lg.setLevel(logging.INFO)
+
 
 GIB = 1024 ** 3
 MIB = 1024 ** 2
@@ -88,6 +96,21 @@ class ApiProbe:
     kill: bool | None = None              # status.kill
     ledger_errors: int | None = None      # status.counters.ledger_errors (surec basindan beri)
     unprotected_ids: tuple[int, ...] | None = None   # stop'u olmayan acik pozisyonlar (yalniz kurtarma R7)
+    # WP-B8: canli/testnet `status.exchange` blogu (11 §9.4). mode: status.mode; has_exchange: blok var mi.
+    mode: str | None = None
+    has_exchange: bool = False
+    exchange_reachable: bool | None = None
+    exchange_last_sync: datetime | None = None
+    naked: tuple[tuple[int, str, float], ...] | None = None   # (trade_id, cift, stopsuz sure sn); None = okunamadi
+
+
+@dataclass(frozen=True)
+class PauseProbe:
+    """PAUSE dosyasi + denetim gunlugu (11 §9.2). holds: simdiki tutus nedenleri (None = okunamadi);
+    last_ops: neden -> gunlukteki SON islem ("add" | "remove"); audit_ok: gunluk okunabildi mi (yok = bos, okunabilir)."""
+    holds: tuple[str, ...] | None = None
+    last_ops: Mapping[str, str] = field(default_factory=dict)
+    audit_ok: bool = True
 
 
 @dataclass(frozen=True)
@@ -143,6 +166,9 @@ class HealthSnapshot:
     # Piyasa verisi alarmlari; None = bu denetimler kapali (MARKET_DB yapilandirilmamis).
     market: MarketProbe | None = None
     prev_rules_missing: Mapping[str, int] = field(default_factory=dict)
+    # WP-B8: bot -> PauseProbe; onceki turda gorulen tutuslar (kayip tutus: kaybolan + gunlukte "remove" yok).
+    pause: Mapping[str, PauseProbe] = field(default_factory=dict)
+    prev_pause_holds: Mapping[str, tuple] = field(default_factory=dict)
 
     def __post_init__(self):
         if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
@@ -193,6 +219,10 @@ class HealthConfig:
     feed_status_crit_s: int = 180
     market_bar_crit_s: int = 300
     rules_warn_s: int = 24 * 3600
+    # Canli/testnet (WP-B8): stopsuz pozisyon `naked_alarm_s`'i asarsa CRIT (11 §6.5: bos olmayan liste hemen CRIT => 0);
+    # borsa okunamiyorsa `exchange_unreachable_s` sonra CRIT (11 §10 F1), once WARN.
+    naked_alarm_s: float = 0.0
+    exchange_unreachable_s: int = 60
 
     def __post_init__(self):
         for n in ("loop_warn_s", "loop_crit_s", "candle_warn_mult", "candle_crit_mult", "candle_margin_s",
@@ -200,8 +230,12 @@ class HealthConfig:
                   "disk_crit_bytes", "mem_warn_bytes", "mem_crit_bytes", "swap_warn_ratio",
                   "swap_crit_ratio", "restart_warn_delta", "restart_crit_delta", "restart_crit_runs",
                   "backup_warn_s", "backup_crit_s", "warmup_s", "confirm_runs", "crit_repeat_min",
-                  "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "rules_warn_s"):
+                  "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "rules_warn_s",
+                  "exchange_unreachable_s"):
             _pos(n, getattr(self, n))
+        v = self.naked_alarm_s
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
+            raise ValueError("naked_alarm_s sonlu ve >= 0 olmali")
         if self.clock_skew_tolerance_s is None or isinstance(self.clock_skew_tolerance_s, bool) \
                 or not isinstance(self.clock_skew_tolerance_s, (int, float)) \
                 or not math.isfinite(self.clock_skew_tolerance_s) or self.clock_skew_tolerance_s < 0:
@@ -593,6 +627,78 @@ def _c_rules_missing(snap, bot, cfg):
     return _res(name, Status.OK, "ok", f"{bot} rules_missing {cur} (artis yok)", cur, 0)
 
 
+def _live_mode(a: ApiProbe) -> bool:
+    return a.has_exchange or a.mode in ("testnet", "live")
+
+
+def _c_naked(snap, bot, cfg):
+    """Acik canli/testnet pozisyon stopsuz (11 §6.5): status.exchange.naked bos degilse (sure > esik) hemen CRIT.
+    status.open_positions'ta stop'u olmayan pozisyon da (canli kipte) ayni alarmdir."""
+    name = f"naked_position:{bot}"
+    a = snap.api[bot]
+    rows = a.naked
+    if rows is None:
+        return _unknown(name, "naked_unknown", f"{bot} stopsuz pozisyon bilgisi (exchange.naked) okunamadi")
+    bad = [r for r in rows if r[2] > cfg.naked_alarm_s]
+    if bad:
+        txt = ", ".join(f"{r[1]}#{r[0]} {r[2]:.0f} sn" for r in bad[:5])
+        return _res(name, Status.CRIT, "naked_position", f"{bot} stopsuz acik pozisyon: {txt}",
+                    max(r[2] for r in bad), cfg.naked_alarm_s)
+    if a.unprotected_ids:
+        ids = ",".join(str(i) for i in a.unprotected_ids[:5])
+        return _res(name, Status.CRIT, "naked_position", f"{bot} status'ta stop'u olmayan acik pozisyon: {ids}",
+                    len(a.unprotected_ids), 0)
+    return _res(name, Status.OK, "ok", f"{bot} stopsuz pozisyon yok")
+
+
+def _c_exchange(snap, bot, cfg):
+    name = f"exchange_reachable:{bot}"
+    a = snap.api[bot]
+    r = a.exchange_reachable
+    if r is None:
+        return _unknown(name, "exchange_unknown", f"{bot} borsa erisilebilirligi (exchange.reachable) okunamadi")
+    if r:
+        return _res(name, Status.OK, "ok", f"{bot} borsa erisilebilir")
+    t = a.exchange_last_sync
+    age = None
+    if t is not None:
+        try:
+            age = _age_s(snap.now, t, cfg)
+        except _Skew:
+            age = None
+    if age is None:
+        return _res(name, Status.CRIT, "exchange_unreachable", f"{bot} borsaya ulasilamiyor; son basarili esitleme bilinmiyor")
+    if age > cfg.exchange_unreachable_s:
+        return _res(name, Status.CRIT, "exchange_unreachable",
+                    f"{bot} borsaya {age:.0f} sn'dir ulasilamiyor (esik {cfg.exchange_unreachable_s} sn)", age,
+                    cfg.exchange_unreachable_s)
+    return _res(name, Status.WARN, "exchange_unreachable",
+                f"{bot} borsaya ulasilamiyor ({age:.0f} sn)", age, cfg.exchange_unreachable_s)
+
+
+def _c_pause_audit(snap, bot, cfg):
+    """11 §9.2: (a) tutus var ama gunlukte o neden icin SON islem "add" degil -> kimse eklemedi (CRIT);
+    (b) onceki turda vardi, simdi yok ve gunlukte "remove" yok -> dosya elle silindi/kayboldu (CRIT, bir tur)."""
+    name = f"pause_audit:{bot}"
+    p = snap.pause[bot]
+    if p.holds is None:
+        return _unknown(name, "pause_unknown", f"{bot} PAUSE dosyasi okunamadi")
+    if not p.audit_ok:
+        return _unknown(name, "pause_audit_unreadable", f"{bot} pause denetim gunlugu okunamadi")
+    unaudited = [h for h in p.holds if p.last_ops.get(h) != "add"]
+    if unaudited:
+        return _res(name, Status.CRIT, "pause_hold_unaudited",
+                    f"{bot} duraklatma tutusu denetim gunlugunde 'add' satiri olmadan duruyor: {', '.join(unaudited[:5])}",
+                    len(unaudited), 0)
+    prev = snap.prev_pause_holds.get(bot) or ()
+    lost = [h for h in prev if h not in p.holds and p.last_ops.get(h) != "remove"]
+    if lost:
+        return _res(name, Status.CRIT, "pause_hold_lost",
+                    f"{bot} duraklatma tutusu denetim gunlugunde 'remove' olmadan kayboldu: {', '.join(lost[:5])}",
+                    len(lost), 0)
+    return _res(name, Status.OK, "ok", f"{bot} duraklatma tutuslari denetim gunluguyle tutarli ({len(p.holds)})")
+
+
 def _safe(name, fn, *args) -> CheckResult:
     try:
         r = fn(*args)
@@ -616,12 +722,17 @@ def combine(results, cfg: HealthConfig = DEFAULT_CFG) -> Status:
 
 def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthReport:
     results: list[CheckResult] = []
-    bots = list(dict.fromkeys(list(cfg.require_bots) + list(snap.api) + list(snap.ledger)))
+    bots = list(dict.fromkeys(list(cfg.require_bots) + list(snap.api) + list(snap.ledger) + list(snap.pause)))
     for bot in bots:
         if bot in snap.api:
             results.append(_safe(f"api_reachable:{bot}", _c_api, snap, bot, cfg))
             results.append(_safe(f"bot_loop_age:{bot}", _c_loop, snap, bot, cfg))
             results.append(_safe(f"candle_age:{bot}", _c_candle, snap, bot, cfg))
+            if _live_mode(snap.api[bot]):
+                results.append(_safe(f"naked_position:{bot}", _c_naked, snap, bot, cfg))
+                results.append(_safe(f"exchange_reachable:{bot}", _c_exchange, snap, bot, cfg))
+        if bot in snap.pause:
+            results.append(_safe(f"pause_audit:{bot}", _c_pause_audit, snap, bot, cfg))
         if bot in snap.ledger:
             results.append(_safe(f"ledger_write_age:{bot}", _c_ledger_age, snap, bot, cfg))
             results.append(_safe(f"ledger_gate:{bot}", _c_gate, snap, bot, cfg))
@@ -677,7 +788,8 @@ def should_send_ok(report: HealthReport) -> bool:
 # Uyari yolu
 # ---------------------------------------------------------------------------------------------
 IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed",
-                             "rules_missing_increase"})
+                             "rules_missing_increase", "naked_position", "pause_hold_unaudited",
+                             "pause_hold_lost"})
 
 
 @dataclass(frozen=True)

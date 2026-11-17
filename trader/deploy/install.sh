@@ -130,7 +130,7 @@ fi
 say "Dizinler"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADER_DIR/shared" "$TRADER_DIR/shared/veto" \
   "$TRADER_DIR/user_data" "$TRADER_DIR/var/history" \
-  "$TRADER_DIR/var/telegram"
+  "$TRADER_DIR/var/telegram" "$TRADER_DIR/var-testnet" "$TRADER_DIR/shared/testnet"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
 install -d -m 0750 -o root -g root /var/backups/trader
 # budget.sqlite'i trader sahipli onceden olustur (yoksa): ilk olusturan veto (root) olursa dosya root:root 0600 kalir ve ders/telegram acamaz (OPEN-8).
@@ -153,6 +153,9 @@ copy_env "$TRADER_DIR/deploy/trader-telegram.env.example" /etc/trader-telegram.e
 copy_env "$TRADER_DIR/deploy/trader-veto.env.example"     /etc/trader-veto.env     "root:root"           0600
 copy_env "$TRADER_DIR/deploy/trader-veto-hmac.env.example" /etc/trader-veto-hmac.env "root:root"          0600
 copy_env "$TRADER_DIR/deploy/trader-panel-cf.env.example" /etc/trader-panel-cf.env "root:root"           0600
+# testnet golge motoru anahtarlari: AYRI dosya (canli anahtar dosyasi degil); anahtarlar bos kalirsa birim acilmaz (WP-B8)
+copy_env "$TRADER_DIR/deploy/trader-testnet.env.example"  /etc/trader-testnet.env  "root:root"           0600
+chmod 0600 /etc/trader-testnet.env; chown root:root /etc/trader-testnet.env
 # veto HMAC anahtari: bos ise otomatik uret (ekrana YAZILMAZ); veto birimi imzalar, motor dogrular
 if ! grep -Eq '^TRADER_VETO_HMAC_KEY=[^[:space:]]+' /etc/trader-veto-hmac.env; then
   HMAC_NEW="$(openssl rand -hex 32)"
@@ -262,6 +265,14 @@ else
   CF_TODO+=("Worker parolasi (en az 32 karakter rastgele): cd $TRADER_DIR/var/wrangler && set -a && . /etc/trader-panel-cf.env && set +a && ./node_modules/.bin/wrangler secret put PANEL_SIFRE --name trader-pano   (parola istenince yapistirin; ekrana yazilmaz, Cloudflare'da Worker sirri olarak saklanir)")
   CF_TODO+=("Yayini acin: systemctl enable --now trader-panel-publish.timer (ya da install.sh'i yeniden calistirin); workers.dev adresini yer imine ekleyin")
 fi
+
+# Testnet golge motoru (WP-B8): BINANCE_API_KEY ve BINANCE_API_SECRET ikisi de doluysa acilir (gercek para yok; yalniz testnet.binancefuture.com)
+if has_value /etc/trader-testnet.env BINANCE_API_KEY && has_value /etc/trader-testnet.env BINANCE_API_SECRET; then
+  # saglik denetcisi golge motoru da izler (stopsuz pozisyon / borsa erisimi); kullanici degeri korunur
+  grep -q '^HEALTH_SHADOW_VAR_DIR=' /etc/trader-health.env || echo "HEALTH_SHADOW_VAR_DIR=" >> /etc/trader-health.env
+  sed -i "s#^HEALTH_SHADOW_VAR_DIR=\$#HEALTH_SHADOW_VAR_DIR=${TRADER_DIR}/var-testnet#" /etc/trader-health.env
+  enable_now trader-engine-testnet.service
+else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRET (Binance Futures TESTNET anahtari; testnet golge motoru, ikisi de dolu olmadan acilmaz)"); fi
 
 # ---- 11. ozet ---------------------------------------------------------------------
 say "OZET"
