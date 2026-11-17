@@ -142,6 +142,8 @@ date -u ; ls -l $T/var/feed-status.json
 ```
 Beklenen: `last/1m` ve `mark/1m` icin en yeni mum `date -u`'dan en fazla ~2 dk geride; `15m/1h/4h` dolu. Hata: `systemctl show trader-feed -p Result -p ExecMainStatus`: **6** = HTTP 451 (bu sunucudan Binance vadeli yok; baska bolge gerekir), **5** = kurallar alinamadi (ag/Binance), **1** = ag yok (traceback). Hepsinde birim `failed` olur ve OnFailure alarmi calisir.
 
+**2b. OI / long-short orani toplayici (ML-G7, `trader-oi.timer`)**: her 5 dk bir kez `scripts/oi_collect.py` calisir (Binance herkese acik `/futures/data/*` GET uclari; anahtar yok; `trader-oi.service`, `MemoryMax=96M`) ve 10 cift icin `var/market.sqlite` icindeki `positioning_5m` tablosuna (pair, ts ms, OI, global/top hesap ve pozisyon orani, taker orani, fetched_at) idempotent yazar. Her kosu son satirdan simdiye (en fazla ~30 gun) boslugu kapatir; kilitli donem (2026-05-01..2026-11-01) ne istenir ne yazilir. Kontrol: `sqlite3 -readonly $T/var/market.sqlite "select pair,count(*),datetime(max(ts)/1000,'unixepoch') from positioning_5m group by 1"` (10 satir; en yeni ts `date -u`'dan ~10 dk geride) ; `systemctl list-timers trader-oi.timer` ; `journalctl -u trader-oi -n 20 --no-pager` (`event=done ... errors=0`). Cikis kodlari: 0 tamam, 2 bazi uclar alinamadi (alarm degil, sonraki tur kapatir), 3 IP yasagi/429, 6 HTTP 451 (alarm). Tablo feed'in `user_version`ine dokunmaz; feed durursa da toplama surer. Birikmesi istenmiyorsa: `systemctl disable --now trader-oi.timer`.
+
 **3. Kurallar 10/10**
 ```
 sqlite3 -readonly $T/var/market.sqlite "select count(*) from rules"                  # 10

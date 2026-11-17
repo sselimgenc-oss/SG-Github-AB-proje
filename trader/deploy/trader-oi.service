@@ -1,0 +1,27 @@
+[Unit]
+Description=Trader OI ve long/short orani toplayici (ML-G7; Binance herkese acik /futures/data -> var/market.sqlite positioning_5m; tek seferlik)
+Documentation=file:///opt/trader/docs/sunucu-kurulum.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONUNBUFFERED=1
+# Cikis 2 = bazi cift/uc alinamadi (gunluge yazilir, sonraki tur kapatir): alarm degil. 3 = IP yasagi/429, 6 = HTTP 451: alarm.
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/oi_collect.py --config-dir /opt/trader/config
+SuccessExitStatus=2
+TimeoutStartSec=240
+MemoryHigh=80M
+MemoryMax=96M
+CPUQuota=20%
+Nice=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var

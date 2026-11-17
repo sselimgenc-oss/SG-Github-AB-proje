@@ -128,7 +128,8 @@ def test_every_unit_handled_by_install():
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
-                        "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service"}  # tetikleyici/sablon birimler
+                        "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service",
+                        "trader-oi.service"}  # tetikleyici/sablon birimler
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled

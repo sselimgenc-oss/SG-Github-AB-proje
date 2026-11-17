@@ -226,6 +226,7 @@ enable_now trader-health.timer
 enable_now trader-engine-retry@learner.timer   # acilis kapisi (cikis 7) yeniden deneme: besleme saglikliyse, saatte en fazla 6
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine-retry@twin.timer; fi
 enable_now trader-backup.timer
+enable_now trader-oi.timer   # ML-G7: OI/long-short orani toplayici (5 dk; salt okunur Binance uclari, anahtar yok); var/market.sqlite positioning_5m
 enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23:10 UTC); defter/market salt okunur, var/<bot>/counterfactual.sqlite tek yazar
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-counterfactual@twin.timer; fi
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
