@@ -19,7 +19,7 @@ from .bars import floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
-from .errors import ClockError, FailClosed, StateError
+from .errors import ClockError, ConfigError, FailClosed, StateError
 from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
 from .killswitch import Killswitch
@@ -366,7 +366,7 @@ class Engine:
             else:
                 with self.state.tx():
                     self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
-        lev = entry_leverage()
+        lev = entry_leverage(cfg)
         for pair in cfg.pairs:
             try:
                 self.broker.prepare(pair, lev)
@@ -910,6 +910,8 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     from .marketdata.sources import StoreSource
 
     env = os.environ if env is None else env
+    if cfg.mode in ("testnet", "live") and broker is None:
+        raise ConfigError("faz_b: testnet/live icin LiveBroker henuz yok (B3/B4)")
     strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
     clock = clock or SystemClock()
     view = view or StoreSource(cfg.market_db)

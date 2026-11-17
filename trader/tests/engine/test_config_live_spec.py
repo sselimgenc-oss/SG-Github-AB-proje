@@ -319,6 +319,7 @@ def test_live_startup_unverifiable_permissions_exit_8(tmp_path, monkeypatch):
 
 
 def test_testnet_skips_permission_check(tmp_path):
+    pytest.importorskip("trader_engine.brokers.binance_futures")   # WP-B3 gelene kadar atla (bos gecmesin)
     rest = _FakeRest({**GOOD_RESTR, "enableWithdrawals": True})
     try:
         _broker("testnet", rest, tmp_path).startup_check()

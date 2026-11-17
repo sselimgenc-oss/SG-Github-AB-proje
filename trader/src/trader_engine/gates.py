@@ -81,9 +81,11 @@ class EntryOutcome:
     mark_decided: bool = True
 
 
-def entry_leverage() -> int:
-    """Kaldirac her zaman risk kilidinin alt sinirindan (eski adaptor `leverage()` ile ayni kural)."""
-    return int(max(1, K.LOCKED_CFG.min_leverage))
+def entry_leverage(cfg=None) -> int:
+    """11 §3.1: cfg.leverage (varsayilan 3 = risk kilidi alt siniri => kagit sonuclari ayni). cfg yoksa alt sinir."""
+    if cfg is None:
+        return int(max(1, K.LOCKED_CFG.min_leverage))
+    return int(max(1, cfg.leverage))
 
 
 def _fin(x) -> bool:
@@ -231,7 +233,7 @@ class EntryGate:
         if acct is None:
             return self._skip(row, tf, "day_start_missing", skip_reason="entry_gate_closed",
                               veto_reason="gate:day_start_missing")
-        lev = entry_leverage()
+        lev = entry_leverage(self.cfg)
         ref = self.entry_ref_fn(pair, D, row) if self.entry_ref_fn is not None else row.planned_entry
         cand = K.Candidate(pair, row.side, float(ref), float(row.planned_stop), float(lev),
                            rules.step, rules.min_notional)

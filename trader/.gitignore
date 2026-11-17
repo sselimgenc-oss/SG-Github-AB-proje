@@ -17,6 +17,8 @@ user_data/backtest_results/
 
 # trader_engine calisma verisi / kilit dosyalari
 var/
+var-testnet/
+var-live/
 shared/KILL
 research/crosscheck/
 

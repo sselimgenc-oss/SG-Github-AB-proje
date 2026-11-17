@@ -2,6 +2,8 @@
   "mode": "testnet",
   "leverage": 3,
   "var_dir": "var-testnet",
+  "kill_file": "shared/testnet/KILL",
+  "pause_file": "shared/testnet/PAUSE",
   "live": {
     "account_tag": "testnet-sub",
     "expected_wallet_max": 100000.0,

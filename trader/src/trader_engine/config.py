@@ -295,13 +295,13 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     build_risk_config(ttr)
     cost = raw["cost"] if isinstance(raw["cost"], CostModel) else None
     cost = _build_cost(dataclasses.asdict(cost) if cost else raw["cost"])
-    if mode == "live":
+    if mode in ("testnet", "live"):
         if bot != "learner":
-            raise ConfigError("mode='live' yalniz bot='learner' ile gecerli (ikiz kagitta kalir)")
-        if veto_mode != "required":
-            raise ConfigError("mode='live': veto_mode='required' zorunlu")
+            raise ConfigError(f"mode={mode!r} yalniz bot='learner' ile gecerli (ikiz kagitta kalir)")
         if cost.trigger_source != "mark":
-            raise ConfigError("mode='live': cost.trigger_source='mark' zorunlu")
+            raise ConfigError(f"mode={mode!r}: cost.trigger_source='mark' zorunlu")
+    if mode == "live" and veto_mode != "required":
+        raise ConfigError("mode='live': veto_mode='required' zorunlu")
     return EngineConfig(
         schema=SCHEMA, mode=mode, bot=bot, pairs=pairs,  # type: ignore[arg-type]
         wallet_start=nums["wallet_start"], cost=cost, target_mode="bar_close",
@@ -330,15 +330,17 @@ def _read(path: Any) -> dict[str, Any]:
 
 def load_engine_config(base_path: Any, bot_path: Any = None, *,
                        env: Mapping[str, str] | None = None, overlay_path: Any = None) -> EngineConfig:
-    """base (+ bot) (+ overlay) JSON birlestirir ve dogrular. mode='live' ise LIVE_CONFIRM (env; verilmezse
-    os.environ) live.account_tag ile birebir eslesmeli (11 §3.1), aksi ConfigError('live_confirm')."""
+    """base (+ bot) (+ overlay) JSON birlestirir ve dogrular. LIVE_CONFIRM (11 §3.1) burada YALNIZ `env=` acikca
+    verildiyse denetlenir; kosu yolu (cli run / build_engine) check_live_confirm'i kendisi cagirir
+    (kill/pause/init-ledger/reconcile/backtest live yapilandirmada LIVE_CONFIRM istemez)."""
     merged = _read(base_path)
     if bot_path is not None:
         merged = deep_merge(merged, _read(bot_path))
     if overlay_path is not None:
         merged = deep_merge(merged, _read(overlay_path))
     cfg = _validate(merged)
-    check_live_confirm(cfg, env)
+    if env is not None:
+        check_live_confirm(cfg, env)
     return cfg
 
 
@@ -350,6 +352,8 @@ def apply_overrides(cfg: EngineConfig, **kw: Any) -> EngineConfig:
     unknown = set(kw) - _TOP_KEYS
     if unknown:
         raise ConfigError(f"bilinmeyen anahtar: {sorted(unknown)}")
+    if kw.get("mode") in ("backtest", "paper") and "live" not in kw:
+        kw["live"] = None                        # testnet/live yapilandirmasindan backtest/paper'a gecis live blogunu birakir
     d = {f.name: getattr(cfg, f.name) for f in dataclasses.fields(cfg)}
     d.update(kw)
     return _validate(d)

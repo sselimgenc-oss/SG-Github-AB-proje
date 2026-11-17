@@ -22,19 +22,23 @@ def _load_cfg(a):
     d = Path(a.config_dir)
     env = getattr(a, "env", None)
     overlay = d / f"engine.{env}.json" if env else None
-    return load_engine_config(d / "engine.base.json", d / f"engine.{a.bot}.json", overlay_path=overlay)
+    bot = getattr(a, "bot", None) or "learner"
+    return load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
 
 
 def _live_startup(cfg, checker) -> int | None:
     """testnet/live on kosullari (11 §3.1-3.4). None => devam; aksi cikis kodu.
     Sira: anahtarlar (keys_missing, kod 2) -> acilis denetimi (ret: kod 8) -> broker yok (faz_b, kod 2).
-    (LIVE_CONFIRM, config yuklenirken denetlenir.)"""
+    LIVE_CONFIRM burada denetlenir (yalniz kosu yolu; kill/pause/init-ledger/reconcile/backtest istemez).
+    B3: startup_check icinde ExchangeBan/yetki -> kod 8, ulasilamaz -> kod 5 eslemesi yapilir (11 §3.4); burada
+    yalniz EngineExit.code aynen iletilir."""
     import os
 
-    from .config import load_keys
+    from .config import check_live_confirm, load_keys
     from .engine import EngineExit
     from .errors import ConfigError
     try:
+        check_live_confirm(cfg, os.environ)
         key, secret = load_keys(os.environ)
     except ConfigError as e:
         print(f"hata: {e}", file=sys.stderr)
@@ -89,7 +93,12 @@ def _cmd_init_ledger(a) -> int:
     from trader_core.signals import DEFAULT_SIGNAL_PARAMS
 
     from .strategies.registry import StrategyError, get_strategy, make_label
-    cfg = _load_cfg(a)
+    from .errors import ConfigError
+    try:
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
     try:
         strat = get_strategy(a.strategy or cfg.strategy)
     except StrategyError as e:
@@ -130,7 +139,12 @@ def _cmd_init_ledger(a) -> int:
 def _cmd_reconcile(a) -> int:
     from .engine import build_engine
     from .engine import EngineExit
-    cfg = _load_cfg(a)
+    from .errors import ConfigError
+    try:
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
     if cfg.mode in ("testnet", "live"):
         print("faz_b: testnet/live reconcile henuz uygulanmadi", file=sys.stderr)
         return EXIT_FAZ_B
@@ -146,9 +160,7 @@ def _cmd_reconcile(a) -> int:
 
 def _cmd_kill(a) -> int:
     from .clock import SystemClock
-    from .config import load_engine_config
-    d = Path(a.config_dir)
-    cfg = load_engine_config(d / "engine.base.json", d / "engine.learner.json")
+    cfg = _load_cfg(a)
     from .killswitch import Killswitch
     k = Killswitch(cfg.kill_file, SystemClock())
     if a.clear:
@@ -161,10 +173,8 @@ def _cmd_kill(a) -> int:
 def _cmd_pause(a) -> int:
     """11 §9.5: duraklatma tutuslari. `remove` motor kodunda yalniz burada cagrilir (AST korumasi)."""
     from .clock import SystemClock
-    from .config import load_engine_config
     from .pause import EntryPause
-    d = Path(a.config_dir)
-    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{a.bot}.json")
+    cfg = _load_cfg(a)
     p = EntryPause(f"{cfg.pause_file}.{cfg.bot}", SystemClock(), audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
     try:
         if a.list:
@@ -221,28 +231,34 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="trader_engine")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
+    def env_arg(p):
+        p.add_argument("--env", default=None, choices=("testnet", "live"),
+                       help="config/engine.<env>.json katmani (kip + live blogu + env'e ozgu kill/pause yolu)")
+
     def bot_args(p, need_bot=True):
         p.add_argument("--bot", required=need_bot, choices=("learner", "twin"))
         p.add_argument("--config-dir", default="config")
 
     p = sub.add_parser("run")
     bot_args(p)
-    p.add_argument("--env", default=None, choices=("testnet", "live"),
-                   help="config/engine.<env>.json katmani (kip + live blogu)")
+    env_arg(p)
     p.set_defaults(fn=_cmd_run)
     p = sub.add_parser("init-ledger")
     bot_args(p)
     p.add_argument("--reason", default="paper_start")
     p.add_argument("--strategy", default=None)
+    env_arg(p)
     p.set_defaults(fn=_cmd_init_ledger)
     p = sub.add_parser("reconcile")
     bot_args(p)
+    env_arg(p)
     p.set_defaults(fn=_cmd_reconcile)
     p = sub.add_parser("kill")
     p.add_argument("--clear", action="store_true")
     p.add_argument("--by", default="cli")
     p.add_argument("--reason", default="manual")
     p.add_argument("--config-dir", default="config")
+    env_arg(p)
     p.set_defaults(fn=_cmd_kill)
     p = sub.add_parser("pause")
     bot_args(p)
@@ -251,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", default=None)
     p.add_argument("--by", default=None)
     p.add_argument("--note", default="")
+    env_arg(p)
     p.set_defaults(fn=_cmd_pause)
     for name, fn in (("feed", _cmd_feed), ("backtest", _cmd_backtest), ("rules-snapshot", _cmd_rules)):
         p = sub.add_parser(name)

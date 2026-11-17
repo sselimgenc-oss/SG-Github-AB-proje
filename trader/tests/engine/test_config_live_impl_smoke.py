@@ -55,7 +55,10 @@ def test_leverage_range():
 def test_live_rules():
     with pytest.raises(ConfigError):
         _base(mode="live", bot="twin", live=LIVE)
-    assert _base(mode="testnet", bot="twin", live=LIVE).mode == "testnet"
+    with pytest.raises(ConfigError):
+        _base(mode="testnet", bot="twin", live=LIVE)
+    with pytest.raises(ConfigError):
+        _base(mode="testnet", live=LIVE, cost={"trigger_source": "last"})
     with pytest.raises(ConfigError):
         _base(mode="live", live=LIVE, cost={"trigger_source": "last"})
 
@@ -104,3 +107,115 @@ def test_cli_exit_codes(monkeypatch):
     assert _run(monkeypatch, keys, checker=refuse) == 8
     seen = []
     assert _run(monkeypatch, keys, checker=lambda c, k, s: seen.append(c.mode)) == cli.EXIT_FAZ_B and seen == ["testnet"]
+
+
+# ------------------------------------------------------------------ mentor duzeltmeleri F1-F9
+def _live_dir(tmp_path):
+    import shutil
+    d = tmp_path / "cfg"
+    shutil.copytree(CFG, d)
+    (d / "engine.live.json").write_text(json.dumps(
+        {"mode": "live", "var_dir": str(tmp_path / "var-live"), "kill_file": str(tmp_path / "K"),
+         "pause_file": str(tmp_path / "P"), "live": LIVE}))
+    return d
+
+
+def test_load_engine_config_no_confirm_without_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("LIVE_CONFIRM", raising=False)
+    d = _live_dir(tmp_path)
+    c = load_engine_config(d / "engine.base.json", d / "engine.learner.json", overlay_path=d / "engine.live.json")
+    assert c.mode == "live"
+    with pytest.raises(ConfigError, match="live_confirm"):
+        load_engine_config(d / "engine.base.json", d / "engine.learner.json",
+                           overlay_path=d / "engine.live.json", env={})
+
+
+def test_kill_pause_succeed_under_live_config_without_confirm(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("LIVE_CONFIRM", raising=False)
+    d = _live_dir(tmp_path)
+    cd = ["--config-dir", str(d), "--env", "live"]
+    assert cli.main(["kill", *cd, "--by", "t", "--reason", "x"]) == 0
+    assert (tmp_path / "K").exists()
+    assert cli.main(["kill", *cd, "--clear"]) == 0
+    assert cli.main(["pause", "--bot", "learner", *cd, "--by", "ops"]) == 0
+    assert cli.main(["pause", "--bot", "learner", *cd, "--list"]) == 0
+    assert '"active": true' in capsys.readouterr().out
+    assert cli.main(["pause", "--bot", "learner", *cd, "--clear", "--reason", "manual", "--by", "ops"]) == 0
+
+
+def test_run_live_requires_confirm_exit_2(tmp_path, monkeypatch):
+    for k in ("LIVE_CONFIRM",):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("BINANCE_API_KEY", GOOD)
+    monkeypatch.setenv("BINANCE_API_SECRET", GOOD)
+    d = _live_dir(tmp_path)
+    called = []
+    a = cli.build_parser().parse_args(["run", "--bot", "learner", "--env", "live", "--config-dir", str(d)])
+    assert cli._cmd_run(a, checker=lambda c, k, s: called.append(1)) == cli.EXIT_FAZ_B
+    assert not called
+    monkeypatch.setenv("LIVE_CONFIRM", "sub-acct-1")
+    assert cli._cmd_run(a, checker=lambda c, k, s: called.append(1)) == cli.EXIT_FAZ_B and called == [1]
+
+
+def test_init_ledger_reconcile_live_config_ok_and_config_error_exit_2(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("LIVE_CONFIRM", raising=False)
+    d = _live_dir(tmp_path)
+    assert cli.main(["reconcile", "--bot", "learner", "--config-dir", str(d), "--env", "live"]) == cli.EXIT_FAZ_B
+    assert "faz_b" in capsys.readouterr().err
+    assert cli.main(["init-ledger", "--bot", "learner", "--config-dir", str(d), "--env", "live"]) == 0
+    (d / "engine.live.json").write_text(json.dumps({"mode": "live"}))      # live blogu yok => ConfigError
+    for cmd in ("init-ledger", "reconcile"):
+        assert cli.main([cmd, "--bot", "learner", "--config-dir", str(d), "--env", "live"]) == 2
+
+
+def test_apply_overrides_backtest_paper_drop_live():
+    t = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.testnet.json")
+    assert apply_overrides(t, mode="backtest", veto_mode="off").live is None
+    assert apply_overrides(t, mode="paper").live is None
+    assert apply_overrides(t, mode="paper").mode == "paper"
+
+
+def test_backtest_build_config_under_live_bot_file(tmp_path):
+    from trader_engine.backtest import BacktestRunner, BacktestSpec
+    d = _live_dir(tmp_path)
+    raw = json.loads((d / "engine.learner.json").read_text())
+    raw.update({"mode": "live", "live": LIVE})
+    (d / "engine.learner.json").write_text(json.dumps(raw))
+    from datetime import datetime, timezone
+    spec = BacktestSpec(id="t", start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+                        end=datetime(2025, 1, 2, tzinfo=timezone.utc), config_dir=str(d))
+    cfg = BacktestRunner(spec).build_config()
+    assert cfg.mode == "backtest" and cfg.live is None
+
+
+def test_build_engine_refuses_testnet_live_without_broker(tmp_path):
+    from trader_engine.engine import build_engine
+    for m in ("testnet", "live"):
+        with pytest.raises(ConfigError, match="faz_b"):
+            build_engine(_base(mode=m, live=LIVE, var_dir=str(tmp_path / "v")))
+
+
+def test_entry_leverage_wired(tmp_path):
+    from trader_engine import gates
+    assert gates.entry_leverage(_base()) == 3
+    assert gates.entry_leverage(_base(leverage=4)) == 4
+    assert gates.entry_leverage() == LOCKED_CFG.min_leverage
+
+
+def test_engine_start_prepares_with_cfg_leverage(tmp_path):
+    import inspect
+    from trader_engine import engine as E
+    src = inspect.getsource(E.Engine.start)
+    assert "entry_leverage(cfg)" in src and "entry_leverage()" not in src
+    import trader_engine.gates as G
+    assert "entry_leverage(self.cfg)" in inspect.getsource(G.EntryGate)
+
+
+def test_testnet_config_env_specific_paths():
+    c = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.testnet.json")
+    assert c.kill_file == "shared/testnet/KILL" and c.pause_file == "shared/testnet/PAUSE"
+
+
+def test_gitignore_has_live_vars():
+    t = (ROOT / ".gitignore").read_text().split()
+    assert "var-testnet/" in t and "var-live/" in t
