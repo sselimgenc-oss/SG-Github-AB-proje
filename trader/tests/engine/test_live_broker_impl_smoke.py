@@ -539,7 +539,88 @@ def test_pending_new_entry_queried_every_poll_and_missing_order_dropped_with_fin
     del ex.orders[r.client_id]
     clock.advance(1)
     b.poll(clock.now())
+    assert r.client_id in b._pending_market and not b.findings         # tek -2013 dusurmez
+    for _ in range(12):
+        clock.advance(1)
+        evs = b.poll(clock.now())
+        if r.client_id not in b._pending_market:
+            break
     assert r.client_id not in b._pending_market and f"pending_order_not_found:{r.client_id}" in b.findings
+    assert [e.detail for e in evs if e.kind == "order_rejected"] == ["pending_not_found"]
+
+
+def test_pending_not_found_streak_resets_when_order_reappears():
+    b, ex, clock = build()
+    r = req("entry", 10.0)
+    row = {"clientOrderId": r.client_id, "symbol": "XRPUSDT", "side": "BUY", "type": "MARKET", "reduceOnly": False,
+           "origQty": "10", "time": 1, "orderId": 4243, "status": "NEW", "executedQty": "0", "avgPrice": "0", "updateTime": 1}
+    ex.orders[r.client_id] = dict(row)
+    ex.inject("/fapi/v1/order", FakeResp(200, dict(row)))
+    assert b.market_order(r).status == "accepted"
+    del ex.orders[r.client_id]
+    for _ in range(5):
+        clock.advance(1)
+        b.poll(clock.now())
+    ex.orders[r.client_id] = dict(row)
+    clock.advance(1)
+    b.poll(clock.now())
+    assert b._pending_nf == {} or r.client_id not in b._pending_nf
+    del ex.orders[r.client_id]
+    for _ in range(5):
+        clock.advance(1)
+        b.poll(clock.now())
+    assert r.client_id in b._pending_market and not b.findings
+
+
+def test_candidate_query_reject_skips_candidate_and_force_orders_reject_proceeds_with_finding():
+    b, ex, clock = build()
+    s_entry = b.market_order(req("entry", 10.0))
+    b.poll(clock.now())
+    stop_cid = req("stop", 10.0, 1.9).client_id
+    b.register_position(XRP, clock.now(), [stop_cid])                              # aday: sorgulanamayan stop kimligi
+    ex.external_close("XRPUSDT")
+    clock.advance(31)
+    ex.inject("/fapi/v1/algoOrder", FakeResp(400, {"code": -1102, "msg": "param"}))    # aday sorgusu (kesin ret)
+    ex.inject("/fapi/v1/forceOrders", FakeResp(400, {"code": -4000, "msg": "bad"}))
+    ex.inject("/fapi/v1/forceOrders", FakeResp(400, {"code": -4000, "msg": "bad"}))
+    f = [e for e in b.poll(clock.now()) if e.fill]
+    assert len(f) == 1 and f[0].detail == "foreign_close"
+    assert any(x.startswith("force_orders_rejected:") for x in b.findings)
+    assert ex.count("algoOrder") >= 1
+    assert s_entry.status == "filled"
+
+
+def test_force_orders_start_time_clamped_to_last_7_days():
+    pos = T0 - timedelta(days=30)
+    b, ex, clock = build()
+    seen = []
+    orig = b._rest.force_orders
+    b._rest.force_orders = lambda sym, start, *a, **k: (seen.append(start), orig(sym, start, *a, **k))[1]
+    b.market_order(req("entry", 10.0))
+    b.poll(clock.now())
+    b._pos_since[XRP] = pos
+    ex.external_close("XRPUSDT")
+    clock.advance(31)
+    b._pending_close[XRP] = pos
+    b.poll(clock.now())
+    floor = int((clock.now() - timedelta(days=7)).timestamp() * 1000)
+    assert seen and all(s >= floor for s in seen)
+
+
+def test_margin_types_from_last_position_risk_read():
+    b, ex, clock = build()
+    assert b.margin_types() == {}
+    b.positions()
+    assert b.margin_types() == {XRP: "isolated", DOGE: "isolated"}
+    ex.margin_type["XRPUSDT"] = "cross"
+    b.positions()
+    assert b.margin_types()[XRP] == "cross"
+
+
+def test_entry_fill_pos_since_has_margin_on_immediate_fill():
+    b, ex, clock = build()
+    b.market_order(req("entry", 10.0))
+    assert b._pos_since[XRP] == T0 - timedelta(seconds=2)
 
 
 # -- 18

@@ -66,6 +66,11 @@ _BLOCK_PRIORITY = ("exchange_auth", "exchange_unknown_code", "working_type_unver
 STARTUP_BAN_SLEEP_MAX_S = 300.0
 STARTUP_RULES_TRIES = 2
 POS_SINCE_MARGIN = timedelta(seconds=2)
+PENDING_NF_TRIES = 3           # bekleyen piyasa emri: ust uste "yok" (-2013) sayisi ...
+PENDING_NF_SPAN_S = 10.0       # ... ve ilk "yok"tan bu yana gecen sure dolmadan dusurulmez
+FORCE_ORDERS_MAX_AGE = timedelta(days=7)   # forceOrders startTime en fazla 7 gun geriye
+FEE_FALLBACK_CTR = "fee_rate_fallback"     # sayac anahtari (risk sabiti degil)
+assert _COUNTERS[0] == FEE_FALLBACK_CTR
 CLOSE_FAST_TRIES = 3
 CLOSE_GIVEUP_S = 60.0
 STOP_KEEP = 3                  # pair basina iptal edilmis son stop kimligi sayisi (gec tetiklenme atfi icin)
@@ -172,6 +177,8 @@ class LiveBroker:
         self._seq = 0
         self._queue: list[tuple[datetime, int, BrokerEvent]] = []
         self._pending_market: dict[str, _Pending] = {}
+        self._pending_nf: dict[str, tuple[datetime, int]] = {}   # cid -> (ilk "yok" zamani, ust uste sayi)
+        self._margin_types: dict[str, str] = {}          # son positionRisk okumasindan pair -> isolated|cross
         self._pending_close: dict[str, datetime] = {}
         self._pc_first: dict[str, datetime] = {}         # cozulmemis kapanis: ilk deneme zamani / deneme sayisi / sonraki deneme
         self._pc_tries: dict[str, int] = {}
@@ -476,7 +483,7 @@ class LiveBroker:
             except (ExchangeError, ValueError):
                 rate = None
             if rate is None or not math.isfinite(rate) or rate < 0:
-                self._ctr[_COUNTERS[0]] += 1     # "fee_rate_fallback" sayaci (risk sabiti degil)
+                self._ctr[FEE_FALLBACK_CTR] += 1
                 log.warning("fee_rate_fallback:%s", p)
             else:
                 self._taker[p] = rate
@@ -533,6 +540,9 @@ class LiveBroker:
             if not isinstance(r, dict):
                 continue
             pair = self._pair(str(r.get("symbol", "")))
+            mt = str(r.get("marginType", "")).lower()
+            if mt in ("isolated", "cross"):
+                self._margin_types[pair] = mt
             m = _fl(r.get("markPrice"))
             if m > 0:
                 self._last_mark[pair] = m
@@ -546,6 +556,10 @@ class LiveBroker:
             elif pair not in self._open_pairs:
                 self._last_pos.pop(pair, None)
         return cur
+
+    def margin_types(self) -> dict[str, str]:
+        """Son positionRisk okumasindan {pair: "isolated"|"cross"} (marginType alani; okunmayan cift yok). Ag cagrisi yapmaz."""
+        return dict(self._margin_types)
 
     def positions(self) -> list[BrokerPosition]:
         now = self._now()
@@ -795,7 +809,7 @@ class LiveBroker:
                 sign = D(1) if info.side == "buy" else D(-1)
                 self._open_pairs.add(pair)
                 self._last_pos[pair] = sign * ex
-                self._pos_since[pair] = now
+                self._pos_since[pair] = now - POS_SINCE_MARGIN
                 self._entry_fee[pair] = fee
                 self._push(BrokerEvent("fill", ts, pair, cid, Fill(cid, pair, "entry", info.side, float(ex), avg, fee, ts, "market")))  # type: ignore[arg-type]
                 return "filled", float(ex), avg, fee
@@ -1005,14 +1019,23 @@ class LiveBroker:
                 continue
             except ExchangeError:
                 continue
-            if q is None:                                    # POST kabul etmisti; emir artik yok: birak + bulgu
-                del self._pending_market[cid]
-                self.findings.append(f"pending_order_not_found:{cid}")
-                log.critical("bekleyen emir bulunamadi: %s", cid)
+            if q is None:                                    # POST kabul etmisti; tek -2013 yetmez (gecikmeli gorunurluk)
+                now = self._now()
+                first, n = self._pending_nf.get(cid, (now, 0))
+                n += 1
+                self._pending_nf[cid] = (first, n)
+                if n >= PENDING_NF_TRIES and (now - first).total_seconds() >= PENDING_NF_SPAN_S:
+                    del self._pending_market[cid]
+                    del self._pending_nf[cid]
+                    self.findings.append(f"pending_order_not_found:{cid}")
+                    self._push(BrokerEvent("order_rejected", now, info.pair, cid, detail="pending_not_found"))
+                    log.critical("bekleyen emir bulunamadi: %s", cid)
                 continue
+            self._pending_nf.pop(cid, None)
             outcome, *_ = self._settle(info, cid, q)
             if outcome != "pending":
                 del self._pending_market[cid]
+                self._pending_nf.pop(cid, None)
 
     def _clear_pending_close(self, pair: str) -> None:
         for d in (self._pending_close, self._pc_first, self._pc_tries, self._pc_next):
@@ -1222,8 +1245,10 @@ class LiveBroker:
                         r = self._rc("query_conditional", symbol, c, protective=True, attempts=1)
                     else:
                         r = self._rc("query_order", symbol, c, protective=True, attempts=1)
+                except ExchangeReject:
+                    continue                                    # bu aday sorgulanamadi (kesin ret): atla
                 except ExchangeError:
-                    raise _Retry() from None
+                    raise _Retry() from None                    # belirsiz / ban / yetki: yeniden dene
                 if isinstance(r, dict) and oid in (str(r.get("actualOrderId")), str(r.get("orderId"))):
                     cid = c
                     self._learn(r, pair)
@@ -1249,8 +1274,14 @@ class LiveBroker:
         # yabanci ilan etmeden once: likidasyon/ADL emri mi? (forceOrders; sorgulanamayan likidasyon emri icin tek yol)
         if oid and getattr(self._rest, "force_orders", None) is not None:
             for typ in ("LIQUIDATION", "ADL"):
+                start = max(_ms(since) - 1000, _ms(self._now() - FORCE_ORDERS_MAX_AGE) + 60_000)   # borsa siniri 7 gun
                 try:
-                    rows = self._rc("force_orders", symbol, _ms(since) - 1000, typ, protective=True, attempts=1)
+                    rows = self._rc("force_orders", symbol, start, typ, protective=True, attempts=1)
+                except ExchangeReject:
+                    f = f"force_orders_rejected:{pair}:{oid}"
+                    if f not in self.findings:
+                        self.findings.append(f)
+                    continue                                    # kesin ret: bulgu ile devam (yabanci ilanina gidebilir)
                 except ExchangeError:
                     raise _Retry() from None
                 for fr in rows or []:

@@ -194,6 +194,7 @@ class LiveBroker:                      # Broker protokolü (03 §3); tasarımdak
         # pozisyona ait kimlikler (stop/çıkış; çıkış atfı için ipucu). Kayıtsız pozisyon yalnız `_sync` onu açık görürse izlenir.
     def foreign_open_orders(self) -> list[dict]                        # kimliği bizim önek + geçerli rol harfi taşımayan açık emirler
     def health(self) -> dict                                           # rest.health() + sayaçlar, reachable, last_sync_ts, naked, entries_blocked_reasons
+    def margin_types(self) -> dict[str, str]                           # son positionRisk okumasından {pair: "isolated"|"cross"} (marginType); ağ çağrısı yok; mutabakat L10 okur
     def counters(self) -> dict; def set_naked(self, rows: list) -> None; last_ban: tuple[http, retry_after_s] | None
     entries_blocked_reason: str | None   # salt okunur; entries_blocked_reasons (öncelik sıralı demet) yapışkan KÜMEDEN türetilir
 ```
@@ -345,7 +346,7 @@ Zaman: açılışta `protect_first`, kapıdan sonra tam `run`; pozisyon ya da ç
 | L2a | L2 adayı, ama o çiftte son 24 saatte `failed`/`unknown` durumda bizim giriş emrimiz var ve `query` onu `filled` gösteriyor (geç dolum) | Pozisyon satırı yeniden açılır (dolum `query`'den), stop o satırın `initial_stop`'unda **hemen** kurulur (kurulamazsa kapatılır), `pause.add("late_fill", …)`, `CRITICAL` |
 | L3 | State `open`/`closing`, borsada pozisyon yok | `broker.closing_events(pair, pos.entry_ts)` → olaylar normal yoldan işlenir (çıkış kaydı, artık emirler iptal). Olay türetilemiyorsa bulgu `exit_unresolved:<tid>`, girişler kapalı (`reconcile_state_orphan`), sonraki turda yeniden; 10 dakikayı aşarsa `CRITICAL`. Emir verilmez |
 | L3b | State `opening`, pencere doldu, emir yok, borsa düz | `_close_unopened` |
-| L4 | İkisi de var, borsa miktarı state'ten **küçük** (dış azaltma, ADL, kısmi çıkış) | State `qty := borsa miktarı`; stop yeni miktarla yeniden kurulur (yeni önce, eski sonra); bulgu `qty_reduced_external:<tid>`, `CRITICAL` |
+| L4 | İkisi de var, borsa miktarı state'ten **küçük** (dış azaltma, ADL, kısmi çıkış) | **State `qty` ORİJİNAL giriş miktarı olarak KALIR** (`closing_events` pozisyonu azaltan TÜM işlemleri kapsadığından nihai çıkış olayı `qty` = giriş miktarı ve VWAP'ı dış azaltmanın gerçekleşen kâr/zararını zaten içerir; satır ile olay eşleşir). Borsadaki gerçek miktar ve dış azaltmanın tahmini kâr/zararı kv `ext_reduction:<tid>` kaydına yazılır (denetim; defterde çift sayılmaz). Stop ve çıkış emri miktarı **borsa miktarı** olur (`exchange_qty_override`; stop L6 ile yeni önce, eski sonra); bulgu `qty_reduced_external:<tid>`, `CRITICAL` (değişimde bir kez günlüklenir) |
 | L5 | Pozisyon var (`open`/`closing`), borsada bizim stopumuz **yok** | **Hemen** yeni sıra numarasıyla stop (`current_stop`, sıkı yuvarlama, borsa miktarı). `would_trigger` → piyasada kapat. İkinci deneme de başarısız → piyasada kapat + `stop_failed`. Sayaç `stops_reinstalled` |
 | L6 | Stop miktarı ≠ pozisyon miktarı | Doğru miktarla yeni stop, sonra eskiler iptal (r8: yeni stop iptal edilmez) |
 | L7 | Aynı pozisyonda birden çok bizim stopumuz | En sıkısı kalır (long: en yüksek tetik; short: en düşük); diğerleri iptal; state `current_stop`/`stop_client_id` kalana eşitlenir |
