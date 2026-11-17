@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader gunluk sapma izleyicisi (%i; 20:20 Europe/Istanbul, 21:00 gunluk raporundan once)
+
+[Timer]
+OnCalendar=*-*-* 20:20:00 Europe/Istanbul
+# en fazla 5 dk dagilma: rapor 21:00'den once biter
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

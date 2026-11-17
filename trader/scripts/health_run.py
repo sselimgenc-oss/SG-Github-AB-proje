@@ -82,9 +82,15 @@ def _env_num(env, name, cast, default, *, minimum=0):
     return v if v >= minimum and v == v and v not in (float("inf"),) else default
 
 
+def drift_enabled_from_env(env) -> bool:
+    """DRIFT_CHECK_ENABLED (1/true/yes/on) -> drift_check_enabled (saglik-spec 16.6). Bos/diger -> kapali."""
+    return str(env.get("DRIFT_CHECK_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def make_cfg(env) -> H.HealthConfig:
     import dataclasses
     return dataclasses.replace(H.DEFAULT_CFG, require_bots=bots_from_env(env),
+                               drift_check_enabled=drift_enabled_from_env(env),
                                veto_max_age_s=veto_max_age_from_env(env), veto_strict=True,
                                naked_alarm_s=_env_num(env, "NAKED_ALARM_S", float, H.DEFAULT_CFG.naked_alarm_s),
                                exchange_unreachable_s=_env_num(env, "EXCHANGE_UNREACH_S", int,
@@ -612,6 +618,50 @@ def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
     return probes
 
 
+DRIFT_SCHEMA = "drift/1"
+
+
+def probe_drift(path: str, bot: str) -> H.DriftProbe:
+    """<var>/<bot>/drift.json -> DriftProbe (16.6). Yalniz okur, hicbir istatistik hesaplamaz. Yok -> missing;
+    bozuk/sema ya da bot uyusmaz/zaman okunamaz -> unreadable."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(2_000_001)
+    except FileNotFoundError:
+        return H.DriftProbe("missing")
+    except OSError:
+        return H.DriftProbe("unreadable")
+    try:
+        if len(raw) > 2_000_000:
+            raise ValueError("buyuk")
+        d = json.loads(raw.decode("utf-8"))
+        if not isinstance(d, dict) or d.get("schema") != DRIFT_SCHEMA or d.get("bot") != bot:
+            return H.DriftProbe("unreadable")
+        gen = _parse_dt(d.get("generated_at"))
+        ov = d.get("overall")
+        if gen is None or not isinstance(ov, str):
+            return H.DriftProbe("unreadable")
+        rules = d.get("rules")
+        up = tuple(sorted(k for k, v in rules.items() if isinstance(v, dict) and v.get("level") == "UYARI")) \
+            if isinstance(rules, dict) else ()
+        return H.DriftProbe("ok", gen, ov, up)
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return H.DriftProbe("unreadable")
+
+
+def collect_drift(env: dict, var_dir: str):
+    """drift_check_enabled kapaliysa None (kontrol SKIPPED); aciksa bot basina probe."""
+    if not drift_enabled_from_env(env):
+        return None
+    out = {}
+    for bot in bots_from_env(env):
+        try:
+            out[bot] = probe_drift(os.path.join(var_dir, bot, "drift.json"), bot)
+        except Exception:  # noqa: BLE001
+            out[bot] = H.DriftProbe("unreadable")
+    return out
+
+
 def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> H.HealthSnapshot:
     var_dir = env["ENGINE_VAR_DIR"]
     api, ledger, containers = {}, {}, {}
@@ -657,7 +707,7 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     ml = collect_ml(env, state, now, var_dir, bots_from_env(env))
     prev_scores = state.get("ml_score_errors") if isinstance(state.get("ml_score_errors"), dict) else {}
     return H.HealthSnapshot(
-        ml=ml, prev_ml_score_errors={b: v for b, v in prev_scores.items() if _int_or_none(v) is not None},
+        drift=collect_drift(env, var_dir), ml=ml, prev_ml_score_errors={b: v for b, v in prev_scores.items() if _int_or_none(v) is not None},
         market=market, prev_rules_missing=dict(state.get("rules_missing", {})),
         now=now, timeframe_s=tf_s, api=api, ledger=ledger, disk_free_bytes=free, mem_available_bytes=mem,
         swap_total_bytes=swap_t, swap_used_bytes=swap_u, containers=containers,

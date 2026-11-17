@@ -1,0 +1,25 @@
+[Unit]
+Description=Trader gunluk sapma izleyicisi (%i; tek seferlik, salt okunur)
+Documentation=file:///opt/trader/docs/kagit-degerlendirme-plani.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+# ENGINE_VAR_DIR (canliya cikista var dizini degisirse tek yer): saglik env dosyasi; yoksa <repo>/var
+EnvironmentFile=-/etc/trader-health.env
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/drift_run.py --bot %i --once
+TimeoutStartSec=120
+# 3: bozulmus calisma (defter okunamadi ya da cikti yazilamadi) SuccessExitStatus disinda => OnFailure; 0 = basarili (UYARI dahil)
+MemoryMax=64M
+CPUQuota=20%
+Nice=15
+IOSchedulingClass=idle
+ProtectSystem=strict
+ProtectHome=read-only
+# YAZILABILIR yalniz var/<bot> (drift.json, drift_state.json; defterin -shm yan dosyasi icin dizin duzeyi). '-' oneki: ikiz kapaliyken dizin yok.
+ReadWritePaths=-/opt/trader/var/%i
+ReadOnlyPaths=-/opt/trader/var/%i/ledger.sqlite
+NoNewPrivileges=true
+PrivateTmp=true
