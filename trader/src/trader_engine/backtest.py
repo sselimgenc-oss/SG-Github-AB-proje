@@ -179,7 +179,6 @@ class BacktestSpec:
     out_root: str | None = None
     config_dir: str = "config"
     pairs: tuple[str, ...] | None = None
-    compat_trail_lag: bool = False
     flags: dict = field(default_factory=dict)
 
 
@@ -422,13 +421,6 @@ class BacktestRunner:
         if cfg.cost.fill_model == "legacy_compat":
             def entry_ref(pair, D, row, _v=view):          # noqa: E306  (freqtrade current_rate: sonraki adim acilisi)
                 return _v.open_at(pair, D)
-        if s.compat_trail_lag:                              # yalniz legacy_compat (spec_from_args dogrular); native'e dokunmaz
-            _orig_ec = signals.exit_context
-
-            def _lagged_exit_context(pair, pos, D, _o=_orig_ec):     # noqa: E306
-                ctx = _o(pair, pos, D)
-                return None if ctx is None else dataclasses.replace(ctx, trail_lag=True)
-            signals.exit_context = _lagged_exit_context     # type: ignore[method-assign]
         eng = Engine(cfg, clock=clock, view=view, broker=broker, ledger=ledger, state=state, signals=signals,
                      strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=True,
                      tick_fn=tick_fn)
@@ -743,8 +735,6 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out-root", default=None, help="varsayilan: <var_dir>/backtests")
     ap.add_argument("--config-dir", default="config")
     ap.add_argument("--pairs", default=None, help="virgullu kanonik ciftler (BTC/USDT,ETH/USDT)")
-    ap.add_argument("--compat-trail-lag", action="store_true",
-                    help="yalniz legacy_compat: iz suren stop guncellemesi bir bar gecikir (freqtrade zamanlamasi)")
     return ap
 
 
@@ -764,8 +754,6 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         raise BacktestArgError("bad_params", f"--params JSON degil: {e}") from e
     if a.fill_model == "legacy_compat" and a.granularity not in (None, "15m"):
         raise BacktestArgError("bad_args", "legacy_compat: --granularity 15m zorunlu")
-    if a.compat_trail_lag and a.fill_model != "legacy_compat":
-        raise BacktestArgError("bad_args", "--compat-trail-lag yalniz --fill-model legacy_compat ile")
     trunc = parse_end_prime(a.truncate_check) if a.truncate_check else None
     return BacktestSpec(
         id=a.id, start=start, end=end, period=period, strategy=a.strategy, tf=a.tf, fill_model=a.fill_model,
@@ -773,7 +761,7 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         market_db=a.market_db, history_dir=a.history_dir, synthetic_rules=a.synthetic_rules, veto=a.veto,
         record_filtered=a.record_filtered, skip_flat=not a.no_skip_flat, paranoid=a.paranoid, seed=a.seed,
         truncate_check=trunc, from_paper_ledger=a.from_paper_ledger, out_root=a.out_root, config_dir=a.config_dir,
-        pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None, compat_trail_lag=bool(a.compat_trail_lag),
+        pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None,
         flags=dict(argv=list(argv)))
 
 

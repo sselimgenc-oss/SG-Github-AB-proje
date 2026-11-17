@@ -28,7 +28,6 @@ class ExitContext:
     regime_last: str | None
     last_close: float
     n_closed: int
-    trail_lag: bool = False      # yalniz legacy_compat: iz stop yolu son kapanmis bar HARIC hesaplanir (freqtrade bir bar eski ATR/uc)
 
 
 @dataclass(frozen=True)
@@ -63,8 +62,6 @@ def _fin(x) -> bool:
 
 def trail_stop_value(pos: Position, ctx: ExitContext) -> tuple[float, bool]:
     highs, lows, atrs = ctx.highs, ctx.lows, ctx.atrs
-    if ctx.trail_lag:                                   # uyum bayragi (varsayilan kapali): stop guncellemesi bir bar gecikir
-        highs, lows, atrs = highs[:-1], lows[:-1], atrs[:-1]
     if pos.setup != "T1" or len(highs) == 0:
         return float(pos.initial_stop), False
     path = signals.trail_stop_path(pos.side, pos.entry_price, pos.initial_stop, highs, lows, atrs, pos.trail_atr)

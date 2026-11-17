@@ -6,7 +6,7 @@ TAM), ozsermaye = cuzdan + acik referans pozisyonlarin `calc_profit` (son kapanm
 ozsermayesi = cuzdan - bugun (UTC) kapanan K/Z, acik pozisyonlar referanstan (planned_risk, stake). Sonra freqtrade'in kendi
 stake kisma kurali (docs 06 "Adim 5": min(karar marji, 0.99*cuzdan - acik stake'ler)) ve stake->miktar kesmesi uygulanir.
 `--equity est` eski tahmini (`equity_entry_est`, kisma kurali yok) kullanir.
-CIKIS (b): motor calismasi (`--engine-dir`, onerilen: --compat-trail-lag acik) ile anahtari eslesen islemlerde cikis nedeni +
+CIKIS (b): motor calismasi (`--engine-dir`, bayrak-kapali uyum motoru) ile anahtari eslesen islemlerde cikis nedeni +
 zamani + fiyat (<= 1 tik) karsilastirilir.
 Kullanim: python research/bt_chainfree_diag.py --id 1h_IS_f1_s0 --tf 1h [--engine-dir D] [--out-dir D]
 Cikti: <out>/<id>_chainfree.json + ozet satirlari. Freqtrade calistirilmaz."""
