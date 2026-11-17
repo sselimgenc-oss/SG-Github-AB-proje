@@ -322,10 +322,12 @@ def test_runner_run_once(tmp_path):
         def fail(self, rep):
             sent.append("fail")
             return False
+    import dataclasses
     env = {"HEARTBEAT_URL": "https://h.example/x"}
     sp = tmp_path / "state.json"
+    fresh = lambda **kw: dataclasses.replace(snap(**kw), veto_file_mtime=NOW - timedelta(minutes=5))  # noqa: E731
     code = R.run_once(env, now=NOW, state_path=sp, notifier=H.NullNotifier(), sender=S(),
-                      snapshot_fn=lambda e, s, n: snap())
+                      snapshot_fn=lambda e, s, n: fresh())
     assert code == 0 and sent == ["ok"]
     st = json.loads(sp.read_text())
     assert st["last_overall"] == "OK" and "installed_at" in st
@@ -333,7 +335,7 @@ def test_runner_run_once(tmp_path):
     api["learner"] = ApiProbe()
     sent.clear()
     code = R.run_once(env, now=NOW, state_path=sp, notifier=H.NullNotifier(), sender=S(),
-                      snapshot_fn=lambda e, s, n: snap(api=api))
+                      snapshot_fn=lambda e, s, n: fresh(api=api))
     assert code == 10 and sent == ["fail"]
     sp.write_text("{bozuk")
     state, reset = R.load_state(sp)

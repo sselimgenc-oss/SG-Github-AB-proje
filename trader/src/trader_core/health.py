@@ -182,6 +182,7 @@ class HealthConfig:
     clock_skew_tolerance_s: int = 5
     require_bots: tuple[str, ...] = ("learner", "twin")
     veto_max_age_s: int | None = None
+    veto_strict: bool = False   # True: veto belgesi yok -> CRIT; yas > veto_max_age_s -> CRIT (WARN bandi yok)
     budget_check_enabled: bool = False
     # Uyari bastirma (Bolum 5)
     confirm_runs: int = 2
@@ -466,11 +467,18 @@ def _c_veto(snap, cfg):
         return _res("veto_file_age", Status.SKIPPED, "placeholder", "veto dosyasi denetimi kapali")
     t = snap.veto_file_mtime
     if t is None:
+        if cfg.veto_strict:
+            return _res("veto_file_age", Status.CRIT, "veto_missing", "veto belgesi yok/bayat: girisler kapali")
         return _unknown("veto_file_age", "veto_unknown", "veto dosyasi yok ya da okunamadi")
     try:
         age = _age_s(snap.now, t, cfg)
     except _Skew:
         return _unknown("veto_file_age", "clock_skew", "veto dosya zamani gelecekte; saat uyumsuz")
+    if cfg.veto_strict:
+        if age > mx:
+            return _res("veto_file_age", Status.CRIT, "veto_stale",
+                        f"veto belgesi yok/bayat: girisler kapali (yas {age:.0f} sn, esik {mx:.0f} sn)", age, mx)
+        return _res("veto_file_age", Status.OK, "ok", f"veto dosyasi yasi {age:.0f} sn", age, mx)
     return _graded("veto_file_age", age, mx, 3 * mx, "ok", "veto_stale", "veto dosyasi yasi")
 
 

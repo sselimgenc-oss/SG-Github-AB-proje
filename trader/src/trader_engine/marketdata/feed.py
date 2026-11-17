@@ -618,6 +618,9 @@ def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = N
     except FailClosed as e:
         log.critical("feed baslamadi: %s", e)
         return EXIT_STORE
+    except (ExchangeError, DataError, RulesError) as e:     # acilista ag/borsa/veri hatasi (traceback yok)
+        log.critical("feed baslamadi: borsa/ag hatasi: %s", type(e).__name__)
+        return EXIT_RULES
     except SystemExit as e:
         return int(e.code or 0)
     finally:

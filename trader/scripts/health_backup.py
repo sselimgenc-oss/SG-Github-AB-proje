@@ -22,7 +22,13 @@ GIB = 1024 ** 3
 MIN_FREE_BYTES = 1 * GIB
 KEEP_MIN, KEEP_MAX, KEEP_DEFAULT = 3, 60, 14
 MIN_OK_AFTER_ROTATION = 3
-BOTS = ("learner", "twin")
+BOTS = ("learner", "twin")   # varsayilan; HEALTH_BOTS ile degistirilir
+
+
+def bots_from_env(env) -> tuple:
+    raw = (env.get("HEALTH_BOTS") or "").strip()
+    bots = tuple(dict.fromkeys(b for b in (x.strip() for x in raw.split(",")) if b))
+    return bots or BOTS
 EXIT_OK, EXIT_FAILED, EXIT_CRASH = 0, 20, 1
 
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -348,7 +354,7 @@ def main(argv=None) -> int:
             print("health_backup: BACKUP_DIR, ENGINE_VAR_DIR gerekli", file=sys.stderr)
             return EXIT_CRASH
         keep = parse_keep_days(env.get("BACKUP_KEEP_DAYS"))
-        code, m = run_backup(backup_dir, var_dir, keep)
+        code, m = run_backup(backup_dir, var_dir, keep, bots=bots_from_env(env))
         bad = [k for k, v in m["files"].items() if not v["ok"]]
         print(json.dumps({"backup_ok": m["ok"], "failed": bad, "created_at": m["created_at"]}))
         if bad:

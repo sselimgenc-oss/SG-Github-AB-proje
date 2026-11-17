@@ -29,8 +29,65 @@ TOTAL_BUDGET_S = 60.0
 STATUS_SCHEMA = "engine-status/1"
 STATUS_MAX_BYTES = 2_000_000
 PING_MAX_AGE_S = 120  # docs/motor/05 8.2: ping_ok = (simdi - loop_at) <= 120 sn
-BOTS = ("learner", "twin")
+DEFAULT_BOTS = ("learner", "twin")
+BOTS = DEFAULT_BOTS   # geriye uyum; calisma zamani listesi: bots_from_env(env)
+DEFAULT_VETO_MAX_AGE_S = 5400
+_ROOT = _HERE.parent
 _TF_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
+
+
+def bots_from_env(env) -> tuple[str, ...]:
+    """HEALTH_BOTS (virgullu; varsayilan "learner,twin"). Bos/gecersiz -> varsayilan."""
+    raw = (env.get("HEALTH_BOTS") or "").strip()
+    bots = tuple(dict.fromkeys(b for b in (x.strip() for x in raw.split(",")) if b))
+    return bots or DEFAULT_BOTS
+
+
+def veto_file_from_env(env) -> str:
+    """VETO_FILE; yoksa config/veto.json `veto_path` (goreli -> repo koku), o da okunamazsa shared/veto/veto.json."""
+    v = (env.get("VETO_FILE") or "").strip()
+    if v:
+        return v
+    rel = "shared/veto/veto.json"
+    try:
+        with open(_ROOT / "config" / "veto.json", encoding="utf-8") as f:
+            p = json.load(f).get("veto_path")
+        if isinstance(p, str) and p:
+            rel = p
+    except (OSError, ValueError, AttributeError):
+        pass
+    return rel if os.path.isabs(rel) else str(_ROOT / rel)
+
+
+def veto_max_age_from_env(env) -> int:
+    try:
+        n = int(str(env.get("VETO_MAX_AGE_S") or "").strip())
+    except ValueError:
+        return DEFAULT_VETO_MAX_AGE_S
+    return n if n > 0 else DEFAULT_VETO_MAX_AGE_S
+
+
+def probe_veto_mtime(path: str):
+    try:
+        return datetime.fromtimestamp(os.stat(path).st_mtime, tz=timezone.utc)
+    except OSError:
+        return None
+
+
+def make_cfg(env) -> H.HealthConfig:
+    import dataclasses
+    return dataclasses.replace(H.DEFAULT_CFG, require_bots=bots_from_env(env),
+                               veto_max_age_s=veto_max_age_from_env(env), veto_strict=True)
+
+
+class NoHeartbeat:
+    """HEARTBEAT_URL bos: dis nabiz kapali (WARN); rc=1 degil."""
+
+    def ok(self, report) -> bool:
+        return True
+
+    def fail(self, report) -> bool:
+        return True
 
 
 def timeframe_to_s(tf) -> int | None:
@@ -247,7 +304,7 @@ def collect_market(env: dict, var_dir: str):
     fs = env.get("MARKET_FEED_STATUS") or os.path.join(var_dir, "feed-status.json")
     try:
         return probe_market(db_path=db, feed_status_path=fs, pairs=market_pairs(env),
-                            engine_status_paths={b: status_path(var_dir, b) for b in BOTS})
+                            engine_status_paths={b: status_path(var_dir, b) for b in bots_from_env(env)})
     except Exception:  # noqa: BLE001
         return H.MarketProbe(feed_status_state="unreadable", db_state="unreadable")
 
@@ -279,20 +336,28 @@ def probe_mem(meminfo_path="/proc/meminfo"):
 # --------------------------------------------------------------------------- ortam
 def load_env(environ=None) -> dict:
     env = dict(os.environ if environ is None else environ)
-    need = ("HEARTBEAT_URL", "ENGINE_VAR_DIR", "BACKUP_DIR")
+    need = ("ENGINE_VAR_DIR", "BACKUP_DIR")
     missing = [k for k in need if not env.get(k)]
     if missing:
         raise ValueError("eksik ortam degiskenleri: " + ", ".join(missing))
+    if not (env.get("HEARTBEAT_URL") or "").strip():
+        log.warning("HEARTBEAT_URL bos: dis nabiz KAPALI (dis servis sessizligi izlenmez)")
     return env
 
 
-def make_notifier(name: str):
+def make_notifier(name: str, environ=None):
+    """telegram: TelegramNotifier (basarisizsa Outbox spool'una yazar, dedup_key = alert.fingerprint).
+    auto: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID varsa telegram, yoksa log + WARN."""
+    environ = os.environ if environ is None else environ
     if name == "log":
         return H.LogNotifier()
-    if name == "telegram":
+    if name in ("telegram", "auto"):
         from trader_core import telegram as T
-        n = T.notifier_from_env(os.environ)
+        n = T.notifier_from_env(environ)
         if n is None:
+            if name == "auto":
+                log.warning("NOTIFIER=auto: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID yok; uyarilar yalniz gunluge yazilir")
+                return H.LogNotifier()
             raise ValueError("telegram yapilandirilmamis")
         return n
     raise ValueError("bilinmeyen NOTIFIER")
@@ -302,7 +367,7 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     var_dir = env["ENGINE_VAR_DIR"]
     api, ledger, containers = {}, {}, {}
     tf_s = None
-    for bot in BOTS:
+    for bot in bots_from_env(env):
         sp = status_path(var_dir, bot)
         try:
             probe, t = probe_status(sp, bot, now)
@@ -333,7 +398,8 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
         swap_total_bytes=swap_t, swap_used_bytes=swap_u, containers=containers,
         prev_restart_counts=dict(state.get("restart_counts", {})),
         consecutive_restart_runs=dict(state.get("consecutive_restart_runs", {})),
-        installed_at=H._from_iso(state.get("installed_at")), last_backup_at=last_backup)
+        installed_at=H._from_iso(state.get("installed_at")), last_backup_at=last_backup,
+        veto_file_mtime=probe_veto_mtime(veto_file_from_env(env)))
 
 
 def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifier=None, sender=None,
@@ -343,11 +409,12 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
     state, reset = load_state(state_path)
     if state.get("installed_at") is None:
         state["installed_at"] = H._iso(now)
-    notifier = notifier or make_notifier(env.get("NOTIFIER", "log"))
-    sender = sender or H.HttpsHeartbeat(env["HEARTBEAT_URL"], env.get("HEARTBEAT_FAIL_URL") or None)
+    notifier = notifier or make_notifier(env.get("NOTIFIER", "log"), env)
+    hb_url = (env.get("HEARTBEAT_URL") or "").strip()
+    sender = sender or (H.HttpsHeartbeat(hb_url, env.get("HEARTBEAT_FAIL_URL") or None) if hb_url else NoHeartbeat())
     deadline = time.monotonic() + TOTAL_BUDGET_S
     snap = snapshot_fn(env, state, now) if snapshot_fn else collect(env, state, now, deadline=deadline)
-    report = H.evaluate(snap)
+    report = H.evaluate(snap, make_cfg(env))
 
     maint = None
     mf = env.get("HEALTH_MAINTENANCE_FILE")

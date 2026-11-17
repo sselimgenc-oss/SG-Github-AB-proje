@@ -4,6 +4,7 @@ asla sessizlik. Birim anlambilimi (RestartPreventExitStatus, OnFailure) test_rea
 from __future__ import annotations
 
 import json
+import os
 import logging
 import sqlite3
 import subprocess
@@ -56,15 +57,15 @@ def test_drill_feed_451_exits_6_with_critical_message(tmp_path, caplog):
 
 
 def test_drill_feed_no_network_fails_loudly_not_silently(tmp_path, caplog):
-    """Ag yok (baglanti hatasi): `GET /time` (saat olcumu) kurallardan ONCE denenir ve main()'de yakalanmaz -> surec yakalanmamis istisnayla
-    cikis 1 (journal'da traceback). Davranis sonucu 451'den farkli: Restart=always 20 sn arayla yeniden dener, 5 basarisizlik/600 sn
-    sonra birim `failed` olur ve OnFailure alarmi gider (docs/hazirlik-denetimi.md: OPEN-7, kozmetik). Sessizlik YOK, kural yazilmaz."""
-    from trader_engine.marketdata.rest_public import ExchangeError
+    """Ag yok (baglanti hatasi): main() ExchangeError'i yakalar, tek critical satir yazar, cikis 5 (451 -> 6 kalir; OPEN-7 kapandi).
+    Sessizlik YOK, kural yazilmaz."""
     cfgd = write_config(tmp_path)
     clock = SimClock(NOW0)
     sess = FakeBinance(clock, PAIRS10, "down")
-    with caplog.at_level(logging.WARNING), pytest.raises(ExchangeError):
-        F.main(["--config-dir", str(cfgd)], rest=_rest(sess, clock), clock=clock, max_ticks=1)
+    with caplog.at_level(logging.WARNING):
+        rc = F.main(["--config-dir", str(cfgd)], rest=_rest(sess, clock), clock=clock, max_ticks=1)
+    assert rc == F.EXIT_RULES == 5
+    assert any(r.levelno == logging.CRITICAL for r in caplog.records)
     assert (clock.now() - NOW0).total_seconds() < 300               # sonsuz bekleme yok
     assert any("ağ hatası" in r.getMessage() for r in caplog.records)
     st = MarketStore(tmp_path / "var" / "market.sqlite", read_only=True)
@@ -134,7 +135,10 @@ def _bring_up(tmp_path, bots=("learner", "twin")):
 def _health_env(tmp_path, cfgd):
     (tmp_path / "bk").mkdir(exist_ok=True)
     (tmp_path / "hs").mkdir(exist_ok=True)
-    return {"ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://hb.invalid/x",
+    veto = tmp_path / "veto.json"
+    veto.write_text("{}")
+    os.utime(veto, (NOW0.timestamp(), NOW0.timestamp()))             # benzetim saatine gore taze
+    return {"VETO_FILE": str(veto), "ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://hb.invalid/x",
             "MARKET_DB": str(tmp_path / "var" / "market.sqlite"), "ENGINE_CONFIG_DIR": str(cfgd), "NOTIFIER": "log",
             "STATE_DIR": str(tmp_path / "hs")}
 
@@ -163,14 +167,14 @@ def test_rehearsal_empty_server_feed_rules_gate_status_health(tmp_path, capsys):
     assert {f["code"] for f in out["failing"]} <= {"ledger_write_stale_warmup"}, out["failing"]
 
 
-@pytest.mark.xfail(strict=True, reason="ACIK P1 (OPEN-4): varsayilan kurulumda ikiz KAPALI ama saglik (require_bots=learner+twin) ikizi zorunlu "
-                                       "sayar -> health surekli CRIT, dis nabiz surekli 'fail'")
 def test_OPEN_health_is_not_crit_in_learner_only_deployment(tmp_path, capsys):
     from trader_core import health as H
     cfgd, clock, _, _e = _bring_up(tmp_path, bots=("learner",))
     hr = _health_mod("health_run_r3")
     sender = _Sender()
-    hr.run_once(_health_env(tmp_path, cfgd), now=clock.now(), state_path=str(tmp_path / "hs" / "state.json"),
+    env = _health_env(tmp_path, cfgd)
+    env["HEALTH_BOTS"] = "learner"
+    hr.run_once(env, now=clock.now(), state_path=str(tmp_path / "hs" / "state.json"),
                 notifier=H.NullNotifier(), sender=sender)
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert out["overall"] != "CRIT" and sender.calls == ["ok"]
@@ -443,11 +447,26 @@ def test_backup_of_running_engines_ledgers_is_ok_and_restorable(tmp_path):
         c.close()
 
 
-@pytest.mark.xfail(strict=True, reason="ACIK P1 (OPEN-4): varsayilan kurulumda ikiz yok ama yedek ikiz defterini ister -> her gun source_missing, cikis 20")
 def test_OPEN_backup_is_ok_in_learner_only_deployment(tmp_path):
     _bring_up(tmp_path, bots=("learner",))
-    code, m = _backup_mod().run_backup(str(tmp_path / "bk"), str(tmp_path / "var"), 14)
+    code, m = _backup_mod().run_backup(str(tmp_path / "bk"), str(tmp_path / "var"), 14, bots=_backup_mod().bots_from_env({"HEALTH_BOTS": "learner"}))
     assert code == 0 and m["ok"] is True
+
+
+def test_drill_backup_of_closed_wal_ledger_in_writable_dir_via_mode_ro(tmp_path):
+    """OPEN-10: temiz kapatilmis WAL defteri (-wal/-shm yok), yazilabilir dizinde, yedek betiginin mode=ro URI'siyle yedeklenir."""
+    from trader_engine import cli
+    cfgd = write_config(tmp_path)
+    assert cli.main(["init-ledger", "--bot", "learner", "--config-dir", str(cfgd)]) == 0     # surec cikti -> defter temiz kapandi
+    src = tmp_path / "var" / "learner" / "ledger.sqlite"
+    assert src.is_file()
+    assert not (tmp_path / "var" / "learner" / "ledger.sqlite-wal").exists()
+    bm = _backup_mod()
+    res = bm.backup_one("ledger", "learner", src, tmp_path / "out.sqlite")
+    assert res["ok"] is True, res
+    c = sqlite3.connect(f"file:{tmp_path / 'out.sqlite'}?mode=ro", uri=True)
+    assert c.execute("pragma integrity_check").fetchone()[0] == "ok"
+    c.close()
 
 
 # ------------------------------------------------------------------ panel okur + KILL dosyasi (motor/panel ayni yol)
