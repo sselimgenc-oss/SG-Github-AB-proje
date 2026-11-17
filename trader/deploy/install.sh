@@ -87,7 +87,17 @@ say "Kod deposu"
 as_trader() { runuser -u "$TRADER_USER" -- "$@"; }
 if [ -f "$DEPLOY_KEY" ]; then
   chown "$TRADER_USER:$TRADER_USER" "$DEPLOY_KEY"; chmod 600 "$DEPLOY_KEY"
-  export GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${HOME_DIR}/.ssh/known_hosts"
+  # github.com ana makine anahtarlari sabit (TOFU/accept-new yok). Kaynak: GitHub "SSH key fingerprints" belgesi ve
+  # https://api.github.com/meta (ssh_keys); parmak izleri: ed25519 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU,
+  # ecdsa SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM, rsa SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s
+  GH_KNOWN_HOSTS="${HOME_DIR}/.ssh/github_known_hosts"
+  cat > "$GH_KNOWN_HOSTS" <<'KEYS'
+github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+KEYS
+  chown "$TRADER_USER:$TRADER_USER" "$GH_KNOWN_HOSTS"; chmod 644 "$GH_KNOWN_HOSTS"
+  export GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GH_KNOWN_HOSTS}"
   CLONE_URL="$REPO_SSH_URL"
   echo "Deploy anahtari bulundu; SSH ile cekiliyor."
 else
@@ -116,8 +126,9 @@ say "Python ortami (birkac dakika surebilir)"
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade pip
 # trader/src ve trader/scripts icindeki iceri aktarmalardan: requests pandas numpy pyarrow anthropic (ccxt YOK: dis cati yasak)
 # (dis ticaret cercevesi, pytest ve diger gelistirme paketleri KURULMAZ)
+# Surum + sha256 sabit: requirements.lock (CPython 3.12, linux x86_64); --require-hashes kaymayi/degisikligi reddeder.
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
-  "requests>=2.31" "pandas>=2.2" "numpy>=1.26" "pyarrow>=15" "anthropic"
+  --require-hashes -r "$TRADER_DIR/requirements.lock"
 
 # ---- 5b. Node + wrangler (yalniz panel yayini icin; yalniz eksikse kurulur, global degil) ------------------
 say "Node/npm ve wrangler (Cloudflare yayini)"

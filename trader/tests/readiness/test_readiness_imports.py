@@ -78,9 +78,13 @@ PROBE = textwrap.dedent("""
 
 def _declared() -> list[str]:
     t = install_text()
-    m = re.search(r'pip install[^\n]*\\\n\s*(.+)', t)
-    assert m, "install.sh pip install satiri bulunamadi"
-    return [re.sub(r'[<>=!~].*', "", x.strip('"')) for x in m.group(1).split()]
+    code = re.sub(r"#.*", "", t)
+    assert re.search(r'pip install[^\n]*\\\n\s*--require-hashes -r "\$TRADER_DIR/requirements\.lock"', code), \
+        "install.sh requirements.lock'u --require-hashes ile kurmuyor"
+    lock = (ROOT / "requirements.lock").read_text()
+    m = re.search(r"^# Dogrudan:\s*(.+)$", lock, re.M)
+    assert m, "requirements.lock 'Dogrudan' basligi yok"
+    return m.group(1).split()
 
 
 def test_install_declares_expected_runtime_packages():
