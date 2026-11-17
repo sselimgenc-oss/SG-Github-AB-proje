@@ -10,20 +10,59 @@ import sys
 from pathlib import Path
 
 EXIT_OK, EXIT_REPEATED, EXIT_FAZ_B, EXIT_ENGINE, EXIT_FINDINGS = 0, 3, 2, 4, 5
+EXIT_PERMISSION = 8   # 11 §3.3: borsa yetki/izin/bolge reddi (RestartPreventExitStatus=7 8)
+
+# 11 §3.4 acilis denetimi icin enjekte edilebilir kabuk: callable(cfg, api_key, api_secret) -> None;
+# reddederse EngineExit(8, kod) firlatir. Gercek denetim LiveBroker.startup_check() (B3/B7) ile baglanir.
+STARTUP_CHECKER = None
 
 
 def _load_cfg(a):
     from .config import load_engine_config
     d = Path(a.config_dir)
-    return load_engine_config(d / "engine.base.json", d / f"engine.{a.bot}.json")
+    env = getattr(a, "env", None)
+    overlay = d / f"engine.{env}.json" if env else None
+    return load_engine_config(d / "engine.base.json", d / f"engine.{a.bot}.json", overlay_path=overlay)
 
 
-def _cmd_run(a) -> int:
+def _live_startup(cfg, checker) -> int | None:
+    """testnet/live on kosullari (11 §3.1-3.4). None => devam; aksi cikis kodu.
+    Sira: anahtarlar (keys_missing, kod 2) -> acilis denetimi (ret: kod 8) -> broker yok (faz_b, kod 2).
+    (LIVE_CONFIRM, config yuklenirken denetlenir.)"""
+    import os
+
+    from .config import load_keys
+    from .engine import EngineExit
+    from .errors import ConfigError
+    try:
+        key, secret = load_keys(os.environ)
+    except ConfigError as e:
+        print(f"hata: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
+    checker = checker if checker is not None else STARTUP_CHECKER
+    if checker is not None:
+        try:
+            checker(cfg, key, secret)
+        except EngineExit as e:
+            print(f"acilis denetimi reddetti: {e}", file=sys.stderr)
+            return e.code
+    print("faz_b: testnet/live LiveBroker henuz uygulanmadi (Faz B: B3/B4)", file=sys.stderr)
+    return EXIT_FAZ_B
+
+
+def _cmd_run(a, *, checker=None) -> int:
     from .engine import EngineExit, build_engine
-    from .errors import EngineError
+    from .errors import ConfigError, EngineError
     from .strategies.registry import StrategyError
     try:
-        eng = build_engine(_load_cfg(a))
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
+    if cfg.mode in ("testnet", "live"):
+        return _live_startup(cfg, checker)
+    try:
+        eng = build_engine(cfg)
     except StrategyError as e:
         print(f"strateji hatasi: {e.code}: {e}", file=sys.stderr)
         return EXIT_ENGINE
@@ -91,7 +130,11 @@ def _cmd_init_ledger(a) -> int:
 def _cmd_reconcile(a) -> int:
     from .engine import build_engine
     from .engine import EngineExit
-    eng = build_engine(_load_cfg(a))
+    cfg = _load_cfg(a)
+    if cfg.mode in ("testnet", "live"):
+        print("faz_b: testnet/live reconcile henuz uygulanmadi", file=sys.stderr)
+        return EXIT_FAZ_B
+    eng = build_engine(cfg)
     try:
         eng.start()
     except EngineExit as e:
@@ -184,6 +227,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("run")
     bot_args(p)
+    p.add_argument("--env", default=None, choices=("testnet", "live"),
+                   help="config/engine.<env>.json katmani (kip + live blogu)")
     p.set_defaults(fn=_cmd_run)
     p = sub.add_parser("init-ledger")
     bot_args(p)

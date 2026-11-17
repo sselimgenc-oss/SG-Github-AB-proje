@@ -14,8 +14,9 @@ ALLOWED_MODULES_A = {
     "marketdata/__init__.py", "marketdata/rest_public.py", "marketdata/store.py", "marketdata/feed.py", "marketdata/sources.py",
     "strategies/__init__.py", "strategies/base.py", "strategies/registry.py", "strategies/price_action_v1.py", "strategies/price_action_v1_ml.py",
     "brokers/__init__.py", "brokers/base.py", "brokers/paper.py", "exchange/__init__.py", "exchange/rules.py"}
-# Faz B (11 §2): WP-B1 geldi; diğerleri (binance_futures, reconcile_live, pause) kendi WP'leriyle eklenir.
-ALLOWED_MODULES_B = ALLOWED_MODULES_A | {"exchange/binance_rest.py", "pause.py"}
+# Faz B (11 §2): dört yeni modül izinli (binance_rest B1, pause B6, binance_futures B3, reconcile_live B5).
+ALLOWED_MODULES_B = ALLOWED_MODULES_A | {"exchange/binance_rest.py", "pause.py", "brokers/binance_futures.py",
+                                         "reconcile_live.py"}
 PHASE_B_FILES = ["brokers/binance_futures.py", "exchange/binance_rest.py", "marketdata/ws.py", "reconcile_live.py"]
 FORBIDDEN_TEXT_B = ["listen" + "Key", "web" + "sockets"]   # Faz B: algo metni serbest, kullanıcı veri akışı ertelendi (11 §2)
 FORBIDDEN_TEXT = ["listen" + "Key", "userData" + "Stream", "algo" + "Order", "web" + "sockets"]

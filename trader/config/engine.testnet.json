@@ -1,0 +1,16 @@
+{
+  "mode": "testnet",
+  "leverage": 3,
+  "var_dir": "var-testnet",
+  "live": {
+    "account_tag": "testnet-sub",
+    "expected_wallet_max": 100000.0,
+    "conditional_mode": "algo",
+    "recv_window_ms": 5000,
+    "poll_open_s": 5.0,
+    "poll_flat_s": 30.0,
+    "stop_deadline_s": 10.0,
+    "entry_resolve_window_s": 60.0,
+    "max_attempts": 1
+  }
+}

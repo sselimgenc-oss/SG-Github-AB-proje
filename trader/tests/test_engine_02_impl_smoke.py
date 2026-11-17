@@ -106,7 +106,7 @@ def test_config():
     assert tw.start_delay_s == 3.0 and tw.state_path == "var/twin/state.sqlite"
     with pytest.raises(errors.ConfigError):
         config.load_engine_config(ROOT / "config/engine.base.json")  # bot eksik
-    with pytest.raises(errors.ConfigError, match="faz_b"):
+    with pytest.raises(errors.ConfigError, match="live blogu"):  # 11 B2: faz_b reddi kalkti
         config.apply_overrides(cfg, mode="live")
     with pytest.raises(errors.ConfigError):
         config.apply_overrides(cfg, cost={"fill_model": "legacy_compat"})

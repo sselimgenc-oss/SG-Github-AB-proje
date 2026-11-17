@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,10 +31,28 @@ class CostModel:
     granularity: Literal["1m", "15m"] = "1m"
 
 
+_TAG_RE = re.compile(r"[a-z0-9-]{3,32}")
+_KEY_VARS = ("BINANCE_API_KEY", "BINANCE_API_SECRET")
+
+
+@dataclass(frozen=True)
+class LiveSettings:
+    """11 §3.1: testnet/live ayarlari. Taban adresleri burada YOK (binance_rest.py'de sabit)."""
+    account_tag: str
+    expected_wallet_max: float
+    conditional_mode: Literal["algo", "classic"] = "algo"
+    recv_window_ms: int = 5000
+    poll_open_s: float = 5.0
+    poll_flat_s: float = 30.0
+    stop_deadline_s: float = 10.0
+    entry_resolve_window_s: float = 60.0
+    max_attempts: int = 1
+
+
 @dataclass(frozen=True)
 class EngineConfig:
     schema: str
-    mode: Literal["paper", "backtest"]
+    mode: Literal["paper", "backtest", "testnet", "live"]
     bot: Literal["learner", "twin"]
     pairs: tuple[str, ...]
     wallet_start: float
@@ -59,6 +78,8 @@ class EngineConfig:
     ml_model_path: str | None = None                          # model paketi (JSON); off iken okunmaz
     pause_file: str = "shared/PAUSE"                          # 11 §3.1: gercek yol f"{pause_file}.{bot}"
     startup_wait_s: float = 600.0                             # paper acilis kapisi: kural+taze 1m veri icin azami bekleme
+    leverage: int = LOCKED_CFG.min_leverage                   # 11 §3.1: [min_leverage, max_leverage]
+    live: LiveSettings | None = None                          # 11 §3.1: testnet/live icin ZORUNLU, digerlerinde yasak
 
     @property
     def risk_config(self) -> RiskConfig:
@@ -89,7 +110,9 @@ _TOP_KEYS = {f.name for f in dataclasses.fields(EngineConfig)}
 _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wait_s",
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
-_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "startup_wait_s", "pause_file"}
+_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "startup_wait_s", "pause_file",
+                  "leverage", "live"}
+_LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 
@@ -145,6 +168,66 @@ def _build_cost(raw: Any) -> CostModel:
     return cm
 
 
+def _int(name: str, v: Any, lo: int, hi: int) -> int:
+    if isinstance(v, bool) or not isinstance(v, int):
+        raise ConfigError(f"{name} tam sayi olmali: {v!r}")
+    if v < lo or v > hi:
+        raise ConfigError(f"{name} aralik disi [{lo}, {hi}]: {v!r}")
+    return v
+
+
+def _build_live(raw: Any) -> LiveSettings:
+    if isinstance(raw, LiveSettings):
+        raw = dataclasses.asdict(raw)
+    if not isinstance(raw, Mapping):
+        raise ConfigError("live sozluk olmali")
+    unknown = set(raw) - _LIVE_KEYS
+    if unknown:
+        raise ConfigError(f"live bilinmeyen anahtar: {sorted(unknown)}")
+    for req in ("account_tag", "expected_wallet_max"):
+        if req not in raw:
+            raise ConfigError(f"live eksik anahtar: {req}")
+    d = LiveSettings(account_tag="x", expected_wallet_max=1.0)
+    tag = raw["account_tag"]
+    if not isinstance(tag, str) or not _TAG_RE.fullmatch(tag):
+        raise ConfigError("live.account_tag ^[a-z0-9-]{3,32}$ olmali")
+    wmax = _num("live.expected_wallet_max", raw["expected_wallet_max"])
+    if wmax <= 0:
+        raise ConfigError("live.expected_wallet_max > 0 olmali")
+    cm = _choice("live.conditional_mode", raw.get("conditional_mode", d.conditional_mode), ("algo", "classic"))
+    return LiveSettings(
+        account_tag=tag, expected_wallet_max=wmax, conditional_mode=cm,  # type: ignore[arg-type]
+        recv_window_ms=_int("live.recv_window_ms", raw.get("recv_window_ms", d.recv_window_ms), 1000, 10000),
+        poll_open_s=_num("live.poll_open_s", raw.get("poll_open_s", d.poll_open_s), 1, 15),
+        poll_flat_s=_num("live.poll_flat_s", raw.get("poll_flat_s", d.poll_flat_s), 5, 120),
+        stop_deadline_s=_num("live.stop_deadline_s", raw.get("stop_deadline_s", d.stop_deadline_s), 5, 15),
+        entry_resolve_window_s=_num("live.entry_resolve_window_s",
+                                    raw.get("entry_resolve_window_s", d.entry_resolve_window_s), 0, 3600),
+        max_attempts=_int("live.max_attempts", raw.get("max_attempts", d.max_attempts), 1, 2))
+
+
+def load_keys(env: Mapping[str, str]) -> tuple[str, str]:
+    """11 §3.2: (BINANCE_API_KEY, BINANCE_API_SECRET). Eksik/bos/bosluklu/<32 karakter => ConfigError('keys_missing').
+    Iletide yalniz degisken adi vardir, deger asla."""
+    out = []
+    for name in _KEY_VARS:
+        v = env.get(name)
+        if not isinstance(v, str) or len(v) < 32 or any(c.isspace() for c in v):
+            raise ConfigError(f"keys_missing: {name}")
+        out.append(v)
+    return out[0], out[1]
+
+
+def check_live_confirm(cfg: "EngineConfig", env: Mapping[str, str] | None = None) -> None:
+    """11 §3.1 cift onay: yalniz mode='live'. LIVE_CONFIRM != live.account_tag => ConfigError('live_confirm')."""
+    if cfg.mode != "live":
+        return
+    env = os.environ if env is None else env
+    got = env.get("LIVE_CONFIRM")
+    if cfg.live is None or not isinstance(got, str) or got != cfg.live.account_tag:
+        raise ConfigError("live_confirm")  # deger iletiye/gunluge yazilmaz
+
+
 def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     if not isinstance(raw, Mapping):
         raise ConfigError("yapilandirma sozluk olmali")
@@ -157,9 +240,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     if raw["schema"] != SCHEMA:
         raise ConfigError(f"schema {SCHEMA!r} olmali: {raw['schema']!r}")
     mode = raw["mode"]
-    if mode in ("testnet", "live"):
-        raise ConfigError("faz_b")
-    _choice("mode", mode, ("paper", "backtest"))
+    _choice("mode", mode, ("paper", "backtest", "testnet", "live"))
     bot = _choice("bot", raw["bot"], ("learner", "twin"))
     pairs_raw = raw["pairs"]
     if isinstance(pairs_raw, (str, bytes)) or not isinstance(pairs_raw, (list, tuple)) or not pairs_raw:
@@ -199,10 +280,28 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     if not isinstance(pause_file, str) or not pause_file:
         raise ConfigError("pause_file bos olmayan str olmali")
     startup_wait = _num("startup_wait_s", raw.get("startup_wait_s", 600.0), 0.0, 86_400.0)
+    lev = _int("leverage", raw.get("leverage", LOCKED_CFG.min_leverage),
+               LOCKED_CFG.min_leverage, LOCKED_CFG.max_leverage)
+    live_raw = raw.get("live")
+    if mode in ("testnet", "live"):
+        if live_raw is None:
+            raise ConfigError(f"live blogu mode={mode} icin zorunlu")
+        live = _build_live(live_raw)
+    else:
+        if live_raw is not None:
+            raise ConfigError(f"live blogu mode={mode} ile verilemez")
+        live = None
     ttr = raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk)
     build_risk_config(ttr)
     cost = raw["cost"] if isinstance(raw["cost"], CostModel) else None
     cost = _build_cost(dataclasses.asdict(cost) if cost else raw["cost"])
+    if mode == "live":
+        if bot != "learner":
+            raise ConfigError("mode='live' yalniz bot='learner' ile gecerli (ikiz kagitta kalir)")
+        if veto_mode != "required":
+            raise ConfigError("mode='live': veto_mode='required' zorunlu")
+        if cost.trigger_source != "mark":
+            raise ConfigError("mode='live': cost.trigger_source='mark' zorunlu")
     return EngineConfig(
         schema=SCHEMA, mode=mode, bot=bot, pairs=pairs,  # type: ignore[arg-type]
         wallet_start=nums["wallet_start"], cost=cost, target_mode="bar_close",
@@ -213,7 +312,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
         start_delay_s=nums["start_delay_s"], strategy=strategy,
         target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path,  # type: ignore[arg-type]
-        startup_wait_s=startup_wait, pause_file=pause_file,
+        startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live,
         **{n: raw[n] for n in _STR},
     )
 
@@ -230,12 +329,17 @@ def _read(path: Any) -> dict[str, Any]:
 
 
 def load_engine_config(base_path: Any, bot_path: Any = None, *,
-                       env: Mapping[str, str] | None = None) -> EngineConfig:
-    """base (+ bot) JSON birlestirir ve dogrular. `env` Faz A'da kullanilmaz (ayrilmis)."""
+                       env: Mapping[str, str] | None = None, overlay_path: Any = None) -> EngineConfig:
+    """base (+ bot) (+ overlay) JSON birlestirir ve dogrular. mode='live' ise LIVE_CONFIRM (env; verilmezse
+    os.environ) live.account_tag ile birebir eslesmeli (11 §3.1), aksi ConfigError('live_confirm')."""
     merged = _read(base_path)
     if bot_path is not None:
         merged = deep_merge(merged, _read(bot_path))
-    return _validate(merged)
+    if overlay_path is not None:
+        merged = deep_merge(merged, _read(overlay_path))
+    cfg = _validate(merged)
+    check_live_confirm(cfg, env)
+    return cfg
 
 
 def apply_overrides(cfg: EngineConfig, **kw: Any) -> EngineConfig:
