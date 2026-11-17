@@ -394,7 +394,8 @@ def test_windowed_source_equals_direct_compute_and_runs_gaps(tmp_path):
     assert fr.last.regime == ref["regime"] and fr.last.signal == bool(ref["signal"])
     assert fr.last.atr_tf == pytest.approx(ref["atr_tf"])
     assert src.frame("BTC/USDT", D, S.DEFAULT_SIGNAL_PARAMS, 1) is fr            # tek tur onbellek
-    early = datetime(2024, 11, 2, tzinfo=UTC)
+    first = view.data_range("BTC/USDT", "1h")[0]
+    early = first + timedelta(days=1)                      # verinin ilk gunu: 1500 bar penceresi icin yetersiz gecmis
     assert src.frame("BTC/USDT", early, S.DEFAULT_SIGNAL_PARAMS, 1).status == "no_history"
     soft = WindowedSignalSource(view, get_strategy("price_action_v1"), strict=False)
     bad = soft.frame("BTC/USDT", D, S.DEFAULT_SIGNAL_PARAMS.__class__(trigger_tf="15m"), 1)

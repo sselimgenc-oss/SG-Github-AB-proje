@@ -247,7 +247,8 @@ HIST = Path(__file__).resolve().parents[2] / "var" / "history"
 @pytest.mark.skipif(not (HIST / "BTC_USDT_USDT-1h-futures.feather").exists(), reason="gercek veri yok")
 def test_historical_real_files_and_store_equivalence(tmp_path):
     h = HistoricalSource(HIST, granularity="15m", synthetic_rules=True)
-    assert h.data_range(P, "1h")[0] == datetime(2024, 11, 1, tzinfo=timezone.utc)
+    first = pd.read_feather(HIST / "BTC_USDT_USDT-1h-futures.feather", columns=["date"])["date"].min()
+    assert h.data_range(P, "1h")[0] == first.to_pydatetime()          # baslangic dosyadan turetilir (sabit tarih yok)
     assert h.step_seconds() == 900
     u = datetime(2026, 11, 15, 11, 59, 59, tzinfo=timezone.utc)
     d4 = h.bars(P, "4h", u, 3)
