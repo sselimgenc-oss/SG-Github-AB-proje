@@ -310,3 +310,13 @@ def test_engine_retry_units_and_install():
     assert re.search(r'if \[ "\$WITH_TWIN" -eq 1 \]; then enable_now trader-engine-retry@twin\.timer', t)
     u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
     assert "trader-*.timer" in u                                   # sablon zamanlayici da kaldirilir
+
+
+def test_trader_slice_installed_and_removed():
+    i = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
+    assert (DEPLOY / "trader.slice").exists()
+    assert 'render "$TRADER_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"' in i
+    assert i.index("trader.slice\"") < i.index("systemctl daemon-reload")
+    assert 'rm -f "$UNIT_DIR/trader.slice"' in u
+    assert "Slice=trader.slice" in i          # trader-fetch (systemd-run) de ayni slice'ta

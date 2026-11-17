@@ -2,6 +2,7 @@
 Description=Trader saglik alarmi: %i basarisiz
 
 [Service]
+Slice=trader.slice
 Type=oneshot
 EnvironmentFile=-/etc/trader-health.env
 # Telegram daemon'una bagimli DEGIL: dogrudan tek seferlik gonderim (basarisizsa spool); '-' oneki: Telegram yoksa zincir hata uretmesin

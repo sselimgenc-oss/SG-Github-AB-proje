@@ -3,6 +3,7 @@ Description=Trader motor acilis-kapisi yeniden deneme (%i)
 Documentation=file:///opt/trader/docs/hazirlik-denetimi.md
 
 [Service]
+Slice=trader.slice
 Type=oneshot
 User=root
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/engine_retry.py --bot %i

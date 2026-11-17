@@ -4,6 +4,7 @@ Documentation=file:///opt/trader/docs/saglik-spec.md
 OnFailure=trader-health-fail@%n.service
 
 [Service]
+Slice=trader.slice
 Type=oneshot
 User=root
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/health_backup.py

@@ -60,3 +60,49 @@ def test_budget_assumes_twin_default_on_and_installed_units_unchanged():
 
 def test_engine_retry_oneshot_is_bounded():
     assert _mem("trader-engine-retry@.service") == 64   # kisa omurlu, saglik birimiyle ayni tavan (toplam butceye eklenmez: saglikla ayni anda nadiren)
+
+
+# ---- WP-D: trader.slice + OOM onceligi ----
+def _kv(name: str) -> dict[str, str]:
+    return dict(unit_kv((DEPLOY / name).read_text(encoding="utf-8")))
+
+
+def test_trader_slice_exists_with_provisional_caps():
+    p = DEPLOY / "trader.slice"
+    assert p.exists()
+    txt = p.read_text(encoding="utf-8")
+    kv = _kv("trader.slice")
+    assert kv["MemoryHigh"] == "1100M" and kv["MemoryMax"] == "1300M"
+    assert "[Slice]" in txt
+    assert "GECICI" in txt and "48" in txt          # sayilar gecici; 48 saatlik olcumle kesinlesir
+    assert int(kv["MemoryHigh"][:-1]) < int(kv["MemoryMax"][:-1]) < RAM_MB * 0.7
+
+
+def test_every_service_in_trader_slice():
+    units = sorted(DEPLOY.glob("trader-*.service"))
+    assert units
+    for p in units:
+        assert _kv(p.name).get("Slice") == "trader.slice", p.name
+
+
+def test_oom_score_adjust_policy():
+    assert _kv("trader-panel-publish.service")["OOMScoreAdjust"] == "500"
+    # motor ve feed son oldurulur (negatif deger root yonetici tarafindan uygulanir; sandbox engellemez)
+    for n in ("trader-engine@.service", "trader-feed.service"):
+        assert int(_kv(n)["OOMScoreAdjust"]) < 0, n
+    # baska hicbir birim pozitif/negatif ayar almaz
+    others = {p.name for p in DEPLOY.glob("trader-*.service") if "OOMScoreAdjust" in _kv(p.name)}
+    assert others == {"trader-panel-publish.service", "trader-engine@.service", "trader-feed.service"}
+
+
+def test_install_uninstall_handle_slice_and_publish_stays_gated():
+    t = install_text()
+    assert "deploy/trader.slice" in t and "/trader.slice" in t
+    assert t.index("trader.slice\"") < t.index("systemctl daemon-reload")
+    u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
+    assert "trader.slice" in u
+    # yayin zamanlayicisi Cloudflare anahtarlari dolmadan acilmaz (bellek verisi oncesi kapali kalir)
+    assert not re.search(r"^enable_now trader-panel-publish\.timer", t, re.M)
+    assert "has_value /etc/trader-panel-cf.env CLOUDFLARE_API_TOKEN" in t
+    doc = (DEPLOY.parent / "docs" / "sunucu-kurulum.md").read_text(encoding="utf-8")
+    assert "Bellek ölçümü" in doc and "systemd-cgtop" in doc and "MemoryCurrent" in doc and "900 MB" in doc

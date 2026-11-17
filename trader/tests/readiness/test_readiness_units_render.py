@@ -137,3 +137,12 @@ def test_restart_semantics_match_exit_codes():
     for u in ("trader-engine@.service", "trader-feed.service", "trader-telegram.service", "trader-veto.service",
               "trader-lesson.service", "trader-health.service", "trader-backup.service", "trader-telegram-report.service"):
         assert "OnFailure=trader-health-fail@%n.service" in (DEPLOY / u).read_text(encoding="utf-8"), u
+
+
+def test_slice_rendered_and_every_service_references_it(rendered):
+    # trader.slice 'trader-*' glob'una girmez: install.sh onu ayrica render() ile kurar
+    assert "trader.slice" not in rendered
+    assert "render \"$TRADER_DIR/deploy/trader.slice\"" in install_text()
+    for name, txt in rendered.items():
+        if name.endswith(".service"):
+            assert ("Slice", "trader.slice") in unit_kv(txt), name

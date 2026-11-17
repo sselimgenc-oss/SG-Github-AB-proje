@@ -58,7 +58,7 @@ systemctl disable --now trader-panel                  # geri alma
 
 ## Telefondan/bilgisayardan pano (Cloudflare Worker, Basic Auth)
 
-Sunucu her 5 dakikada panonun tek dosyalik anlik goruntusunu Cloudflare Worker'a yukler (`trader-panel-publish.timer`); sayfada "Olusturulma: ..." damgasi ve 10 dk'dan eskiyse kirmizi bayat seridi vardir. Cihazlariniza kurulum gerekmez. Canli pano yine yalniz `127.0.0.1:8787`'de kalir.
+**Bellek verisi olmadan acmayin (bkz. "Bellek ölçümü"): 48 saatlik veri + >= ~900 MB bos RAM sart.** Sunucu her 5 dakikada panonun tek dosyalik anlik goruntusunu Cloudflare Worker'a yukler (`trader-panel-publish.timer`); sayfada "Olusturulma: ..." damgasi ve 10 dk'dan eskiyse kirmizi bayat seridi vardir. Cihazlariniza kurulum gerekmez. Canli pano yine yalniz `127.0.0.1:8787`'de kalir.
 
 Sizin yapacaklariniz:
 1. Cloudflare'da bir API token olusturun ("Edit Cloudflare Workers" sablonu). Token'i sohbete YAZMAYIN; size verecegimiz guvenli yolla (ya da sunucuda `nano /etc/trader-panel-cf.env`) girin. Hesap kimligini (Account ID) de ayni dosyaya yazin.
@@ -68,6 +68,23 @@ Sizin yapacaklariniz:
 RISK (karariniz): Workers duzenleme token'i tek Worker'a daraltilamaz, hesap capindadir. Sunucu ele gecirilirse ayni hesaptaki diger Worker'lariniz (1L3A, CT) da uzerine yazilabilir. Oneri: bu pano icin AYRI bir Cloudflare hesabi acin; ya da riski bilerek kabul edin. Karar sizindir.
 
 Geri alma: `systemctl disable --now trader-panel-publish.timer`; Worker'i Cloudflare panelinden silin.
+
+## Bellek ölçümü (soak, ilk 48 saat)
+
+Sunucu 2 GB RAM + 4 GB takas ve baska bir proje ile paylasiliyor. Tum trader birimleri `trader.slice` altindadir (`MemoryHigh=1100M`, `MemoryMax=1300M`: **GECICI sayilar**; kesin degerler asagidaki 48 saatlik olcumden sonra belirlenir). Pano yayini (`wrangler`/node) bellek acisindan en pahali birimdir; `OOMScoreAdjust=500` ile bellek baskisinda once o olur, motor ve feed (`-200`) son sirada kalir.
+
+Olcum (root olarak; soak baslangicinda, sonra 6-12 saatte bir ve 48. saatte):
+```
+free -m
+systemd-cgtop -m -1 -b --depth=3 /trader.slice
+systemctl show trader.slice -p MemoryCurrent -p MemoryPeak
+systemctl show trader-engine@learner trader-engine@twin trader-feed -p MemoryCurrent
+```
+`systemd-cgtop`: `-m` bellege gore siralar, `-1` tek tur, `-b` etkilesimsiz, `--depth=3` alt cgroup'lar, `/trader.slice` kok cgroup yolu. `MemoryPeak` eski systemd surumlerinde yoksa bos doner; sorun degildir.
+
+Bana su bilgileri bildirin: (1) her olcumde `free -m` ciktisinin "available" ve takas "used" sutunu; (2) `trader.slice` MemoryCurrent en yuksek degeri ve birim bazinda dagilim; (3) diger projenin tahmini kullanimi (RSS toplami); (4) `journalctl -k | grep -i "out of memory\|oom"` ciktisi (varsa).
+
+**Cloudflare yayinini (`trader-panel-publish.timer`) ancak 48 saatlik bellek verisi toplandiktan sonra ve diger proje calisirken bos RAM (`available`) >= ~900 MB ise acin.** Bunu saglamak icin yayin zamanlayicisi varsayilan kapalidir (Cloudflare anahtarlari `/etc/trader-panel-cf.env` icinde bos oldugu surece `install.sh` acmaz); anahtarlari verinin gelisinden once doldurmayin.
 
 ## Acilis kapisi yeniden deneme
 Motor acilis kapisinda (kural 10/10 degil ya da veri bayat) cikis 7 ile `failed` olursa `trader-engine-retry@<bot>.timer` (5 dk) besleme saglikliyken motoru yeniden baslatir; saatte en fazla 6 deneme, sonra tek CRIT Telegram uyarisi. Cikis 6 (451) ve yapilandirma hatalari yeniden denenmez (tek sert alarm). Izleme: `journalctl -u 'trader-engine-retry@*' -n 30`.

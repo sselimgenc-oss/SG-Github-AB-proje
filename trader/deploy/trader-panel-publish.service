@@ -3,6 +3,9 @@ Description=Trader panosu anlik goruntusu -> Cloudflare Worker (5 dk'da bir; zam
 Documentation=file:///opt/trader/docs/panel-spec.md
 
 [Service]
+Slice=trader.slice
+# Bellek baskisinda cekirdek once node/wrangler (yayin) surecini oldurur, motorlari degil (WP-D)
+OOMScoreAdjust=500
 Type=oneshot
 User=trader
 Group=trader

@@ -4,6 +4,7 @@ After=network-online.target
 OnFailure=trader-health-fail@%n.service
 
 [Service]
+Slice=trader.slice
 Type=oneshot
 User=trader
 SupplementaryGroups=trader-tg

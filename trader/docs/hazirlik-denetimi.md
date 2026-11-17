@@ -103,6 +103,7 @@ Oneri: `main()`'de `except (ExchangeError, DataError)` -> `log.critical` + `EXIT
 Oneri: install.sh `install -m 0600 -o trader -g trader /dev/null user_data/budget.sqlite` (bos dosya "ilk olusturma" sayilir; root yine yazar).
 
 ### OPEN-9 (orta) Bellek: slice tavani yok, diger proje payi bilinmiyor
+**Durum (WP-D): slice YAPILDI, sayilar GECICI.** `deploy/trader.slice` (`MemoryHigh=1100M`, `MemoryMax=1300M`) eklendi; her `deploy/*.service` `Slice=trader.slice` icinde; `trader-panel-publish` `OOMScoreAdjust=500`, motor ve feed `OOMScoreAdjust=-200` (system birimi, root yonetici uygular; `NoNewPrivileges`/`ProtectSystem` engellemez; bir konteynerde reddedilirse birim yine baslar ancak ayar uygulanmaz). install.sh slice'i kurar + daemon-reload; uninstall.sh siler. Kesin sayilar soak'in ilk 48 saatlik `systemd-cgtop` verisinden sonra (docs/sunucu-kurulum.md "Bellek ölçümü"). Cloudflare yayini bellek verisi (48 sa) + bos RAM >= ~900 MB olmadan acilmaz. Testler: `tests/readiness/test_readiness_memory.py`.
 Tavan toplamlari: her zaman acik 1210 MB (RAM'in %59'u), en kotu ust uste binme 2282 MB. Diger projenin kullanimi bu depodan olculemez. `MemoryHigh` (280 MB) yumusak sinir, `vm.swappiness=10`, 4 GB takas var.
 Oneri: (1) kurulumdan once `free -m` + diger projenin RSS'i; (2) `trader.slice` (`MemoryMax=1300M`, `MemoryHigh=1100M`) altina tum trader birimleri; (3) pano yayini (node/wrangler, 400 MB tavan, 5 dk'da bir) en pahali kisa omurlu birimdir: ilk hafta kapali tutulabilir; (4) ikizi 2. gun acmak yerine ilk gunden acmak OPEN-4 icin gerekli (350 MB).
 

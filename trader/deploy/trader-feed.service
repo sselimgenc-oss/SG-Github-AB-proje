@@ -9,6 +9,9 @@ StartLimitIntervalSec=600
 StartLimitBurst=5
 
 [Service]
+Slice=trader.slice
+# Son oldurulecekler (negatif deger yalniz root yonetici tarafindan, User= oncesi uygulanir; NoNewPrivileges/ProtectSystem engellemez) (WP-D)
+OOMScoreAdjust=-200
 Type=simple
 User=trader
 Group=trader

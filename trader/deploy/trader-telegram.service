@@ -6,6 +6,7 @@ Wants=network-online.target
 OnFailure=trader-health-fail@%n.service
 
 [Service]
+Slice=trader.slice
 Type=simple
 User=trader
 SupplementaryGroups=trader-tg

@@ -189,6 +189,8 @@ render() { # ornek birim yollarini bu sunucuya uyarla
 for f in "$TRADER_DIR"/deploy/trader-*.service "$TRADER_DIR"/deploy/trader-*.timer; do
   render "$f" "${UNIT_DIR}/$(basename "$f")"
 done
+# trader.slice: tum birimlerin ortak bellek tavani (GECICI sayilar; soak'te 48 saatlik olcumle kesinlesir). 'trader-*' glob'una girmez, ayrica kurulur.
+render "$TRADER_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"
 systemctl daemon-reload
 
 # ---- 9. veri ---------------------------------------------------------------------
@@ -196,7 +198,7 @@ say "Gecmis veri"
 HIST="$TRADER_DIR/user_data/data/binance/futures"
 if [ -z "$(find "$HIST" -maxdepth 1 -name '*.feather' -print -quit 2>/dev/null)" ]; then
   echo "Veri yok; Binance acik arsivinden indiriliyor (yavas olabilir, sunucuyu yormaz)."
-  systemd-run --quiet --wait --collect --unit=trader-fetch -p User="$TRADER_USER" -p Nice=15 -p MemoryMax=450M \
+  systemd-run --quiet --wait --collect --unit=trader-fetch -p User="$TRADER_USER" -p Nice=15 -p MemoryMax=450M -p Slice=trader.slice \
     -p WorkingDirectory="$TRADER_DIR" "$TRADER_DIR/.venv/bin/python" "$TRADER_DIR/scripts/fetch_binance_vision.py" --workers 2 \
     || echo "UYARI: veri indirme tamamlanamadi; install.sh'i yeniden calistirirsaniz kaldigi yerden devam eder."
 else

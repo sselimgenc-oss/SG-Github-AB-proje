@@ -1,0 +1,10 @@
+[Unit]
+Description=Trader slice (2 GB sunucuda diger projeyle paylasilan bellek tavani)
+Documentation=file:///opt/trader/docs/sunucu-kurulum.md
+
+[Slice]
+# GECICI SAYILAR (WP-D / OPEN-9): 2 GB RAM + 4 GB takas, baska bir proje ayni sunucuda.
+# Kesin degerler soak'in ilk 48 saatindeki `systemd-cgtop` / MemoryCurrent verisine gore belirlenecek (docs/sunucu-kurulum.md "Bellek olcumu").
+# MemoryHigh: yumusak sinir (asilinca geri kazanim/kisma); MemoryMax: sert tavan (asilinca slice icinde OOM).
+MemoryHigh=1100M
+MemoryMax=1300M

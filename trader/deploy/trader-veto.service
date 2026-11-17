@@ -6,6 +6,7 @@ Wants=network-online.target
 OnFailure=trader-health-fail@%n.service
 
 [Service]
+Slice=trader.slice
 Type=oneshot
 User=root
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/veto_run.py

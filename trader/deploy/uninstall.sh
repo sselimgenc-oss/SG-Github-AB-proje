@@ -23,6 +23,7 @@ done
 for f in "$UNIT_DIR"/trader-*.service "$UNIT_DIR"/trader-*.timer; do
   [ -e "$f" ] && rm -f "$f"
 done
+rm -f "$UNIT_DIR/trader.slice"
 rm -f /etc/sysctl.d/99-trader-swappiness.conf
 systemctl daemon-reload
 systemctl reset-failed >/dev/null 2>&1 || true
