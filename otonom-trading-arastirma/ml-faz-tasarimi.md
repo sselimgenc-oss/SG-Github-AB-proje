@@ -9,7 +9,7 @@ Kullanıcı 17 Kasım'da açık noktalardaki mentor önerilerini onayladı ve ML
 1. **ML önce filtre olarak girer, strateji olarak değil.** Price action stratejisi adayı üretir; model yalnızca "bu adayı alma" diyebilir (meta-etiket). Aday ekleyemez, fiyat/stop/boyut değiştiremez. Kendi adayını üreten ML stratejisi en erken ML-5'te, ayrı kapıyla.
 2. **Model bir parametre sürümüdür.** Etkin model kimliği ve eşiği defterdeki parametre sürümüne yazılır. Böylece sıcak yükleme, denetim izi, geri alma ve "aynı sürüm + aynı veri = aynı karar" kuralı mevcut defter mekanizmasından gelir; yeni bir yol icat edilmez.
 3. **Eğitim sunucuda haftalık, düşük öncelikli ve bellek sınırlı; araştırma sunucu dışında.** Motorun kendisine yeni kütüphane girmez: motor modeli kendi küçük ağaç okuyucumuzla çalıştırır.
-4. **Dürüstlük notu:** v1 girişinde yön bilgisi yok, işlem başı maliyet 0,18–0,22 R. Filtre, kenarı olmayan bir sinyalden kenar yaratamaz; yalnızca "hangi koşulda alınmamalı" bilgisini bulabilir. ML-1 kapısını geçemezse faz durur ve bu sonuç kayda geçer. ML, strateji iyileştirmesinin yerine geçmez.
+4. **Dürüstlük notu:** v1 girişinde yön bilgisi yok, işlem başı maliyet 0,18–0,22 R. Filtre, kenarı olmayan bir sinyalden kenar yaratamaz; yalnızca "hangi koşulda alınmamalı" bilgisini bulabilir. ML-1 kapısını geçemezse tur raporu yazılır, sonraki tur açılır ve bu sonuç kayda geçer. ML, strateji iyileştirmesinin yerine geçmez.
 
 ## 1. Amaç ve "daha güçlü"nün ölçüsü
 
@@ -154,7 +154,7 @@ Eğitim işi botla aynı süreçte çalışmaz, deftere salt okunur bağlanır, 
 | ML-0b Geçmiş derlem | 19b | Backtester v1b'yi 2024-11 → 2026-04'te oynatır; her aday (alınan + atlanan) etiket ve net R ile | Backtester çapraz doğrulaması geçince; hedef 27–28 Kasım, olmazsa kağıt 1. hafta | Derlem hash'iyle dondurulur; rastgele 50 adayın etiketi elle doğrulanır |
 | ML-0c Eğitim hattı | 19c | Aurum montajı, özellik üretici, taban + LightGBM, JSON döküm, ağaç okuyucu, kapı betiği | Hedef 28 Kasım; olmazsa kağıt 1.–2. hafta | Bir uçtan uca koşu + kapı raporu; istatistikler makale örnekleriyle tutuyor; eşlik testi geçer |
 | ML-0d Alınmayan sinyal gece işi | 25a | Atlanan kararların varsayımsal net R'si | Kağıt 1. hafta | 14 gün kesintisiz etiket üretimi |
-| ML-1 Araştırma (sunucu dışı) | 25b | En fazla 8 ön kayıtlı tarif | ML-0b + ML-0c bitince; gerçekçi ilk sonuç aralık 1.–2. hafta | Bir tarif Bölüm 3.4'ü geçer; geçemezse **faz durur**, rapor yazılır |
+| ML-1 Araştırma (sunucu dışı) | 25b | En fazla 8 ön kayıtlı tarif | ML-0b + ML-0c bitince; gerçekçi ilk sonuç aralık 1.–2. hafta | Bir tarif Bölüm 3.4'ü geçer; geçemezse **tur raporu yazılır, sonraki tur açılır** |
 | ML-2 Gölge | 25c | Model her karara puan yazar; kayma alarmı; DI | ML-1 geçince; en erken kağıt 2. hafta. Canlıda da sürer | ≥ 6 hafta ve ≥ 150 puanlı aday (≥ 50'si alınmış); ileri dönemde net R farkı > 0 ve IC > 0 |
 | ML-3 Etkin filtre | 28a | `price_action_v1_ml` devrede; son kullanma süresi; geri alma izleyicisi | ML-2 geçti + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş + gözlem altında başka değişiklik yok. En erken ocak ortası | 8 hafta geri almasız; ikize karşı net R farkı ≥ 0 |
 | ML-4 Kendi kendine yenileme | Sonraki | Sunucuda haftalık eğitim + otomatik terfi | ML-3 geçti; ilk üç terfi kullanıcı onaylı | 8 hafta elle müdahalesiz, geri almasız |

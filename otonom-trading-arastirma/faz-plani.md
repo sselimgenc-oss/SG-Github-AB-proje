@@ -47,7 +47,7 @@ Hedef: aralık sonu–ocak başı canlı (1000 $, Binance global alt hesap). Tek
 **Makine öğrenmesi, kağıt döneminde** (kararları etkilemez; sunucuya eğitim yükü binmez, araştırma sunucu dışında):
 
 25a. 1. hafta: alınmayan sinyalin sonucu gece işi (atlanan kararların varsayımsal net R'si); 19b/19c'den kalan iş varsa tamamlanır.
-25b. 1.–3. hafta: ML-1 araştırması, en fazla 8 ön kayıtlı tarif, 6 denemelik strateji planıyla paralel ve ayrı deneme defteriyle. Hiçbir tarif kapıyı geçemezse ML burada durur, rapor yazılır; kağıt ve canlı takvimi etkilenmez.
+25b. 1.–3. hafta: ML-1 araştırması, en fazla 8 ön kayıtlı tarif, 6 denemelik strateji planıyla paralel ve ayrı deneme defteriyle. Hiçbir tarif kapıyı geçemezse tur raporu yazılır, sonraki tur açılır; kağıt ve canlı takvimi etkilenmez. Ayrıntı: ml-guclendirme-plani.md (17 Kasım, kullanıcı onaylı)
 25c. Kapıyı geçen model olunca (en erken 2. hafta): `ml_mode=shadow` — model her karara puan yazar, hiçbir kararı değiştirmez. Canlıya geçişte de gölge sürer.
 
 ## Faz 4 — Canlıya geçiş (28 Aralık – 4 Ocak)
