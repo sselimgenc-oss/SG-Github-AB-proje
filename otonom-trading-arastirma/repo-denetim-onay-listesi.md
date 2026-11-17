@@ -1,6 +1,6 @@
 # Başka botlardan alınacaklar: onay listesi
 
-**Tarih:** 17 Kasım 2026 · **Hazırlayan:** mentor · **Durum:** kullanıcı onayı bekliyor
+**Tarih:** 17 Kasım 2026 · **Hazırlayan:** mentor · **Durum:** onaylandı (17 Kasım 2026). Kullanıcı kararı: "mentor tamam derse benim için de tamam; mentor çekince koyabilir." Mentor kararı: **şimdi yapılacak** 1, 2, 3, 4, 5, 7, 8, 9, 12 (yalnız veri toplama), 16, 17, 18, 19 · **sırası gelince** 6, 10, 11, 13, 14, 15, 20, 21, 23, 24, 25 · **bekletiliyor** 22. Çekinceler ve iş paketleri `tasarim-kararlari.md` 17 Kasım "Repo denetimi onay listesi" kaydında. Aşağıdaki onay kutuları artık doldurulmaz.
 
 ## Bu belge nedir?
 
