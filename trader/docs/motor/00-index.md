@@ -51,7 +51,7 @@ Her `src/trader_engine` dosyasının **tek** sahibi vardır (08 `test_engine_mod
 | `config/engine*.json` | 02 | `pyproject.toml`, `.gitignore` (satır ekleme) | 08 |
 | `scripts/fetch_binance_vision.py`, `research/bt_crosscheck.py`, `research/run_bt_engine.py` | 06 | `tests/engine/test_engine_<birim>_*`, `test_no_framework_imports.py` | ilgili birim (adlar her belgede) |
 
-Dokunulmaz (hiçbir birim): `src/trader_core/**`, `user_data/strategies/TraderV1.py`, `research/run_bt.py`, `docker-compose.yml` (§4.3 silme commit'i; kapıdan önce). `feed.py` **01** tarafından sıfırdan yazılır; 1l3a `paper_canli.py`'den yalnız fikir alınır (07 §4.2, mentor kararı).
+Dokunulmaz (hiçbir birim): `src/trader_core/**`. (`user_data/strategies/TraderV1.py`, `research/run_bt.py`, `docker-compose.yml` §4.3 kapsamında `1dcd917` commit'inde silindi; artık yok.) `feed.py` **01** tarafından sıfırdan yazılır; 1l3a `paper_canli.py`'den yalnız fikir alınır (07 §4.2, mentor kararı).
 
 ## 4. Çapraz birim sözleşmeleri (değişiklik = mentor onayı + etkilenen belgelerin revizyonu)
 
