@@ -128,7 +128,7 @@ def test_every_unit_handled_by_install():
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
-                        "trader-panel-publish.service", "trader-engine-retry@.service"}  # tetikleyici/sablon birimler
+                        "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service"}  # tetikleyici/sablon birimler
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled
@@ -136,6 +136,8 @@ def test_every_unit_handled_by_install():
             continue
         elif u.name == "trader-engine-retry@.timer":
             assert "trader-engine-retry@learner.timer" in enabled and "trader-engine-retry@twin.timer" in enabled
+        elif u.name == "trader-counterfactual@.timer":
+            assert "trader-counterfactual@learner.timer" in enabled and "trader-counterfactual@twin.timer" in enabled
         else:
             assert u.name in enabled, u.name
 
@@ -320,3 +322,23 @@ def test_trader_slice_installed_and_removed():
     assert i.index("trader.slice\"") < i.index("systemctl daemon-reload")
     assert 'rm -f "$UNIT_DIR/trader.slice"' in u
     assert "Slice=trader.slice" in i          # trader-fetch (systemd-run) de ayni slice'ta
+
+
+def test_counterfactual_units_and_install():
+    """Alinmayan sinyal gece isi (25a): sablon birim, 23:10 UTC (02:10 TSI), defter/market salt okunur, yalniz var/<bot> yazilabilir."""
+    s = (DEPLOY / "trader-counterfactual@.service").read_text(encoding="utf-8")
+    tm = (DEPLOY / "trader-counterfactual@.timer").read_text(encoding="utf-8")
+    assert "Type=oneshot" in s and "Slice=trader.slice" in s and "User=trader" in s
+    assert "counterfactual_run.py --bot %i --once" in s and "OnFailure=trader-health-fail@%n.service" in s
+    assert re.search(r"^MemoryMax=128M$", s, re.M) and re.search(r"^Nice=\d+", s, re.M) and "NoNewPrivileges=true" in s
+    assert "ProtectSystem=strict" in s and "ProtectHome=read-only" in s and "PrivateTmp=true" in s
+    assert "EnvironmentFile" not in re.sub(r"#.*", "", s)                      # anahtar/token yok: ag ve API kullanmaz
+    rw = re.search(r"^ReadWritePaths=(.*)$", s, re.M).group(1).split()
+    assert rw == ["-/opt/trader/var/%i"]                                        # yalniz kendi bot dizini
+    ro = re.search(r"^ReadOnlyPaths=(.*)$", s, re.M).group(1).split()
+    assert "-/opt/trader/var/%i/ledger.sqlite" in ro and "-/opt/trader/var/market.sqlite" in ro
+    assert "OnCalendar=*-*-* 23:10:00 UTC" in tm and "Persistent=true" in tm
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert "enable_now trader-counterfactual@learner.timer" in t
+    assert re.search(r'if \[ "\$WITH_TWIN" -eq 1 \]; then enable_now trader-counterfactual@twin\.timer', t)
+    assert (ROOT / "scripts/counterfactual_run.py").exists() and (ROOT / "docs/alinmayan-sinyal-spec.md").exists()

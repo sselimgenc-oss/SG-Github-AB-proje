@@ -26,6 +26,7 @@ ENTRIES = {
                                             "trader_engine.marketdata.sources", "anthropic"]),
     "telegram": ("script:scripts/telegram_run.py", ["trader_core.telegram", "requests"]),
     "telegram-report": ("script:scripts/telegram_run.py", ["trader_core.telegram"]),
+    "counterfactual": ("script:scripts/counterfactual_run.py", ["trader_core.counterfactual", "trader_core.ledger"]),
     "backup": ("script:scripts/health_backup.py", []),
 }
 FORBIDDEN = ["scipy", "sklearn", "lightgbm", "yaml", "pytest", "matplotlib", "joblib", "numba", "websockets", "ccxt",

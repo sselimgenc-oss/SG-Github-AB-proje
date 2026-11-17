@@ -135,7 +135,8 @@ def test_restart_semantics_match_exit_codes():
     assert eng["RestartPreventExitStatus"] == str(EXIT_STARTUP_GATE) == "7"
     assert fd["RestartPreventExitStatus"] == str(F.EXIT_GEOBLOCK) == "6"
     for u in ("trader-engine@.service", "trader-feed.service", "trader-telegram.service", "trader-veto.service",
-              "trader-lesson.service", "trader-health.service", "trader-backup.service", "trader-telegram-report.service"):
+              "trader-lesson.service", "trader-health.service", "trader-backup.service", "trader-telegram-report.service",
+              "trader-counterfactual@.service"):
         assert "OnFailure=trader-health-fail@%n.service" in (DEPLOY / u).read_text(encoding="utf-8"), u
 
 

@@ -23,6 +23,7 @@ def test_every_long_running_and_heavy_unit_has_memory_max():
     for n in DAEMONS + ONESHOTS:
         assert _mem(n) is not None, n
     # sinirsiz kalanlar yalniz kisa omurlu, hafif tek seferlik birimler
+    assert _mem("trader-counterfactual@.service") is not None
     unlimited = {p.name for p in DEPLOY.glob("trader-*.service") if _mem(p.name) is None}
     assert unlimited == {"trader-health-fail@.service", "trader-telegram-report.service"}, unlimited
 
@@ -30,9 +31,11 @@ def test_every_long_running_and_heavy_unit_has_memory_max():
 def test_memory_budget_sums():
     always = _mem("trader-feed.service") + 2 * _mem("trader-engine@.service") + _mem("trader-panel.service") + _mem("trader-telegram.service")
     transient = sum(_mem(n) for n in ONESHOTS)
-    worst = always + transient
+    cf = 2 * _mem("trader-counterfactual@.service")      # gece isi: ogrenen + ikiz ayni anda (RandomizedDelaySec ile kayabilir ama en kotu durum ust uste)
+    worst = always + transient + cf
     assert always == 350 + 2 * 350 + 64 + 96 == 1210
-    assert worst == 1210 + 64 + 96 + 256 + 256 + 400 == 2282
+    assert _mem("trader-counterfactual@.service") == 128
+    assert worst == 1210 + 64 + 96 + 256 + 256 + 400 + 2 * 128 == 2538
     # her zaman acik birimlerin SERT tavan toplami RAM'in %60'ini gecmez; boylece baska proje icin >= 800 MB kalir (OS ~150 MB dahil degil)
     assert always <= 0.6 * RAM_MB
     # en kotu ust uste binme bile RAM + takas icinde (OOM yerine takas); RAM'i asar -> swappiness=10 ve takas 4 GB sart

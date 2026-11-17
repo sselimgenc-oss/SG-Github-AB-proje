@@ -1078,9 +1078,27 @@ def section_lesson(cfg: TelegramConfig, now: datetime) -> str:
         store.close()
 
 
+def section_counterfactual(cfg: TelegramConfig, now: datetime) -> str:
+    """Alınmayan sinyaller (plan 25a): öğrenen için son 7 günde hesaplanmış varsayımsal sonuçlar (salt okunur)."""
+    if not cfg.ledger_path:
+        raise SectionError("defter_yok")
+    path = Path(cfg.ledger_path).parent / "counterfactual.sqlite"
+    if not path.exists():
+        return "henüz hesaplanmadı"
+    from . import counterfactual as CF  # noqa: PLC0415
+    try:
+        sm = CF.summary(path, "learner", now=now, days=7)
+    except CF.CounterfactualError as e:
+        raise SectionError(e.code) from None
+    if not sm["n"]:
+        return "0"
+    return f"{sm['n']}, ort. varsayımsal net R {sm['mean_r_net']:+.2f}"
+
+
 def default_sections(cfg: TelegramConfig, now: datetime, day: str) -> dict[str, Callable[[], str]]:
     return {"Defter": lambda: section_ledger(cfg, day), "Bütçe": lambda: section_budget(cfg),
-            "Ders": lambda: section_lesson(cfg, now)}
+            "Ders": lambda: section_lesson(cfg, now),
+            "Alınmayan sinyaller (son 7 gün)": lambda: section_counterfactual(cfg, now)}
 
 
 def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, sections=None) -> str:

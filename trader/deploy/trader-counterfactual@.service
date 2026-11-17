@@ -1,0 +1,24 @@
+[Unit]
+Description=Trader alinmayan sinyal gece isi (%i; tek seferlik)
+Documentation=file:///opt/trader/docs/alinmayan-sinyal-spec.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/counterfactual_run.py --bot %i --once
+TimeoutStartSec=600
+# 3: bozulmus calisma (market/defter/depo okunamadi ya da yazilamadi) SuccessExitStatus disinda => OnFailure; 0 = basarili (defter yoksa da)
+MemoryMax=128M
+CPUQuota=30%
+Nice=15
+IOSchedulingClass=idle
+ProtectSystem=strict
+ProtectHome=read-only
+# YAZILABILIR yalniz var/<bot> (counterfactual.sqlite; defterin -shm yan dosyasi icin dizin duzeyi). '-' oneki: ikiz kapaliyken dizin yok.
+ReadWritePaths=-/opt/trader/var/%i
+# defter ve piyasa veritabani DOSYA duzeyinde salt okunur (kodda da mode=ro); /opt/trader/var'in kalani ProtectSystem=strict ile salt okunur
+ReadOnlyPaths=-/opt/trader/var/%i/ledger.sqlite -/opt/trader/var/market.sqlite
+NoNewPrivileges=true
+PrivateTmp=true
