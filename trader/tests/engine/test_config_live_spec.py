@@ -289,11 +289,10 @@ GOOD_RESTR = {"enableReading": True, "enableFutures": True, "enableWithdrawals":
 
 def _broker(env, rest, tmp_path):
     from trader_engine.brokers.binance_futures import LiveBroker   # WP-B3 dependency
-    cfg = _load(tmp_path, {"mode": env, "live": LIVE_OK})
+    cfg = _load(tmp_path, {"mode": env, "live": LIVE_OK}, env={"LIVE_CONFIRM": LIVE_OK["account_tag"]})
     return LiveBroker(cfg.live, env, cfg.leverage, cfg.pairs, rest, _Clock(), cfg.cost.taker_fee)
 
 
-@pytest.mark.xfail(strict=True, reason="WP-B3/B4: LiveBroker henuz yok")
 @pytest.mark.parametrize("field,val", [
     ("enableWithdrawals", True), ("enableInternalTransfer", True), ("permitsUniversalTransfer", True),
     ("ipRestrict", False), ("enableReading", False), ("enableFutures", False),
@@ -307,7 +306,6 @@ def test_live_startup_permission_failure_exits_8(tmp_path, field, val):
     assert f"key_permission:{field}" in str(ei.value)
 
 
-@pytest.mark.xfail(strict=True, reason="WP-B3/B4: LiveBroker henuz yok")
 def test_live_startup_unverifiable_permissions_exit_8(tmp_path, monkeypatch):
     from trader_engine.engine import EngineExit
     monkeypatch.delenv("LIVE_PERMISSION_ATTESTED", raising=False)
@@ -328,7 +326,6 @@ def test_testnet_skips_permission_check(tmp_path):
     assert "api_restrictions" not in rest.calls
 
 
-@pytest.mark.xfail(strict=True, reason="WP-B3/B4: LiveBroker henuz yok")
 def test_live_wallet_above_expected_exits_8(tmp_path):
     from trader_engine.engine import EngineExit
     rest = _FakeRest(GOOD_RESTR)

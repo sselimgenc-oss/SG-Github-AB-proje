@@ -19,7 +19,7 @@ from .bars import floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
-from .errors import ClockError, ConfigError, FailClosed, StateError
+from .errors import ClockError, ConfigError, EngineExit, FailClosed, StateError
 from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
 from .killswitch import Killswitch
@@ -46,14 +46,6 @@ _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_fai
                     "minute_gaps", "funding_missing", "exit_data_gap")
 STARTUP_MAX_AGE_S = 300          # acilis kapisi: son kapanmis 1m (last+mark) en fazla bu kadar eski olabilir
 EXIT_STARTUP_GATE = 7
-
-
-class EngineExit(Exception):
-    """Surec cikisi (systemd yeniden baslatir). `code` cikis kodu."""
-
-    def __init__(self, code: int, message: str = "") -> None:
-        super().__init__(message or f"exit {code}")
-        self.code = code
 
 
 @dataclass(frozen=True)

@@ -468,6 +468,21 @@ class SignedRestClient:
     def query_order(self, symbol, client_id: str, *, protective: bool = True, attempts: int | None = None) -> dict | None:
         return self._query("/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}, protective, attempts)
 
+    def query_order_by_id(self, symbol, order_id, *, protective: bool = True, attempts: int | None = None) -> dict | None:
+        """GET /fapi/v1/order?orderId=: yalnız -2013 ("emir yok") None döner; diğer her ret/hata çağırana yükselir."""
+        oid = int(order_id) if str(order_id).isdigit() else order_id
+        return self._query("/fapi/v1/order", {"symbol": symbol, "orderId": oid}, protective, attempts)
+
+    def force_orders(self, symbol, start_ms: int, auto_close_type: str = "LIQUIDATION", *, protective: bool = True,
+                     attempts: int | None = None) -> list[dict]:
+        """GET /fapi/v1/forceOrders (likidasyon / ADL emirleri); boş yanıt -> []."""
+        if auto_close_type not in ("LIQUIDATION", "ADL"):
+            raise ValueError(f"auto_close_type: {auto_close_type!r}")
+        r = self.request("GET", "/fapi/v1/forceOrders", {"symbol": symbol, "autoCloseType": auto_close_type,
+                                                         "startTime": int(start_ms), "limit": 50},
+                         kind="read", protective=protective, attempts=attempts)
+        return list(r) if isinstance(r, list) else []
+
     def query_conditional(self, symbol, client_id: str, *, protective: bool = True, attempts: int | None = None) -> dict | None:
         if self.conditional_mode == "algo":
             return self._query("/fapi/v1/algoOrder", {"clientAlgoId": client_id}, protective, attempts)
