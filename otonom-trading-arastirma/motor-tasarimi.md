@@ -304,6 +304,8 @@ Kayan / ertelenenler:
 
 Veri: mevcut feather'lar (15m/1h/4h last, 1h mark, funding) + Binance Vision'dan 1m last ve 1m mark (`scripts/fetch_binance_vision.py` genişletilir). Dönemler aynı: IS 20241101–20251101, WF 20251101–20260501. **HOLDOUT (20260501–20261101) çapraz doğrulamada ve ayarlamada kullanılmaz.**
 
+**Yapısal HOLDOUT kilidi:** `src/trader_engine/holdout.py` (`HOLDOUT`, `check_holdout`) tek kaynaktır; `backtest.py` yeniden dışa aktarır ve `Engine.run_range` `mode=="backtest"` iken hiçbir bar okumadan önce `holdout_locked` fırlatır (kilidi aşan anahtar yoktur; paper/canlı etkilenmez). `tests/engine/test_no_holdout_in_tests.py` gerçek-veri testlerinde 2026-05..10 tarihlerini yasaklar.
+
 ### 4.2 Freqtrade sonuçlarıyla çapraz doğrulama
 Referans: `trader/user_data/backtest_results/<id>/` (`ledger.sqlite`, `trades_enriched.csv`, `overlay.json`). Araç: `research/bt_crosscheck.py`.
 

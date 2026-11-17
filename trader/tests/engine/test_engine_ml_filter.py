@@ -39,8 +39,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "user_data" / "data" / "binance" / "futures"
 UTC = timezone.utc
 needs_data = pytest.mark.skipif(not DATA.exists(), reason="user_data/data yok")
-START, END = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 10, 11, tzinfo=UTC)
-END_SHORT = datetime(2026, 10, 8, tzinfo=UTC)
+START, END = datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 3, 11, tzinfo=UTC)
+END_SHORT = datetime(2026, 3, 8, tzinfo=UTC)
 PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
 
 
@@ -56,7 +56,7 @@ def make_pkg(*, intercept=0.0, coef_atr=0.0, threshold=0.5, created=None, gate=T
              "mean": [0.0] * n, "std": [1.0] * n, "fill": [0.0] * n}
     cal = {"a": 1.0, "b": 0.0}
     body = {"model": model, "calibration": cal, "threshold": threshold}
-    created = created or datetime(2026, 10, 1, tzinfo=UTC)
+    created = created or datetime(2026, 3, 1, tzinfo=UTC)
     meta = {"version": "test", "created_at": created.isoformat(),
             "expires_at": (expires or created + timedelta(days=MODEL_EXPIRY_DAYS)).isoformat(),
             "features": names, "feature_list_hash": feature_list_hash(names), "model_hash": sha256_text(canon(body))}
@@ -67,7 +67,7 @@ def make_pkg(*, intercept=0.0, coef_atr=0.0, threshold=0.5, created=None, gate=T
     return {"meta": meta, **body}
 
 
-NOW = datetime(2026, 10, 5, tzinfo=UTC)
+NOW = datetime(2026, 3, 5, tzinfo=UTC)
 
 
 # ------------------------------------------------------------------------------------------------ model yukleme (motor)
@@ -86,15 +86,15 @@ class TestModelLoading:
             load_package(make_pkg(gate=gate), now=NOW)
 
     def test_refuses_expired_21_days(self):
-        pkg = make_pkg(created=datetime(2026, 9, 1, tzinfo=UTC))
+        pkg = make_pkg(created=datetime(2026, 2, 1, tzinfo=UTC))
         with pytest.raises(PackageError, match="suresi"):
-            load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 9, 23, tzinfo=UTC))
-        load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 9, 21, tzinfo=UTC))
+            load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 2, 23, tzinfo=UTC))
+        load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 2, 21, tzinfo=UTC))
 
     def test_extended_expires_at_cannot_dodge_21_days(self):
-        pkg = make_pkg(created=datetime(2026, 9, 1, tzinfo=UTC), expires=datetime(2027, 9, 1, tzinfo=UTC))
+        pkg = make_pkg(created=datetime(2026, 2, 1, tzinfo=UTC), expires=datetime(2027, 2, 1, tzinfo=UTC))
         with pytest.raises(PackageError, match="suresi"):
-            load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 9, 25, tzinfo=UTC))
+            load_model_view(pkg, expected_features=FEATURE_NAMES, ml_mode="shadow", now=datetime(2026, 2, 25, tzinfo=UTC))
 
     def test_refuses_tampered_hash_and_feature_mismatch_and_no_threshold(self):
         pkg = make_pkg()
@@ -304,7 +304,7 @@ def test_active_filters_below_threshold_remove_only(runs):
 
 @needs_data
 def test_active_without_model_or_expired_or_error_opens_no_entries(tmp_path_factory):
-    expired_view = view_from_package(make_pkg(threshold=0.0, created=datetime(2026, 9, 1, tzinfo=UTC)))  # 10/01'de dolmus
+    expired_view = view_from_package(make_pkg(threshold=0.0, created=datetime(2026, 2, 1, tzinfo=UTC)))  # 03/01'de dolmus
     cases = {"no_model": dict(model=None, ml_error="ml_model_path_missing"),
              "expired": dict(model=expired_view),
              "unscored": dict(model=view_from_package(make_pkg(threshold=0.0, features=None)))}

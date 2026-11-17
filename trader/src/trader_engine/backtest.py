@@ -32,6 +32,7 @@ from .config import EngineConfig, _read as _read_cfg, _validate as _validate_cfg
 from .engine import ENGINE_VERSION, Engine
 from .errors import ConfigError, DataError, EngineError
 from .gates import NoVeto
+from .holdout import HOLDOUT, BacktestArgError, check_holdout  # noqa: F401  (yeniden disa aktarim)
 from .killswitch import Killswitch
 from .numeric import round_nearest
 from .marketdata.sources import HistoricalSource, StoreSource
@@ -46,16 +47,9 @@ log = logging.getLogger("backtest")
 
 ROOT = Path(__file__).resolve().parents[2]
 PERIODS = {"IS": "20241101-20251101", "WF": "20251101-20260501"}
-HOLDOUT = (datetime(2026, 5, 1, tzinfo=timezone.utc), datetime(2026, 11, 1, tzinfo=timezone.utc))
 BASE_FEE = 0.0005
 
 EXIT_OK, EXIT_ARG, EXIT_LOOKAHEAD, EXIT_DATA, EXIT_TRUNCATE, EXIT_EQUALITY = 0, 2, 3, 4, 5, 6
-
-
-class BacktestArgError(EngineError):
-    def __init__(self, code: str, msg: str = "") -> None:
-        super().__init__(msg or code)
-        self.code = code
 
 
 class TruncateError(EngineError):
@@ -101,11 +95,6 @@ def parse_end_prime(txt: str) -> datetime:
     except ValueError as e:
         raise BacktestArgError("bad_truncate", f"--truncate-check END' cozulemedi: {txt!r}") from e
     return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
-
-
-def check_holdout(start: datetime, end: datetime) -> None:
-    if start < HOLDOUT[1] and end > HOLDOUT[0]:
-        raise BacktestArgError("holdout_locked", f"HOLDOUT [{HOLDOUT[0]:%Y%m%d}, {HOLDOUT[1]:%Y%m%d}) ile kesisen donem")
 
 
 def fee_eff(fee_mult: float, slip_bps: float) -> float:

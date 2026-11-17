@@ -20,6 +20,7 @@ from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
 from .errors import ClockError, FailClosed, StateError
+from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
 from .killswitch import Killswitch
 from .marketdata.sources import MarketView, MinuteStep
@@ -786,6 +787,8 @@ class Engine:
 
     # ================================================================== backtest surucusu
     def run_range(self, start: datetime, end: datetime, *, active_only: bool = True) -> RunSummary:
+        if self.cfg.mode == "backtest":
+            check_holdout(start, end)      # kilitli donem: hicbir bar okunmadan once reddedilir
         tf = self.tf
         step_s = self.view.step_seconds()
         D = floor_tf(start, tf)

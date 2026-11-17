@@ -10,7 +10,7 @@ ENGINE = "src/trader_engine"
 CORE = "src/trader_core"
 CORE_ALLOWED = {"risk", "signals", "regime", "indicators", "ledger", "veto", "config_loader", "ml_package", "ml_features"}
 CORE_NAME_ALLOWED = {"config_loader": {"deep_merge"}}
-LEAVES = {"types", "errors", "numeric", "clock", "bars", "fileio", "config"}
+LEAVES = {"types", "errors", "numeric", "clock", "bars", "fileio", "config", "holdout"}
 # ALLOWED_EDGES: yaprak modüller yalnız birbirini içe aktarabilir (stdlib + izinli trader_core hariç).
 ALLOWED_EDGES = {m: set(LEAVES) for m in LEAVES}
 HIGH = {"engine", "gates", "strategy_runner"}

@@ -258,7 +258,7 @@ def test_historical_real_files_and_store_equivalence(tmp_path):
     if not (HIST / "BTC_USDT_USDT-1m-futures.feather").exists():      # 1m verisi indirilmemisse
         with pytest.raises(DataError):
             HistoricalSource(HIST).minute_steps([P], u, u + timedelta(hours=1))
-    pts = h.funding(P, datetime(2026, 10, 31, 8, tzinfo=timezone.utc), datetime(2026, 10, 31, 16, tzinfo=timezone.utc))
+    pts = h.funding(P, datetime(2026, 4, 30, 8, tzinfo=timezone.utc), datetime(2026, 4, 30, 16, tzinfo=timezone.utc))
     assert [p.ts.hour for p in pts] == [16] and pts[0].mark is not None
     with pytest.raises(DataError):
         h.rules(P) if not h.synthetic_rules else (_ for _ in ()).throw(DataError("x"))

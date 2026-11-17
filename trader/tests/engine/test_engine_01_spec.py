@@ -325,7 +325,7 @@ def test_query_range_half_open_and_last_open(tmp_path):
 
 def test_funding_roundtrip_range_and_null_mark(tmp_path):
     s = MarketStore(s_path(tmp_path))
-    t8, t16, t24 = dt(2026, 10, 31, 8), dt(2026, 10, 31, 16), dt(2026, 11, 1)
+    t8, t16, t24 = dt(2026, 12, 31, 8), dt(2026, 12, 31, 16), dt(2027, 1, 1)
     pts = [FundingPoint(BTC, t8, 0.0001, 100.0), FundingPoint(BTC, t16, -0.0002, None), FundingPoint(BTC, t24, 0.0003, 101.0)]
     assert s.put_funding(pts) == 3
     s.put_funding(pts)
@@ -974,22 +974,22 @@ def test_funding_window_example4_and_mark_source(tmp_path):
     hd = tmp_path / "hist"
     write_history(hd, frames)
     stem = pair_stem(BTC)
-    # funding file spanning 2026-10-31 08:00 / 16:00 / 24:00 against 1h mark only
-    t8, t16 = dt(2026, 10, 31, 8), dt(2026, 10, 31, 16)
-    idx = pd.DatetimeIndex([dt(2026, 10, 31, h) for h in range(24)], name="date")
+    # funding file spanning 2026-12-31 08:00 / 16:00 / 24:00 against 1h mark only
+    t8, t16 = dt(2026, 12, 31, 8), dt(2026, 12, 31, 16)
+    idx = pd.DatetimeIndex([dt(2026, 12, 31, h) for h in range(24)], name="date")
     mk1h = pd.DataFrame({"open": [200.0 + h for h in range(24)], "high": 300.0, "low": 100.0, "close": 250.0, "volume": 0.0}, index=idx)
     h2 = tmp_path / "hist2"
     h2.mkdir()
     write_feather(h2 / f"{stem}-1h-mark.feather", mk1h)
     write_feather(h2 / f"{stem}-1h-futures.feather", mk1h)
     write_feather(h2 / f"{stem}-15m-futures.feather", mk1h)
-    pd.DataFrame({"date": pd.to_datetime([dt(2026, 10, 31, 0), t8, t16], utc=True),
+    pd.DataFrame({"date": pd.to_datetime([dt(2026, 12, 31, 0), t8, t16], utc=True),
                   "funding_rate": [0.1, 0.2, 0.3]}).to_feather(str(h2 / f"{stem}-1h-funding_rate.feather"))
     hs = HistoricalSource(str(h2), granularity="15m")
     pts = hs.funding(BTC, t8, t16)
     assert [(p.ts, p.rate) for p in pts] == [(t16, 0.3)]
     assert pts[0].mark == 216.0                       # 1h mark open at 16:00 (no 1m mark file)
-    assert hs.funding(BTC, dt(2026, 11, 5), dt(2026, 11, 6)) == []     # outside file range: empty, nothing invented
+    assert hs.funding(BTC, dt(2027, 1, 5), dt(2027, 1, 6)) == []     # outside file range: empty, nothing invented
     # with 1m mark present, mark = that minute's open
     hs2 = HistoricalSource(str(hd))
     p = hs2.funding(BTC, FUND_TS[0], FUND_TS[1])

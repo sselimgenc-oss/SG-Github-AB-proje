@@ -332,7 +332,7 @@ def _build(tmp, pairs, start, *, mode="backtest", strict=True, state_path=None, 
 @needs_data
 def test_end_to_end_one_month_backtest(tmp_path):
     pytest.importorskip("pyarrow")
-    start, end = datetime(2026, 10, 1, tzinfo=UTC), datetime(2026, 11, 1, tzinfo=UTC)
+    start, end = datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 4, 1, tzinfo=UTC)
     eng, cfg = _build(tmp_path, ["BTC/USDT", "ETH/USDT"], start)
     rep = eng.start()
     assert rep.reconcile.ok and rep.unresolved_orders == 0
@@ -408,7 +408,7 @@ def test_windowed_source_equals_direct_compute_and_runs_gaps(tmp_path):
 def test_paper_replay_and_kill(tmp_path):
     """Yeniden baslatma oynatmasi (§5.5) + bayat giris kapisi + kill: kapali giris, acik pozisyon yok."""
     pytest.importorskip("pyarrow")
-    t0 = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    t0 = datetime(2026, 3, 9, 10, 0, tzinfo=UTC)
     eng, cfg = _build(tmp_path, ["BTC/USDT", "ETH/USDT"], t0, mode="paper", strict=False)
     # ilk kurulum: imlecler elle (t0 - adim); saat t0 + 3 saat 7 dk
     with eng.state.tx():
