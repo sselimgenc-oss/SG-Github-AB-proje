@@ -1,6 +1,5 @@
 {
   "mode": "testnet",
-  "leverage": 3,
   "var_dir": "var-testnet",
   "kill_file": "shared/testnet/KILL",
   "pause_file": "shared/testnet/PAUSE",
