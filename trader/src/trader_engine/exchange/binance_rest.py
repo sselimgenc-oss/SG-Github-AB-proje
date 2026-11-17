@@ -173,6 +173,7 @@ class SignedRestClient:
         self._hdr_cnt: dict[str, tuple[int, int]] = {}       # "10s"/"1m" -> (değer, alınma zamanı)
         self._ban_until_ms, self._ban_http = 0, None
         self._ban_403_s = 0
+        self._testnet_warn_ms: int | None = None      # testnet ağırlık uyarısı hız sınırı
         self._last_ok_ms: int | None = None
 
     def __repr__(self) -> str:                      # anahtar/gizli asla gösterilmez
@@ -258,9 +259,14 @@ class SignedRestClient:
             raise ExchangeBan(self._fmt(method, path, self._ban_http, None, f"ban_window {left}s"), http=self._ban_http, retry_after_s=left)
         # 2) ağırlık eşikleri
         w = self._cur_weight(now)
-        if w >= self.weight_hard and not protective:
+        if self.env == "testnet":
+            # mentor: testnet ağırlık başlığı paylaşımlı/gürültülü → iki ağırlık eşiği de atlanır (429/418/403 ve sessizlik penceresi geçerli)
+            if w >= self.weight_soft and (self._testnet_warn_ms is None or now - self._testnet_warn_ms >= 60_000):
+                self._testnet_warn_ms = now
+                log.log(logging.WARNING, "testnet ağırlık başlığı %d >= %d yok sayılıyor (paylaşımlı/gürültülü)", w, self.weight_soft)
+        elif w >= self.weight_hard and not protective:
             raise ExchangeBan(self._fmt(method, path, None, None, f"weight_hard {w}"), http=None)
-        if w >= self.weight_soft and not protective and kind == "read":
+        if self.env != "testnet" and w >= self.weight_soft and not protective and kind == "read":
             left = max(1, -(-(self._weight_ts_ms + 60_000 - now) // 1000))
             log.log(logging.WARNING, "ağırlık %d >= %d; okuma gönderilmedi (%d sn)", w, self.weight_soft, left)
             raise ExchangeBan(self._fmt(method, path, None, None, f"weight_soft {w}"), http=None, retry_after_s=left)

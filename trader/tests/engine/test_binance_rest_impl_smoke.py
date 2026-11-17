@@ -169,14 +169,14 @@ def test_idempotent_and_none_codes():
 
 
 def test_weight_thresholds_and_protective():
-    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"}), Resp(200, [])])
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"}), Resp(200, [])], env="live")
     c.account()
     with pytest.raises(ExchangeBan):                   # soft: gönderilmeden ban (uyku yok)
         c.position_risk()
     assert clock["sleeps"] == [] and len(net.calls) == 1
     c.position_risk(protective=True)
     assert clock["sleeps"] == [] and len(net.calls) == 2
-    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(200, {"orderId": 1})])
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(200, {"orderId": 1})], env="live")
     c.account()
     with pytest.raises(ExchangeBan):
         c.position_risk()
@@ -289,7 +289,7 @@ def test_sync_time_bad_server_time_is_uncertain():
 
 
 def test_weight_soft_raises_ban_without_sending_and_pre_send_bans_not_sent():
-    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"})])
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1250"})], env="live")
     c.account()
     clock["t"] += 20_000
     with pytest.raises(ExchangeBan) as ei:
@@ -297,7 +297,7 @@ def test_weight_soft_raises_ban_without_sending_and_pre_send_bans_not_sent():
     assert ei.value.http is None and ei.value.retry_after_s == 40 and "weight_soft" in str(ei.value)
     assert len(net.calls) == 1 and clock["sleeps"] == [] and c._used_weight == 1250
     # weight_hard ve sessizlik penceresi de gönderilmeden yükselir
-    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(418, None, {"Retry-After": "30"})])
+    c, net, clock = mk([Resp(200, [], {"X-MBX-USED-WEIGHT-1M": "1850"}), Resp(418, None, {"Retry-After": "30"})], env="live")
     c.account()
     with pytest.raises(ExchangeBan):
         c.new_market("X", "BUY", "1", "cid", False)
