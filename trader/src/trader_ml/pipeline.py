@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import models
+from . import diagnostics, models, prechecks
 from .config import BURN_IN_THRESHOLD, GATE, RECIPE_ID
 from .gate import GateResult, model_metrics, run_gate, select_threshold
 from .guards import assert_pre_holdout
@@ -104,18 +104,27 @@ def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
 
 
 def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool = False, n_boot: int = 2000,
-        now: datetime | None = None, corpus_sha256: str | None = None) -> dict:
+        now: datetime | None = None, corpus_sha256: str | None = None, health_strict: bool | None = None,
+        expected_daily_sr: float | None = None, expected_ic: float | None = None) -> dict:
     """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry).
-    synthetic=False (gercek kosu): lightgbm yuklenemezse LightGBMRequired (lojistige dusmez)."""
+    synthetic=False (gercek kosu): lightgbm yuklenemezse LightGBMRequired (lojistige dusmez).
+    ML-G1: ozellik sagligi (bos/sabit/kopya) gercek kosuda REDDEDER (health_strict varsayilan = not synthetic), sentetikte
+    yalniz raporlar; guc on hesabi egitimden once yazdirilir ve rapora/gate_result.json'a yazilir. Kapi mantigi degismez."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     t = validate_candidates(t)
     assert_pre_holdout(t["ts"], "egitim girdisi")
     t = t[t["label"].notna()].reset_index(drop=True)
     names = feature_columns(t)
-    X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
     if not synthetic and lightgbm_version() is None:
         raise LightGBMRequired("lightgbm yuklenemedi, gercek kosu basarisiz")
+    health = prechecks.feature_health(t, names)
+    if (not synthetic if health_strict is None else health_strict):
+        prechecks.assert_feature_health(health)
+    power = prechecks.corpus_power(t, n_trials, expected_daily_sr=expected_daily_sr, expected_ic=expected_ic)
+    for ln in prechecks.power_lines(power):
+        print(ln, flush=True)
+    X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
     folds, oof, last, bests = run_oof(t, names, require_lightgbm=not synthetic)
     kinds = [m for m in MODELS if f"z_{m}" in oof.columns]
 
@@ -177,16 +186,17 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     extra["gate_passed"] = passed
     pkg_path = save_package(build_package(*args, created_at=created, extra=extra), out_dir / "model_candidate.json")
     pkg = load_package(pkg_path, now=now, require_gate=False)  # hash'ler tutuyor mu
+    diag = diagnostics.compute(oof, f"p_{selected}")
     md = render_report(res, meta=pkg["meta"], folds=folds, peak_rss_mb=peak_rss_mb(), synthetic=synthetic,
                        selected_reason=reason, n_trials=n_trials, lightgbm_version=lightgbm_version(),
-                       corpus_sha256=corpus_sha256)
+                       corpus_sha256=corpus_sha256, diagnostics=diag, health=health, power=power)
     (out_dir / "gate_report.md").write_text(md, encoding="utf-8")
     summary = {"passed": res.passed, "model": selected, "threshold": th, "parity_max_abs_diff": parity,
                "checks": [{"name": c.name, "ok": c.ok, "value": c.value} for c in res.checks],
                "package": str(pkg_path), "report": str(out_dir / "gate_report.md"), "peak_rss_mb": peak_rss_mb(),
                "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials,
                "recipe_id": RECIPE_ID, "lightgbm_version": lightgbm_version(), "corpus_sha256": corpus_sha256,
-               "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
+               "feature_health": health, "power_precheck": power, "diagnostics": diag, "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
     return summary
@@ -208,6 +218,10 @@ def main(argv=None) -> int:
     ap.add_argument("--registry", default=str(DEFAULT_REGISTRY), help="deneme defteri (n_trials = tarif x 2 model)")
     ap.add_argument("--n-trials", type=int, default=None,
                     help="deftere ek olarak ACIK deneme sayisi (defter miktarindan kucuk olamaz)")
+    ap.add_argument("--expected-sr", type=float, default=None, help="guc on hesabi: beklenen GUNLUK Sharpe (filtreli seri)")
+    ap.add_argument("--expected-ic", type=float, default=None, help="guc on hesabi: beklenen gunluk sira korelasyonu")
+    ap.add_argument("--precheck-only", action="store_true",
+                    help="yalniz ozellik sagligi + guc on hesabi yazdir; egitim/kapi KOSULMAZ")
     a = ap.parse_args(argv)
     if not a.research:
         apply_limits()
@@ -225,8 +239,19 @@ def main(argv=None) -> int:
         from .schema import load_candidates
         t = load_candidates(a.candidates)
         corpus_sha = hashlib.sha256(Path(a.candidates).read_bytes()).hexdigest()
+    if a.precheck_only:
+        tl = t[t["label"].notna()].reset_index(drop=True)
+        h = prechecks.feature_health(tl)
+        print(f"Ozellik sagligi: bos={h['all_nan']} sabit={h['constant']} kopya={h['duplicate']} -> {'TEMIZ' if h['ok'] else 'SAGLIKSIZ'}")
+        for ln in prechecks.power_lines(prechecks.corpus_power(tl, n_trials, expected_daily_sr=a.expected_sr, expected_ic=a.expected_ic)):
+            print(ln)
+        return 0 if (h["ok"] or a.synthetic) else 3
     try:
-        s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials, corpus_sha256=corpus_sha)
+        s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials, corpus_sha256=corpus_sha,
+                expected_daily_sr=a.expected_sr, expected_ic=a.expected_ic)
+    except prechecks.FeatureHealthError as e:
+        print(f"REDDEDILDI: {e}", file=sys.stderr)
+        return 3
     except LightGBMRequired as e:
         print(f"BASARISIZ: {e}", file=sys.stderr)
         return 2

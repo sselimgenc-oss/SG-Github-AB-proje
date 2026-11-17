@@ -176,7 +176,7 @@ def test_n_trials_is_required_and_registry_derived():
     import inspect
     sig = inspect.signature(pipeline.run).parameters["n_trials"]
     assert sig.default is inspect.Parameter.empty and sig.kind is inspect.Parameter.KEYWORD_ONLY
-    assert n_trials_from_registry() == 4                              # 2 kayitli tarif x 2 model
+    assert n_trials_from_registry() == 6                              # 3 kayitli satir x 2 model
     with pytest.raises(RegistryError):
         n_trials_from_registry(ROOT / "research" / "yok.csv")
 

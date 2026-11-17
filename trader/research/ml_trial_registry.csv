@@ -1,3 +1,4 @@
 recipe_id,registered_at,note
 ml0c-baseline-v1,2026-11-16,ML-0c taban tarif (lojistik + LightGBM sabit tarif); n_trials = kayitli tarif x 2 model
 ml1-r01-v1b-native33,2026-11-17,ML-1 tarif 1: lojistik + sig LightGBM (LGBM_PARAMS aynen) 33 ozellik (ml_features.FEATURE_NAMES) 2R/72 mum uc-bariyer etiketi ileri Platt 4 dilim; 19c tek kosu
+diag-19c-univariate,2026-11-17,TANI-ONLY on kayit (ml-guclendirme-plani 2 / karar 4): 19c derleminin tamaminda tek-ozellik korelasyonuna bakildi; tarif degil; n_trials 4->6 (1 satir x 2 model; sikilastirma)

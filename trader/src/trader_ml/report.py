@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 
 from .config import GATE, TRAIN_MEM_CAP_MB
+from . import diagnostics as _diag
+from . import prechecks as _pre
 from .gate import GateResult
 
 
@@ -13,7 +15,8 @@ def _fmt(v, nd=4):
 
 def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb: float, synthetic: bool,
                   selected_reason: str, n_trials: int | None = None, lightgbm_version: str | None = None,
-                  corpus_sha256: str | None = None) -> str:
+                  corpus_sha256: str | None = None, diagnostics: dict | None = None,
+                  health: dict | None = None, power: dict | None = None) -> str:
     L = []
     verdict = "KABUL (gölgeye girişe uygun)" if res.passed else "RED"
     L += [f"# ML terfi kapısı raporu — {verdict}", ""]
@@ -50,6 +53,14 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
     for c in res.checks:
         if c.detail:
             L.append(f"- {c.name}: {c.detail}")
+    if health is not None:
+        L += ["", "## Koşu öncesi korumalar (geçti/kaldı rolü yok; ham ihlal gerçek koşuyu reddeder)", "",
+              f"- Özellik sağlığı: {health['n_features']} özellik; boş={health['all_nan'] or '-'}; sabit={health['constant'] or '-'}; "
+              f"kopya={[f'{a}=={b}' for a, b in health['duplicate']] or '-'} -> {'TEMİZ' if health['ok'] else 'SAĞLIKSIZ ÖZELLİK VAR (sentetik koşuda yalnız uyarı)'}"]
+        if power is not None:
+            L += ["- " + power_line.strip() if i == 0 else "  " + power_line.strip() for i, power_line in enumerate(_pre.power_lines(power))]
+    if diagnostics is not None:
+        L += ["", "## Tanı satırları (yalnız bilgi; geçti/kaldı rolü yok)", ""] + _diag.lines(diagnostics)
     L += ["", "## Test dilimleri (genişleyen pencere, 72 mum arındırma + 24 mum ambargo)", "",
           "| Dilim | Eğitim satırı | Test satırı | Test başlangıcı | Test sonu |", "|---|---|---|---|---|"]
     for f in folds:

@@ -1,5 +1,5 @@
 """On kayit (17 Kasim ML 19b/19c): IC bagleyici evreni = alinan satirlar; tum-satir IC tani; gercek kosuda lightgbm zorunlu;
-deneme defteri n_trials = 4."""
+deneme defteri n_trials = 6 (3 satir x 2 model; ML-G1: diag-19c-univariate eklendi)."""
 import builtins
 import csv
 import sys
@@ -77,12 +77,12 @@ def test_real_mode_hard_fails_without_lightgbm(monkeypatch, table, tmp_path):
     assert set(pipeline._fold_models(X, y.astype(float), np.ones(200), np.arange(200), require_lightgbm=False)) == {"logistic"}
 
 
-def test_registry_n_trials_is_four_and_recipe_registered():
+def test_registry_n_trials_is_six_and_recipe_registered():
     assert config.RECIPE_ID == "ml1-r01-v1b-native33"
     with DEFAULT_REGISTRY.open(encoding="utf-8", newline="") as fh:
         ids = [r["recipe_id"] for r in csv.DictReader(fh)]
-    assert ids == ["ml0c-baseline-v1", "ml1-r01-v1b-native33"]
-    assert n_trials_from_registry() == 4
+    assert ids == ["ml0c-baseline-v1", "ml1-r01-v1b-native33", "diag-19c-univariate"]
+    assert n_trials_from_registry() == 6
 
 
 def test_native33_feature_count_and_report_fields(table, tmp_path):
