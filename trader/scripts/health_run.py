@@ -547,8 +547,8 @@ def read_package_meta(path: str | None) -> dict:
         exp = _parse_dt_utc(meta["expires_at"])
         mh = meta["model_hash"]
         if created is None or exp is None or not isinstance(mh, str) or not mh \
-                or not isinstance(meta["gate_passed"], bool) or not isinstance(meta["version"], str):
-            raise ValueError("meta")   # zorunlu alanlar: version, created_at, expires_at, model_hash, gate_passed
+                or not isinstance(meta["gate_passed"], bool):
+            raise ValueError("meta")   # zorunlu alanlar: created_at, expires_at, model_hash, gate_passed (version motorda istege bagli)
         exp = min(exp, created + timedelta(days=ML_EXPIRY_DAYS))
         tw = meta.get("train_window")
         snap_at = _parse_dt_utc(meta.get("data_snapshot_at"))
@@ -587,9 +587,15 @@ def ml_stale_update(prev: dict | None, f: dict) -> tuple[dict, bool]:
 
 
 def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
-    """Opt-in (15 kalibi: yapilandirma varligi): hicbir bot icin model paketi yolu (ML_MODEL_PATH_<BOT> ya da
-    engine config `ml_model_path`) yoksa None -> ml_package kontrolu uretilmez. Durum yazimi `run_once` icinde."""
-    if not any(ml_model_path(env, b) for b in api_bots):
+    """Opt-in (15 kalibi: yapilandirma varligi): bir bot icin model paketi yolu (ML_MODEL_PATH_<BOT> ya da
+    engine config `ml_model_path`) VAR ya da status.json `ml` blogu dict ve mode != "off" ise acik; aksi None -> ml_package kontrolu uretilmez. Durum yazimi `run_once` icinde."""
+    def _ml_on(b):
+        if ml_model_path(env, b):
+            return True
+        # yol yok ama motor ML'i acik bildiriyor (active + ml_model_path=null -> no_model): fail-open olmasin
+        st = probe_ml_status(status_path(env["ENGINE_VAR_DIR"], b), b, now)
+        return st["present"] is True and st["mode"] != "off"
+    if not any(_ml_on(b) for b in api_bots):
         return None
     seen_prev = state.get("ml_seen") if isinstance(state.get("ml_seen"), dict) else {}
     probes = {}

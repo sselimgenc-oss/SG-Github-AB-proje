@@ -299,6 +299,7 @@ def test_run_once_persists_ml_state(tmp_path):
            "ML_MODEL_PATH_LEARNER": str(p), "STATE_DIR": str(tmp_path / "st")}
     snap = R.collect(env, {}, NOW)
     assert snap.ml["learner"].file_state == "ok" and snap.ml["learner"].file_stale is False
+    _status(var, "learner", None)
     assert R.collect({k: v for k, v in env.items() if k != "ML_MODEL_PATH_LEARNER"}, {}, NOW).ml is None
 
 
@@ -373,3 +374,39 @@ def test_report_bad_block_and_default_sections(tmp_path):
     assert "Model filtresi kapalı" in T.build_report(cfg, NOW, "2026-12-10", T.default_sections(cfg, NOW, "2026-12-10"))
     lines = T.build_report(cfg, NOW, "2026-12-10", {"Model": lambda: "M", "Risk kademesi": lambda: "K"}).splitlines()
     assert lines.index("M") < lines.index("K")
+
+
+def test_opt_in_status_block_without_path(tmp_path):
+    var = tmp_path / "var"
+    _status(var, "learner", {"mode": "active", "state": "no_model", "model_id": None, "expires_at": None,
+                             "error": "ml_model_path_missing", "v2_errors": 0})
+    env = {"ENGINE_VAR_DIR": str(var), "BACKUP_DIR": str(tmp_path / "bk"), "HEALTH_BOTS": "learner"}
+    snap = R.collect(env, {}, NOW)
+    assert snap.ml is not None and snap.ml["learner"].file_state == "not_configured"
+    rep = H.evaluate(snap)
+    r = {x.name: x for x in rep.results}["ml_package:learner"]
+    assert (r.status, r.code) == (H.Status.CRIT, "ml_no_model")
+    assert not H.should_send_ok(rep)
+    _status(var, "learner", {"mode": "off", "state": "off"})
+    assert R.collect(env, {}, NOW).ml is None
+    _status(var, "learner", None)
+    assert R.collect(env, {}, NOW).ml is None
+
+
+def test_score_errors_alert_immediate():
+    assert "ml_score_errors" in H.IMMEDIATE_WARN_CODES and "ml_score_errors" not in H.IMMEDIATE_CODES
+    rep = ev(mlp(score_errors=5), prev={"learner": 3})[1]
+    a, _ = H.plan_alerts(rep, None, NOW, replace(H.DEFAULT_CFG, multiple_threshold=100))
+    assert any(x.code == "ml_score_errors" and "puanlayamıyor" in x.title for x in a)
+
+
+def test_version_not_required(tmp_path):
+    p = pkg(tmp_path, "2026-12-01T00:00:00")
+    d = json.loads(p.read_text())
+    d["meta"].pop("version")
+    p.write_text(json.dumps(d))
+    f = R.read_package_meta(str(p))
+    assert f["file_state"] == "ok" and f["file_model_id"].startswith("?@")
+    d["meta"].pop("gate_passed")
+    p.write_text(json.dumps(d))
+    assert R.read_package_meta(str(p))["file_state"] == "unreadable"

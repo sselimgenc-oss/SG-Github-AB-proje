@@ -1040,6 +1040,10 @@ IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "
                              "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model"})
 
 
+# WARN olup ilk turda uyaran kodlar (taban her tur guncellendigi icin uyari tek tur gorunur; confirm_runs bekleyemez).
+IMMEDIATE_WARN_CODES = frozenset({"ml_score_errors"})
+
+
 @dataclass(frozen=True)
 class Alert:
     level: Status
@@ -1245,7 +1249,8 @@ def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
         }
         new_fp[fp] = ent
         if r.status is Status.WARN:
-            need, repeat = cfg.confirm_runs, cfg.warn_repeat_min
+            need = 1 if r.code in IMMEDIATE_WARN_CODES else cfg.confirm_runs
+            repeat = cfg.warn_repeat_min
         else:
             need = 1 if r.code in IMMEDIATE_CODES else cfg.confirm_runs
             repeat = cfg.crit_repeat_min
