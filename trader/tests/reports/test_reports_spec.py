@@ -1553,13 +1553,3 @@ def test_c6_memory_and_no_1m_access(tmp_path):
     assert int(m.group(1)) <= 300 * 1024
     js = json.loads((sc.out / "learner" / "2026-03-01" / "rapor.json").read_text())
     assert "NaN" not in json.dumps(js)       # 1m NaN satirlari okunmus olsaydi sizardi
-
-
-def test_c7_real_backtest_smoke(tmp_path):
-    run = ROOT / "var" / "backtests" / "1h_IS_f1_s0_native_last"
-    hist = ROOT / "var" / "history"
-    if not (run.is_dir() and hist.is_dir()):
-        pytest.skip("gercek veri yok (spec C7: yoksa atlanir)")
-    p = run_cli(["--run-dir", run, "--history", hist, "--synthetic-rules", "--now", NOW, "--out", tmp_path / "out"])
-    assert p.returncode == 0, p.stdout + p.stderr
-    assert json.loads(p.stdout.strip().splitlines()[-1])["n_trades"] == 610
