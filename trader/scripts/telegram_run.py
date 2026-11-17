@@ -44,11 +44,18 @@ class _Clk:
 EXIT_OK, EXIT_CONFIG = 0, 1
 
 
-def build_pauses(env, now_fn) -> dict:
-    """bot -> EntryPause (11 §9.5). PAUSE_FILE (varsayilan shared/PAUSE) + `.<bot>`; PAUSE_BOTS (varsayilan learner,twin);
-    denetim gunlugu ENGINE_VAR_DIR/<bot>/pause_audit.jsonl (varsayilan var)."""
-    base = env.get("PAUSE_FILE") or "shared/PAUSE"
-    var = (env.get("ENGINE_VAR_DIR") or "var").rstrip("/")
+def _abs(root: Path, p: str) -> str:
+    q = Path(p)
+    return str(q if q.is_absolute() else root / q)
+
+
+def build_pauses(env, now_fn, root: Path | None = None) -> dict:
+    """bot -> EntryPause (11 §9.5). Yollar MUTLAK (cwd'ye bagli degil; systemd cwd=/ olabilir): goreli degerler repo
+    kokune (trader/) gore cozulur, motor (WorkingDirectory=/opt/trader) ile ayni dosya. PAUSE_FILE (varsayilan
+    shared/PAUSE) + `.<bot>`; PAUSE_BOTS (varsayilan learner,twin); denetim ENGINE_VAR_DIR/<bot>/pause_audit.jsonl."""
+    root = root or _HERE.parent
+    base = _abs(root, env.get("PAUSE_FILE") or "shared/PAUSE")
+    var = _abs(root, (env.get("ENGINE_VAR_DIR") or "var")).rstrip("/")
     bots = [b.strip() for b in (env.get("PAUSE_BOTS") or "learner,twin").split(",") if b.strip()]
     clk = _Clk(now_fn)
     return {b: EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b) for b in bots}
@@ -83,13 +90,13 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
             return EXIT_OK
         if args.cmd == "report":
             n = T.TelegramNotifier(client, cfg.chat_id, T.Outbox(cfg.var_dir, now_fn), now_fn, sleep)
-            print(T.run_report(cfg, n, now_fn()))
+            print(T.run_report(cfg, n, now_fn(), pauses=build_pauses(env, now_fn)))
             return EXIT_OK
         ks = Killswitch(cfg.kill_file, _Clk(now_fn)) if cfg.kill_file else None
         pauses = build_pauses(env, now_fn)
         d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks, pauses=pauses,
                              report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
-                                                       T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat())))
+                                                       T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(), pauses)))
         flag = {"stop": False}
         signal.signal(signal.SIGTERM, lambda *_: flag.update(stop=True))
         d.run_forever(stop or (lambda: flag["stop"]))

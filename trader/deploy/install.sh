@@ -177,6 +177,12 @@ if grep -q '^HEALTH_BOTS=' /etc/trader-health.env; then
 else
   echo "HEALTH_BOTS=${HEALTH_BOTS_VAL}" >> /etc/trader-health.env
 fi
+# /durdur her beklenen botun PAUSE dosyasina yazar (11 §9.5): --no-twin ile yalniz learner (olmayan ikize dosya acilmaz)
+if grep -q '^PAUSE_BOTS=' /etc/trader-telegram.env; then
+  sed -i "s#^PAUSE_BOTS=.*#PAUSE_BOTS=${HEALTH_BOTS_VAL}#" /etc/trader-telegram.env
+else
+  echo "PAUSE_BOTS=${HEALTH_BOTS_VAL}" >> /etc/trader-telegram.env
+fi
 
 # ---- 8. systemd birimleri ---------------------------------------------------------
 say "systemd birimleri"

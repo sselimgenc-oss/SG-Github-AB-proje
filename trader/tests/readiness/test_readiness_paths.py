@@ -233,3 +233,18 @@ def test_budget_db_precreated_and_hmac_generated_without_echo():
     assert re.search(r'install -m 0600 -o "\$TRADER_USER" -g "\$TRADER_USER" /dev/null "\$TRADER_DIR/user_data/budget.sqlite"', t)
     assert "openssl rand -hex 32" in t
     assert not re.search(r"echo[^\n]*HMAC_NEW|printf[^\n]*HMAC_NEW(?!.*>>)", t)
+
+
+def test_telegram_pause_env_and_unit_match_engine(envs, units, tmp_path):
+    e = envs["trader-telegram.env"]
+    l = _cfg("learner")
+    assert e["PAUSE_FILE"] == _abs(l.pause_file) == f"{T}/shared/PAUSE"
+    assert e["ENGINE_VAR_DIR"] == _abs(l.var_dir) == f"{T}/var"
+    assert e["PAUSE_BOTS"] == "learner,twin"
+    assert any(k == "WorkingDirectory" for k, _ in unit_kv(units["trader-telegram.service"]))
+    assert _covered(posixpath.dirname(e["PAUSE_FILE"]), _rw(units, "trader-telegram.service"))
+    assert _covered(f"{T}/var/learner", _rw(units, "trader-telegram.service"))
+    assert _covered(f"{T}/var/twin", _rw(units, "trader-telegram.service"))
+    from readiness_support import render_env_files as rend
+    (tmp_path / "nt").mkdir()
+    assert rend(tmp_path / "nt", with_twin=0)["trader-telegram.env"]["PAUSE_BOTS"] == "learner"

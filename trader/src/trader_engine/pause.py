@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -16,6 +17,8 @@ from pathlib import Path
 
 from .clock import Clock
 from .fileio import atomic_write_json, fmt_ts
+
+log = logging.getLogger(__name__)
 
 SCHEMA = "pause/1"
 REASONS = ("user_cmd", "drawdown_review", "unknown_position", "late_fill", "exchange_ban", "exchange_auth", "manual")
@@ -108,6 +111,14 @@ class EntryPause:
             f.flush()
             os.fsync(f.fileno())
 
+    def _safe_audit(self, op: str, reason: str, by: str, note: str) -> None:
+        """Durum yazildiktan sonra denetim hatasi islemi geri almaz ve yukseltmez (cagiran sessiz kalmasin diye CRITICAL)."""
+        try:
+            self._audit(op, reason, by, note)
+        except Exception as e:  # noqa: BLE001
+            log.critical("pause denetim gunlugu yazilamadi (durum degisti): op=%s reason=%s by=%s path=%s err=%s",
+                         op, reason, by, self.audit_path, type(e).__name__)
+
     def _write(self, holds: list[PauseHold]) -> None:
         atomic_write_json(self.path, {"schema": SCHEMA, "bot": self.bot, "holds": [
             {"reason": h.reason, "by": h.by, "at": h.at, "note": h.note} for h in holds]})
@@ -132,7 +143,7 @@ class EntryPause:
                 return False
             cur.append(PauseHold(reason, by, fmt_ts(self.clock.now()), note))
             self._write(cur)
-            self._audit("add", reason, by, note)
+            self._safe_audit("add", reason, by, note)
             return True
 
     def remove(self, reason: str, by: str) -> bool:
@@ -151,5 +162,5 @@ class EntryPause:
                 self._write(left)
             else:
                 os.unlink(self.path)
-            self._audit("remove", reason, by, "")
+            self._safe_audit("remove", reason, by, "")
             return True

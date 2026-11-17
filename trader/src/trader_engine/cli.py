@@ -129,10 +129,13 @@ def _cmd_pause(a) -> int:
                               "holds": [dataclasses.asdict(h) for h in p.holds()]}, ensure_ascii=False))
             return EXIT_OK
         if a.clear:
+            if not a.reason or not a.by:
+                print("hata: --clear icin --reason ve --by zorunlu (ornek: --reason manual --by ad)", file=sys.stderr)
+                return EXIT_FAZ_B
             ok = p.remove(a.reason, a.by)
             print("kaldirildi" if ok else "tutus yok / kaldirilamadi")
             return EXIT_OK if ok else EXIT_FINDINGS
-        ok = p.add(a.reason, a.by, a.note)
+        ok = p.add(a.reason or "manual", a.by or "cli", a.note)
         print("eklendi" if ok else "zaten var / eklenemedi")
         return EXIT_OK
     except ValueError as e:
@@ -200,8 +203,8 @@ def build_parser() -> argparse.ArgumentParser:
     bot_args(p)
     p.add_argument("--clear", action="store_true")
     p.add_argument("--list", action="store_true")
-    p.add_argument("--reason", default="manual")
-    p.add_argument("--by", default="cli")
+    p.add_argument("--reason", default=None)
+    p.add_argument("--by", default=None)
     p.add_argument("--note", default="")
     p.set_defaults(fn=_cmd_pause)
     for name, fn in (("feed", _cmd_feed), ("backtest", _cmd_backtest), ("rules-snapshot", _cmd_rules)):

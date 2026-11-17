@@ -166,6 +166,15 @@ def test_twin_default_on_with_no_twin_opt_out():
     assert "HEALTH_BOTS=" in (DEPLOY / "trader-health.env.example").read_text(encoding="utf-8")
 
 
+def test_install_sets_pause_bots_for_telegram():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert "PAUSE_BOTS=${HEALTH_BOTS_VAL}" in t
+    env = (DEPLOY / "trader-telegram.env.example").read_text(encoding="utf-8")
+    for k in ("PAUSE_FILE=", "ENGINE_VAR_DIR=", "PAUSE_BOTS="):
+        assert re.search(rf"^{k}", env, re.M)
+    assert "WorkingDirectory=/opt/trader" in (DEPLOY / "trader-telegram.service").read_text(encoding="utf-8")
+
+
 def test_uninstall_only_trader_units():
     t = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
     rms = re.findall(r"rm -[a-z]*f?\s+(.+)", t)

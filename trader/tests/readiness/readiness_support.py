@@ -28,7 +28,7 @@ def render_units(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR) -> dict[str
     return {p.name: p.read_text(encoding="utf-8") for p in sorted(out_dir.iterdir())}
 
 
-def render_env_files(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR) -> dict[str, dict[str, str]]:
+def render_env_files(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR, with_twin: int = 1) -> dict[str, dict[str, str]]:
     """install.sh'in env ornek kopyalama + yol sed adimlarini tmp dizinde calistirir; {ad: {ANAHTAR: deger}} doner."""
     t = install_text()
     a = t.index("copy_env() {")
@@ -37,7 +37,7 @@ def render_env_files(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR) -> dict
     snippet = snippet.replace('"$TRADER_DIR/deploy/', f'"{ROOT}/deploy/')
     # install -o/-g gercek kullanici gerektirir: sahip/grup bayraklarini tmp calismasi icin at
     snippet = snippet.replace('install -m "$4" -o "${3%%:*}" -g "${3##*:}" "$1" "$dst"', 'install -m "$4" "$1" "$dst"')
-    script = (f"set -euo pipefail\nTRADER_DIR={shlex.quote(trader_dir)}\nTRADER_USER=trader\nTG_GROUP=trader-tg\nWITH_TWIN=1\n{snippet}\n")
+    script = (f"set -euo pipefail\nTRADER_DIR={shlex.quote(trader_dir)}\nTRADER_USER=trader\nTG_GROUP=trader-tg\nWITH_TWIN={with_twin}\n{snippet}\n")
     subprocess.run(["bash", "-c", script], check=True, capture_output=True, text=True)
     out: dict[str, dict[str, str]] = {}
     for p in sorted(out_dir.glob("trader-*.env")):

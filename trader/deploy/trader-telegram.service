@@ -9,6 +9,7 @@ OnFailure=trader-health-fail@%n.service
 Slice=trader.slice
 Type=simple
 User=trader
+WorkingDirectory=/opt/trader
 SupplementaryGroups=trader-tg
 EnvironmentFile=/etc/trader-telegram.env
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/telegram_run.py daemon

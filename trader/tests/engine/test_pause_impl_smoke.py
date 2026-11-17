@@ -216,7 +216,7 @@ def test_cli_pause_add_list_clear(tmp_path, capsys):
     assert not f.exists()
     audit = (tmp_path / "var" / "learner" / "pause_audit.jsonl").read_text().splitlines()
     assert [json.loads(x)["op"] for x in audit] == ["add", "remove"]
-    assert cli.main(["pause", "--bot", "learner", "--config-dir", str(d), "--clear", "--reason", "manual"]) == 5
+    assert cli.main(["pause", "--bot", "learner", "--config-dir", str(d), "--clear", "--reason", "manual", "--by", "ops"]) == 5
     assert cli.main(["pause", "--bot", "learner", "--config-dir", str(d), "--reason", "zzz"]) == 2
 
 
@@ -229,3 +229,39 @@ def test_config_pause_file_default_and_validation():
     from trader_engine.config import _validate
     with pytest.raises(ConfigError):
         _validate(raw)
+
+
+def test_cli_clear_requires_explicit_reason_and_by(tmp_path, capsys):
+    d = _cfg_dir(tmp_path)
+    assert cli.main(["pause", "--bot", "learner", "--config-dir", str(d), "--by", "ops"]) == 0
+    f = tmp_path / "shared" / "PAUSE.learner"
+    base = ["pause", "--bot", "learner", "--config-dir", str(d), "--clear"]
+    assert cli.main(base) == 2 and f.exists()
+    assert cli.main(base + ["--reason", "manual"]) == 2 and f.exists()
+    assert cli.main(base + ["--by", "ops"]) == 2 and f.exists()
+    assert "zorunlu" in capsys.readouterr().err
+    assert cli.main(base + ["--reason", "manual", "--by", "ops"]) == 0 and not f.exists()
+
+
+def test_audit_failure_after_state_write_does_not_raise(tmp_path, caplog):
+    blocker = tmp_path / "blocked"
+    blocker.write_text("x")                                   # audit dizini olusturulamaz (dosya var)
+    p = EntryPause(str(tmp_path / "PAUSE.learner"), SimClock(T0), audit_path=str(blocker / "a.jsonl"))
+    with caplog.at_level("CRITICAL"):
+        assert p.add("user_cmd", "telegram:1") is True
+        assert p.active() and [h.reason for h in p.holds()] == ["user_cmd"]
+        assert p.add("user_cmd", "telegram:1") is False
+        assert p.remove("user_cmd", "telegram:1") is True
+    assert not p.active()
+    assert sum(1 for r in caplog.records if r.levelname == "CRITICAL") == 2
+
+
+def test_live_gate_code_params_unavailable_first():
+    from trader_engine.engine import Engine
+    e = Engine.__new__(Engine)
+    e._params_ok, e._started = False, True
+    e.ledger = SimpleNamespace(entries_allowed=lambda: SimpleNamespace(ok=False, code="ledger_x"))
+    e.pause = SimpleNamespace(active=lambda: True, code=lambda: "paused")
+    assert e._live_gate_code("blocked_x", True) == "params_unavailable"
+    e._params_ok = True
+    assert e._live_gate_code("blocked_x", True) == "ledger_x"

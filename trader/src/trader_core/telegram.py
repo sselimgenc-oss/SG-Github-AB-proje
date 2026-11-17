@@ -195,8 +195,7 @@ class TelegramClient:
 class TelegramConfig:
     def __init__(self, token: str, chat_id: int, var_dir: str, kill_file: str = "", status_path: str = "",
                  lesson_run: str = "", health_state: str = "", ledger_path: str = "", twin_ledger_path: str = "",
-                 budget_config: str = "", lesson_store: str = "", pause_files: Mapping[str, str] | None = None):
-        self.pause_files = dict(pause_files) if pause_files else None     # bot -> PAUSE dosyasi (11 §9.2)
+                 budget_config: str = "", lesson_store: str = ""):
         self.ledger_path, self.twin_ledger_path = ledger_path, twin_ledger_path
         self.budget_config, self.lesson_store = budget_config, lesson_store
         self.token, self.chat_id, self.var_dir = token, chat_id, var_dir
@@ -481,119 +480,35 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-_PAUSE_REASONS = ("user_cmd", "drawdown_review", "unknown_position", "late_fill", "exchange_ban", "exchange_auth",
-                  "manual")
-
-
-class _Hold:
-    def __init__(self, reason: str, by: str, at: str | None, note: str):
-        self.reason, self.by, self.at, self.note = reason, by, at, note
-
-
-class FilePause:
-    """trader_engine.pause.EntryPause ile ayni dosya bicimi/kilidi (pause/1, `<yol>.lock` flock); trader_core motoru
-    import edemedigi icin yedek gerceklenim: telegram_run.py EntryPause enjekte ederse bu kullanilmaz."""
-
-    def __init__(self, path: str, now_fn: Callable[[], datetime], bot: str = ""):
-        self.path, self.now_fn, self.bot = str(path), now_fn, bot
-
-    def _raw(self) -> str | None:
-        try:
-            return Path(self.path).read_bytes().decode("utf-8", errors="replace")
-        except FileNotFoundError:
-            return None
-        except OSError as e:
-            return f"unreadable: {type(e).__name__}"
-
-    @staticmethod
-    def _parse(raw: str) -> list[_Hold] | None:
-        try:
-            d = json.loads(raw)
-        except ValueError:
-            return None
-        if not isinstance(d, dict) or d.get("schema") != "pause/1" or not isinstance(d.get("holds"), list) \
-                or not d["holds"]:
-            return None
-        out = []
-        for h in d["holds"]:
-            if not isinstance(h, dict) or not isinstance(h.get("reason"), str) or not isinstance(h.get("by"), str):
-                return None
-            out.append(_Hold(h["reason"], h["by"], h.get("at"), str(h.get("note", ""))))
-        return out
-
-    def active(self) -> bool:
-        try:
-            os.stat(self.path)
-        except FileNotFoundError:
-            return False
-        except OSError:
-            return True
-        return True
-
-    def holds(self) -> tuple[_Hold, ...]:
-        raw = self._raw()
-        if raw is None:
-            return ()
-        return tuple(self._parse(raw) or [_Hold("unreadable", "system", None, raw[:200])])
-
-    def _mutate(self, fn) -> bool:
-        import fcntl  # noqa: PLC0415
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        with open(f"{self.path}.lock", "a+") as lk:
-            fcntl.flock(lk.fileno(), fcntl.LOCK_EX)
-            try:
-                return fn()
-            finally:
-                fcntl.flock(lk.fileno(), fcntl.LOCK_UN)
-
-    def _audit(self, op: str, reason: str, by: str, note: str) -> None:
-        row = {"at": LS.fmt_ts(self.now_fn()), "op": op, "reason": reason, "by": by, "note": note}
-        with open(Path(self.path).parent / "pause_audit.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    def _write(self, hs: list[_Hold]) -> None:
-        atomic_write_json(self.path, {"schema": "pause/1", "bot": self.bot, "holds": [
-            {"reason": h.reason, "by": h.by, "at": h.at, "note": h.note} for h in hs]})
-
-    def add(self, reason: str, by: str, note: str = "") -> bool:
-        if reason not in _PAUSE_REASONS:
-            raise ValueError(reason)
-
-        def fn() -> bool:
-            raw = self._raw()
-            cur: list[_Hold] = []
-            if raw is not None:
-                cur = self._parse(raw)  # type: ignore[assignment]
-                if cur is None or any(h.reason == reason for h in cur):
-                    return False
-            cur.append(_Hold(reason, by, LS.fmt_ts(self.now_fn()), note))
-            self._write(cur)
-            self._audit("add", reason, by, note)
-            return True
-        return self._mutate(fn)
-
-    def remove(self, reason: str, by: str) -> bool:
-        if reason not in _PAUSE_REASONS and reason != "unreadable":
-            raise ValueError(reason)
-
-        def fn() -> bool:
-            raw = self._raw()
-            cur = self._parse(raw) if raw is not None else None
-            if cur is None or not any(h.reason == reason for h in cur):
-                return False
-            left = [h for h in cur if h.reason != reason]
-            if left:
-                self._write(left)
-            else:
-                os.unlink(self.path)
-            self._audit("remove", reason, by, "")
-            return True
-        return self._mutate(fn)
-
-
 HELP = ("/durum  /rapor  /hepsini_kapat  /durdur  /devam  /onayla <id>  /reddet <id>  /yardim\n"
         "/durdur: yeni girisleri durdurur, pozisyonlar acik kalir (tam kapatma icin /hepsini_kapat)")
 PAUSE_USER = "user_cmd"
+
+
+def pause_state(pauses: Mapping[str, Any] | None) -> dict[str, list]:
+    """bot -> tutus listesi (yalniz etkin olanlar)."""
+    out: dict[str, list] = {}
+    for bot, p in (pauses or {}).items():
+        try:
+            if p.active():
+                out[bot] = list(p.holds())
+        except Exception as e:  # noqa: BLE001 - fail-closed: okunamayan duraklatma etkin sayilir
+            log.warning("pause okunamadi: %s", type(e).__name__)
+            out[bot] = []
+    return out
+
+
+def pause_lines(pauses: Mapping[str, Any]) -> list[str]:
+    """Bot basina duraklatma satiri: neden, kim, ne zaman (11 §9.5; /durum ve gunluk rapor)."""
+    st = pause_state(pauses)
+    lines = []
+    for bot in pauses:
+        if bot not in st:
+            lines.append(f"duraklatma {bot}: yok")
+        else:
+            hs = ", ".join(f"{h.reason} ({h.by}, {h.at})" for h in st[bot]) or "okunamadi"
+            lines.append(f"duraklatma {bot}: {hs}")
+    return lines
 
 
 class TelegramDaemon:
@@ -612,9 +527,7 @@ class TelegramDaemon:
         self.base.mkdir(parents=True, exist_ok=True)
         self.outbox = Outbox(self.base, self.now)
         self.killswitch = killswitch          # motorun Killswitch'i disaridan verilir (scripts/telegram_run.py)
-        # bot -> EntryPause benzeri (active/holds/add/remove); trader_engine'den scripts/telegram_run.py enjekte eder (11 §9.5)
-        if not pauses and getattr(cfg, "pause_files", None):
-            pauses = {b: FilePause(pf, self.now, b) for b, pf in cfg.pause_files.items()}
+        # bot -> EntryPause (active/holds/add/remove); yalniz scripts/telegram_run.py enjekte eder; yedek gerceklenim YOK (11 §9.5)
         self.pauses = dict(pauses) if pauses else None
         self.start_ts = self.now().timestamp()
         self._seen: set[int] = set()
@@ -789,29 +702,10 @@ class TelegramDaemon:
 
     # -- duraklatma (11 §9) ---------------------------------------------------
     def _pause_state(self) -> dict[str, list]:
-        """bot -> tutus listesi (yalniz etkin olanlar)."""
-        out: dict[str, list] = {}
-        for bot, p in (self.pauses or {}).items():
-            try:
-                if p.active():
-                    out[bot] = list(p.holds())
-            except Exception as e:  # noqa: BLE001 - fail-closed: okunamayan duraklatma etkin sayilir
-                log.warning("pause okunamadi: %s", type(e).__name__)
-                out[bot] = []
-        return out
+        return pause_state(self.pauses)
 
     def _pause_lines(self) -> list[str]:
-        if self.pauses is None:
-            return []
-        st = self._pause_state()
-        lines = []
-        for bot in self.pauses:
-            if bot not in st:
-                lines.append(f"duraklatma {bot}: yok")
-            else:
-                hs = ", ".join(f"{h.reason} ({h.by}, {h.at})" for h in st[bot]) or "okunamadi"
-                lines.append(f"duraklatma {bot}: {hs}")
-        return lines
+        return [] if self.pauses is None else pause_lines(self.pauses)
 
     def _remaining_lines(self) -> str:
         st = self._pause_state()
@@ -848,8 +742,9 @@ class TelegramDaemon:
         if st and not others:
             others = ["unreadable"]
         if others:
-            extra = " (/kademe_devam ile)" if "drawdown_review" in others else ""
-            return f"Bu durdurma Telegram'dan kaldırılamaz: {', '.join(others)}{extra}; yalnız sunucuda kaldırılır"
+            extra = (" (kademe inceleme akışıyla ya da sunucuda operatör tarafından kaldırılır)"
+                     if "drawdown_review" in others else "; yalnız sunucuda kaldırılır")
+            return f"Bu durdurma Telegram'dan kaldırılamaz: {', '.join(others)}{extra}"
         return "KILL etkin degil"
 
     def _devam_layer(self) -> tuple[str, str | None]:
@@ -938,24 +833,46 @@ class TelegramDaemon:
             self._reply("KILL kuruldu; motor pozisyonlari kapatiyor")
             return "kill_set"
         if p["action"] == "pause" and self.pauses:
-            added = []
+            problems = []
             for bot, ps in self.pauses.items():
-                if ps.add(PAUSE_USER, f"telegram:{who}"):
-                    added.append(bot)
-            self._reply("Yeni giriş durduruldu. Açık pozisyonlar zarar durdurlarıyla açık kalır. "
-                        "Hepsini kapatmak için /hepsini_kapat.")
-            return "paused"
+                try:
+                    if ps.add(PAUSE_USER, f"telegram:{who}"):
+                        continue
+                    hs = ps.holds()
+                    if any(h.reason == PAUSE_USER for h in hs):
+                        continue                              # zaten var (idempotent)
+                    problems.append(f"{bot}: duraklatma dosyası okunamıyor/bozuk; girişler kapalı (fail-closed) ama "
+                                    "user_cmd tutuşu kaydedilemedi; sunucuda bakılmalı")
+                except Exception as e:  # noqa: BLE001 - onayli kodun ardindan sessiz kalinmaz
+                    log.error("pause add basarisiz: %s %s", bot, type(e).__name__)
+                    problems.append(f"{bot}: duraklatma YAZILAMADI ({type(e).__name__}); sunucuda kontrol edin")
+            msg = ("Yeni giriş durduruldu. Açık pozisyonlar zarar durdurlarıyla açık kalır. "
+                   "Hepsini kapatmak için /hepsini_kapat.")
+            if problems:
+                msg = "Duraklatma kısmen uygulandı/uygulanamadı:\n" + "\n".join(problems) + "\n" + msg
+            self._reply(msg, "CRIT" if problems else "WARN")
+            return "pause_partial" if problems else "paused"
         if p["action"] == "devam":
             layer = p.get("layer", "kill")
             if layer == "pause" and self.pauses:
+                if self.killswitch is not None and self.killswitch.active():
+                    self._reply("KILL etkin; önce KILL akışı: /devam ile KILL kaldırılır, duraklatma ondan sonra")
+                    return "refused"
                 why = self._pause_devam_refusal()
                 if why:
                     self._reply(why)
                     return "refused"
-                for ps in self.pauses.values():
-                    ps.remove(PAUSE_USER, f"telegram:{who}")
-                self._reply("Duraklatma (user_cmd) kaldirildi.\n" + self._remaining_lines())
-                return "pause_cleared"
+                failed = []
+                for bot, ps in self.pauses.items():
+                    try:
+                        ps.remove(PAUSE_USER, f"telegram:{who}")
+                    except Exception as e:  # noqa: BLE001
+                        log.error("pause remove basarisiz: %s %s", bot, type(e).__name__)
+                        failed.append(f"{bot}: kaldırılamadı ({type(e).__name__})")
+                head = "Duraklatma (user_cmd) kaldirildi." if not failed else \
+                    "Duraklatma kısmen kaldırıldı:\n" + "\n".join(failed)
+                self._reply(head + "\n" + self._remaining_lines(), "CRIT" if failed else "WARN")
+                return "pause_partial" if failed else "pause_cleared"
             why = self._devam_refusal()
             if why:
                 self._reply(why)
@@ -1320,13 +1237,19 @@ def section_counterfactual(cfg: TelegramConfig, now: datetime) -> str:
             f"değildir) — {parts}")
 
 
-def default_sections(cfg: TelegramConfig, now: datetime, day: str) -> dict[str, Callable[[], str]]:
-    return {"Defter": lambda: section_ledger(cfg, day), "Bütçe": lambda: section_budget(cfg),
-            "Ders": lambda: section_lesson(cfg, now),
-            "Alınmayan sinyaller (son 7 gün)": lambda: section_counterfactual(cfg, now)}
+def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None
+                     ) -> dict[str, Callable[[], str]]:
+    out: dict[str, Callable[[], str]] = {}
+    if pauses:                                                   # 11 §9.5: bot basina duraklatma satiri
+        out["Duraklatma"] = lambda: "\n" + "\n".join("  " + ln for ln in pause_lines(pauses))
+    out.update({"Defter": lambda: section_ledger(cfg, day), "Bütçe": lambda: section_budget(cfg),
+                "Ders": lambda: section_lesson(cfg, now),
+                "Alınmayan sinyaller (son 7 gün)": lambda: section_counterfactual(cfg, now)})
+    return out
 
 
-def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, sections=None) -> str:
+def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, sections=None,
+               pauses: Mapping[str, Any] | None = None) -> str:
     """-> 'sent' | 'spooled' | 'skipped' | 'already'. last_report.json gun anahtari yalniz teslimde yazilir."""
     lp = Path(cfg.var_dir) / "last_report.json"
     try:
@@ -1336,7 +1259,7 @@ def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, s
     decision, day = report_decision(now, last)
     if decision == "atla":
         return "already" if last == day else "skipped"
-    text = build_report(cfg, now, day, default_sections(cfg, now, day) if sections is None else sections)
+    text = build_report(cfg, now, day, default_sections(cfg, now, day, pauses) if sections is None else sections)
     if decision == "gecikmis":
         text = "[gecikmiş] " + text
     ok = notifier.send_text(text, "INFO", f"report-{day}")

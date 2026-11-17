@@ -57,6 +57,7 @@ def penv(tmp_path, monkeypatch):
     e.tmp = tmp_path
     e.fake = FakeTelegram()
     e.clk = Clk()
+    e.clk_obj = type("_C", (), {"now": staticmethod(lambda: e.clk())})()     # EntryPause icin Clock (daemon saatiyle ayni)
     e.sleeps = []
     e.calls = []
     e.runner_result = (0, json.dumps({"status": "approved", "code": "ok", "message": "tamam", "request_id": "lr-2026-11-16-3"}))
@@ -64,17 +65,17 @@ def penv(tmp_path, monkeypatch):
     e.kill_file = str(tmp_path / "KILL")
     e.status_path = str(tmp_path / "status.json")
     e.pause_paths = {b: str(tmp_path / "shared" / f"PAUSE.{b}") for b in BOTS}
-    # SPEC-AMBIGUOUS: sartname "yapilandirmadaki her bot" der ama TelegramConfig'in bot/duraklatma yolu alani adini
-    # vermez. En literal okuma: `pause_files={bot: f"{pause_file}.{bot}"}` eslemesi (EntryPause yolu §9.2). Tek yer.
+    # WP-B6 F4: FilePause silindi; daemon'a uretimdeki EntryPause siniflari enjekte edilir (bot -> EntryPause, §9.2 yolu).
     e.cfg = tg.TelegramConfig(token=TOKEN, chat_id=CID, var_dir=str(tmp_path / "var"), kill_file=e.kill_file,
                               status_path=e.status_path, lesson_run=str(tmp_path / "lesson_run.py"),
-                              health_state=str(tmp_path / "health.json"), pause_files=dict(e.pause_paths))
+                              health_state=str(tmp_path / "health.json"))
     (tmp_path / "var").mkdir()
     e.client = tg.TelegramClient(TOKEN, http_post=e.fake.post, sleep=e.sleeps.append)
     e.ks = Killswitch(e.kill_file, SimClock(T0))
+    e.pauses = {b: EntryPause(p, e.clk_obj, bot=b) for b, p in e.pause_paths.items()}
     e.new_daemon = lambda **kw: tg.TelegramDaemon(
         e.cfg, e.client, now_fn=e.clk, runner=kw.pop("runner", e.runner), sleep=e.sleeps.append,
-        random_code=kw.pop("random_code", lambda: "4821"),
+        random_code=kw.pop("random_code", lambda: "4821"), pauses=kw.pop("pauses", e.pauses),
         killswitch=kw.pop("killswitch", _ks_for(e.cfg, e.clk)), **kw)
     e.d = e.new_daemon()
     e.clk.advance(2)

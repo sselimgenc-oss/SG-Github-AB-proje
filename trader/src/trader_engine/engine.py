@@ -90,7 +90,9 @@ class Engine:
         self.veto = veto
         self.kill = kill
         if pause is None and cfg.mode != "backtest":
-            pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
+            # F10: goreli yol cwd'ye bagli kalmasin (systemd WorkingDirectory'ye guvenilmez): mutlak yola cevrilir
+            pause = EntryPause(os.path.abspath(f"{cfg.pause_file}.{cfg.bot}"), clock,
+                               audit_path=os.path.abspath(cfg.path("pause_audit.jsonl")), bot=cfg.bot)
         self.pause = pause
         self.status = status
         self.strict = strict
@@ -179,6 +181,8 @@ class Engine:
 
     def _live_gate_code(self, blocked, killed: bool) -> str:
         """Anlik kapi durumu (cift-bagimsiz kapilar; bayatlik karar adimina ozgudur)."""
+        if self._params_ok is False and self._started:      # 11 §9.3: ilk kapi
+            return "params_unavailable"
         try:
             h = self.ledger.entries_allowed()
             if not h.ok:
@@ -191,8 +195,6 @@ class Engine:
             return "kill"
         if self.pause is not None and self.pause.active():
             return self.pause.code() or "paused"
-        if self._params_ok is False and self._started:
-            return "params_unavailable"
         return "ok"
 
     def kill_state(self) -> str | None:

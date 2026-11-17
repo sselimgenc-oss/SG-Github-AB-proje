@@ -89,6 +89,9 @@ Bana su bilgileri bildirin: (1) her olcumde `free -m` ciktisinin "available" ve 
 ## Acilis kapisi yeniden deneme
 Motor acilis kapisinda (kural 10/10 degil ya da veri bayat) cikis 7 ile `failed` olursa `trader-engine-retry@<bot>.timer` (5 dk) besleme saglikliyken motoru yeniden baslatir; saatte en fazla 6 deneme, sonra tek CRIT Telegram uyarisi. Cikis 6 (451) ve yapilandirma hatalari yeniden denenmez (tek sert alarm). Izleme: `journalctl -u 'trader-engine-retry@*' -n 30`.
 
+## Giris duraklatma (CLI)
+Telegram `/durdur` / `/devam` disinda tek yol CLI'dir: `sudo -u trader <repo>/.venv/bin/python -m trader_engine pause --bot learner --reason manual --by ad` ; kaldirmak icin `--clear --reason <neden> --by <ad>` (ikisi de zorunlu). CLI'yi **mutlaka `sudo -u trader`** ile calistirin: root olarak calisinca `PAUSE.<bot>.lock` ve `pause_audit.jsonl` root sahipli olusur ve `trader` kullanicisi (motor, Telegram) artik yazamaz. Gerekirse: `chown trader:trader shared/PAUSE.* var/*/pause_audit.jsonl`.
+
 ## Kaldirma
 
 ```

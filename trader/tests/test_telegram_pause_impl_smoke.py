@@ -165,3 +165,115 @@ def test_status_line_and_legacy_durdur(rig, tmp_path):
     d2.r = d.r
     d2.process_updates([msg(d2, "/durdur", 9)])
     assert "desteklenmiyor" in d.r.fake.texts()[-1]
+
+
+# ---------------------------------------------------------------- F1 build_pauses == motor yollari
+def test_build_pauses_match_engine_paths_for_both_bots(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root / "scripts"))
+    import telegram_run as TR
+    from trader_engine.config import load_engine_config
+    monkeypatch.chdir(tmp_path)                                  # cwd farkli: yollar yine kok-bagimli
+    ps = TR.build_pauses({}, lambda: T0)
+    assert list(ps) == ["learner", "twin"]
+    for bot in ("learner", "twin"):
+        cfg = load_engine_config(root / "config" / "engine.base.json", root / "config" / f"engine.{bot}.json")
+        want_pause = str(root / (cfg.pause_file + "." + bot))
+        want_audit = str(root / cfg.path("pause_audit.jsonl"))
+        assert ps[bot].path == want_pause and Path(ps[bot].path).is_absolute()
+        assert ps[bot].audit_path == want_audit and ps[bot].bot == bot
+    ps2 = TR.build_pauses({"PAUSE_BOTS": "learner", "PAUSE_FILE": "/x/PAUSE", "ENGINE_VAR_DIR": "/x/var"}, lambda: T0)
+    assert list(ps2) == ["learner"] and ps2["learner"].path == "/x/PAUSE.learner"
+    assert ps2["learner"].audit_path == "/x/var/learner/pause_audit.jsonl"
+
+
+def test_production_entrypause_durdur_devam_end_to_end(rig):
+    status(rig)
+    assert "Yeni giriş durduruldu" in (say(rig, "/durdur", 1) and say(rig, "0427", 2))
+    for b, p in rig.r.pauses.items():
+        assert p.active() and p.holds()[0].reason == "user_cmd" and p.holds()[0].by.startswith("telegram:")
+    say(rig, "/devam", 3)
+    assert "kaldirildi" in say(rig, "0427", 4)
+    assert not any(p.active() for p in rig.r.pauses.values())
+    rows = [json.loads(x) for p in rig.r.pauses.values() for x in Path(p.audit_path).read_text().splitlines()]
+    assert sorted(r["op"] for r in rows) == ["add", "add", "remove", "remove"]
+
+
+# ---------------------------------------------------------------- F2
+def test_durdur_confirm_reports_per_bot_failure_and_still_pauses_other(rig):
+    status(rig)
+    orig = rig.pauses["learner"].add
+
+    def boom(*a, **k):
+        raise OSError("disk")
+    rig.pauses["learner"].add = boom
+    say(rig, "/durdur", 1)
+    t = say(rig, "0427", 2)
+    assert "learner" in t and "YAZILAMADI" in t
+    assert rig.pauses["twin"].active() and not rig.pauses["learner"].active()
+    rig.pauses["learner"].add = orig
+
+
+def test_devam_pause_removal_failure_per_bot_not_silent(rig):
+    status(rig)
+    for p in rig.pauses.values():
+        p.add("user_cmd", "x")
+    rig.pauses["learner"].remove = lambda *a, **k: (_ for _ in ()).throw(OSError("ro"))
+    say(rig, "/devam", 1)
+    t = say(rig, "0427", 2)
+    assert "learner" in t and "kaldırılamadı" in t
+    assert not rig.pauses["twin"].active()
+
+
+# ---------------------------------------------------------------- F3
+def test_report_has_per_bot_pause_line(rig, tmp_path):
+    rig.pauses["learner"].add("drawdown_review", "engine:rk1")
+    secs = T.default_sections(rig.cfg, T0, "2026-12-30", rig.pauses)
+    out = T.build_report(rig.cfg, T0, "2026-12-30", {"Duraklatma": secs["Duraklatma"]})
+    assert "duraklatma learner: drawdown_review (engine:rk1, 2026-12-30T10:00:00Z)" in out
+    assert "duraklatma twin: yok" in out
+    assert "Duraklatma" not in T.default_sections(rig.cfg, T0, "2026-12-30")
+
+
+# ---------------------------------------------------------------- F5
+def test_pending_pause_devam_refused_when_kill_set_before_confirm(rig):
+    status(rig)
+    for p in rig.pauses.values():
+        p.add("user_cmd", "x")
+    say(rig, "/devam", 1)
+    rig.killswitch.set(by="cli", reason="manual")
+    t = say(rig, "0427", 2)
+    assert "KILL etkin" in t
+    assert all(p.active() for p in rig.pauses.values()) and rig.killswitch.active()
+
+
+# ---------------------------------------------------------------- F6
+def test_pause_remove_appears_once_with_pause_user():
+    import ast
+    root = Path(__file__).resolve().parents[1]
+    calls = []
+    for f in [root / "src/trader_core/telegram.py", *sorted((root / "scripts").glob("*.py"))]:
+        for n in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "remove"
+                    and not (isinstance(n.func.value, ast.Name) and n.func.value.id in ("os", "files"))):   # files: list.remove
+                calls.append((f.name, ast.unparse(n.args[0]) if n.args else None))
+    assert calls == [("telegram.py", "PAUSE_USER")], calls
+
+
+# ---------------------------------------------------------------- F9
+def test_devam_refusal_drawdown_review_no_missing_command(rig):
+    status(rig)
+    rig.pauses["learner"].add("drawdown_review", "engine:rk1")
+    t = say(rig, "/devam", 1)
+    assert "kaldırılamaz" in t and "drawdown_review" in t and "/kademe_devam" not in t and "yalnız sunucuda" not in t
+
+
+def test_durdur_confirm_unreadable_file_says_so(rig):
+    status(rig)
+    Path(rig.pauses["learner"].path).write_text("{bozuk")
+    say(rig, "/durdur", 1)
+    t = say(rig, "0427", 2)
+    assert "learner" in t and "okunamıyor" in t and "user_cmd" in t
+    assert rig.pauses["twin"].active()
