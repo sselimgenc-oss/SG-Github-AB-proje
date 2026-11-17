@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import logging
 import signal
@@ -114,6 +115,31 @@ def _cmd_kill(a) -> int:
     return EXIT_OK
 
 
+def _cmd_pause(a) -> int:
+    """11 §9.5: duraklatma tutuslari. `remove` motor kodunda yalniz burada cagrilir (AST korumasi)."""
+    from .clock import SystemClock
+    from .config import load_engine_config
+    from .pause import EntryPause
+    d = Path(a.config_dir)
+    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{a.bot}.json")
+    p = EntryPause(f"{cfg.pause_file}.{cfg.bot}", SystemClock(), audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
+    try:
+        if a.list:
+            print(json.dumps({"bot": cfg.bot, "active": p.active(),
+                              "holds": [dataclasses.asdict(h) for h in p.holds()]}, ensure_ascii=False))
+            return EXIT_OK
+        if a.clear:
+            ok = p.remove(a.reason, a.by)
+            print("kaldirildi" if ok else "tutus yok / kaldirilamadi")
+            return EXIT_OK if ok else EXIT_FINDINGS
+        ok = p.add(a.reason, a.by, a.note)
+        print("eklendi" if ok else "zaten var / eklenemedi")
+        return EXIT_OK
+    except ValueError as e:
+        print(f"hata: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
+
+
 def _cmd_feed(a) -> int:
     from .marketdata import feed as F  # noqa: F401
     runner = getattr(F, "main", None)
@@ -170,6 +196,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", default="manual")
     p.add_argument("--config-dir", default="config")
     p.set_defaults(fn=_cmd_kill)
+    p = sub.add_parser("pause")
+    bot_args(p)
+    p.add_argument("--clear", action="store_true")
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--reason", default="manual")
+    p.add_argument("--by", default="cli")
+    p.add_argument("--note", default="")
+    p.set_defaults(fn=_cmd_pause)
     for name, fn in (("feed", _cmd_feed), ("backtest", _cmd_backtest), ("rules-snapshot", _cmd_rules)):
         p = sub.add_parser(name)
         p.add_argument("rest", nargs=argparse.REMAINDER)

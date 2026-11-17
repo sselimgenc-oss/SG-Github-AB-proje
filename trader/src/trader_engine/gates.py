@@ -20,6 +20,7 @@ from .clock import Clock
 from .config import EngineConfig
 from .errors import DataError
 from .killswitch import Killswitch
+from .pause import EntryPause
 from .state import StateStore, parse_iso_z
 from .strategy_runner import SignalFrame, SignalRow
 from .types import SymbolRules
@@ -128,8 +129,10 @@ def build_decision_event(row: SignalRow, tf: str, **override) -> L.DecisionEvent
 class EntryGate:
     def __init__(self, cfg: EngineConfig, ledger: L.Ledger, state: StateStore, kill: Killswitch, veto: VetoSource,
                  clock: Clock, broker: Broker, rules_fn: Callable[[str], SymbolRules],
-                 entry_ref_fn: Callable[[str, datetime, SignalRow], float] | None = None) -> None:
+                 entry_ref_fn: Callable[[str, datetime, SignalRow], float] | None = None,
+                 pause: EntryPause | None = None) -> None:
         self.cfg = cfg
+        self.pause = pause
         self.ledger = ledger
         self.state = state
         self.kill = kill
@@ -159,6 +162,8 @@ class EntryGate:
             return GateVerdict(False, str(reason), closed)
         if self.kill.active():
             return GateVerdict(False, "kill", closed)
+        if self.pause is not None and self.pause.active():          # 11 §9.3: kill'den sonra, stale_data'dan once
+            return GateVerdict(False, self.pause.code() or "paused", closed)
         if self.clock.now() - D > self.cfg.stale_factor * tf_delta(tf):
             return GateVerdict(False, "stale_data", "other")
         return GateVerdict(True, "ok", None)

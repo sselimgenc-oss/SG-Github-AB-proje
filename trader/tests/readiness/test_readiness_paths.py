@@ -221,7 +221,9 @@ def test_health_env_has_bots_and_veto_freshness(envs):
 def test_lesson_and_telegram_sandbox_ledger_access(units):
     for u in ("trader-lesson.service", "trader-telegram.service"):
         assert f"-{T}/var/learner" in _rw(units, u), u
-        assert f"-{T}/var/twin" in _ro(units, u), u
+    assert f"-{T}/var/twin" in _ro(units, "trader-lesson.service")
+    # telegram: /durdur ikiz icin de var/twin/pause_audit.jsonl yazar (WP-B6)
+    assert f"-{T}/var/twin" in _rw(units, "trader-telegram.service")
     assert f"-{T}/var/twin" in _ro(units, "trader-telegram-report.service")
     assert _covered(f"{T}/var", _rw(units, "trader-backup.service"))                  # OPEN-10
 

@@ -6,7 +6,7 @@ import logging
 import os
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass, fields, replace
+from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from .errors import ClockError, FailClosed, StateError
 from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
 from .killswitch import Killswitch
+from .pause import EntryPause
 from .marketdata.sources import MarketView, MinuteStep
 from .order_manager import OrderManager
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
@@ -77,7 +78,7 @@ class Engine:
     def __init__(self, cfg: EngineConfig, *, clock: Clock, view: MarketView, broker: Broker, ledger: L.Ledger,
                  state: StateStore, signals: SignalSource, strategy: Strategy, veto: VetoSource, kill: Killswitch,
                  status: StatusWriter | None, orders: OrderManager | None = None, entry_ref_fn=None,
-                 strict: bool = False, tick_fn=None) -> None:
+                 strict: bool = False, tick_fn=None, pause: EntryPause | None = None) -> None:
         self.cfg = cfg
         self.clock = clock
         self.view = view
@@ -88,13 +89,16 @@ class Engine:
         self.strategy = strategy
         self.veto = veto
         self.kill = kill
+        if pause is None and cfg.mode != "backtest":
+            pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
+        self.pause = pause
         self.status = status
         self.strict = strict
         rules_fn = broker.rules
         self.orders = orders or OrderManager(cfg.bot, broker, state, clock, rules_fn)
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
-        self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn)
+        self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause)
         self.reconciler = Reconciler(cfg, broker, state, ledger, self.orders, clock)
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
@@ -185,6 +189,8 @@ class Engine:
             return str(blocked)
         if killed:
             return "kill"
+        if self.pause is not None and self.pause.active():
+            return self.pause.code() or "paused"
         if self._params_ok is False and self._started:
             return "params_unavailable"
         return "ok"
@@ -217,7 +223,13 @@ class Engine:
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
+            "pause": self._pause_status(),
         }
+
+    def _pause_status(self) -> dict | None:
+        if self.pause is None:
+            return None
+        return {"active": self.pause.active(), "holds": [asdict(h) for h in self.pause.holds()]}
 
     def _ml_status(self, now: datetime) -> dict | None:
         f = getattr(self.signals, "ml_status", None)
@@ -903,16 +915,17 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
         broker = PaperBroker(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate,
                                          wallet_start=cfg.wallet_start),
                              view.rules, view.funding, clock)
-    for p in (cfg.ledger_path, cfg.state_path, cfg.status_path, cfg.kill_file):
+    for p in (cfg.ledger_path, cfg.state_path, cfg.status_path, cfg.kill_file, f"{cfg.pause_file}.{cfg.bot}"):
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, clock=(None if cfg.mode == "paper" else clock.now))
     state = StateStore(cfg.state_path, bot=cfg.bot)
     vsrc: VetoSource = FileVeto(veto.load_config(cfg.veto_config), env) if cfg.veto_mode == "required" else NoVeto()
     kill = Killswitch(cfg.kill_file, clock)
+    pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
     status = StatusWriter(cfg.status_path, clock, cfg)
     ml_model, ml_error = None, None
     if getattr(strategy, "ml_mode", "off") != "off":
         ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
     signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
-                  strategy=strategy, veto=vsrc, kill=kill, status=status)
+                  strategy=strategy, veto=vsrc, kill=kill, status=status, pause=pause)

@@ -57,6 +57,7 @@ class EngineConfig:
     target_trade_risk: float = LOCKED_CFG.target_trade_risk
     ml_mode: Literal["off", "shadow", "active"] = "off"      # 05 §13.4a; yalniz price_action_v1_ml okur
     ml_model_path: str | None = None                          # model paketi (JSON); off iken okunmaz
+    pause_file: str = "shared/PAUSE"                          # 11 §3.1: gercek yol f"{pause_file}.{bot}"
     startup_wait_s: float = 600.0                             # paper acilis kapisi: kural+taze 1m veri icin azami bekleme
 
     @property
@@ -66,6 +67,9 @@ class EngineConfig:
 
     def _bot_path(self, name: str) -> str:
         return f"{self.var_dir.rstrip('/')}/{self.bot}/{name}"
+
+    def path(self, name: str) -> str:
+        return self._bot_path(name)
 
     @property
     def ledger_path(self) -> str:
@@ -85,7 +89,7 @@ _TOP_KEYS = {f.name for f in dataclasses.fields(EngineConfig)}
 _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wait_s",
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
-_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "startup_wait_s"}
+_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "startup_wait_s", "pause_file"}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
 
@@ -191,6 +195,9 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     ml_path = raw.get("ml_model_path")
     if ml_path is not None and (not isinstance(ml_path, str) or not ml_path):
         raise ConfigError("ml_model_path bos olmayan str ya da null olmali")
+    pause_file = raw.get("pause_file", "shared/PAUSE")
+    if not isinstance(pause_file, str) or not pause_file:
+        raise ConfigError("pause_file bos olmayan str olmali")
     startup_wait = _num("startup_wait_s", raw.get("startup_wait_s", 600.0), 0.0, 86_400.0)
     ttr = raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk)
     build_risk_config(ttr)
@@ -206,7 +213,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
         start_delay_s=nums["start_delay_s"], strategy=strategy,
         target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path,  # type: ignore[arg-type]
-        startup_wait_s=startup_wait,
+        startup_wait_s=startup_wait, pause_file=pause_file,
         **{n: raw[n] for n in _STR},
     )
 

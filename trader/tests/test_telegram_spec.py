@@ -576,9 +576,10 @@ def test_devam_code_from_other_chat_nothing(env):
     assert kill_active(env)
 
 
-def test_durdur_unsupported(env):
+def test_durdur_without_pause_config_does_not_kill(env):
+    """11 §9.5 ile karar 1 degisti: /durdur artik "desteklenmiyor" degil; PAUSE yapilandirilmamissa yalniz
+    kill kurulmaz (yeni davranis tests/test_telegram_pause_spec.py'de)."""
     env.send("/durdur")
-    assert "desteklenm" in env.fake.alltext().lower()
     assert not kill_active(env)
 
 

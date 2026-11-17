@@ -195,7 +195,8 @@ class TelegramClient:
 class TelegramConfig:
     def __init__(self, token: str, chat_id: int, var_dir: str, kill_file: str = "", status_path: str = "",
                  lesson_run: str = "", health_state: str = "", ledger_path: str = "", twin_ledger_path: str = "",
-                 budget_config: str = "", lesson_store: str = ""):
+                 budget_config: str = "", lesson_store: str = "", pause_files: Mapping[str, str] | None = None):
+        self.pause_files = dict(pause_files) if pause_files else None     # bot -> PAUSE dosyasi (11 §9.2)
         self.ledger_path, self.twin_ledger_path = ledger_path, twin_ledger_path
         self.budget_config, self.lesson_store = budget_config, lesson_store
         self.token, self.chat_id, self.var_dir = token, chat_id, var_dir
@@ -480,14 +481,126 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-HELP = ("/durum  /rapor  /hepsini_kapat  /devam  /onayla <id>  /reddet <id>  /yardim\n"
-        "/durdur: desteklenmiyor (tam kapatma icin /hepsini_kapat)")
+_PAUSE_REASONS = ("user_cmd", "drawdown_review", "unknown_position", "late_fill", "exchange_ban", "exchange_auth",
+                  "manual")
+
+
+class _Hold:
+    def __init__(self, reason: str, by: str, at: str | None, note: str):
+        self.reason, self.by, self.at, self.note = reason, by, at, note
+
+
+class FilePause:
+    """trader_engine.pause.EntryPause ile ayni dosya bicimi/kilidi (pause/1, `<yol>.lock` flock); trader_core motoru
+    import edemedigi icin yedek gerceklenim: telegram_run.py EntryPause enjekte ederse bu kullanilmaz."""
+
+    def __init__(self, path: str, now_fn: Callable[[], datetime], bot: str = ""):
+        self.path, self.now_fn, self.bot = str(path), now_fn, bot
+
+    def _raw(self) -> str | None:
+        try:
+            return Path(self.path).read_bytes().decode("utf-8", errors="replace")
+        except FileNotFoundError:
+            return None
+        except OSError as e:
+            return f"unreadable: {type(e).__name__}"
+
+    @staticmethod
+    def _parse(raw: str) -> list[_Hold] | None:
+        try:
+            d = json.loads(raw)
+        except ValueError:
+            return None
+        if not isinstance(d, dict) or d.get("schema") != "pause/1" or not isinstance(d.get("holds"), list) \
+                or not d["holds"]:
+            return None
+        out = []
+        for h in d["holds"]:
+            if not isinstance(h, dict) or not isinstance(h.get("reason"), str) or not isinstance(h.get("by"), str):
+                return None
+            out.append(_Hold(h["reason"], h["by"], h.get("at"), str(h.get("note", ""))))
+        return out
+
+    def active(self) -> bool:
+        try:
+            os.stat(self.path)
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True
+        return True
+
+    def holds(self) -> tuple[_Hold, ...]:
+        raw = self._raw()
+        if raw is None:
+            return ()
+        return tuple(self._parse(raw) or [_Hold("unreadable", "system", None, raw[:200])])
+
+    def _mutate(self, fn) -> bool:
+        import fcntl  # noqa: PLC0415
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        with open(f"{self.path}.lock", "a+") as lk:
+            fcntl.flock(lk.fileno(), fcntl.LOCK_EX)
+            try:
+                return fn()
+            finally:
+                fcntl.flock(lk.fileno(), fcntl.LOCK_UN)
+
+    def _audit(self, op: str, reason: str, by: str, note: str) -> None:
+        row = {"at": LS.fmt_ts(self.now_fn()), "op": op, "reason": reason, "by": by, "note": note}
+        with open(Path(self.path).parent / "pause_audit.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def _write(self, hs: list[_Hold]) -> None:
+        atomic_write_json(self.path, {"schema": "pause/1", "bot": self.bot, "holds": [
+            {"reason": h.reason, "by": h.by, "at": h.at, "note": h.note} for h in hs]})
+
+    def add(self, reason: str, by: str, note: str = "") -> bool:
+        if reason not in _PAUSE_REASONS:
+            raise ValueError(reason)
+
+        def fn() -> bool:
+            raw = self._raw()
+            cur: list[_Hold] = []
+            if raw is not None:
+                cur = self._parse(raw)  # type: ignore[assignment]
+                if cur is None or any(h.reason == reason for h in cur):
+                    return False
+            cur.append(_Hold(reason, by, LS.fmt_ts(self.now_fn()), note))
+            self._write(cur)
+            self._audit("add", reason, by, note)
+            return True
+        return self._mutate(fn)
+
+    def remove(self, reason: str, by: str) -> bool:
+        if reason not in _PAUSE_REASONS and reason != "unreadable":
+            raise ValueError(reason)
+
+        def fn() -> bool:
+            raw = self._raw()
+            cur = self._parse(raw) if raw is not None else None
+            if cur is None or not any(h.reason == reason for h in cur):
+                return False
+            left = [h for h in cur if h.reason != reason]
+            if left:
+                self._write(left)
+            else:
+                os.unlink(self.path)
+            self._audit("remove", reason, by, "")
+            return True
+        return self._mutate(fn)
+
+
+HELP = ("/durum  /rapor  /hepsini_kapat  /durdur  /devam  /onayla <id>  /reddet <id>  /yardim\n"
+        "/durdur: yeni girisleri durdurur, pozisyonlar acik kalir (tam kapatma icin /hepsini_kapat)")
+PAUSE_USER = "user_cmd"
 
 
 class TelegramDaemon:
     def __init__(self, cfg: TelegramConfig, client: TelegramClient, *, now_fn: Callable[[], datetime] | None = None,
                  runner: Callable | None = None, killswitch=None, report_fn: Callable[[], str] | None = None,
-                 sleep: Callable[[float], None] = time.sleep, random_code: Callable[[], str] | None = None):
+                 sleep: Callable[[float], None] = time.sleep, random_code: Callable[[], str] | None = None,
+                 pauses: Mapping[str, Any] | None = None):
         self.cfg, self.client = cfg, client
         self.now = now_fn or (lambda: datetime.now(UTC))
         if runner is None:
@@ -499,6 +612,10 @@ class TelegramDaemon:
         self.base.mkdir(parents=True, exist_ok=True)
         self.outbox = Outbox(self.base, self.now)
         self.killswitch = killswitch          # motorun Killswitch'i disaridan verilir (scripts/telegram_run.py)
+        # bot -> EntryPause benzeri (active/holds/add/remove); trader_engine'den scripts/telegram_run.py enjekte eder (11 §9.5)
+        if not pauses and getattr(cfg, "pause_files", None):
+            pauses = {b: FilePause(pf, self.now, b) for b, pf in cfg.pause_files.items()}
+        self.pauses = dict(pauses) if pauses else None
         self.start_ts = self.now().timestamp()
         self._seen: set[int] = set()
         self._rand = random_code or (lambda: "%04d" % secrets.randbelow(10000))
@@ -651,8 +768,7 @@ class TelegramDaemon:
         if cmd == "/devam":
             return self._cmd_devam_start()
         if cmd == "/durdur":
-            self._reply("desteklenmiyor, tam kapatma icin /hepsini_kapat")
-            return "unsupported"
+            return self._cmd_durdur_start()
         if cmd in ("/onayla", "/reddet"):
             return self._lesson(arg, cmd == "/onayla")
         self._reply("bilinmeyen komut. " + HELP)
@@ -667,17 +783,91 @@ class TelegramDaemon:
         lines = [f"kip={st.get('mode')} kill={st.get('kill')} kill_state={st.get('kill_state')} "
                  f"entries_open={st.get('entries_open')} equity={st.get('equity')} "
                  f"loop_at={st.get('loop_at')}", f"acik pozisyon: {len(st.get('open_positions') or [])}"]
+        lines += self._pause_lines()
         self._reply("\n".join(lines), "INFO")
         return "ok"
 
+    # -- duraklatma (11 §9) ---------------------------------------------------
+    def _pause_state(self) -> dict[str, list]:
+        """bot -> tutus listesi (yalniz etkin olanlar)."""
+        out: dict[str, list] = {}
+        for bot, p in (self.pauses or {}).items():
+            try:
+                if p.active():
+                    out[bot] = list(p.holds())
+            except Exception as e:  # noqa: BLE001 - fail-closed: okunamayan duraklatma etkin sayilir
+                log.warning("pause okunamadi: %s", type(e).__name__)
+                out[bot] = []
+        return out
+
+    def _pause_lines(self) -> list[str]:
+        if self.pauses is None:
+            return []
+        st = self._pause_state()
+        lines = []
+        for bot in self.pauses:
+            if bot not in st:
+                lines.append(f"duraklatma {bot}: yok")
+            else:
+                hs = ", ".join(f"{h.reason} ({h.by}, {h.at})" for h in st[bot]) or "okunamadi"
+                lines.append(f"duraklatma {bot}: {hs}")
+        return lines
+
+    def _remaining_lines(self) -> str:
+        st = self._pause_state()
+        lines = []
+        for bot in (self.pauses or {}):
+            if bot in st:
+                rs = ", ".join(h.reason for h in st[bot]) or "okunamadi"
+                lines.append(f"{bot}: {rs} — girişler hâlâ kapalı")
+            else:
+                lines.append(f"{bot}: girişler açık")
+        return "\n".join(lines)
+
+    def _cmd_durdur_start(self) -> str:
+        if not self.pauses:
+            self._reply("desteklenmiyor, tam kapatma icin /hepsini_kapat")
+            return "unsupported"
+        st = self._pause_state()
+        have = {b: next((h for h in hs if h.reason == PAUSE_USER), None) for b, hs in st.items()}
+        if all(have.get(b) is not None for b in self.pauses):
+            who = "; ".join(f"{b}: {h.by}, {h.at}" for b, h in have.items() if h is not None)
+            self._reply(f"Girişler zaten durdurulmuş ({who})")
+            return "already"
+        code = self._new_pending("pause")
+        self._reply("Yeni giris durdurulacak; acik pozisyonlar zarar durdurlariyla acik kalir. Onay icin "
+                    f"{CODE_TTL_S} sn icinde yalniz su 4 haneli kodu yanitla: {code}")
+        return "code_sent"
+
+    def _pause_devam_refusal(self) -> str | None:
+        """KILL yokken /devam: kaldirilabilecek user_cmd tutusu var mi (None = var)."""
+        st = self._pause_state()
+        if any(h.reason == PAUSE_USER for hs in st.values() for h in hs):
+            return None
+        others = sorted({h.reason for hs in st.values() for h in hs})
+        if st and not others:
+            others = ["unreadable"]
+        if others:
+            extra = " (/kademe_devam ile)" if "drawdown_review" in others else ""
+            return f"Bu durdurma Telegram'dan kaldırılamaz: {', '.join(others)}{extra}; yalnız sunucuda kaldırılır"
+        return "KILL etkin degil"
+
+    def _devam_layer(self) -> tuple[str, str | None]:
+        """-> (katman, ret nedeni). Cagri basina tek katman: once KILL, sonra user_cmd duraklatmasi."""
+        if self.killswitch is not None and self.killswitch.active():
+            return "kill", self._devam_refusal()
+        if self.pauses:
+            return "pause", self._pause_devam_refusal()
+        return "kill", self._devam_refusal()
+
     # -- iki adimli kod -----------------------------------------------------
-    def _new_pending(self, action: str) -> str:
+    def _new_pending(self, action: str, **extra) -> str:
         code = self._rand()
         salt = secrets.token_hex(8)
         now = self.now().timestamp()
         atomic_write_json(self._pending_p, {
             "token_hash": hashlib.sha256((salt + code).encode()).hexdigest(), "salt": salt, "action": action,
-            "chat_id": self.cfg.chat_id, "created_at": now, "expires_at": now + CODE_TTL_S})
+            "chat_id": self.cfg.chat_id, "created_at": now, "expires_at": now + CODE_TTL_S, **extra})
         return code
 
     def _cmd_kill_start(self) -> str:
@@ -713,13 +903,20 @@ class TelegramDaemon:
         return None
 
     def _cmd_devam_start(self) -> str:
-        why = self._devam_refusal()
+        layer, why = self._devam_layer()
         if why:
             self._reply(why)
             return "refused"
-        code = self._new_pending("devam")
-        self._reply(f"KILL kaldirilacak ve girisler yeniden acilabilir. {CODE_TTL_S} sn icinde yalniz su 4 haneli "
-                    f"kodu yanitla: {code}")
+        code = self._new_pending("devam", layer=layer)
+        if layer == "kill":
+            extra = ""
+            if self.pauses and self._pause_state():
+                extra = " Girisleri durduran duraklatma ayrica suruyor; o icin KILL kalkinca /devam'i yeniden gonder."
+            self._reply(f"KILL kaldirilacak ve girisler yeniden acilabilir. {CODE_TTL_S} sn icinde yalniz su 4 haneli "
+                        f"kodu yanitla: {code}.{extra}")
+        else:
+            self._reply(f"/durdur ile konan duraklatma kaldirilacak. {CODE_TTL_S} sn icinde yalniz su 4 haneli "
+                        f"kodu yanitla: {code}")
         return "code_sent"
 
     def _on_code(self, code: str, who: str) -> str:
@@ -740,13 +937,32 @@ class TelegramDaemon:
             self.kill_watch = self.now().timestamp()
             self._reply("KILL kuruldu; motor pozisyonlari kapatiyor")
             return "kill_set"
+        if p["action"] == "pause" and self.pauses:
+            added = []
+            for bot, ps in self.pauses.items():
+                if ps.add(PAUSE_USER, f"telegram:{who}"):
+                    added.append(bot)
+            self._reply("Yeni giriş durduruldu. Açık pozisyonlar zarar durdurlarıyla açık kalır. "
+                        "Hepsini kapatmak için /hepsini_kapat.")
+            return "paused"
         if p["action"] == "devam":
+            layer = p.get("layer", "kill")
+            if layer == "pause" and self.pauses:
+                why = self._pause_devam_refusal()
+                if why:
+                    self._reply(why)
+                    return "refused"
+                for ps in self.pauses.values():
+                    ps.remove(PAUSE_USER, f"telegram:{who}")
+                self._reply("Duraklatma (user_cmd) kaldirildi.\n" + self._remaining_lines())
+                return "pause_cleared"
             why = self._devam_refusal()
             if why:
                 self._reply(why)
                 return "refused"
             self.killswitch.clear()
-            self._reply("KILL kaldirildi")
+            rem = ("\n" + self._remaining_lines()) if self.pauses else ""
+            self._reply("KILL kaldirildi" + rem)
             return "kill_cleared"
         return "bad_action"
 

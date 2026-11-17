@@ -50,6 +50,7 @@ class StatusWriter:
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
             "dry_run": True, "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
+            **({"pause": f["pause"]} if f.get("pause") is not None else {}),
         }
 
     def write(self, engine, *, force: bool = False, stopped: bool = False) -> bool:

@@ -20,6 +20,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import telegram as T  # noqa: E402
 from trader_engine.killswitch import Killswitch  # noqa: E402
+from trader_engine.pause import EntryPause  # noqa: E402
 
 
 def default_runner(argv: list[str], timeout: float, env) -> tuple[int, str]:
@@ -41,6 +42,16 @@ class _Clk:
         return self._fn()
 
 EXIT_OK, EXIT_CONFIG = 0, 1
+
+
+def build_pauses(env, now_fn) -> dict:
+    """bot -> EntryPause (11 §9.5). PAUSE_FILE (varsayilan shared/PAUSE) + `.<bot>`; PAUSE_BOTS (varsayilan learner,twin);
+    denetim gunlugu ENGINE_VAR_DIR/<bot>/pause_audit.jsonl (varsayilan var)."""
+    base = env.get("PAUSE_FILE") or "shared/PAUSE"
+    var = (env.get("ENGINE_VAR_DIR") or "var").rstrip("/")
+    bots = [b.strip() for b in (env.get("PAUSE_BOTS") or "learner,twin").split(",") if b.strip()]
+    clk = _Clk(now_fn)
+    return {b: EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b) for b in bots}
 
 
 def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, stop=None, runner=None) -> int:
@@ -75,7 +86,8 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
             print(T.run_report(cfg, n, now_fn()))
             return EXIT_OK
         ks = Killswitch(cfg.kill_file, _Clk(now_fn)) if cfg.kill_file else None
-        d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks,
+        pauses = build_pauses(env, now_fn)
+        d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks, pauses=pauses,
                              report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
                                                        T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat())))
         flag = {"stop": False}
