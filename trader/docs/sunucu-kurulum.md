@@ -69,6 +69,9 @@ RISK (karariniz): Workers duzenleme token'i tek Worker'a daraltilamaz, hesap cap
 
 Geri alma: `systemctl disable --now trader-panel-publish.timer`; Worker'i Cloudflare panelinden silin.
 
+## Acilis kapisi yeniden deneme
+Motor acilis kapisinda (kural 10/10 degil ya da veri bayat) cikis 7 ile `failed` olursa `trader-engine-retry@<bot>.timer` (5 dk) besleme saglikliyken motoru yeniden baslatir; saatte en fazla 6 deneme, sonra tek CRIT Telegram uyarisi. Cikis 6 (451) ve yapilandirma hatalari yeniden denenmez (tek sert alarm). Izleme: `journalctl -u 'trader-engine-retry@*' -n 30`.
+
 ## Kaldirma
 
 ```

@@ -160,7 +160,7 @@ def test_every_timer_has_a_service_and_is_enabled_or_gated(units):
             kv = dict(unit_kv(units[name]))
             target = kv.get("Unit", stem + ".service")
             assert target in units, f"{name} -> {target} yok"
-            assert f"enable_now {name}" in inst, f"{name} install.sh'te etkinlestirilmiyor"
+            assert (f"enable_now {name}" in inst or (name == "trader-engine-retry@.timer" and "enable_now trader-engine-retry@learner.timer" in inst)), f"{name} install.sh'te etkinlestirilmiyor"
 
 
 # ------------------------------------------------------------------ eski ACIK kusurlar (duzeltildi; regresyon testleri)

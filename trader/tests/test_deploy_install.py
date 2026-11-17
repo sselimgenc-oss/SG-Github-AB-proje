@@ -128,12 +128,14 @@ def test_every_unit_handled_by_install():
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
-                        "trader-panel-publish.service"}  # tetikleyici/sablon birimler
+                        "trader-panel-publish.service", "trader-engine-retry@.service"}  # tetikleyici/sablon birimler
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled
         elif u.name in deliberately_not:
             continue
+        elif u.name == "trader-engine-retry@.timer":
+            assert "trader-engine-retry@learner.timer" in enabled and "trader-engine-retry@twin.timer" in enabled
         else:
             assert u.name in enabled, u.name
 
@@ -294,3 +296,17 @@ r = await w.fetch(rq(), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 401) t
     (tmp_path / "package.json").write_text('{"type":"module"}')
     r = subprocess.run(["node", str(js)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_engine_retry_units_and_install():
+    s = (DEPLOY / "trader-engine-retry@.service").read_text(encoding="utf-8")
+    tm = (DEPLOY / "trader-engine-retry@.timer").read_text(encoding="utf-8")
+    e = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
+    assert "RestartPreventExitStatus=7" in e                      # kapi hatasi hala 'failed' olur
+    assert "Type=oneshot" in s and "User=root" in s and "engine_retry.py --bot %i" in s
+    assert "OnUnitActiveSec=5min" in tm and "WantedBy=timers.target" in tm
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert "enable_now trader-engine-retry@learner.timer" in t
+    assert re.search(r'if \[ "\$WITH_TWIN" -eq 1 \]; then enable_now trader-engine-retry@twin\.timer', t)
+    u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
+    assert "trader-*.timer" in u                                   # sablon zamanlayici da kaldirilir

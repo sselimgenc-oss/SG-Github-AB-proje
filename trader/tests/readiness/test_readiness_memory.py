@@ -56,3 +56,7 @@ def test_budget_assumes_twin_default_on_and_installed_units_unchanged():
     assert "enable_now trader-engine@twin.service" in t
     # yeni birimler (veto-hmac env) bellek tavanlarini degistirmez; telegram-report hala sinirsiz hafif tek seferlik
     assert _mem("trader-telegram.service") == 96
+
+
+def test_engine_retry_oneshot_is_bounded():
+    assert _mem("trader-engine-retry@.service") == 64   # kisa omurlu, saglik birimiyle ayni tavan (toplam butceye eklenmez: saglikla ayni anda nadiren)

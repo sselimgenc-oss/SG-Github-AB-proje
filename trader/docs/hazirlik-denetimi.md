@@ -110,7 +110,9 @@ Oneri: (1) kurulumdan once `free -m` + diger projenin RSS'i; (2) `trader.slice` 
 Dizin salt okunur bagli iken WAL defteri yalniz yazici baglanti aciksa (`-wal/-shm` var) okunur; temiz kapanista bu dosyalar silinir. Motor `failed` (kapi 7) iken 03:10 yedegi `backup_error`, pano `wal_yok_salt_okunur` (pano bunu kodlu bildirir; fizik `unshare` ile dogrulandi). Yedek basarisizligi `exit 20` + manifest `ok:false` -> saglik `backup_age`.
 Oneri: yedek birimi `ReadOnlyPaths` yerine `ReadWritePaths=var` ile (root, yedek `mode=ro` URI kullanmaya devam eder).
 
-## 4. Motor birimi `RestartPreventExitStatus=7`: arti/eksi ve oneri (uygulanmadi)
+## 4. Motor birimi `RestartPreventExitStatus=7`: arti/eksi ve oneri (YAPILDI: WP-C)
+
+**Durum (17 Kasim 2026):** `RestartPreventExitStatus=7` kaldi; `scripts/engine_retry.py` + `deploy/trader-engine-retry@.service/.timer` eklendi (install.sh learner ve ikiz icin etkinlestirir). Yalniz `failed` + cikis 7 + saglikli besleme (feed-status <=180 sn, rules >= cift sayisi, her cift son 1m bar <=180 sn) iken yeniden baslatir; cikis 6/yapilandirma hatasi yeniden denenmez; saatte en fazla 6 deneme (`/var/lib/trader-health/engine-retry.json`), tukenince tek CRIT. Testler: `tests/readiness/test_readiness_retry.py`.
 
 Davranis: kapi (kural/veri 10/10 degil, `startup_wait_s=600` sn sonra) cikis 7 -> `Restart=on-failure` bunu YENIDEN BASLATMAZ -> birim `failed` -> OnFailure CRIT.
 
@@ -120,7 +122,7 @@ Davranis: kapi (kural/veri 10/10 degil, `startup_wait_s=600` sn sonra) cikis 7 -
 | Hatali yapilandirmada (cift listesi/kural) sonsuz dongu yok; `StartLimit` yorulmasi yok | Feed `Restart=always` ile kendini toparlasa bile motor ayakta kalmaz; saglik "motor yok" CRIT'i, alarm yorgunlugu |
 | `systemctl start` ile bilincli yeniden baslatma sureci | Boot sirasinda: feed ilk backfill'i bitirmeden `startup_wait_s` bitebilir (soguk bos sunucu: ilk acilista tam bu senaryo) |
 
-Oneri (uygulanmadi): **`trader-engine-retry.timer`** (her 5 dk) + oneshot servis: `systemctl is-failed trader-engine@%i` ise VE feed saglikliyse (`var/feed-status.json` taze, `market.sqlite` `rules` 10 satir, son 1m mum < 3 dk) `systemctl reset-failed` + `systemctl start`; en fazla N=6 deneme/saat, deneme sayisi `/var/lib/trader-health` altinda tutulur; her denemede INFO, limit dolunca tekrar CRIT. Boylece (1) gecici feed sorunu kendiliginden iyilesir, (2) kalici sorun (451/yanlis cift) yine tek net alarmla kalir. Ek kucuk adim: `trader-engine@.service`'e `After=` yerine ilk acilista feed'in ilk backfill'ini bekleyen bir `ExecStartPre` yoktur; `startup_wait_s`'i ilk gun 1800'e cikarmak (config'te mevcut anahtar) en ucuz azaltimdir.
+Oneri (uygulandi): **`trader-engine-retry@.timer`** (her 5 dk) + oneshot servis: `systemctl is-failed trader-engine@%i` ise VE feed saglikliyse (`var/feed-status.json` taze, `market.sqlite` `rules` 10 satir, son 1m mum < 3 dk) `systemctl reset-failed` + `systemctl start`; en fazla N=6 deneme/saat, deneme sayisi `/var/lib/trader-health` altinda tutulur; her denemede INFO, limit dolunca tekrar CRIT. Boylece (1) gecici feed sorunu kendiliginden iyilesir, (2) kalici sorun (451/yanlis cift) yine tek net alarmla kalir. Ek kucuk adim: `trader-engine@.service`'e `After=` yerine ilk acilista feed'in ilk backfill'ini bekleyen bir `ExecStartPre` yoktur; `startup_wait_s`'i ilk gun 1800'e cikarmak (config'te mevcut anahtar) en ucuz azaltimdir.
 
 ## 5. Bu denetimde yapilan degisiklikler (hepsi mekanik)
 

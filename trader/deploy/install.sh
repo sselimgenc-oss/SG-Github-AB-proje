@@ -215,6 +215,8 @@ enable_now trader-feed.service     # veri akisi once: motor kural + taze veri go
 enable_now trader-engine@learner.service
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali (--no-twin): acmak icin 'bash $TRADER_DIR/deploy/install.sh' (varsayilan acik)."; fi
 enable_now trader-health.timer
+enable_now trader-engine-retry@learner.timer   # acilis kapisi (cikis 7) yeniden deneme: besleme saglikliyse, saatte en fazla 6
+if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine-retry@twin.timer; fi
 enable_now trader-backup.timer
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
