@@ -38,7 +38,7 @@ import bt_crosscheck as X  # noqa: E402
 import bt_chainfree_diag as CF  # noqa: E402
 
 RUNS = ("1h_IS_f1_s0", "1h_WF_f1_s0", "1h_IS_f2_s5")
-REF_ROOT = ROOT / "user_data" / "backtest_results"
+REF_ROOT = X.REF_ROOT
 ENG_ROOT = ROOT / "var" / "bt_base"
 
 

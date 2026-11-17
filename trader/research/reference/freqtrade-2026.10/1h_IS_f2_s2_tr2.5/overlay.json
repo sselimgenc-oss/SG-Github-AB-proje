@@ -1,0 +1,10 @@
+{
+ "timeframe": "1h",
+ "trader_v1": {
+  "params": {
+   "trail_atr": 2.5,
+   "trigger_tf": "1h"
+  },
+  "ledger_path": "/home/user/SG-Github-AB-proje/trader/user_data/backtest_results/1h_IS_f2_s2_tr2.5/ledger.sqlite"
+ }
+}

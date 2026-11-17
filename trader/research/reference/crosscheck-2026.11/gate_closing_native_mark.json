@@ -1,0 +1,71 @@
+{
+ "ledger": "/home/user/SG-Github-AB-proje/trader/var/backtests/1h_IS_f1_s0_native_mark/ledger.sqlite",
+ "n_decisions": 1863,
+ "n_closing_positions": 27,
+ "n_steps_with_closing": 27,
+ "n_rejected_while_closing": 5,
+ "n_same_side_closing": 3,
+ "reasons": {
+  "ayn\u0131 y\u00f6n (short) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r": 4,
+  "ayn\u0131 y\u00f6n (long) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r": 1
+ },
+ "n_max_positions_rejects_total": 0,
+ "n_risk_denied_total": 364,
+ "rows": [
+  {
+   "step": "2025-02-16 14:00:00+00:00",
+   "pair": "ETH/USDT",
+   "side": "short",
+   "skip": "risk_denied",
+   "risk_reason": "ayn\u0131 y\u00f6n (short) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r",
+   "closing": [
+    "ADA/USDT short"
+   ],
+   "closing_same_side": true
+  },
+  {
+   "step": "2025-02-16 14:00:00+00:00",
+   "pair": "LINK/USDT",
+   "side": "short",
+   "skip": "risk_denied",
+   "risk_reason": "ayn\u0131 y\u00f6n (short) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r",
+   "closing": [
+    "ADA/USDT short"
+   ],
+   "closing_same_side": true
+  },
+  {
+   "step": "2025-04-27 01:00:00+00:00",
+   "pair": "ADA/USDT",
+   "side": "long",
+   "skip": "risk_denied",
+   "risk_reason": "ayn\u0131 y\u00f6n (long) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r",
+   "closing": [
+    "AVAX/USDT long"
+   ],
+   "closing_same_side": true
+  },
+  {
+   "step": "2025-10-16 14:00:00+00:00",
+   "pair": "DOGE/USDT",
+   "side": "short",
+   "skip": "risk_denied",
+   "risk_reason": "ayn\u0131 y\u00f6n (short) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r",
+   "closing": [
+    "BTC/USDT long"
+   ],
+   "closing_same_side": false
+  },
+  {
+   "step": "2025-10-16 14:00:00+00:00",
+   "pair": "LINK/USDT",
+   "side": "short",
+   "skip": "risk_denied",
+   "risk_reason": "ayn\u0131 y\u00f6n (short) risk s\u0131n\u0131r\u0131 a\u015f\u0131l\u0131r",
+   "closing": [
+    "BTC/USDT long"
+   ],
+   "closing_same_side": false
+  }
+ ]
+}

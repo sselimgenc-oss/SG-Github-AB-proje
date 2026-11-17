@@ -28,7 +28,7 @@ RUNS = ["1h_IS_f1_s0", "1h_WF_f1_s0", "15m_IS_f1_s0", "1h_IS_f2_s5"]
 
 
 def _matched(run: str, eng_root: Path) -> pd.DataFrame:
-    ref = ROOT / "user_data" / "backtest_results" / run
+    ref = X.REF_ROOT / run
     _, rt = X.read_ledger(ref)
     _, et = X.read_ledger(eng_root / f"{run}_compat")
     for d in (rt, et):
@@ -85,7 +85,7 @@ def stakecut(order: str = "pair") -> list[dict]:
     out = []
     for run in RUNS:
         tf = run.split("_")[0]
-        ref = ROOT / "user_data" / "backtest_results" / run
+        ref = X.REF_ROOT / run
         t = C.load_ref(ref, tf)
         src = C.HistoricalSource(str(hist), granularity="15m", synthetic_rules=True)
         rdec, _ = X.read_ledger(ref)
@@ -149,7 +149,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("cmd", choices=["fee", "funding", "stakecut", "closing"])
     ap.add_argument("--engine-root", default=str(ROOT / "var" / "bt_lag"))
-    ap.add_argument("--xc-dir", default=str(ROOT / "research" / "crosscheck"))
+    ap.add_argument("--xc-dir", default=str(X.XC_REF_DIR))
     ap.add_argument("--ledger", default=str(ROOT / "var" / "backtests" / "1h_IS_f1_s0_native_mark" / "ledger.sqlite"))
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)

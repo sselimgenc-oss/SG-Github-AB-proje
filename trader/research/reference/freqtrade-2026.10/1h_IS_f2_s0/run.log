@@ -1,0 +1,515 @@
+2026-11-16 14:58:03,122 - freqtrade - INFO - freqtrade 2026.10
+2026-11-16 14:58:04,086 - freqtrade.configuration.load_config - INFO - Using config: config/base.json ...
+2026-11-16 14:58:04,087 - freqtrade.configuration.load_config - INFO - Using config: config/backtest.json ...
+2026-11-16 14:58:04,087 - freqtrade.configuration.load_config - INFO - Using config: /home/user/SG-Github-AB-proje/trader/user_data/backtest_results/1h_IS_f2_s0/overlay.json ...
+2026-11-16 14:58:04,089 - freqtrade.loggers - INFO - Enabling colorized output.
+2026-11-16 14:58:04,089 - freqtrade.loggers - INFO - Logfile configured
+2026-11-16 14:58:04,089 - freqtrade.loggers - INFO - Verbosity set to 0
+2026-11-16 14:58:04,090 - freqtrade.configuration.configuration - INFO - Using additional Strategy lookup path: user_data/strategies
+2026-11-16 14:58:04,090 - freqtrade.configuration.configuration - INFO - Using max_open_trades: -1 ...
+2026-11-16 14:58:04,090 - freqtrade.configuration.configuration - INFO - Parameter --timeframe-detail detected, using 15m for intra-candle backtesting ...
+2026-11-16 14:58:04,091 - freqtrade.configuration.configuration - INFO - Parameter --fee detected, setting fee to: 0.001 ...
+2026-11-16 14:58:04,091 - freqtrade.configuration.configuration - INFO - Parameter --timerange detected: 20241101-20251101 ...
+2026-11-16 14:58:04,091 - freqtrade.configuration.configuration - INFO - Using user-data directory: user_data ...
+2026-11-16 14:58:04,092 - freqtrade.configuration.configuration - INFO - Using data directory: user_data/data/binance ...
+2026-11-16 14:58:04,092 - freqtrade.configuration.configuration - INFO - Using /home/user/SG-Github-AB-proje/trader/user_data/backtest_results/1h_IS_f2_s0 as backtest directory ...
+2026-11-16 14:58:04,092 - freqtrade.configuration.configuration - INFO - Parameter --export detected: trades ...
+2026-11-16 14:58:04,092 - freqtrade.configuration.configuration - INFO - Parameter --cache=day detected ...
+2026-11-16 14:58:04,092 - freqtrade.configuration.configuration - INFO - Filter trades by timerange: 20241101-20251101
+2026-11-16 14:58:04,093 - freqtrade.exchange.check_exchange - INFO - Checking exchange...
+2026-11-16 14:58:04,100 - freqtrade.exchange.check_exchange - INFO - Exchange "binance" is officially supported by the Freqtrade development team.
+2026-11-16 14:58:04,101 - freqtrade.configuration.configuration - INFO - Using pairlist from configuration.
+2026-11-16 14:58:04,101 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:58:04,103 - freqtrade.commands.optimize_commands - INFO - Starting freqtrade in Backtesting mode
+2026-11-16 14:58:04,103 - freqtrade.exchange.exchange - INFO - Instance is running with dry_run enabled
+2026-11-16 14:58:04,104 - freqtrade.exchange.exchange - INFO - Using CCXT 4.5.92
+2026-11-16 14:58:04,104 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:58:04,107 - freqtrade.exchange.exchange - INFO - Applying additional ccxt config: {'options': {'defaultType': 'swap'}}
+2026-11-16 14:58:04,111 - freqtrade.exchange.exchange - INFO - Using Exchange "Binance"
+2026-11-16 14:58:04,433 - freqtrade.resolvers.exchange_resolver - INFO - Using resolved exchange class 'Binance' ...
+2026-11-16 14:58:04,461 - freqtrade.resolvers.iresolver - INFO - Using resolved strategy TraderV1 from '/home/user/SG-Github-AB-proje/trader/user_data/strategies/TraderV1.py'...
+2026-11-16 14:58:04,462 - freqtrade.strategy.hyper - INFO - Found no parameter file.
+2026-11-16 14:58:04,468 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'timeframe' with value from the configuration: 1h.
+2026-11-16 14:58:04,469 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_currency' with value from the configuration: USDT.
+2026-11-16 14:58:04,469 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'stake_amount' with value from the configuration: 100.
+2026-11-16 14:58:04,469 - freqtrade.resolvers.strategy_resolver - INFO - Override strategy 'max_open_trades' with value from the configuration: inf.
+2026-11-16 14:58:04,469 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using minimal_roi: {'0': 100}
+2026-11-16 14:58:04,470 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using timeframe: 1h
+2026-11-16 14:58:04,470 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stoploss: -0.99
+2026-11-16 14:58:04,470 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop: False
+2026-11-16 14:58:04,470 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_stop_positive_offset: 0.0
+2026-11-16 14:58:04,470 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using trailing_only_offset_is_reached: False
+2026-11-16 14:58:04,471 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_custom_stoploss: True
+2026-11-16 14:58:04,471 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using process_only_new_candles: True
+2026-11-16 14:58:04,471 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_types: {'entry': 'market', 'exit': 'market', 'stoploss': 'market', 'stoploss_on_exchange': True, 
+'stoploss_on_exchange_interval': 60}
+2026-11-16 14:58:04,471 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using order_time_in_force: {'entry': 'GTC', 'exit': 'GTC'}
+2026-11-16 14:58:04,471 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_currency: USDT
+2026-11-16 14:58:04,472 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using stake_amount: 100
+2026-11-16 14:58:04,472 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using startup_candle_count: 1200
+2026-11-16 14:58:04,472 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using use_exit_signal: True
+2026-11-16 14:58:04,472 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_only: False
+2026-11-16 14:58:04,472 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_roi_if_entry_signal: False
+2026-11-16 14:58:04,473 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using exit_profit_offset: 0.0
+2026-11-16 14:58:04,473 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using disable_dataframe_checks: False
+2026-11-16 14:58:04,473 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using ignore_buying_expired_candle_after: 0
+2026-11-16 14:58:04,473 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using position_adjustment_enable: False
+2026-11-16 14:58:04,473 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_entry_position_adjustment: -1
+2026-11-16 14:58:04,474 - freqtrade.resolvers.strategy_resolver - INFO - Strategy using max_open_trades: inf
+2026-11-16 14:58:04,474 - freqtrade.configuration.config_validation - INFO - Validating configuration ...
+2026-11-16 14:58:04,478 - freqtrade.resolvers.iresolver - INFO - Using resolved pairlist StaticPairList from 
+'/home/user/SG-Github-AB-proje/trader/.venv-ft/lib/python3.12/site-packages/freqtrade/plugins/pairlist/StaticPairList.py'...
+2026-11-16 14:58:04,478 - freqtrade.optimize.backtesting - INFO - Using fee 0.1000% from config.
+2026-11-16 14:58:04,479 - freqtrade.exchange.exchange - WARNING - Using 3 calls to get OHLCV. This can result in slower operations for the bot. Please check if you really need 1200 candles for your 
+strategy.
+2026-11-16 14:58:04,510 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BTC/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,536 - freqtrade.data.history.datahandlers.idatahandler - WARNING - ETH/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,561 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,584 - freqtrade.data.history.datahandlers.idatahandler - WARNING - SOL/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,608 - freqtrade.data.history.datahandlers.idatahandler - WARNING - XRP/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,630 - freqtrade.data.history.datahandlers.idatahandler - WARNING - DOGE/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,657 - freqtrade.data.history.datahandlers.idatahandler - WARNING - ADA/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,680 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,704 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,725 - freqtrade.data.history.datahandlers.idatahandler - WARNING - AVAX/USDT:USDT, futures, 1h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:04,744 - freqtrade.optimize.backtesting - INFO - Loading data from 2024-11-01 00:00:00 up to 2025-11-01 00:00:00 (365 days).
+2026-11-16 14:58:04,745 - freqtrade.configuration.timerange - WARNING - Moving start-date by 1200 candles to account for startup time.
+2026-11-16 14:58:06,285 - freqtrade.optimize.backtesting - INFO - Dataload complete. Calculating indicators
+2026-11-16 14:58:06,287 - freqtrade.optimize.backtesting - INFO - Running backtesting for Strategy TraderV1
+2026-11-16 14:58:06,288 - freqtrade.data.dataprovider - INFO - Loading data for BTC/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:06,293 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BTC/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:06,466 - freqtrade.data.dataprovider - INFO - Loading data for ETH/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:06,473 - freqtrade.data.history.datahandlers.idatahandler - WARNING - ETH/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:06,636 - freqtrade.data.dataprovider - INFO - Loading data for BNB/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:06,641 - freqtrade.data.history.datahandlers.idatahandler - WARNING - BNB/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:06,800 - freqtrade.data.dataprovider - INFO - Loading data for SOL/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:06,804 - freqtrade.data.history.datahandlers.idatahandler - WARNING - SOL/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:06,983 - freqtrade.data.dataprovider - INFO - Loading data for XRP/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:06,988 - freqtrade.data.history.datahandlers.idatahandler - WARNING - XRP/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:07,152 - freqtrade.data.dataprovider - INFO - Loading data for DOGE/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:07,157 - freqtrade.data.history.datahandlers.idatahandler - WARNING - DOGE/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:07,323 - freqtrade.data.dataprovider - INFO - Loading data for ADA/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:07,329 - freqtrade.data.history.datahandlers.idatahandler - WARNING - ADA/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:07,497 - freqtrade.data.dataprovider - INFO - Loading data for TRX/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:07,502 - freqtrade.data.history.datahandlers.idatahandler - WARNING - TRX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:07,667 - freqtrade.data.dataprovider - INFO - Loading data for LINK/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:07,671 - freqtrade.data.history.datahandlers.idatahandler - WARNING - LINK/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:07,860 - freqtrade.data.dataprovider - INFO - Loading data for AVAX/USDT:USDT 4h from 2024-04-15 00:00:00 to 2025-11-01 00:00:00
+2026-11-16 14:58:07,865 - freqtrade.data.history.datahandlers.idatahandler - WARNING - AVAX/USDT:USDT, futures, 4h, data starts at 2024-11-01 00:00:00
+2026-11-16 14:58:08,066 - freqtrade.optimize.backtesting - INFO - Backtesting with data from 2024-12-21 00:00:00 up to 2025-11-01 00:00:00 (315 days).
+2026-11-16 14:58:08,312 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:08,356 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,425 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,429 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,433 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,511 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,686 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,690 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,696 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,865 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,868 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,948 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,952 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:09,956 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,015 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,586 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,589 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,624 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,627 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,631 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:10,931 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:11,457 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 14:58:11,993 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 14:58:12,141 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:12,429 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:12,637 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:13,519 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:13,660 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:13,664 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:13,668 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:13,834 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:13,837 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:13,944 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:13,947 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:13,951 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:14,274 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:15,502 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:15,527 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,530 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,532 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,535 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,590 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,593 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:15,679 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,019 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,270 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,314 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,318 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,400 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:16,492 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:17,887 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:19,102 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:58:22,348 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:22,491 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:23,577 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:23,668 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:23,762 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:23,906 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:24,127 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:24,292 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:24,391 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:25,916 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:25,948 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:26,369 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:26,430 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:26,904 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:27,300 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:27,476 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:28,044 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:29,377 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:29,458 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:30,061 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:30,456 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:30,460 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:30,465 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:30,521 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:31,767 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:32,175 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:33,710 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 14:58:34,072 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:34,076 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:34,079 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:34,500 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:35,167 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:36,091 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:37,331 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:37,340 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:40,163 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:40,167 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:40,170 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:40,248 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:40,608 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:41,326 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:41,436 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:41,508 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:45,667 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:46,349 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:47,058 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:47,062 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:47,398 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:47,693 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:48,733 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:48,951 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:48,997 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,004 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,047 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,171 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,175 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,179 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,283 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,291 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,299 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:49,303 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:58:51,680 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:51,733 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:52,008 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,245 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,248 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,424 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,551 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,712 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,717 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,722 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,962 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,967 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:53,971 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:54,907 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:58:56,385 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:01,460 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:14,675 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:15,159 - TraderV1 - INFO - trader_v1: risk reddi BTC/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:15,215 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:17,590 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:17,594 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:17,598 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:18,017 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:20,365 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:21,534 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:22,240 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 14:59:22,320 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:22,487 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:22,590 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 14:59:26,275 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:26,620 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:27,002 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:27,542 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:30,446 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,649 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,653 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:30,810 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,814 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,872 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,928 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:30,983 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:31,184 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:31,290 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:31,416 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:31,490 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:32,148 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:32,437 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:32,539 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 14:59:32,878 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:34,725 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:34,755 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:38,119 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:38,123 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:38,286 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:40,109 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:40,376 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:40,549 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:40,827 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:40,833 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,311 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,583 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,588 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,677 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,764 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:41,852 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:42,191 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:42,286 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:42,293 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:45,451 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:46,307 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: stop yanlış tarafta: long için stop < entry olmalı
+2026-11-16 14:59:46,310 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 14:59:46,835 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:47,525 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:47,530 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:47,535 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 14:59:48,721 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:00:00,192 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:00:00,845 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:00:05,264 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:00:05,546 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:00:21,116 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:00:36,282 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:00:39,281 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:00:40,567 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:00:40,572 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:00:41,037 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:00:41,260 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:00:41,586 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:01:01,499 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:01:01,505 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:01:02,915 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:01:04,809 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:01:21,979 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:21,984 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:22,020 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:22,528 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:24,086 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:29,820 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:30,556 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:30,563 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:32,217 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:33,882 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:34,035 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:01:46,847 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:47,041 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:48,505 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:01:48,919 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:21,498 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:21,504 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:21,771 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:25,349 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:30,141 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:37,444 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:38,531 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:44,258 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:02:44,445 - TraderV1 - INFO - trader_v1: risk reddi BNB/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:49,269 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:52,245 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:52,412 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:02:53,226 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:02:55,827 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:02,627 - TraderV1 - CRITICAL - trader_v1: giris kaydi yazilamadi (ADA/USDT:USDT): karar baska bir trade_id'ye bagli
+2026-11-16 15:03:02,660 - TraderV1 - ERROR - trader_v1: cikis kaydi yazilamadi (ADA/USDT:USDT): trade_id icin gecerli bir giris yok (spool)
+2026-11-16 15:03:02,692 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: stop yanlış tarafta: long için stop < entry olmalı
+2026-11-16 15:03:05,726 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:03:14,112 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:03:15,187 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:22,451 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:22,572 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:22,744 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:32,811 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:03:52,790 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:04:16,741 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:04:16,754 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:04:17,968 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:04:26,183 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:04:26,199 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:04:26,384 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:04:31,002 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 15:04:33,339 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:04:33,906 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:04:56,878 - TraderV1 - INFO - trader_v1: risk reddi TRX/USDT:USDT: aynı yön (long) risk sınırı aşılır
+2026-11-16 15:05:06,193 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: toplam teminat özsermayeyi aşar
+2026-11-16 15:05:09,762 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:10,730 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:11,138 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:16,218 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:16,228 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:20,959 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:23,775 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:23,787 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:24,403 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:25,217 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:26,874 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:30,463 - TraderV1 - INFO - trader_v1: risk reddi ADA/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:31,451 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:31,454 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:31,456 - TraderV1 - INFO - trader_v1: risk reddi AVAX/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:38,854 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:44,899 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: günlük zarar bütçesi aşılır
+2026-11-16 15:05:53,661 - TraderV1 - INFO - trader_v1: risk reddi ETH/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:53,669 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:54,563 - TraderV1 - INFO - trader_v1: risk reddi SOL/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:54,569 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:54,576 - TraderV1 - INFO - trader_v1: risk reddi DOGE/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:54,582 - TraderV1 - INFO - trader_v1: risk reddi LINK/USDT:USDT: aynı yön (short) risk sınırı aşılır
+2026-11-16 15:05:54,899 - TraderV1 - INFO - trader_v1: risk reddi XRP/USDT:USDT: aynı yön (short) risk sınırı aşılır
+backtest ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4/4       100% • 0:00:03 • 0:00:00
+backtest ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7560/7560 100% • 0:07:50 • 0:00:00
+2026-11-16 15:05:56,150 - freqtrade.misc - INFO - dumping json to "/home/user/SG-Github-AB-proje/trader/user_data/backtest_results/1h_IS_f2_s0/backtest-result-2026-11-16_15-05-56.meta.json"
+Result for strategy TraderV1
+                                                BACKTESTING REPORT                                                 
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃           Pair ┃ Trades ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃ Avg Duration ┃  Win  Draw  Loss  Win% ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│  ADA/USDT:USDT │     72 │         0.69 │         111.127 │        11.11 │     12:42:00 │   24     0    48  33.3 │
+│ AVAX/USDT:USDT │     53 │         0.53 │          70.469 │         7.05 │     12:50:00 │   17     0    36  32.1 │
+│  SOL/USDT:USDT │     45 │         0.61 │          61.641 │         6.16 │     15:48:00 │   18     0    27  40.0 │
+│  BNB/USDT:USDT │     77 │         0.04 │          11.982 │          1.2 │     17:20:00 │   23     0    54  29.9 │
+│  ETH/USDT:USDT │     59 │        -0.73 │         -54.930 │        -5.49 │     14:17:00 │   14     0    45  23.7 │
+│  TRX/USDT:USDT │     76 │        -0.34 │         -79.315 │        -7.93 │     15:57:00 │   26     0    50  34.2 │
+│ DOGE/USDT:USDT │     58 │        -1.54 │        -115.953 │        -11.6 │     15:32:00 │   14     0    44  24.1 │
+│  BTC/USDT:USDT │     75 │        -0.87 │        -130.784 │       -13.08 │     13:27:00 │   19     0    56  25.3 │
+│  XRP/USDT:USDT │     63 │        -0.94 │        -133.811 │       -13.38 │     14:30:00 │   18     0    45  28.6 │
+│ LINK/USDT:USDT │     51 │        -4.08 │        -282.137 │       -28.21 │     11:04:00 │    5     0    46   9.8 │
+│          TOTAL │    629 │        -0.61 │        -541.713 │       -54.17 │     14:26:00 │  178     0   451  28.3 │
+└────────────────┴────────┴──────────────┴─────────────────┴──────────────┴──────────────┴────────────────────────┘
+                                             LEFT OPEN TRADES REPORT                                              
+┏━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃          Pair ┃ Trades ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃ Avg Duration ┃  Win  Draw  Loss  Win% ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ETH/USDT:USDT │      1 │         0.39 │           0.486 │         0.05 │      3:00:00 │    1     0     0   100 │
+│ BNB/USDT:USDT │      1 │        -0.39 │          -0.422 │        -0.04 │     14:00:00 │    0     0     1     0 │
+│         TOTAL │      2 │          0.0 │           0.065 │         0.01 │      8:30:00 │    1     0     1  50.0 │
+└───────────────┴────────┴──────────────┴─────────────────┴──────────────┴──────────────┴────────────────────────┘
+                                                ENTER TAG STATS                                                
+┏━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Enter Tag ┃ Entries ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃ Avg Duration ┃  Win  Draw  Loss  Win% ┃
+┡━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│        R1 │      76 │        -1.36 │        -200.139 │       -20.01 │     10:43:00 │   14     0    62  18.4 │
+│        T1 │     553 │        -0.51 │        -341.574 │       -34.16 │     14:57:00 │  164     0   389  29.7 │
+│     TOTAL │     629 │        -0.61 │        -541.713 │       -54.17 │     14:26:00 │  178     0   451  28.3 │
+└───────────┴─────────┴──────────────┴─────────────────┴──────────────┴──────────────┴────────────────────────┘
+                                                    EXIT REASON STATS                                                    
+┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Exit Reason ┃ Exits ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃    Avg Duration ┃  Win  Draw  Loss  Win% ┃
+┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ trailing_stop_loss │   263 │         4.11 │        1675.459 │       167.55 │        23:48:00 │  159     0   104  60.5 │
+│             target │    12 │        11.32 │         224.478 │        22.45 │        20:35:00 │   12     0     0   100 │
+│         trail_stop │     4 │        24.84 │         147.249 │        14.72 │        21:45:00 │    4     0     0   100 │
+│          time_stop │     3 │         1.14 │          10.456 │         1.05 │ 2 days, 0:00:00 │    2     0     1  66.7 │
+│         force_exit │     2 │          0.0 │           0.065 │         0.01 │         8:30:00 │    1     0     1  50.0 │
+│          stop_loss │   345 │        -4.93 │       -2599.419 │      -259.94 │         6:45:00 │    0     0   345     0 │
+│              TOTAL │   629 │        -0.61 │        -541.713 │       -54.17 │        14:26:00 │  178     0   451  28.3 │
+└────────────────────┴───────┴──────────────┴─────────────────┴──────────────┴─────────────────┴────────────────────────┘
+                                                           MIXED TAG STATS                                                            
+┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Enter Tag ┃        Exit Reason ┃ Trades ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃    Avg Duration ┃  Win  Draw  Loss  Win% ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│        T1 │ trailing_stop_loss │    263 │         4.11 │        1675.459 │       167.55 │        23:48:00 │  159     0   104  60.5 │
+│        R1 │             target │     12 │        11.32 │         224.478 │        22.45 │        20:35:00 │   12     0     0   100 │
+│        T1 │         trail_stop │      4 │        24.84 │         147.249 │        14.72 │        21:45:00 │    4     0     0   100 │
+│        R1 │          time_stop │      3 │         1.14 │          10.456 │         1.05 │ 2 days, 0:00:00 │    2     0     1  66.7 │
+│        T1 │         force_exit │      2 │          0.0 │           0.065 │         0.01 │         8:30:00 │    1     0     1  50.0 │
+│        R1 │          stop_loss │     61 │        -3.98 │        -435.073 │       -43.51 │         6:57:00 │    0     0    61     0 │
+│        T1 │          stop_loss │    284 │        -5.14 │       -2164.346 │      -216.43 │         6:43:00 │    0     0   284     0 │
+│     TOTAL │                    │    629 │        -0.61 │        -541.713 │       -54.17 │        14:26:00 │  178     0   451  28.3 │
+└───────────┴────────────────────┴────────┴──────────────┴─────────────────┴──────────────┴─────────────────┴────────────────────────┘
+                                   SUMMARY METRICS                                    
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                                 ┃ Value                                     ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Backtesting from                       │ 2024-12-21 00:00:00                       │
+│ Backtesting to                         │ 2025-11-01 00:00:00                       │
+│ Trading Mode                           │ Isolated Futures                          │
+│ Max open trades                        │ 10                                        │
+│                                        │                                           │
+│ Total/Daily Avg Trades                 │ 629 / 2.0                                 │
+│ Starting balance                       │ 1000 USDT                                 │
+│ Final balance                          │ 458.287 USDT                              │
+│ Absolute profit                        │ -541.713 USDT                             │
+│ Total profit %                         │ -54.17%                                   │
+│ CAGR %                                 │ -59.51%                                   │
+│ Sharpe (closed trades)                 │ -2.50                                     │
+│ Sortino (closed trades)                │ -10.07                                    │
+│ Calmar (closed trades)                 │ -5.17                                     │
+│ SQN                                    │ -1.64                                     │
+│ Mean profit p-value                    │ 0.1015                                    │
+│ Profit factor                          │ 0.81                                      │
+│ Expectancy (Ratio)                     │ -0.86 (-0.13)                             │
+│ Avg. daily profit                      │ -1.72 USDT                                │
+│ Avg. stake amount                      │ 164.465 USDT                              │
+│ Market change                          │ -4.62%                                    │
+│ Total trade volume                     │ 620936.082 USDT                           │
+│                                        │                                           │
+│ Long / Short trades                    │ 301 / 328                                 │
+│ Long / Short profit %                  │ -45.74% / -8.43%                          │
+│ Long / Short profit USDT               │ -457.432 / -84.281                        │
+│                                        │                                           │
+│ Best Pair                              │ ADA/USDT:USDT 11.11%                      │
+│ Worst Pair                             │ LINK/USDT:USDT -28.21%                    │
+│ Best trade                             │ ADA/USDT:USDT 71.93%                      │
+│ Worst trade                            │ LINK/USDT:USDT -16.92%                    │
+│ Best day                               │ 231.489 USDT                              │
+│ Worst day                              │ -37.851 USDT                              │
+│ Days win/draw/lose                     │ 78 / 60 / 177                             │
+│ Min/Max/Avg. Duration Winners          │ 0d 02:30 / 3d 02:00 / 1d 03:56            │
+│ Min/Max/Avg. Duration Losers           │ 0d 00:00 / 2d 16:45 / 0d 09:07            │
+│ Max Consecutive Wins / Loss            │ 5 / 20                                    │
+│ Rejected Entry signals                 │ 0                                         │
+│ Entry/Exit Timeouts                    │ 0 / 0                                     │
+│                                        │                                           │
+│ Min/Max balance (closed trades)        │ 373.776 USDT / 1025.606 USDT              │
+│ Max % of account underwater            │ 63.56%                                    │
+│ Absolute drawdown                      │ 651.83 USDT (63.56%)                      │
+│ Drawdown duration                      │ 261 days 03:15:00                         │
+│ Profit at drawdown start               │ 25.606 USDT                               │
+│ Profit at drawdown end                 │ -626.224 USDT                             │
+│ Drawdown start                         │ 2024-12-23 04:00:00                       │
+│ Drawdown end                           │ 2025-09-10 07:15:00                       │
+│                                        │                                           │
+│ Wallet based Metrics                   │                                           │
+│ Min/Max balance (wallet balance)       │ 373.776 USDT / 1025.606 USDT              │
+│ Min/Max balance dates (wallet balance) │ 2025-09-10 08:00:00 / 2024-12-23 05:00:00 │
+│ Max % of account underwater (balance)  │ 63.56%                                    │
+│ Absolute drawdown (wallet balance)     │ 651.83 USDT (63.56%)                      │
+│ Drawdown duration                      │ 261 days 03:00:00                         │
+│ Profit at drawdown start               │ 25.606 USDT                               │
+│ Profit at drawdown end                 │ -626.224 USDT                             │
+│ Drawdown start                         │ 2024-12-23 05:00:00                       │
+│ Drawdown end                           │ 2025-09-10 08:00:00                       │
+│ Sharpe (daily wallet balance)          │ -0.87                                     │
+│ Sortino (daily wallet balance)         │ -2.84                                     │
+│ Calmar (daily wallet balance)          │ -5.19                                     │
+└────────────────────────────────────────┴───────────────────────────────────────────┘
+
+Backtested 2024-12-21 00:00:00 -> 2025-11-01 00:00:00 | Max open trades : 10
+                                                         STRATEGY SUMMARY                                                          
+┏━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+┃ Strategy ┃ Trades ┃ Avg Profit % ┃ Tot Profit USDT ┃ Tot Profit % ┃ Avg Duration ┃  Win  Draw  Loss  Win% ┃            Drawdown ┃
+┡━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+│ TraderV1 │    629 │        -0.61 │        -541.713 │       -54.17 │     14:26:00 │  178     0   451  28.3 │ 651.83 USDT  63.56% │
+└──────────┴────────┴──────────────┴─────────────────┴──────────────┴──────────────┴────────────────────────┴─────────────────────┘

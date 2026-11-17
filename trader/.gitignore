@@ -23,3 +23,8 @@ research/crosscheck/
 # ML 19b aday seti (buyuk dosya; manifest commit edilir)
 research/ml/*.parquet
 research/ml/*.csv
+
+# Degismez referans kanit (freqtrade 2026.10 kosulari + capraz dogrulama kapisi); research/reference/README.md
+# Genel kurallar (*.sqlite*, *.csv, *.zip, crosscheck/) bunu dislamasin diye acik istisna:
+!research/reference/
+!research/reference/**

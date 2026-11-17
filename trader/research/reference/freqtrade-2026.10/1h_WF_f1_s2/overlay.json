@@ -1,0 +1,9 @@
+{
+ "timeframe": "1h",
+ "trader_v1": {
+  "params": {
+   "trigger_tf": "1h"
+  },
+  "ledger_path": "/home/user/SG-Github-AB-proje/trader/user_data/backtest_results/1h_WF_f1_s2/ledger.sqlite"
+ }
+}

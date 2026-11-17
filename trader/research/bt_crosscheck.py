@@ -22,6 +22,9 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
+# Degismez referans kopyalari (research/reference/README.md); calisma ciktilari research/crosscheck/ altina gider.
+REF_ROOT = ROOT / "research" / "reference" / "freqtrade-2026.10"
+XC_REF_DIR = ROOT / "research" / "reference" / "crosscheck-2026.11"
 
 TF_STEP = {"1h": pd.Timedelta(hours=1), "15m": pd.Timedelta(minutes=15)}
 FEATURE_TOL = 1e-9
@@ -544,7 +547,7 @@ def main(argv=None) -> int:
         (out / f"{a.id}_model_diff.json").write_text(json.dumps(rep, indent=1, default=str))
         print(json.dumps({k: v for k, v in rep.items() if k != "samples"}, indent=1, default=str))
         return 0
-    ref = Path(a.ref) if a.ref else ROOT / "user_data" / "backtest_results" / a.id
+    ref = Path(a.ref) if a.ref else REF_ROOT / a.id
     eng = Path(a.eng) if a.eng else ROOT / "var" / "backtests" / f"{a.id}_compat"
     tf = a.tf or ("15m" if a.id.startswith("15m") else "1h")
     hist = a.history_dir or (str(ROOT / "user_data/data/binance/futures")
