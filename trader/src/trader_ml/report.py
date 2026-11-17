@@ -12,7 +12,8 @@ def _fmt(v, nd=4):
 
 
 def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb: float, synthetic: bool,
-                  selected_reason: str) -> str:
+                  selected_reason: str, n_trials: int | None = None, lightgbm_version: str | None = None,
+                  corpus_sha256: str | None = None) -> str:
     L = []
     verdict = "KABUL (gölgeye girişe uygun)" if res.passed else "RED"
     L += [f"# ML terfi kapısı raporu — {verdict}", ""]
@@ -28,6 +29,9 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
           f"- Model oluşturma: {meta['created_at']} | son kullanma: {meta['expires_at']} ({meta['expiry_days']} gün)",
           f"- Veri özeti: `{meta['data_hash'][:16]}…` | kod özeti: `{meta['code_hash'][:16]}…` | model özeti: `{meta['model_hash'][:16]}…`",
           f"- Özellik listesi özeti: `{meta['feature_list_hash'][:16]}…` ({len(meta['features'])} özellik)",
+          f"- Korpus sha256 (aday dosyası): `{corpus_sha256 or 'yok (sentetik / dosyasız)'}`",
+          f"- Tarif kimliği: `{meta['version']}` | deneme sayısı (n_trials): {n_trials if n_trials is not None else '-'} | "
+          f"lightgbm sürümü: {lightgbm_version or 'YOK'}",
           f"- Tepe bellek: {peak_rss_mb:.0f} MB (sunucu tavanı {TRAIN_MEM_CAP_MB} MB"
           + (" — AŞILDI: haftalık eğitim sunucu dışına alınmalı" if peak_rss_mb > TRAIN_MEM_CAP_MB else "") + ")", ""]
     L += ["## Kapı adımları (sırayla; biri kalırsa model reddedilir)", "",
@@ -35,6 +39,12 @@ def render_report(res: GateResult, *, meta: dict, folds: list[dict], peak_rss_mb
     for c in res.checks:
         s = "ATLANDI" if c.ok is None else ("GEÇTİ" if c.ok else "KALDI")
         L.append(f"| {c.name} | {s} | {c.value} | {c.rule} |")
+    ic, ica = res.metrics.get("ic"), res.metrics.get("ic_all_rows")
+    if ic:
+        L += ["", f"- IC (BAĞLAYICI, yalnız alınan işlemler): rho={_fmt(ic['rho'])}, n={ic.get('n_rows', '-')} satır / {ic['n_days']} gün"]
+    if ica:
+        L += [f"- IC (TANI, tüm satırlar; geçti/kaldı rolü yok): rho={_fmt(ica['rho'])}, t={_fmt(ica['t'], 2)}, "
+              f"n={ica['n_rows']} satır / {ica['n_days']} gün, pozitif dilim {ica['pos_folds']}/{len(ica['fold_rho'])}"]
     ff = res.first_failure
     L += ["", f"**Sonuç:** {'Tüm adımlar geçti.' if res.passed else 'İlk kalan adım: ' + ff.name + '.'}", ""]
     for c in res.checks:

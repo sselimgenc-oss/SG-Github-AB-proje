@@ -195,6 +195,20 @@ def pbo_for(oof: pd.DataFrame, pcols: list[str]) -> dict:
     return {"pbo": float(res.pbo), "n_configs": int(keep.sum()), "T": len(days)}
 
 
+def _ic_stats(L: pd.DataFrame, col: str):
+    """(rho, t, gunluk model puani, dilim rho'lari): gunluk toplulastirilmis Spearman IC (puan ~ net R)."""
+    if len(L) == 0:
+        return float("nan"), float("nan"), np.array([]), {}
+    ds, dr = daily_mean(L["ts"], L[col], L["net_r"])
+    rho = spearman(ds, dr)
+    fr = {}
+    for f in sorted(L["fold"].unique()):
+        Lf = L[L["fold"] == f]
+        a_, b_ = daily_mean(Lf["ts"], Lf[col], Lf["net_r"])
+        fr[int(f)] = spearman(a_, b_)
+    return rho, rho_t(rho, len(ds)), ds, fr
+
+
 def run_gate(oof: pd.DataFrame, pcols: list[str], *, selected: str, parity_max_abs_diff: float | None,
              n_trials: int, incumbent_filtered_mean: float | None = None, n_boot: int = 2000) -> GateResult:
     """Bolum 3.4: sirayla IC, kalibrasyon, Bolum 1 olculeri, maliyet, esleme, gorevdekine karsi."""
@@ -204,24 +218,26 @@ def run_gate(oof: pd.DataFrame, pcols: list[str], *, selected: str, parity_max_a
     res = GateResult(model=selected, passed=False, threshold=mm["threshold"], metrics={"per_model": met})
     C = res.checks
 
-    # 1) IC kapisi: gunluk toplulastirma (ayni gun/mum adaylari bagimsiz sayilmaz), tam 4 dilim, >= 3 pozitif
+    # 1) IC kapisi: BAGLAYICI evren = yalniz ALINAN satirlar (taken, gercek net R; on kayit 17 Kasim ML 19b/19c).
+    #    Tum satirlar IC'si yalniz TANI amaclidir (atlananlarin net R'i basitlestirilmis referans cikistir): gecti/kaldi etkisi yok.
+    #    Gunluk toplulastirma (ayni gun/mum adaylari bagimsiz sayilmaz), tam 4 dilim, >= 3 pozitif.
     L = oof[oof["label"].notna()]
-    ds, dr = daily_mean(L["ts"], L[selected], L["net_r"])
-    rho = spearman(ds, dr)
-    t = rho_t(rho, len(ds))
+    LT = L[L["taken"].astype(bool)]
+    rho, t, ds, fr = _ic_stats(LT, selected)
     all_folds = sorted(oof["fold"].unique())
-    fr = {}
-    for f in all_folds:
-        Lf = L[L["fold"] == f]
-        a_, b_ = daily_mean(Lf["ts"], Lf[selected], Lf["net_r"]) if len(Lf) else ([], [])
-        fr[int(f)] = spearman(a_, b_)
     pos = sum(1 for v in fr.values() if np.isfinite(v) and v > 0)
     need, want = G["ic_min_pos_folds"], G["required_folds"]
     ok = bool(len(all_folds) == want and np.isfinite(rho) and rho > 0 and t >= G["ic_min_t"] and pos >= need)
-    C.append(Check("1. IC kapisi", ok, f"rho={rho:.4f}, t={t:.2f} (n={len(ds)} gun), pozitif dilim {pos}/{len(all_folds)}",
+    C.append(Check("1. IC kapisi (yalniz alinan islemler)", ok,
+                   f"rho={rho:.4f}, t={t:.2f} (n={len(ds)} gun, {len(LT)} alinan satir), pozitif dilim {pos}/{len(all_folds)}",
                    f"tam {want} dilim degerlendirilmis, rho>0, t>={G['ic_min_t']}, en az {need} dilim pozitif (gunluk toplulastirma)",
                    "dilim rho: " + ", ".join(f"{k}:{v:+.3f}" for k, v in fr.items())))
-    res.metrics["ic"] = {"rho": rho, "t": t, "fold_rho": fr, "n_days": int(len(ds))}
+    rho_a, t_a, ds_a, fr_a = _ic_stats(L, selected)
+    pos_a = sum(1 for v in fr_a.values() if np.isfinite(v) and v > 0)
+    res.metrics["ic"] = {"rho": rho, "t": t, "fold_rho": fr, "n_days": int(len(ds)), "n_rows": int(len(LT)),
+                         "universe": "taken"}
+    res.metrics["ic_all_rows"] = {"rho": rho_a, "t": t_a, "fold_rho": fr_a, "n_days": int(len(ds_a)),
+                                  "n_rows": int(len(L)), "pos_folds": pos_a, "universe": "all_rows (tani; gecti/kaldi rolu yok)"}
 
     # 2) kalibrasyon
     brier = float(np.mean((L[selected] - L["label"]) ** 2))

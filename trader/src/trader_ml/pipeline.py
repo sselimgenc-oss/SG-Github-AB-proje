@@ -30,18 +30,27 @@ from .walkforward import make_folds
 MODELS = ("logistic", "lgbm")
 
 
-def _fold_models(X, y, w, tr, ts=None, ends=None):
+class LightGBMRequired(RuntimeError):
+    """Gercek (sentetik olmayan) kosuda lightgbm yuklenemedi: kosu BASARISIZ sayilir (sessizce lojistige dusmez)."""
+
+
+lightgbm_version = models.lightgbm_version
+
+
+def _fold_models(X, y, w, tr, ts=None, ends=None, *, require_lightgbm: bool = True):
     out = {"logistic": models.fit_logistic(X[tr], y[tr], w[tr])}
     try:
         booster, best = models.fit_lgbm(X[tr], y[tr], w[tr], ts=None if ts is None else ts[tr],
                                         label_end=None if ends is None else ends[tr])
         out["lgbm"] = (booster, best)
-    except ImportError:                                   # lightgbm yok -> yalniz lojistik
-        pass
+    except ImportError as e:
+        if require_lightgbm:                              # on kayit: gercek kosuda sessiz dusus YOK
+            raise LightGBMRequired(f"lightgbm yuklenemedi, gercek kosu basarisiz: {e}") from e
+        # yalniz sentetik/test kipi: lightgbm yok -> yalniz lojistik
     return out
 
 
-def run_oof(t: pd.DataFrame, names: list[str]):
+def run_oof(t: pd.DataFrame, names: list[str], *, require_lightgbm: bool = True):
     X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
     folds = make_folds(t)
     ts_arr, ends_arr = t["ts"].to_numpy("datetime64[ns]"), t["label_end_ts"].to_numpy("datetime64[ns]")
@@ -51,7 +60,7 @@ def run_oof(t: pd.DataFrame, names: list[str]):
         if len(tr) < 100 or len(te) == 0:
             continue
         w = models.sample_weights(t.iloc[tr], t["ts"].iloc[tr].max())
-        fm = _fold_models(X, y, w, tr, ts_arr, ends_arr)
+        fm = _fold_models(X, y, w, tr, ts_arr, ends_arr, require_lightgbm=require_lightgbm)
         d = t.iloc[te][["ts", "pair", "taken", "label", "net_r", "cost_r", "label_end_ts", "exit_ts"]].copy()
         d["fold"] = f["fold"]
         d["test_start"] = f["test_start"]
@@ -95,8 +104,9 @@ def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
 
 
 def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool = False, n_boot: int = 2000,
-        now: datetime | None = None) -> dict:
-    """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry)."""
+        now: datetime | None = None, corpus_sha256: str | None = None) -> dict:
+    """n_trials ZORUNLU (varsayilan yok): kayitli tarif sayisi x 2 model (registry.n_trials_from_registry).
+    synthetic=False (gercek kosu): lightgbm yuklenemezse LightGBMRequired (lojistige dusmez)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     t = validate_candidates(t)
@@ -104,7 +114,9 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     t = t[t["label"].notna()].reset_index(drop=True)
     names = feature_columns(t)
     X, y = t[names].to_numpy(float), t["label"].to_numpy(float)
-    folds, oof, last, bests = run_oof(t, names)
+    if not synthetic and lightgbm_version() is None:
+        raise LightGBMRequired("lightgbm yuklenemedi, gercek kosu basarisiz")
+    folds, oof, last, bests = run_oof(t, names, require_lightgbm=not synthetic)
     kinds = [m for m in MODELS if f"z_{m}" in oof.columns]
 
     # kapi icin ILERI YONLU Platt + esik (A1); paket icin tum-OOF Platt asagida ayrica uydurulur
@@ -166,12 +178,15 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
     pkg_path = save_package(build_package(*args, created_at=created, extra=extra), out_dir / "model_candidate.json")
     pkg = load_package(pkg_path, now=now, require_gate=False)  # hash'ler tutuyor mu
     md = render_report(res, meta=pkg["meta"], folds=folds, peak_rss_mb=peak_rss_mb(), synthetic=synthetic,
-                       selected_reason=reason)
+                       selected_reason=reason, n_trials=n_trials, lightgbm_version=lightgbm_version(),
+                       corpus_sha256=corpus_sha256)
     (out_dir / "gate_report.md").write_text(md, encoding="utf-8")
     summary = {"passed": res.passed, "model": selected, "threshold": th, "parity_max_abs_diff": parity,
                "checks": [{"name": c.name, "ok": c.ok, "value": c.value} for c in res.checks],
                "package": str(pkg_path), "report": str(out_dir / "gate_report.md"), "peak_rss_mb": peak_rss_mb(),
-               "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials}
+               "n_candidates": int(len(t)), "n_oof": int(len(oof)), "n_trials": n_trials,
+               "recipe_id": RECIPE_ID, "lightgbm_version": lightgbm_version(), "corpus_sha256": corpus_sha256,
+               "ic_taken": res.metrics["ic"], "ic_all_rows_diagnostic": res.metrics["ic_all_rows"]}
     (out_dir / "gate_result.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     oof.to_parquet(out_dir / "oof_predictions.parquet")
     return summary
@@ -201,13 +216,20 @@ def main(argv=None) -> int:
         if a.n_trials < n_trials:
             ap.error(f"--n-trials {a.n_trials} < defterden gelen {n_trials}: deneme sayisi kucultulemez")
         n_trials = a.n_trials
+    corpus_sha = None
     if a.synthetic:
         from .fixture import build_candidate_table, synthetic_candles
         t = build_candidate_table(synthetic_candles())
     else:
+        import hashlib
         from .schema import load_candidates
         t = load_candidates(a.candidates)
-    s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials)
+        corpus_sha = hashlib.sha256(Path(a.candidates).read_bytes()).hexdigest()
+    try:
+        s = run(t, a.out, synthetic=a.synthetic, n_trials=n_trials, corpus_sha256=corpus_sha)
+    except LightGBMRequired as e:
+        print(f"BASARISIZ: {e}", file=sys.stderr)
+        return 2
     print(f"{'KABUL' if s['passed'] else 'RED'}: rapor {s['report']} (n_trials={n_trials})")
     return 0
 

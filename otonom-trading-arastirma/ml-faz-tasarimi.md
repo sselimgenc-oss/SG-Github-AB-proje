@@ -91,6 +91,17 @@ Tarif (özellik listesi, hiperparametre, etiket) değişirse bu yeni **denemedir
 5. **Eşlik testi:** motorun ağaç okuyucusu ile LightGBM'in tahmini 1e-9 içinde aynı.
 6. **Görevdekine karşı:** aday, etkin modelden ileri pencerede kötü değil.
 
+### 3.4a Ön kayıt: tarif `ml1-r01-v1b-native33` (17 Kasım 2026; gerçek koşudan önce)
+
+Bu bölüm eşik gevşetmesi değil, tanım düzeltmesidir; eşikler (§3.4) aynen kalır.
+
+- **IC evreni:** IC kapısının bağlayıcı evreni yalnız **alınan işlemlerdir** (`taken`: stratejinin gerçekten girdiği satırlar, gerçek net R). Tüm satırlar (alınan + atlanan) IC'si raporda **tanı satırı** olarak yer alır ve geçti/kaldı rolü yoktur; çünkü atlanan adayların net R'ı basitleştirilmiş referans çıkıştır.
+- **Tarif kimliği:** `ml1-r01-v1b-native33` — sabit taban: lojistik + sığ LightGBM (`LGBM_PARAMS` olduğu gibi), 33 özellik (`ml_features.FEATURE_NAMES`; 39→33 değişimi yeni tarif sayılır), 2R / 72 mum üç-bariyer etiketi, ileri yönlü Platt, 4 test dilimi. Pipeline `RECIPE_ID` bu kimliktir; satır `research/ml_trial_registry.csv`'ye eklendi, eski satır (`ml0c-baseline-v1`) durur.
+- **n_trials = 4:** deneme defteri 2 tarif × 2 model (lojistik, LightGBM); `registry.py` sayımı değişmedi, defter satırı silinemez/tekrarlanamaz.
+- **lightgbm zorunlu:** gerçek koşuda (`--research` / sentetik olmayan) lightgbm yüklenemezse koşu **başarısız** sayılır (çıkış kodu 2); sessizce lojistiğe düşülmez. Yalnız sentetik/test kipi, açık parametreyle (`require_lightgbm=False`) düşebilir.
+- **Rapor:** iki IC satırı (bağlayıcı: alınanlar; tanı: tüm satırlar), korpus sha256, tarif kimliği, n_trials, lightgbm sürümü.
+- **19c:** yeniden kurulumdan sonra tek koşu; yeniden koşu/ayar yok; KIRMIZI geçerli sonuçtur ve kayda geçer.
+
 ### 3.5 Gölge ve ikiz
 
 - **Gölge:** aday model her karara puan yazar, hiçbir kararı etkilemez. Filtre yalnız işlem çıkardığı için "filtre açık olsaydı" sonucu, alınan işlemlerin alt kümesi olarak defterden doğrudan hesaplanır; ayrı bir bot gerekmez. Tek yaklaşıklık: çıkarılan işlemin boşalttığı risk payına başka işlem girebilirdi; raporda ayrıca gösterilir.

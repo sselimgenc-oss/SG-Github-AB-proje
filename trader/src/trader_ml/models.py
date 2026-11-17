@@ -105,3 +105,12 @@ def logistic_predict_raw(model: dict, X: np.ndarray) -> np.ndarray:
     """Egitim tarafi dogrudan tahmin (esleme testi referansi; treeeval'dan bagimsiz yazildi)."""
     Xf = np.where(np.isnan(X), np.asarray(model["fill"]), X)
     return ((Xf - np.asarray(model["mean"])) / np.asarray(model["std"])) @ np.asarray(model["coef"]) + model["intercept"]
+
+
+def lightgbm_version() -> str | None:
+    """Kurulu lightgbm surumu; yuklenemezse None (gercek kosu bunu hata sayar)."""
+    try:
+        import lightgbm as lgb
+        return str(lgb.__version__)
+    except ImportError:
+        return None

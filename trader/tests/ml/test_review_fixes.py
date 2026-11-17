@@ -176,14 +176,14 @@ def test_n_trials_is_required_and_registry_derived():
     import inspect
     sig = inspect.signature(pipeline.run).parameters["n_trials"]
     assert sig.default is inspect.Parameter.empty and sig.kind is inspect.Parameter.KEYWORD_ONLY
-    assert n_trials_from_registry() == 2                              # 1 kayitli tarif x 2 model
+    assert n_trials_from_registry() == 4                              # 2 kayitli tarif x 2 model
     with pytest.raises(RegistryError):
         n_trials_from_registry(ROOT / "research" / "yok.csv")
 
 
 def test_registry_counts_recipes_times_two_and_rejects_unknown_recipe(tmp_path):
     f = tmp_path / "r.csv"
-    f.write_text("recipe_id,registered_at,note\nml0c-baseline-v1,2026-11-16,a\nml0c-x,2026-11-20,b\n")
+    f.write_text("recipe_id,registered_at,note\nml0c-baseline-v1,2026-11-16,a\nml1-r01-v1b-native33,2026-11-17,b\n")
     assert n_trials_from_registry(f) == 4
     f.write_text("recipe_id,registered_at,note\nother,2026-11-16,a\n")
     with pytest.raises(RegistryError, match="kayitli degil"):
