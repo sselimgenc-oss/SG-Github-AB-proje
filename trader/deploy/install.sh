@@ -107,7 +107,7 @@ say "Python ortami (birkac dakika surebilir)"
 [ -x "$TRADER_DIR/.venv/bin/python" ] || as_trader "$PY_BIN" -m venv "$TRADER_DIR/.venv"
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check --upgrade pip
 # trader/src ve trader/scripts icindeki iceri aktarmalardan: requests pandas numpy pyarrow anthropic (ccxt YOK: dis cati yasak)
-# (freqtrade, pytest ve diger gelistirme paketleri KURULMAZ)
+# (dis ticaret cercevesi, pytest ve diger gelistirme paketleri KURULMAZ)
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
   "requests>=2.31" "pandas>=2.2" "numpy>=1.26" "pyarrow>=15" "anthropic"
 
@@ -129,7 +129,7 @@ fi
 # ---- 6. dizinler -------------------------------------------------------------------
 say "Dizinler"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADER_DIR/shared" "$TRADER_DIR/shared/veto" \
-  "$TRADER_DIR/user_data" "$TRADER_DIR/user_data/data" "$TRADER_DIR/user_data/data/binance" "$TRADER_DIR/user_data/data/binance/futures" \
+  "$TRADER_DIR/user_data" "$TRADER_DIR/var/history" \
   "$TRADER_DIR/var/telegram"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
 install -d -m 0750 -o root -g root /var/backups/trader
@@ -201,7 +201,7 @@ systemctl daemon-reload
 
 # ---- 9. veri ---------------------------------------------------------------------
 say "Gecmis veri"
-HIST="$TRADER_DIR/user_data/data/binance/futures"
+HIST="$TRADER_DIR/var/history"
 if [ -z "$(find "$HIST" -maxdepth 1 -name '*.feather' -print -quit 2>/dev/null)" ]; then
   echo "Veri yok; Binance acik arsivinden indiriliyor (yavas olabilir, sunucuyu yormaz)."
   systemd-run --quiet --wait --collect --unit=trader-fetch -p User="$TRADER_USER" -p Nice=15 -p MemoryMax=450M -p Slice=trader.slice \

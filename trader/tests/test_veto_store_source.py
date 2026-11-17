@@ -88,7 +88,7 @@ def test_missing_store_fails_closed_exit10(tmp_path):
     # main(): depo yok -> cikis 10 (kaynak enjekte edilmedi)
     (tmp_path / "config").mkdir()
     (tmp_path / "config/veto.json").write_text((ROOT / "config/veto.json").read_text())
-    (tmp_path / "config/base.json").write_text('{"exchange":{"pair_whitelist":["BTC/USDT:USDT"]}}')
+    (tmp_path / "config/engine.base.json").write_text('{"pairs":["BTC/USDT:USDT"]}')
     from trader_core import budget as B
     guard = B.BudgetGuard(B.BudgetConfig(db_path=str(tmp_path / "b.sqlite")), clock=lambda: NOW)
     rc = RUN.main(["--root", str(tmp_path)], budget=guard, now_fn=lambda: NOW, sleep_fn=lambda s: None,
@@ -101,8 +101,6 @@ def test_no_ccxt_imports():
     bad = []
     for base in ("src", "scripts"):
         for f in (ROOT / base).rglob("*.py"):
-            if f.name == "freqtrade_offline.py":
-                continue
             if pat.search(f.read_text(encoding="utf-8")):
                 bad.append(str(f.relative_to(ROOT)))
     assert not bad, bad

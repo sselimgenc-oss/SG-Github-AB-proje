@@ -1,71 +1,55 @@
-# Trader - freqtrade tabanli vadeli islem botu (iskelet)
+# Trader - Binance USDT-M vadeli islem botu
 
-Binance global USDT-M vadeli islemler icin, once dry-run (acik veri, API anahtari yok) calisan
-freqtrade tabanli bot. Iki ornek calisir:
+Kendi motorumuzla (`trader_engine`) calisan, once sahte para (paper) sonra canli Binance global
+USDT-M vadeli islem botu. Iki ornek calisir:
 
 - **learner (L)**: derslerin uygulandigi bot.
 - **twin (T)**: dondurulmus kopya; parametreleri asla degismez.
 
-## Durum
-
-Iskelet; strateji yok, islem acmaz. (`PlaceholderStrategy` hic sinyal uretmez.)
-Sonraki parcalar: risk kilidi, rejim etiketi, strateji, veto servisi, ders servisi, Telegram, saglik izleyici.
+Tasarim ve kararlar: `../otonom-trading-arastirma/` (`motor-tasarimi.md`, `tasarim-kararlari.md`),
+motor sartnameleri: `docs/motor/`.
 
 ## Klasor yapisi
 
 ```
-docker-compose.yml        learner + twin servisleri (freqtrade 2026.10)
-config/base.json          ortak ayarlar
-config/learner.json       learner'a ozel (bot_name)
-config/twin.json          twin'e ozel (bot_name)
-.env.example              API kimlik bilgisi sablonu (yalnizca yer tutucu)
-shared/                   salt-okunur ortak baglama (ileride veto dosyasi)
-user_data/strategies/     stratejiler (iki bota salt-okunur baglanir)
-user_data/learner|twin/   bota ozel veri/db/log (ayri dizinler)
-src/trader_core/          freqtrade'den bagimsiz kendi kodumuz (config_loader)
+config/engine.*.json      motor ayarlari (base + bot/mod ustleri), veto.json, budget.json, lesson.json, panel.json
+deploy/                   systemd birimleri ve install.sh (sunucu kurulumu)
+shared/                   ortak dosyalar (veto belgesi, KILL)
+src/trader_core/          cekirdek: risk, rejim, sinyal, defter, veto, ders, saglik, telegram
+src/trader_engine/        kendi motoru: feed, saat/bar, paper/canli broker, backtester
+research/                 arastirma araclari; research/reference/ degismez referans sonuclari
+scripts/                  fetch_binance_vision.py, download_data.sh, smoke_binance.sh, servis girisleri
+var/                      calisma verisi (gitignore'da): var/history = gecmis feather verisi
+user_data/                bota ozel sqlite dosyalari (ders, butce) (gitignore'da)
 tests/                    pytest testleri
-scripts/                  download_data.sh, smoke_binance.sh
 ```
 
-## Sunucuda calistirma (DigitalOcean Frankfurt)
+## Gecmis veri
 
-Binance ABD IP'lerini HTTP 451 ile engeller; sunucu Frankfurt'ta olmali.
+`api.binance.com` / `fapi.binance.com` erisilemiyorsa gecmis veri `data.binance.vision` arsivinden gelir:
 
 ```bash
-cp .env.example .env          # degerleri doldur (API kullanici/sifre/JWT)
-./scripts/smoke_binance.sh    # iki satirda da HTTP 200 beklenir
-./scripts/download_data.sh    # ~2 yillik veri (15m 1h 4h 1d)
-docker compose up -d
+./scripts/download_data.sh                       # var/history altina (idempotent, sha256 dogrular)
+python scripts/fetch_binance_vision.py --help    # --history-dir, --tfs, --end ...
 ```
 
-API yalnizca sunucuda 127.0.0.1'dedir: learner 8080, twin 8081 (uzaktan SSH tuneli ile).
+- Dosyalar `var/history/<PAIR>_USDT_USDT-<tf>-futures|mark|funding_rate.feather` (yalniz `pyarrow` ile okunur);
+  ham zip onbellegi `var/vision_raw/`. Adlandirma bizim sozlesmemizdir.
+- Funding verisi ayin sonunda yayinlanir; icinde bulunulan ayin funding'i eksiktir.
 
-## Notlar
-
-- Pair listesi (BTC, ETH, BNB, SOL, XRP, DOGE, ADA, TRX, LINK, AVAX) **sunucuda guncel piyasa
-  degerine gore dogrulanmalidir**; sabit `StaticPairList` kullanilir.
-- `max_open_trades: -1`: sinirlamayi ileride risk kilidi yapacak.
-- Degismezler (`config_loader`): dry_run true (acik LIVE bayragi olmadikca), isolated margin,
-  futures, dosyalarda anahtar/sir yok.
-- Bu yapi build ortaminda (ABD) Binance'e erisilemedigi icin calistirilarak dogrulanmadi.
-
-## Backtest (Binance'e erisimi olmayan ortam)
-
-`api.binance.com` / `fapi.binance.com` erisilemiyorsa veri `data.binance.vision` arsivinden gelir.
+## Backtest
 
 ```bash
-python3.12 -m venv .venv-ft && .venv-ft/bin/pip install freqtrade==2026.10   # bir kez
-.venv-ft/bin/python scripts/fetch_binance_vision.py      # veri yenile (idempotent, checksum dogrular)
-F="--config config/base.json --config config/backtest.json --userdir user_data --datadir user_data/data/binance"
-.venv-ft/bin/python scripts/freqtrade_offline.py list-data $F --trading-mode futures --show-timerange
-.venv-ft/bin/python scripts/freqtrade_offline.py backtesting $F --strategy PlaceholderStrategy \
-  --strategy-path user_data/strategies --timerange 20261001-20261101 --export none
+PYTHONPATH=src python -m trader_engine backtest --id <ad> --period IS --tf 1h
+PYTHONPATH=src python research/run_bt_engine.py --id 1h_IS_f2_s2 --period IS --fee-mult 2 --slip-bps 2 --tf 1h
 ```
 
-- Veri `user_data/data/binance/futures/` altina (feather) yazilir; ham zip onbellegi `user_data/data/_vision_raw/` (gitignore'da).
-- `config/backtest.json`: base.json'a ek (API sunucusu kapali, gecerli JWT yer tutucusu).
-- `freqtrade_offline.py`: market listesini yerel veriden sentetik uretir (exchangeInfo erisilemez); precision/min-notional yaklasiktir.
-- Funding verisi ayin sonunda yayinlanir; icinde bulunulan ayin funding'i eksiktir (ayri `futures_funding_rate` ile doldurulabilir).
+Kilitli donem (2026-05-01 -> 2026-11-01) reddedilir.
+
+## Sunucu
+
+Binance ABD IP'lerini HTTP 451 ile engeller; sunucu Frankfurt'ta olmali. Kurulum: `deploy/install.sh`
+(`docs/sunucu-kurulum.md`). `./scripts/smoke_binance.sh` iki satirda da HTTP 200 beklenir.
 
 ## Test
 

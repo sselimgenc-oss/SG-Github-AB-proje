@@ -418,7 +418,7 @@ class PaperBroker:
     def _slipped(self, base: float, order_side: str, slip_bps: float, tick: float,
                  pair: str | None = None, opened_ts: datetime | None = None) -> float:
         if self._legacy:
-            # freqtrade: tarihsel tick'e en yakin yuvarlama; pozisyonun tick'i GIRIS ayininkidir ve omur boyu sabit
+            # referans: tarihsel tick'e en yakin yuvarlama; pozisyonun tick'i GIRIS ayininkidir ve omur boyu sabit
             if self._tick_fn is None or pair is None or opened_ts is None:
                 return base
             return round_nearest(base, self._tick_fn(pair, opened_ts))

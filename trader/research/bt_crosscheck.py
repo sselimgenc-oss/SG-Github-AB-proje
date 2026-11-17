@@ -550,8 +550,8 @@ def main(argv=None) -> int:
     ref = Path(a.ref) if a.ref else REF_ROOT / a.id
     eng = Path(a.eng) if a.eng else ROOT / "var" / "backtests" / f"{a.id}_compat"
     tf = a.tf or ("15m" if a.id.startswith("15m") else "1h")
-    hist = a.history_dir or (str(ROOT / "user_data/data/binance/futures")
-                             if (ROOT / "user_data/data/binance/futures").exists() else None)
+    hist = a.history_dir or (str(ROOT / "var/history")
+                             if (ROOT / "var/history").exists() else None)
     try:
         rep = crosscheck(ref, eng, a.id, trigger_tf=tf, history_dir=hist, until=a.until)
     except (OSError, sqlite3.Error, KeyError) as e:

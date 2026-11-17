@@ -53,7 +53,7 @@ def test_engine_configs_load_for_both_bots_and_pairs_agree_everywhere():
     assert len(learner.pairs) == 10 and learner.pairs == twin.pairs
     vcfg = veto.load_config(ROOT / "config/veto.json")
     vp = veto.load_pairs(vcfg, ROOT)
-    assert sorted(veto.pair_key(p) for p in learner.pairs) == vp, "veto pair listesi (config/base.json) motorun ciftleriyle ayni olmali"
+    assert sorted(veto.pair_key(p) for p in learner.pairs) == vp, "veto pair listesi (config/engine.base.json) motorun ciftleriyle ayni olmali"
     assert vcfg.hmac_key_env == "TRADER_VETO_HMAC_KEY"
 
 

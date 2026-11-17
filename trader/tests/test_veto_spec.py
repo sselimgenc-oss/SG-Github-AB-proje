@@ -61,14 +61,14 @@ def ref_sig(doc: dict, key: str = KEY) -> str:
 
 
 def write_cfg(tmp: Path, **over) -> V.VetoConfig:
-    base = tmp / "base.json"
-    base.write_text(json.dumps({"exchange": {"pair_whitelist": RAW_PAIRS}}))
+    base = tmp / "engine.base.json"
+    base.write_text(json.dumps({"pairs": RAW_PAIRS}))
     d = {
         "version": 1, "model": "claude-haiku-5-5", "ttl_s": 2700, "max_tokens": 1200,
         "temperature": 0, "request_timeout_s": 30, "parse_retries": 1, "cache_ttl": "1h",
         "veto_path": str(tmp / "shared" / "veto" / "veto.json"),
         "hmac_key_env": HMAC_ENV,
-        "pairs_from": f"{base}:exchange.pair_whitelist",
+        "pairs_from": f"{base}:pairs",
         "context": {"candles_4h": 200, "candles_1h": 72, "return_hours": [1, 4, 24]},
     }
     d.update(over)
@@ -1742,8 +1742,8 @@ class TestSchedulingFiles:
 
 
 # =========================================================================== Section 11 (skipped)
-@pytest.mark.skip(reason="TraderV1 changes (veto-spec Section 11) are a separate job and are not implemented yet")
-class TestTraderV1Section11:
+@pytest.mark.skip(reason="legacy strategy-adapter hooks (veto-spec Section 11) are superseded by the engine gate chain")
+class TestAdapterSection11:
     def test_stub_mode_unchanged(self):
         """11.2: backtest/hyperopt or (ledger_path None and veto_path None) -> not_evaluated stub, no file read."""
 

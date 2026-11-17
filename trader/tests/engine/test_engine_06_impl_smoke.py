@@ -225,11 +225,12 @@ def test_impl06_fetch_1m_extension(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "http_get", fake_get)
     rc = None
     monkeypatch.setattr(sys, "argv", ["f", "--only-1m", "--pairs", "BTC", "--start", "2025-01", "--end", "2025-01",
-                                      "--data-dir", str(tmp_path / "d"), "--workers", "1"])
+                                      "--history-dir", str(tmp_path / "d" / "hist"), "--raw-dir", str(tmp_path / "d" / "raw"),
+                                      "--workers", "1"])
     rc = F.main()
     assert rc == 0
     assert any("/klines/BTCUSDT/1m/" in u for u in seen) and any("/markPriceKlines/BTCUSDT/1m/" in u for u in seen)
-    out = tmp_path / "d" / "binance" / "futures"
+    out = tmp_path / "d" / "hist"
     assert not any("1h" in p.name or "funding" in p.name for p in out.iterdir())
     for suffix in ("futures", "mark"):
         p = out / f"BTC_USDT_USDT-1m-{suffix}.feather"

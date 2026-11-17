@@ -226,7 +226,7 @@ def main(argv=None) -> int:
     ap.add_argument("--equity", default="wallet", choices=["wallet", "est"])
     ap.add_argument("--engine-dir", default=None)
     ap.add_argument("--out-dir", default=str(ROOT / "research" / "crosscheck"))
-    ap.add_argument("--history-dir", default=str(ROOT / "user_data" / "data" / "binance" / "futures"))
+    ap.add_argument("--history-dir", default=str(ROOT / "var" / "history"))
     ap.add_argument("--suffix", default="")
     a = ap.parse_args(argv)
     ref = X.REF_ROOT / a.id

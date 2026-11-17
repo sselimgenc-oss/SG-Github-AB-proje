@@ -129,7 +129,7 @@ class VetoConfig:
     cache_ttl: str = "1h"
     veto_path: str = "shared/veto/veto.json"
     hmac_key_env: str = "TRADER_VETO_HMAC_KEY"
-    pairs_from: str = "config/base.json:exchange.pair_whitelist"
+    pairs_from: str = "config/engine.base.json:pairs"
     market_db: str = "var/market.sqlite"
     context: dict = field(default_factory=lambda: {"candles_4h": 200, "candles_1h": 72,
                                                     "return_hours": [1, 4, 24]})

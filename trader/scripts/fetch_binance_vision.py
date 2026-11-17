@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Binance public archive (data.binance.vision) -> freqtrade 2026.10 feather data.
+"""Binance public archive (data.binance.vision) -> feather history files (`var/history`).
 
 Indirir (USDT-M vadeli): klines (15m 1h 4h 1d), markPriceKlines (1h), fundingRate.
 Aylik zip'ler; aylik dosya henuz yayinlanmamissa gunluk zip'lere duser (klines/mark).
 fundingRate icin gunluk arsiv yoktur; icinde bulunulan ayin funding verisi ay sonu
 yayinlanana kadar eksiktir (backtest'te `futures_funding_rate` ile doldurulabilir).
 
-Cikti (freqtrade 2026.10 adlandirmasi, --datadir user_data/data/binance):
-  futures/BTC_USDT_USDT-1h-futures.feather        (date, open, high, low, close, volume)
-  futures/BTC_USDT_USDT-1h-mark.feather           (ayni kolonlar)
-  futures/BTC_USDT_USDT-1h-funding_rate.feather   (date, funding_rate)
+Cikti (dosya adlandirmasi bizim sozlesmemizdir; --history-dir, varsayilan var/history; yalniz pyarrow ile okunur):
+  BTC_USDT_USDT-1h-futures.feather        (date, open, high, low, close, volume)
+  BTC_USDT_USDT-1h-mark.feather           (ayni kolonlar)
+  BTC_USDT_USDT-1h-funding_rate.feather   (date, funding_rate)
 
-Idempotent: ham zip'ler user_data/data/_vision_raw altinda onbelleklenir, var olan
+Idempotent: ham zip'ler var/vision_raw altinda onbelleklenir, var olan
 dosyalar tekrar indirilmez. .CHECKSUM (sha256) dogrulanir. Yalniz data.binance.vision.
 
 1m eklentisi (06 §5): `--tfs 1m` (ya da `--only-1m`) klines 1m (last) ve markPriceKlines 1m (mark) indirir:
-  futures/BTC_USDT_USDT-1m-futures.feather, futures/BTC_USDT_USDT-1m-mark.feather
+  BTC_USDT_USDT-1m-futures.feather, BTC_USDT_USDT-1m-mark.feather
   (date, open, high, low, close, volume; compression="uncompressed": HistoricalSource memory_map ile okur).
 Boyut: ~1,05 M satir x 6 sutun x 8 bayt ~ 50 MB / dosya / cift. `--end YYYY-MM` son ayi (dahil) sinirlar.
 
@@ -43,13 +43,14 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE_URL = "https://data.binance.vision/data/futures/um"
 KLINE_TFS = ["15m", "1h", "4h", "1d"]
 DEFAULT_TFS = "15m,1h,4h,1d"  # 1m yalniz acikca istenince (boyut)
-MARK_TF = "1h"  # binance: mark_ohlcv_timeframe = funding_fee_timeframe = 1h (freqtrade 2026.10)
+MARK_TF = "1h"  # binance: mark_ohlcv_timeframe = funding_fee_timeframe = 1h
 FUNDING_TF = "1h"
 OHLCV = ["date", "open", "high", "low", "close", "volume"]
 
 
 def load_pairs(config: Path) -> list[str]:
-    return json.loads(config.read_text())["exchange"]["pair_whitelist"]
+    """engine.base.json `pairs` ("BTC/USDT") -> dosya sozlesmesi icin "BTC/USDT:USDT"."""
+    return [p if ":" in p else f"{p}:USDT" for p in json.loads(config.read_text())["pairs"]]
 
 
 def vision_symbol(pair: str) -> str:  # BTC/USDT:USDT -> BTCUSDT
@@ -156,9 +157,10 @@ def build(files: list[Path], reader) -> pd.DataFrame:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--config", type=Path, default=ROOT / "config/base.json")
+    ap.add_argument("--config", type=Path, default=ROOT / "config/engine.base.json")
     ap.add_argument("--start", default="2024-11", help="YYYY-MM")
-    ap.add_argument("--data-dir", type=Path, default=ROOT / "user_data/data")
+    ap.add_argument("--history-dir", type=Path, default=ROOT / "var/history", help="feather cikti dizini")
+    ap.add_argument("--raw-dir", type=Path, default=ROOT / "var/vision_raw", help="ham zip onbellegi")
     ap.add_argument("--pairs", help="virgullu baz kisaltmalar (BTC,ETH); varsayilan: config")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--end", default=None, help="YYYY-MM (dahil); varsayilan bugun")
@@ -180,8 +182,8 @@ def main() -> int:
     for t in tfs:
         if t not in ("1m", *KLINE_TFS):
             ap.error(f"gecersiz tf: {t}")
-    raw_dir = args.data_dir / "_vision_raw"
-    out_dir = args.data_dir / "binance" / "futures"
+    raw_dir = args.raw_dir
+    out_dir = args.history_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # datasets: (kind, pair, tf)

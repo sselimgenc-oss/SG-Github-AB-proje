@@ -81,7 +81,7 @@ def funding(eng_root: Path, xc_dir: Path) -> list[dict]:
 def stakecut(order: str = "pair") -> list[dict]:
     """Kural: miktar = trunc(min(karar marji, 0.99*cuzdan - acik stake'ler) * kaldirac / fiyat, adim); cuzdan = 1000 + kapanmis
     profit_abs; ayni mumda kapanan islemlerin sayimi `bt_chainfree_diag.SAME_CLOSE` (ampirik)."""
-    hist = ROOT / "user_data" / "data" / "binance" / "futures"
+    hist = ROOT / "var" / "history"
     out = []
     for run in RUNS:
         tf = run.split("_")[0]

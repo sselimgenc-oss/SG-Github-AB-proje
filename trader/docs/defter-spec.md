@@ -492,7 +492,7 @@ Satırlar `key`'in değerlerine göre sıralı (metin artan, sayı artan). `n=0`
 Ledger.check_writable() -> Health
 Ledger.entries_allowed() -> Health
 Ledger.find_orphan_decisions(*, older_than_s: int = 3600) -> list[int]
-Ledger.find_unledgered_trades(freqtrade_open_trade_ids: Iterable[int]) -> list[int]
+Ledger.find_unledgered_trades(open_trade_ids: Iterable[int]) -> list[int]
 Ledger.drain_spool() -> int
 ```
 

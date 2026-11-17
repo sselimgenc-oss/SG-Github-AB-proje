@@ -15,6 +15,6 @@
   "stale_factor": 1.0,
   "loop_sleep_s": 5.0, "bar_wait_s": 120.0, "minute_wait_s": 20.0, "reconcile_open_s": 15.0, "reconcile_flat_s": 60.0,
   "start_delay_s": 0.0,
-  "var_dir": "var", "market_db": "var/market.sqlite", "history_dir": "user_data/data/binance/futures",
+  "var_dir": "var", "market_db": "var/market.sqlite", "history_dir": "var/history",
   "veto_config": "config/veto.json", "kill_file": "shared/KILL"
 }

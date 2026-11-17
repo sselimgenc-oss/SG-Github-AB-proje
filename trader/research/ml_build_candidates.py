@@ -51,7 +51,7 @@ RULES_EXCEPTION = ("gercek borsa kurallari anlik goruntusu yok (bu ortam Binance
 ALLOWED_UNTRACKED = ("research/ml/", "research/logs/")
 PERIOD = "20241101-20260501"                      # bitis dislayici = HOLDOUT_START
 OUT_DIR = ROOT / "research" / "ml"
-HISTORY = ROOT / "user_data" / "data" / "binance" / "futures"
+HISTORY = ROOT / "var" / "history"
 BT_ARGS = ["--period", PERIOD, "--tf", "1h", "--fill-model", "native", "--strategy", "price_action_v1", "--synthetic-rules",
            "--target-trade-risk", str(TARGET_TRADE_RISK)]
 

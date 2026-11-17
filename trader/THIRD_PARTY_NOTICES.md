@@ -5,8 +5,8 @@
 - Uyarlanan dosyalar: `src/trader_core/indicators.py`, `src/trader_core/regime.py` (gösterge hesapları ve etiket arayüzü iskeleti; sınıflandırma koşulları bize ait).
 - Copyright (c) 2026 danny123-sudo. MIT lisans metni ilgili dosyaların başında yer alır.
 
-## freqtrade (GPL-3.0)
-- Docker imajı olarak kullanılır (`freqtradeorg/freqtrade:2026.10`); kodu bu depoya kopyalanmamıştır.
+## freqtrade (GPL-3.0) — kaldırıldı (17 Kas 2026)
+- Artık çalıştırılmaz ve kodu bu depoda yoktur; kendi motorumuz (`trader_engine`) kullanılır. Yalnız dondurulmuş sonuç dosyaları salt veri olarak `research/reference/freqtrade-2026.10/` altında saklanır (kod değil). Son referans commit: `bfe5185`.
 
 ## 1L3A panosu (kullanıcının kendi projesi)
 - Kaynak: `1l3a-proje/motor/canli/pano.py` (kullanıcının kendi deposu; yalnız okunarak kopyalandı, çalıştırılmadı), 2026-11-16.

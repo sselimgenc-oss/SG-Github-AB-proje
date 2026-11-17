@@ -36,9 +36,9 @@ from trader_engine.strategies.registry import get_strategy
 from trader_engine.strategy_runner import WindowedSignalSource, ml_score_from_reasons
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "user_data" / "data" / "binance" / "futures"
+DATA = ROOT / "var" / "history"
 UTC = timezone.utc
-needs_data = pytest.mark.skipif(not DATA.exists(), reason="user_data/data yok")
+needs_data = pytest.mark.skipif(not DATA.exists(), reason="var/history yok")
 START, END = datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 3, 11, tzinfo=UTC)
 END_SHORT = datetime(2026, 3, 8, tzinfo=UTC)
 PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]

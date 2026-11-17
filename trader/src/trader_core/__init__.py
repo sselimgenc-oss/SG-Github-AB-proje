@@ -1,1 +1,1 @@
-"""Trader cekirdek paketi (freqtrade'den bagimsiz, test edilebilir)."""
+"""Trader cekirdek paketi (dis cerceveden bagimsiz, test edilebilir)."""

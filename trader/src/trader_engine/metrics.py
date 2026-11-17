@@ -1,4 +1,4 @@
-"""Backtest metrikleri (06 §4): `research/run_bt.py::analyze` anahtarlariyla ayni, freqtrade'e bagimsiz; ledger'dan turetilir.
+"""Backtest metrikleri (06 §4): eski kosucunun `analyze` anahtar kumesiyle ayni; yalniz ledger'dan turetilir.
 Saf islevler (pandas serbest). Acik pozisyonlar (`exit_ts` bos) disarida birakilir."""
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pandas as pd
 
 from trader_core import risk as K
 
-# run_bt.analyze anahtar kumesi (freqtrade_pf / unmatched_ledger_rows yerine `engine`)
+# eski analyze anahtar kumesi (referans-PF / eslesmeyen satir alanlari yerine `engine`)
 METRIC_KEYS = (
     "n_trades", "expectancy_R", "n_R", "median_R", "profit_factor", "profit_abs", "profit_pct", "max_dd_pct",
     "max_dd_abs", "avg_duration", "avg_duration_min", "fees_total", "fee_only", "slip_approx", "funding_net",
@@ -105,7 +105,7 @@ def compute_metrics(trades: pd.DataFrame, *, wallet_start: float, slip_bps: floa
     else:
         t["slip_paid"] = t["slip_cost"] if "slip_cost" in t else 0.0
     t["fee_only"] = t["fee_paid"] - t["slip_paid"]
-    t["funding"] = -t["funding_paid"].astype(float)        # + alinan, - odenen (freqtrade funding_fees isareti)
+    t["funding"] = -t["funding_paid"].astype(float)        # + alinan, - odenen (referans funding isareti)
     t["gross"] = t["gross_pnl"].astype(float)
     t["risk_amt"] = [loss_at_stop(q, e, s) if np.isfinite(s) else np.nan
                      for q, e, s in zip(t["qty"], t["entry_price"], t["planned_stop"])]

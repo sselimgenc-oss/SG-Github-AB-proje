@@ -141,7 +141,9 @@ Aday satırları: `"<setup>_<side>:<koşullar>"` + `,<süzgeç sonucu>`. T1: `T1
 
 `compute_signals(df, r)[0:k]` ile `compute_signals(df.iloc[:k], r.iloc[:k])` tüm sütunlarda **birebir** eşit olmalı (NaN eşit sayılır; her `k ≥ 1`). Satır `t` yalnızca `df` ve `regime_df` satır `0…t`'ye bağlıdır. EMA/ATR tohumu ilk satırdan alındığı için sonuç geçmiş başlangıcına hafifçe bağlıdır; backtest ve canlı aynı başlangıçla çalışmalıdır: freqtrade `startup_candle_count` = 300 adet 4s mumunu karşılayacak sayı (1h tetikte 1200, 15m tetikte 4800; Bölüm 4.1).
 
-## 4. `TraderV1.py` — bağdaştırıcı
+## 4. `TraderV1.py` — bağdaştırıcı (KALDIRILDI)
+
+> **Bölüm 4–6 (IStrategy bağdaştırıcısı) kaldırıldı (17 Kasım 2026, `motor-tasarimi.md` §4.3): bkz. `motor-spec.md` ve `docs/motor/`.** Aşağıdaki metin yalnızca tarihsel kayıttır; bağdaştırıcı kodu silinmiştir (son referans commit `bfe5185`). Çıkış kuralları `position_manager`'da, sinyaller `signals.py`'dedir.
 
 `class TraderV1(IStrategy)`. Yalnızca çağırma, boyutlandırma ve kayıt; kural eşiği yok.
 
@@ -211,7 +213,7 @@ v1: her çağrıda `VetoVerdict("not_evaluated", None, False)` döner; hiçbir g
 
 **Ledger uyumsuzluğu ve çözümü:** ledger, `final_action="entered"` için `veto_status="allowed"` şartı koşar; `not_evaluated` yalnızca `risk_allowed=None` ve `skip_reason ∈ {stop_width, rr_below_min, other, entry_gate_closed}` ile geçerlidir. Bu yüzden kanca `"not_evaluated"` dönse bile, kancanın `blocks=False` olduğu girişte adaptör ledger'a **`veto_status="allowed"`, `veto_reason="not_evaluated:v1_stub"`** yazar (hem `entered` hem `risk_denied` kararlarında). `not_evaluated` ledger'a yalnızca veto'dan **önce** elenen adaylar için (`stop_width`, `rr_below_min`, `entry_gate_closed`) yazılır. Veto gerçekten bağlandığında `reason` alanındaki `v1_stub` işareti ayırt edicidir.
 
-## 5. Çıkış kuralları
+## 5. Çıkış kuralları (bağdaştırıcı kısmı kaldırıldı; bkz. Bölüm 4 notu)
 
 Hepsi **kapanmış** tetik TF mumları üzerinden değerlendirilir; yalnızca borsadaki stop emri bar içi çalışır. Giriş mumu `E` = dolumun gerçekleştiği mum (tetik mumundan sonraki). "Girişten beri" mum kümesi `E, E+1, …, son kapanmış mum`.
 
@@ -247,7 +249,7 @@ Long için aligned etiket `"trend_down"`, short için `"trend_up"` olursa (`regi
 
 `TradeExit.exit_reason` (ledger `_EXIT_REASONS`): borsa/simülatör stop'u çalıştı → iz süren stop devredeyken `"trail_stop"`, değilken `"stop"` (devre durumu çıkış anında `trail_stop_path`'ten yeniden hesaplanır); `custom_exit` etiketleri aynen (`"target"`, `"time_stop"`, `"regime_flip"`, `"trail_stop"` Bölüm 5.2'den, `"force_exit"`); kullanıcının `forceexit`'i `"manual"`; freqtrade likidasyonu `"liquidation"`; diğer `"other"`. `planned_exit`: stop/iz için o andaki stop fiyatı, `target` için hedef, diğerlerinde `None`. `funding_paid` işareti ledger'da **pozitif = ödenen** (örnek 12.4'te −0.05 alınan); freqtrade `funding_fees` işareti gerçeklemede doğrulanıp eşlenir (Bölüm 11 madde 12).
 
-## 6. Backtest modu
+## 6. Backtest modu (kaldırıldı; yerine `python -m trader_engine backtest`, bkz. `docs/motor/06-backtester.md`)
 
 - Algılama: `self.dp.runmode` ∈ {`BACKTEST`, `HYPEROPT`}.
 - Yapılandırma bloğu (`config/backtest.json` ile birleşir; blok yoksa tüm varsayılanlar):

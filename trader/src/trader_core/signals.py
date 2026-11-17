@@ -1,6 +1,6 @@
 """Strateji v1 sinyal cekirdegi (T1 trend geri cekilmesi, R1 range donusu).
 
-Saf pandas/numpy; freqtrade, risk.py ve ledger.py import edilmez. Kurallar
+Saf pandas/numpy; dis cerceve, risk.py ve ledger.py import edilmez. Kurallar
 docs/strateji-spec.md ile birebir aynidir. Ileriye bakmaz: satir t yalnizca 0..t
 satirlarina baglidir.
 """

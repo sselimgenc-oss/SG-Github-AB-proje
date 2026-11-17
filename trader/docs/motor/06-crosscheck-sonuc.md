@@ -249,3 +249,12 @@ Yeni uyum kuralı ve ayar turu yok; kapı çekincelerle geçti. (b) çıkış fi
 4. f2_s5 fonlaması yazıldığı haliyle +%10,5, 15m düzeltilmiş hesaplanmadı (ham +%39,9), 1h_WF düzeltilmiş +%4,6.
 5. Bilinçli asıl mod farkları: freqtrade'in büyüklük kısması yerine `insufficient_margin` reddi, giriş anında fonlama yok (+0,04), kapanan pozisyonda yuva/risk tutulur (≤ 3 giriş, ~%0,16; kağıdın 4. haftası).
 6. freqtrade dönemi araştırma sayıları (eski deneme defteri, backtest-raporu-v1) asıl modla doğrudan kıyaslanmaz; bundan sonra asıl mod tabanı geçerlidir, köprü §7.4 tablosu.
+
+## freqtrade silme commit'i (17 Kasım 2026; `motor-tasarimi.md` §4.3 madde 1–5)
+
+Kapı "açıklanmış eşdeğerlik" ile geçtikten sonra tek commit'te yapıldı. **Referans commit (`freqtrade-last`): `bfe5185`** — `TraderV1.py`, freqtrade yapılandırmaları ve `docker-compose.yml`'yi içeren son commit (etiket vekil sunucuda reddedildiği için hash ile kayıtlı; `git show bfe5185:trader/user_data/strategies/TraderV1.py`). Dondurulmuş sonuçlar: `research/reference/freqtrade-2026.10/`, kapı kanıtları `research/reference/crosscheck-2026.11/`.
+
+- **Silinenler:** `user_data/strategies/TraderV1.py`, `PlaceholderStrategy.py`, `research/strategies/TraderV1Analysis.py`, `research/ft_offline_15m.py`, `scripts/freqtrade_offline.py`, `config/{base,learner,twin,backtest}.json`, `docs/traderv1-bekleyen-degisiklikler.md`, `docker-compose.yml`, `tests/test_compose.py`, `research/run_bt.py` (yerine `research/run_bt_engine.py`; `queue.sh` ona bağlandı), `.env.example` (yalnız freqtrade API değişkenleri).
+- **Taşınanlar:** `user_data/data/binance/futures/` → `var/history/`; `user_data/data/_vision_raw/` → `var/vision_raw/` (gitignore'da, dosya sistemi rename'i). `engine.base.json:history_dir`, `fetch_binance_vision.py` (`--history-dir`, `--raw-dir`), `download_data.sh`, `install.sh`, araştırma araçları ve gerçek-veri testleri yeni yola çevrildi; `test_no_holdout_in_tests.py` artık `var/history` yazımlarını da gerçek-veri kaynağı sayar.
+- **`trader_core`:** `find_unledgered_trades(open_trade_ids)` (konumsal; davranış aynı); `veto.pairs_from` → `config/engine.base.json:pairs`; sağlık yoklaması zaten `status.json` okuyucusuydu; `strateji-spec.md` Bölüm 4–6 "kaldırıldı" olarak işaretlendi.
+- **Kabul:** `grep -ri freqtrade trader/src trader/scripts trader/config trader/deploy` boş.

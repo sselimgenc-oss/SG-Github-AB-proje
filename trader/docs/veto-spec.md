@@ -40,14 +40,14 @@ Sırlar burada yoktur; yalnızca ortam değişkeni **adları**.
   "cache_ttl": "1h",
   "veto_path": "shared/veto/veto.json",
   "hmac_key_env": "TRADER_VETO_HMAC_KEY",
-  "pairs_from": "config/base.json:exchange.pair_whitelist",
+  "pairs_from": "config/engine.base.json:pairs",
   "context": {"candles_4h": 200, "candles_1h": 72, "return_hours": [1, 4, 24]}
 }
 ```
 
 Kilitli sınırlar (`HARD_LIMITS`; `VetoConfig` gevşek değerle kurulursa `VetoConfigError(ValueError)`): `900 ≤ ttl_s ≤ 2700`, `max_tokens ≤ 2000`, `request_timeout_s ≤ 60`, `parse_retries ≤ 1`, `cache_ttl ∈ {"5m","1h"}`, `model` boş değil. Bilinmeyen anahtar → hata. `model`, `config/budget.json` fiyat tablosunda yoksa `estimate_cost` `BudgetConfigError` verir ve çağrı yapılmaz (iki dosya arasında tutarlılık denetimi bedavadır).
 
-Pair listesi **yalnızca** `config/base.json` beyaz listesinden gelir; modele ve dosyaya başka pair giremez. Yön kümesi `{"long","short"}`. Pair anahtarı `risk-kilidi-spec.md` normalleştirmesiyle: büyük harf, `:` sonrası atılır (`"BTC/USDT:USDT"` ≡ `"btc/usdt"` → `"BTC/USDT"`).
+Pair listesi **yalnızca** `config/engine.base.json:pairs` listesinden gelir; modele ve dosyaya başka pair giremez. Yön kümesi `{"long","short"}`. Pair anahtarı `risk-kilidi-spec.md` normalleştirmesiyle: büyük harf, `:` sonrası atılır (`"BTC/USDT:USDT"` ≡ `"btc/usdt"` → `"BTC/USDT"`).
 
 ## 4. Veto dosyası sözleşmesi (`veto/1`)
 

@@ -29,7 +29,7 @@ from trader_engine.strategy_runner import SignalFrame, SignalRow, WindowedSignal
 from trader_engine.types import Position, SymbolRules
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "user_data" / "data" / "binance" / "futures"
+DATA = ROOT / "var" / "history"
 UTC = timezone.utc
 T0 = datetime(2026, 12, 1, 9, 0, tzinfo=UTC)
 H = timedelta(hours=1)
@@ -294,7 +294,7 @@ def test_build_decision_event_features_only_finite():
 
 
 # ----------------------------------------------------------------------------------------- uc uca (gercek veri)
-needs_data = pytest.mark.skipif(not DATA.exists(), reason="user_data/data yok")
+needs_data = pytest.mark.skipif(not DATA.exists(), reason="var/history yok")
 
 
 class _CachedSource:

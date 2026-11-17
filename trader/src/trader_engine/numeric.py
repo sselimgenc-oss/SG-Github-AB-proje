@@ -55,7 +55,7 @@ def round_adverse(price: float, order_side: OrderSide, tick: float) -> float:
 
 
 def round_nearest(price: float, tick: float) -> float:
-    """En yakin tick'e (yarim: yukari). legacy_compat dolum yuvarlamasi (freqtrade ROUND)."""
+    """En yakin tick'e (yarim: yukari). legacy_compat dolum yuvarlamasi (referans: en yakin yuvarlama)."""
     return _snap(price, tick, ROUND_HALF_UP)
 
 

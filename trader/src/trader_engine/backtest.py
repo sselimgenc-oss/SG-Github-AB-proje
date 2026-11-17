@@ -195,11 +195,11 @@ class BacktestResult:
 
 
 class _CompatEntryView:
-    """legacy_compat (freqtrade/TraderV1 davranisi): giris kapisinin gordugu hesap ve pozisyon durumu.
+    """legacy_compat (dondurulmus referans davranisi): giris kapisinin gordugu hesap ve pozisyon durumu.
     (1) Cikislar bir mumda giristen ONCE islenir: bu karar adiminda cikis emri verilmis (`closing`) ve stopu D adimi
         barinda tetiklenecek pozisyonlar kapali sayilir ve gerceklesmis kabul edilir (tek-adimlik ileri bakis:
         yalniz uyum kipi, `peek_uses`a sayilir).
-    Ozsermaye tanimi degismez (motor: cuzdan + mark gerceklesmemis; TraderV1: cuzdan + calc_profit(1h kapanis) farki
+    Ozsermaye tanimi degismez (motor: cuzdan + mark gerceklesmemis; referans: cuzdan + 1h kapanis farki
     capraz dogrulamada `equity_coupling` olarak raporlanir). Paper/native'de kullanilmaz."""
 
     def __init__(self, state, raw_view, clock, counter) -> None:
@@ -249,7 +249,7 @@ class _CompatEntryView:
 
 
 def _trunc_step(x: float, step: float) -> float:
-    """Adima asagi kesme, Decimal(repr) uzerinden (freqtrade TRUNCATE; kayan nokta gurultusu korunur)."""
+    """Adima asagi kesme, Decimal(repr) uzerinden (referans davranisi: asagi kesme; kayan nokta gurultusu korunur)."""
     d, q = Decimal(repr(float(x))), Decimal(repr(float(step)))
     return float((d / q).to_integral_value(rounding=ROUND_DOWN) * q)
 
@@ -257,7 +257,7 @@ def _trunc_step(x: float, step: float) -> float:
 class _CompatBrokerView:
     """legacy_compat: giris kapisinin gordugu hesap. Ayni adimda cikacak (`_CompatEntryView._freed`) pozisyonlarin
     gerceklesmis K/Z'si (cikis fiyati tahmini, giris-ayi tick'ine en yakin yuvarlama, cikis komisyonu dahil) boyutlandirmadan
-    ONCE ozsermayeye yansir (freqtrade: cikislar giristen once islenir; TraderV1 cuzdani). Paper/native'de kullanilmaz."""
+    ONCE ozsermayeye yansir (referans davranisi: cikislar giristen once islenir). Paper/native'de kullanilmaz."""
 
     def __init__(self, broker, entry_view, tick_fn, fee) -> None:
         self._b = broker
@@ -290,11 +290,11 @@ class _CoarsePaperBroker(PaperBroker):
     """legacy_compat (kaba 15 dk adim): PaperBroker ayni dolum/tetik kodu; yalniz adim ici `last_mark` zamanlamasi.
     Dolum asamasinda (adim acilisi) mark = adim ACILISI (koruyucu stop bu mark'a gore kurulur), tetik asamasindan sonra
     adim KAPANISI. Boylece 15 dk barin kapanisi stopu asmis olsa bile giris sonrasi stop kurulur ve ayni adimda tetiklenir
-    (freqtrade: giris mumunda stoploss kontrolu); aksi halde `would_trigger` -> `stop_failed` giris kilidi olusurdu.
+    (referans davranisi: giris mumunda stop kontrolu); aksi halde `would_trigger` -> `stop_failed` giris kilidi olusurdu.
     Native 1 dk kipte kullanilmaz."""
 
     def _fill_entry(self, o, bar, rules) -> None:
-        """freqtrade stake->miktar kesmesi (yalniz legacy_compat): `stake = qty*ref/lev` (karar marjini),
+        """Referans stake->miktar kesmesi (yalniz legacy_compat): `stake = qty*ref/lev` (karar marjini),
         `amount = trunc((stake/fill)*lev, adim)` (Decimal(repr) kesme: 0.92 -> 0.9199999999999999 -> 0.91).
         Ref = adim acilisi (`entry_ref`), fill = tick'e yuvarlanmis acilis."""
         lev = o.leverage if o.leverage is not None else self._lev.get(o.pair)
@@ -409,7 +409,7 @@ class BacktestRunner:
         broker_cls = _CoarsePaperBroker if cfg.cost.fill_model == "legacy_compat" else PaperBroker
         tick_fn = None
         if cfg.cost.fill_model == "legacy_compat" and hasattr(raw, "tick_at"):
-            raw.main_tf = tf                                # freqtrade: tarihsel tick ana zaman dilimi mumlarindan
+            raw.main_tf = tf                                # referans: tarihsel tick ana zaman dilimi mumlarindan
             tick_fn = view.tick_at
         broker = broker_cls(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate, wallet_start=cfg.wallet_start),
                              view.rules, view.funding, clock, tick_fn=tick_fn)
@@ -420,7 +420,7 @@ class BacktestRunner:
         kill = Killswitch(str(out_dir / "KILL.never"), clock)
         entry_ref = None
         if cfg.cost.fill_model == "legacy_compat":
-            def entry_ref(pair, D, row, _v=view):          # noqa: E306  (freqtrade current_rate: sonraki adim acilisi)
+            def entry_ref(pair, D, row, _v=view):          # noqa: E306  (referans: sonraki adim acilisi)
                 return _v.open_at(pair, D)
         eng = Engine(cfg, clock=clock, view=view, broker=broker, ledger=ledger, state=state, signals=signals,
                      strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=True,

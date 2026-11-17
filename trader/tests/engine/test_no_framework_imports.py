@@ -18,7 +18,7 @@ ALLOWED_OPTIONAL = {"dev": {"pytest", "pyyaml"}, "live": {"websockets"}}
 SCAN_ROOTS = ("src/trader_engine", "src/trader_core")
 ENGINE_ROOT = "src/trader_engine"
 SUBPROCESS_ALLOW = {("backtest.py", "git")}
-FREQTRADE_REMOVED = False
+FREQTRADE_REMOVED = True
 FREQTRADE_TEXT_ROOTS = ("scripts", "config", "deploy", "src")
 _FT = "freq" + "trade"
 

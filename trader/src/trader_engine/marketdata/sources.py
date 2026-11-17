@@ -108,7 +108,7 @@ def _step_dec(values) -> float:
 
 
 def decimals_of(values) -> int:
-    """freqtrade `get_pair_precision`: her deger 10 ondaliga yuvarlanir, sonra ondalik hane sayisi (float repr'ine
+    """Fiyat hassasiyeti: her deger 10 ondaliga yuvarlanir, sonra ondalik hane sayisi (float repr'ine
     dayanikli; sondaki sifirlar sayilmaz); tum degerlerin en buyugu."""
     dec = 0
     for v in np.unique(np.round(np.asarray(values, dtype="float64"), 10)):
@@ -118,7 +118,7 @@ def decimals_of(values) -> int:
 
 
 def monthly_ticks(ms: np.ndarray, o: np.ndarray, h: np.ndarray, l: np.ndarray, c: np.ndarray) -> dict[tuple[int, int], float]:
-    """freqtrade `get_tick_size_over_time`: (yil, ay UTC) -> 10^-(OHLC ondalik hane sayisinin ayi icindeki en buyugu)."""
+    """Aylik tarihsel tick: (yil, ay UTC) -> 10^-(OHLC ondalik hane sayisinin ayi icindeki en buyugu)."""
     out: dict[tuple[int, int], float] = {}
     if len(ms) == 0:
         return out
@@ -226,7 +226,7 @@ class _Series:
 
 
 class HistoricalSource:
-    """Backtest/test: freqtrade adlandirmali feather dosyalari (pyarrow ile okunur)."""
+    """Backtest/test: `<PAIR>_USDT_USDT-<tf>-futures.feather` adli feather dosyalari (bizim sozlesmemiz; pyarrow ile okunur)."""
 
     def __init__(self, history_dir, *, granularity: str = "1m", synthetic_rules: bool = False) -> None:
         if granularity not in ("1m", "15m"):

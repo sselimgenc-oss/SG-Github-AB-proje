@@ -1,6 +1,6 @@
 """Islem defteri ve parametre degisiklik gunlugu (sqlite3, stdlib). Bkz. docs/defter-spec.md (v1 + Revizyon 2, sema 2).
 
-Yalnizca ekleme (append-only), fail-closed. pandas/numpy/freqtrade import edilmez.
+Yalnizca ekleme (append-only), fail-closed. pandas/numpy ve dis cerceve import edilmez.
 """
 from __future__ import annotations
 
@@ -2158,8 +2158,8 @@ class Ledger:
                 (self.bot, cutoff)).fetchall()
         return [r[0] for r in rows]
 
-    def find_unledgered_trades(self, freqtrade_open_trade_ids: Iterable[int]) -> list[int]:
-        ids = sorted({_int(i, "trade_id") for i in freqtrade_open_trade_ids})
+    def find_unledgered_trades(self, open_trade_ids: Iterable[int]) -> list[int]:
+        ids = sorted({_int(i, "trade_id") for i in open_trade_ids})
         with self._read() as c:
             have = {r[0] for r in c.execute("SELECT trade_id FROM v_trades WHERE bot=?", (self.bot,))}
         missing = [i for i in ids if i not in have]

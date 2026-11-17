@@ -21,19 +21,6 @@ def test_deep_merge_nested_and_no_mutation():
     assert base == {"a": {"x": 1, "y": 2}, "l": [1, 2]}
 
 
-@pytest.mark.parametrize("name", ["learner", "twin"])
-def test_real_configs_valid_and_bot_name(name):
-    cfg = load_config(CFG / "base.json", CFG / f"{name}.json")
-    assert cfg["bot_name"] == name
-    assert cfg["dry_run"] is True
-
-
-def test_bot_names_differ():
-    a = load_config(CFG / "base.json", CFG / "learner.json")["bot_name"]
-    b = load_config(CFG / "base.json", CFG / "twin.json")["bot_name"]
-    assert a != b
-
-
 def test_valid_passes():
     validate(good())
 
@@ -62,7 +49,9 @@ def test_secret_in_file_rejected(field):
 
 
 def test_override_cannot_break_invariant(tmp_path):
+    base = tmp_path / "base.json"
+    base.write_text(json.dumps(good()))
     over = tmp_path / "o.json"
     over.write_text(json.dumps({"dry_run": False}))
     with pytest.raises(ConfigError):
-        load_config(CFG / "base.json", over)
+        load_config(base, over)

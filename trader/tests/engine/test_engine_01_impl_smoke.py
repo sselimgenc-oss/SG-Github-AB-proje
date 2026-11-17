@@ -241,7 +241,7 @@ pa = pytest.importorskip("pyarrow")
 pd = pytest.importorskip("pandas")
 from trader_engine.marketdata.sources import HistoricalSource, StoreSource  # noqa: E402
 
-HIST = Path(__file__).resolve().parents[2] / "user_data" / "data" / "binance" / "futures"
+HIST = Path(__file__).resolve().parents[2] / "var" / "history"
 
 
 @pytest.mark.skipif(not (HIST / "BTC_USDT_USDT-1h-futures.feather").exists(), reason="gercek veri yok")

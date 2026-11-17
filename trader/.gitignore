@@ -10,7 +10,7 @@ user_data/*/*.sqlite*
 user_data/*/backtest_results/
 user_data/*/hyperopt_results/
 
-# freqtrade backtest verisi (fetch_binance_vision.py) ve backtest venv
+# eski konumlar (artik kullanilmiyor; yerel kalintilar commit'e girmesin)
 user_data/data/
 user_data/backtest_results/
 .venv-ft/

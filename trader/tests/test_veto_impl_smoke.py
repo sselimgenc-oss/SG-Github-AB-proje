@@ -208,8 +208,8 @@ class FakeClient:
 def env(tmp_path):
     (tmp_path / "config").mkdir()
     (tmp_path / "config/veto.json").write_text((ROOT / "config/veto.json").read_text())
-    (tmp_path / "config/base.json").write_text(
-        json.dumps({"exchange": {"pair_whitelist": ["BTC/USDT:USDT", "ETH/USDT:USDT"]}}))
+    (tmp_path / "config/engine.base.json").write_text(
+        json.dumps({"pairs": ["BTC/USDT:USDT", "ETH/USDT:USDT"]}))
     bcfg = B.BudgetConfig(db_path=str(tmp_path / "b.sqlite"))
     guard = B.BudgetGuard(bcfg, clock=lambda: T0)
     return SimpleNamespace(root=tmp_path, guard=guard, bcfg=bcfg, path=tmp_path / "shared/veto/veto.json",

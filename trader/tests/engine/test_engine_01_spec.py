@@ -880,7 +880,7 @@ def srcs(tmp_path):
 
 
 def test_real_freqtrade_file_naming_present():
-    d = REPO / "user_data" / "data" / "binance" / "futures"
+    d = REPO / "var" / "history"
     if not d.is_dir():
         pytest.skip("no real data dir")
     stem = pair_stem(BTC)
