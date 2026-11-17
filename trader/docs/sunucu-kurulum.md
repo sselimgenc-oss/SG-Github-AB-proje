@@ -235,3 +235,20 @@ Beklenen: 4 dosya (`ledger_*`, `state_*` x learner/twin), `"ok": true`.
 | veto `missing/key_missing` | motor HMAC anahtarini gormuyor | `/etc/trader-veto-hmac.env` bos: `install.sh` yeniden calistirin |
 | Telefona alarm gelmiyor | Telegram anahtari bos ya da `NOTIFIER=log` | adim 8; `NOTIFIER=auto` ve `/etc/trader-telegram.env` (saglik birimi bunu okur; outbox dosyalari trader-tg grubuna 0660) |
 
+
+## Gecmis veriyi 2021-01'e uzatma (ML-G3; `scripts/fetch_binance_vision.py`)
+
+Amac: ML derlemi ve geri test icin ayni 10 cifte 2021-01 -> 2024-10 gecmisini `var/history`ye eklemek (tasarim-kararlari.md, 17 Kasim kullanici karari). Yalniz data.binance.vision (acik arsiv) kullanilir; Binance API'ye (451) ihtiyac yoktur. Sunucuda canli servisler icin gerekmez; ML/geri test makinesinde calistirin.
+
+```
+cd /home/trader/SG-Github-AB-proje/trader
+sudo -u trader .venv/bin/python scripts/fetch_binance_vision.py --start 2021-01 --tfs all --workers 2 --rate 4 --require-checksum --dry-run   # once plan
+sudo -u trader nice -n 15 .venv/bin/python scripts/fetch_binance_vision.py --start 2021-01 --tfs all --workers 2 --rate 4 --require-checksum
+```
+- Ne indirir (cift basina): klines 15m, 1h, 4h, 1d, 1m; markPriceKlines 1h, 1m; fundingRate; aylik zip + `.CHECKSUM` (sha256 uyusmazsa zip kaydedilmez, cikis kodu 2). Aylik yayinlanmamissa gunluk zip'e duser.
+- Cikti: `var/history/<PAIR>_USDT_USDT-<tf>-{futures|mark}.feather` (date=timestamp[ms,UTC], open, high, low, close, volume), `...-1h-funding_rate.feather` (date, funding_rate). 1m dosyalari sikistirilmamis. Ham zip onbellegi `var/vision_raw` (silinebilir; silinirse bir sonraki kosu yeniden indirir).
+- Kilitli donem (2026-05-01 -> 2026-11-01): arsivden hic istenmez (`--end` en gec 2026-04). Mevcut dosyalarin kilitli doneme ait satirlari degistirilmez; yeni satirlar dosyanin basina/kilitli donem oncesine eklenir (dosya atomik yeniden yazilir; eklenecek bir sey yoksa dosyaya dokunulmaz).
+- Yeniden baslatilabilir: kesilirse ayni komutu tekrar calistirin (var olan zip'ler tekrar indirilmez, ag hatalari `error` sayilir, cikis 1). Ayni anda iki kosu `.fetch.lock` ile engellenir. Calisirken geri test/ML kosusu baslatmayin (feather dosyalari yeniden yazilir).
+- Bosluk raporu: `var/gap_report.json` ve `var/gap_report.md` (cift/kind/tf basina eksik aylar, eksik gunler, kismi gunler). Kosudan sonra okuyun; eksik gun varsa nedeni arsivde yok demektir (uydurulmaz).
+- Boyut (mevcut 2024-11 -> 2026-04 dosyalarindan olcekli tahmin; 46 ay eklenir): `--tfs all` ~ +3,2 GB (feather ~ +2,0 GB, onun ~ +1,9 GB'i 1m; ham zip onbellegi ~ +1,2 GB); 1m'siz (`--tfs 15m,1h,4h,1d`) ~ +0,3 GB. Baslamadan once `df -h /home/trader`.
+- Sure: ~7.400 istek (3.700 zip + checksum); `--rate 4` ile ~30 dk + indirme/donusturme, toplam ~45-60 dk (2 GB sunucuda `--workers 2`; bellek `MemoryMax=450M` icinde kalacak sekilde 1m dosyalari en buyuk bellek kullanicisidir, gerekirse `--tfs 15m,1h,4h,1d` ve ardindan `--only-1m` ayri kosun).
