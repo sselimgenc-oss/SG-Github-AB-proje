@@ -372,3 +372,21 @@ freqtrade kaldırıldı; girdi kaynağı kendi motorumuzun `status.json` dosyas�
 Kurtarma (§7): R5 `open_trade_ids`; R7 `open_positions[].stop` boş/≤0 → FAIL (paper'da borsa stop'u yok, motorun stop'u var); R8 `dry_run`; R1 status tazeliği.
 
 **Motor tarafında eksikler (rapor edildi, motor değiştirilmedi):** (a) `oom_killed`/süreç çıkış nedeni status'ta yok → `None`; (b) yeniden başlatma sayacı status'ta yok → `started_at` değişiminden türetilir (iki çalışma arasında 2 restart tek sayılır); (c) status'ta `ledger_errors` kümülatiftir (süreç başından), zaman penceresi yok; (d) status'ta son defter yazma zamanı yok → defter sqlite'ından okunur; (e) temiz kapanış (`kalp_atisi.json` `stopped`) okunmuyor.
+
+## 15. Piyasa verisi alarmları (opt-in: `MARKET_DB`)
+
+`HealthSnapshot.market` (`MarketProbe`) doluysa `evaluate` ek kontroller üretir; `None` ise hiçbiri çalışmaz ve `REQUIRED_CHECKS` değişmez. Okuyucu `trader_core/market_probe.py` (yalnız stdlib, `trader_engine` içe aktarmaz): `market.sqlite` salt okunur (`file:...?mode=ro`), `feed-status.json` ve motor `status.json` dosyaları ≤ 2 MB okunur. Eşikler `HealthConfig` içinde.
+
+| Kontrol | Koşul | Sonuç (kod) |
+|---|---|---|
+| `feed_status_age` | `feed-status.json` yok / `ts` yaşı > `feed_status_crit_s` (180 sn) / bozuk | CRIT `feed_status_missing` / CRIT `feed_status_stale` / UNKNOWN |
+| `market_bar_age` | yapılandırılmış her çift için en yeni `bars(kind='last', tf='1m')` açılışı yaşı > `market_bar_crit_s` (300 sn) ya da mum yok | CRIT `market_bars_stale` |
+| `rules_coverage` | `rules` satır sayısı < yapılandırılmış çift sayısı | CRIT `rules_incomplete` |
+| `rules_age` | `feed_meta.rules_fetched_at` yaşı > `rules_warn_s` (24 sa); değer yok | WARN `rules_stale`; UNKNOWN |
+| `rules_missing:<bot>` | motor `status.counters.rules_missing` önceki turdakinden **büyük** | CRIT `rules_missing_increase` (`IMMEDIATE_CODES`: ilk turda uyarır) |
+
+`market.sqlite` yoksa `market_bar_age`/`rules_coverage`/`rules_age` hepsi CRIT `market_db_missing` ("market.sqlite yok"); açılamazsa UNKNOWN. Delta durumu runner `state.json` içindeki `rules_missing` ({bot: sayı}) alanındadır; ilk turda önceki değer yoktur (taban, alarm yok), sayaç azalırsa (motor yeniden başladı) alarm yok ve taban güncellenir. Sayaç okunamazsa UNKNOWN (taban korunur).
+
+**Döngü gecikmesi** için yeni kontrol eklenmedi: `bot_loop_age` (WARN > 120 sn, CRIT > `loop_crit_s` = 300 sn, `status.loop_at`) ve `container_restarts` (`not_running` ⇔ `loop_at` > 300 sn) zaten karşılıyor.
+
+**Ortam** (`deploy/trader-health.env.example`): `MARKET_DB` (etkinleştirir), çift listesi `MARKET_PAIRS` (virgüllü) ya da `ENGINE_CONFIG_DIR/engine.base.json` `pairs`; ikisi de yoksa `feed-status.json` içindeki liste; `MARKET_FEED_STATUS` (varsayılan `$ENGINE_VAR_DIR/feed-status.json`). Testler: `tests/test_health_market_spec.py`.

@@ -149,6 +149,9 @@ for f in /etc/trader-health.env /etc/trader-lesson.env /etc/trader-telegram.env;
   sed -i "s#/opt/trader/#${TRADER_DIR}/#g" "$f"
 done
 sed -i "s#^ENGINE_VAR_DIR=\$#ENGINE_VAR_DIR=${TRADER_DIR}/var#" /etc/trader-health.env
+# piyasa verisi alarmlari varsayilan acik (bos ise doldur; kullanici degeri korunur)
+sed -i "s#^MARKET_DB=\$#MARKET_DB=${TRADER_DIR}/var/market.sqlite#" /etc/trader-health.env
+sed -i "s#^ENGINE_CONFIG_DIR=\$#ENGINE_CONFIG_DIR=${TRADER_DIR}/config#" /etc/trader-health.env
 
 # ---- 8. systemd birimleri ---------------------------------------------------------
 say "systemd birimleri"

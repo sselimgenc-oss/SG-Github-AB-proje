@@ -220,6 +220,38 @@ def _count_lines(path) -> int:
     return n
 
 
+def market_pairs(env: dict) -> tuple[str, ...]:
+    """MARKET_PAIRS (virgullu) ya da ENGINE_CONFIG_DIR/engine.base.json `pairs`; ikisi de yoksa bos
+    (probe_market feed-status.json listesine duser)."""
+    raw = env.get("MARKET_PAIRS")
+    if raw:
+        return tuple(p for p in (x.strip() for x in raw.split(",")) if p)
+    cd = env.get("ENGINE_CONFIG_DIR")
+    if cd:
+        try:
+            with open(os.path.join(cd, "engine.base.json"), encoding="utf-8") as f:
+                pairs = json.load(f).get("pairs")
+            if isinstance(pairs, list) and all(isinstance(p, str) for p in pairs):
+                return tuple(pairs)
+        except (OSError, ValueError, AttributeError):
+            pass
+    return ()
+
+
+def collect_market(env: dict, var_dir: str):
+    """Opt-in: MARKET_DB yoksa None (piyasa denetimleri kapali). Salt okunur."""
+    db = env.get("MARKET_DB")
+    if not db:
+        return None
+    from trader_core.market_probe import probe_market
+    fs = env.get("MARKET_FEED_STATUS") or os.path.join(var_dir, "feed-status.json")
+    try:
+        return probe_market(db_path=db, feed_status_path=fs, pairs=market_pairs(env),
+                            engine_status_paths={b: status_path(var_dir, b) for b in BOTS})
+    except Exception:  # noqa: BLE001
+        return H.MarketProbe(feed_status_state="unreadable", db_state="unreadable")
+
+
 def probe_disk(paths) -> int | None:
     best = None
     for p in paths:
@@ -294,7 +326,9 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
         last_backup = latest_ok_backup(env["BACKUP_DIR"])
     except Exception:  # noqa: BLE001
         pass
+    market = collect_market(env, var_dir)
     return H.HealthSnapshot(
+        market=market, prev_rules_missing=dict(state.get("rules_missing", {})),
         now=now, timeframe_s=tf_s, api=api, ledger=ledger, disk_free_bytes=free, mem_available_bytes=mem,
         swap_total_bytes=swap_t, swap_used_bytes=swap_u, containers=containers,
         prev_restart_counts=dict(state.get("restart_counts", {})),
@@ -341,6 +375,10 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
             starts[k] = H._iso(c.started_at)
     new_state["engine_started_at"] = starts
     new_state["installed_at"] = state["installed_at"]
+    if snap.market is not None:   # rules_missing artis tespiti icin son gorulen sayaclar
+        rm = dict(state.get("rules_missing", {}))
+        rm.update({b: v for b, v in snap.market.rules_missing.items() if v is not None})
+        new_state["rules_missing"] = rm
 
     failed = []
     for a in alerts:

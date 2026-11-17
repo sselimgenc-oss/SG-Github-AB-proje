@@ -1,0 +1,181 @@
+"""Piyasa verisi alarmlari (docs/saglik-spec.md Bolum 15): gecici dosya + sqlite fikstürleri, saat enjekte."""
+import importlib.util
+import json
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from trader_core import health as H
+from trader_core.health import Status
+from trader_core.market_probe import probe_market
+
+ROOT = Path(__file__).resolve().parents[1]
+NOW = datetime(2026, 11, 17, 12, 0, tzinfo=timezone.utc)
+PAIRS = ("BTC/USDT", "ETH/USDT")
+
+
+def _ms(dt):
+    return int(dt.timestamp() * 1000)
+
+
+def z(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _load_runner():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        spec = importlib.util.spec_from_file_location("health_run_m", ROOT / "scripts" / "health_run.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    finally:
+        sys.path.remove(str(ROOT / "scripts"))
+
+
+R = _load_runner()
+
+
+def make_world(tmp, *, bar_age=30, feed_age=20, rules=PAIRS, rules_age=3600, rm=0, db=True, feed=True):
+    var = tmp / "var"
+    var.mkdir()
+    if feed:
+        (var / "feed-status.json").write_text(json.dumps(
+            {"schema": "engine/feed-status/1", "ts": z(NOW - timedelta(seconds=feed_age)), "pairs": list(PAIRS)}))
+    if db:
+        c = sqlite3.connect(var / "market.sqlite")
+        c.executescript("""CREATE TABLE bars(kind TEXT, pair TEXT, tf TEXT, open_ms INTEGER, o REAL, h REAL, l REAL,
+            c REAL, v REAL, written_ms INTEGER);
+            CREATE TABLE rules(pair TEXT PRIMARY KEY, json TEXT, fetched_ms INTEGER);
+            CREATE TABLE feed_meta(k TEXT PRIMARY KEY, v TEXT);""")
+        for p in PAIRS:
+            c.execute("INSERT INTO bars VALUES('last',?, '1m',?,1,1,1,1,1,0)", (p, _ms(NOW - timedelta(seconds=bar_age))))
+            c.execute("INSERT INTO bars VALUES('last',?, '1m',?,1,1,1,1,1,0)", (p, _ms(NOW - timedelta(hours=1))))
+        for p in rules:
+            c.execute("INSERT INTO rules VALUES(?, '{}', 0)", (p,))
+        c.execute("INSERT INTO feed_meta VALUES('rules_fetched_at', ?)", (str(_ms(NOW - timedelta(seconds=rules_age))),))
+        c.commit()
+        c.close()
+    for bot in ("learner", "twin"):
+        d = var / bot
+        d.mkdir()
+        (d / "status.json").write_text(json.dumps({"schema": "engine-status/1", "bot": bot,
+                                                   "counters": {"rules_missing": rm}}))
+    return var
+
+
+def snap(var, prev=None):
+    m = probe_market(db_path=str(var / "market.sqlite"), feed_status_path=str(var / "feed-status.json"), pairs=PAIRS,
+                     engine_status_paths={b: str(var / b / "status.json") for b in ("learner", "twin")})
+    return H.HealthSnapshot(now=NOW, market=m, prev_rules_missing=prev or {})
+
+
+def results(var, prev=None):
+    rep = H.evaluate(snap(var, prev))
+    return {r.name: r for r in rep.results if r.name in (
+        "feed_status_age", "market_bar_age", "rules_coverage", "rules_age", "rules_missing:learner",
+        "rules_missing:twin")}
+
+
+def test_happy_path_no_alarm(tmp_path):
+    r = results(make_world(tmp_path), prev={"learner": 0, "twin": 0})
+    assert len(r) == 6 and all(x.status is Status.OK for x in r.values()), r
+
+
+def test_disabled_when_market_none():
+    rep = H.evaluate(H.HealthSnapshot(now=NOW))
+    assert not any(x.name in ("feed_status_age", "market_bar_age", "rules_coverage") for x in rep.results)
+
+
+def test_feed_status_stale_crit(tmp_path):
+    assert results(make_world(tmp_path, feed_age=181))["feed_status_age"].status is Status.CRIT
+
+
+def test_feed_status_boundary_ok(tmp_path):
+    assert results(make_world(tmp_path, feed_age=180))["feed_status_age"].status is Status.OK
+
+
+def test_feed_status_missing_crit(tmp_path):
+    x = results(make_world(tmp_path, feed=False))["feed_status_age"]
+    assert x.status is Status.CRIT and x.code == "feed_status_missing"
+
+
+def test_bar_stale_crit(tmp_path):
+    x = results(make_world(tmp_path, bar_age=301))["market_bar_age"]
+    assert x.status is Status.CRIT and x.code == "market_bars_stale"
+
+
+def test_bar_missing_for_one_pair_crit(tmp_path):
+    var = make_world(tmp_path)
+    c = sqlite3.connect(var / "market.sqlite")
+    c.execute("DELETE FROM bars WHERE pair='ETH/USDT'")
+    c.commit()
+    c.close()
+    x = results(var)["market_bar_age"]
+    assert x.status is Status.CRIT and "ETH/USDT" in x.detail
+
+
+def test_rules_count_below_pairs_crit(tmp_path):
+    x = results(make_world(tmp_path, rules=PAIRS[:1]))["rules_coverage"]
+    assert x.status is Status.CRIT and x.code == "rules_incomplete"
+
+
+def test_rules_age_warn_not_crit(tmp_path):
+    var = make_world(tmp_path, rules_age=24 * 3600 + 60)
+    x = results(var)["rules_age"]
+    assert x.status is Status.WARN and x.code == "rules_stale"
+    assert H.evaluate(snap(var)).overall is not Status.OK   # WARN ya da (baska kontrol) daha kotu
+
+
+def test_rules_missing_increase_crit_then_ok(tmp_path):
+    var = make_world(tmp_path, rm=3)
+    assert results(var, prev={"learner": 2, "twin": 3})["rules_missing:learner"].status is Status.CRIT
+    assert results(var, prev={"learner": 3, "twin": 3})["rules_missing:learner"].status is Status.OK
+    assert results(var, prev={"learner": 5})["rules_missing:learner"].status is Status.OK   # restart: azaldi
+    assert results(var, prev={})["rules_missing:learner"].status is Status.OK               # ilk tur: taban
+
+
+def test_rules_missing_counter_unreadable_unknown(tmp_path):
+    var = make_world(tmp_path)
+    (var / "twin" / "status.json").write_text("{bozuk")
+    assert results(var)["rules_missing:twin"].status is Status.UNKNOWN
+
+
+def test_market_db_missing_crit_clear_message(tmp_path):
+    r = results(make_world(tmp_path, db=False))
+    for n in ("market_bar_age", "rules_coverage", "rules_age"):
+        assert r[n].status is Status.CRIT and r[n].code == "market_db_missing" and "market.sqlite" in r[n].detail
+
+
+def test_reader_is_read_only(tmp_path):
+    var = make_world(tmp_path)
+    before = (var / "market.sqlite").read_bytes()
+    snap(var)
+    assert (var / "market.sqlite").read_bytes() == before
+    assert not list(var.glob("market.sqlite-*"))
+
+
+def test_rules_missing_increase_alerts_immediately():
+    bad = H.CheckResult("rules_missing:learner", Status.CRIT, "rules_missing_increase", "x")
+    rep = H.HealthReport(NOW, (bad,), Status.CRIT, False)
+    alerts, _ = H.plan_alerts(rep, H.empty_state(), NOW)
+    assert [a.code for a in alerts] == ["rules_missing_increase"]
+
+
+def test_runner_collect_and_state_delta(tmp_path):
+    var = make_world(tmp_path, rm=1)
+    env = {"ENGINE_VAR_DIR": str(var), "BACKUP_DIR": str(tmp_path), "MARKET_DB": str(var / "market.sqlite"),
+           "MARKET_PAIRS": ",".join(PAIRS)}
+    st = H.empty_state()
+    st["rules_missing"] = {"learner": 0, "twin": 1}
+    s = R.collect(env, st, NOW)
+    assert s.market.rules_missing == {"learner": 1, "twin": 1} and s.prev_rules_missing == {"learner": 0, "twin": 1}
+    assert R.collect({**env, "MARKET_DB": ""}, st, NOW).market is None
+
+
+def test_loop_lag_already_covered_by_bot_loop_age():
+    assert H.DEFAULT_CFG.loop_crit_s == 300 and H.DEFAULT_CFG.feed_status_crit_s == 180
+    assert H.DEFAULT_CFG.market_bar_crit_s == 300 and H.DEFAULT_CFG.rules_warn_s == 86400

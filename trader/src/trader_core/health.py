@@ -27,7 +27,7 @@ __all__ = [
     "ContainerProbe", "HealthConfig", "DEFAULT_CFG", "evaluate", "combine", "Alert", "Notifier",
     "LogNotifier", "NullNotifier", "plan_alerts", "revert_failed_alerts", "empty_state",
     "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
-    "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS",
+    "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS", "MarketProbe",
 ]
 
 log = logging.getLogger("trader.health")
@@ -109,6 +109,19 @@ class ContainerProbe:
 
 
 @dataclass(frozen=True)
+class MarketProbe:
+    """Piyasa verisi olcumleri (docs/saglik-spec.md Bolum 15). `*_state`: "ok" | "missing" | "unreadable"."""
+    feed_status_state: str = "missing"
+    feed_status_at: datetime | None = None            # feed-status.json `ts`
+    db_state: str = "missing"                         # market.sqlite
+    pairs: tuple[str, ...] = ()                       # yapilandirilmis cift listesi (bos = bilinmiyor)
+    newest_bar_at: Mapping[str, datetime | None] = field(default_factory=dict)   # cift -> en yeni 1m (last) mum acilisi
+    rules_count: int | None = None
+    rules_fetched_at: datetime | None = None          # feed_meta.rules_fetched_at
+    rules_missing: Mapping[str, int | None] = field(default_factory=dict)        # bot -> status counters.rules_missing
+
+
+@dataclass(frozen=True)
 class HealthSnapshot:
     now: datetime
     timeframe_s: int | None = None
@@ -127,6 +140,9 @@ class HealthSnapshot:
     # Ek (spec 5.3 / 6.7): runner durum dosyasindan doldurur; yoksa varsayilan.
     consecutive_restart_runs: Mapping[str, int] = field(default_factory=dict)
     installed_at: datetime | None = None
+    # Piyasa verisi alarmlari; None = bu denetimler kapali (MARKET_DB yapilandirilmamis).
+    market: MarketProbe | None = None
+    prev_rules_missing: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self):
         if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
@@ -172,6 +188,10 @@ class HealthConfig:
     crit_repeat_min: int = 180
     warn_repeat_min: int = 720
     multiple_threshold: int = 4
+    # Piyasa verisi (Bolum 15)
+    feed_status_crit_s: int = 180
+    market_bar_crit_s: int = 300
+    rules_warn_s: int = 24 * 3600
 
     def __post_init__(self):
         for n in ("loop_warn_s", "loop_crit_s", "candle_warn_mult", "candle_crit_mult", "candle_margin_s",
@@ -179,7 +199,7 @@ class HealthConfig:
                   "disk_crit_bytes", "mem_warn_bytes", "mem_crit_bytes", "swap_warn_ratio",
                   "swap_crit_ratio", "restart_warn_delta", "restart_crit_delta", "restart_crit_runs",
                   "backup_warn_s", "backup_crit_s", "warmup_s", "confirm_runs", "crit_repeat_min",
-                  "warn_repeat_min", "multiple_threshold"):
+                  "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "rules_warn_s"):
             _pos(n, getattr(self, n))
         if self.clock_skew_tolerance_s is None or isinstance(self.clock_skew_tolerance_s, bool) \
                 or not isinstance(self.clock_skew_tolerance_s, (int, float)) \
@@ -467,6 +487,104 @@ def _c_budget(snap, cfg):
     return _unknown("budget_status", "budget_unknown", "butce durumu olculemedi ya da taninmiyor")
 
 
+def _c_feed_status(snap, cfg):
+    m = snap.market
+    name = "feed_status_age"
+    if m.feed_status_state == "missing":
+        return _res(name, Status.CRIT, "feed_status_missing", "feed-status.json yok; feed calismiyor olabilir")
+    if m.feed_status_state != "ok" or m.feed_status_at is None:
+        return _unknown(name, "feed_status_unknown", "feed-status.json okunamadi/bozuk")
+    try:
+        age = _age_s(snap.now, m.feed_status_at, cfg)
+    except _Skew:
+        return _unknown(name, "clock_skew", "feed durum zamani gelecekte; saat uyumsuz")
+    if age > cfg.feed_status_crit_s:
+        return _res(name, Status.CRIT, "feed_status_stale",
+                    f"feed durum dosyasi {age:.0f} sn eski, kritik esik {cfg.feed_status_crit_s} sn", age,
+                    cfg.feed_status_crit_s)
+    return _res(name, Status.OK, "ok", f"feed durum dosyasi {age:.0f} sn", age, cfg.feed_status_crit_s)
+
+
+def _db_problem(name, m):
+    if m.db_state == "missing":
+        return _res(name, Status.CRIT, "market_db_missing", "market.sqlite yok; feed hic veri yazmamis")
+    if m.db_state != "ok":
+        return _unknown(name, "market_db_unreadable", "market.sqlite okunamadi")
+    return None
+
+
+def _c_market_bars(snap, cfg):
+    m = snap.market
+    name = "market_bar_age"
+    bad = _db_problem(name, m)
+    if bad:
+        return bad
+    if not m.pairs:
+        return _unknown(name, "pairs_unknown", "yapilandirilmis cift listesi bilinmiyor")
+    stale, worst = [], 0.0
+    for p in m.pairs:
+        t = m.newest_bar_at.get(p)
+        if t is None:
+            stale.append(f"{p}: mum yok")
+            worst = max(worst, float("inf"))
+            continue
+        age = _age_s(snap.now, t, cfg)
+        worst = max(worst, age)
+        if age > cfg.market_bar_crit_s:
+            stale.append(f"{p}: {age:.0f} sn")
+    if stale:
+        v = None if worst == float("inf") else worst
+        return _res(name, Status.CRIT, "market_bars_stale",
+                    "1m mum bayat (esik %d sn): %s" % (cfg.market_bar_crit_s, "; ".join(stale[:5])), v,
+                    cfg.market_bar_crit_s)
+    return _res(name, Status.OK, "ok", f"tum ciftlerde 1m mum taze (en eski {worst:.0f} sn)", worst,
+                cfg.market_bar_crit_s)
+
+
+def _c_rules_count(snap, cfg):
+    m = snap.market
+    name = "rules_coverage"
+    bad = _db_problem(name, m)
+    if bad:
+        return bad
+    if not m.pairs or m.rules_count is None:
+        return _unknown(name, "rules_unknown", "kural satir sayisi ya da cift listesi bilinmiyor")
+    if m.rules_count < len(m.pairs):
+        return _res(name, Status.CRIT, "rules_incomplete",
+                    f"kural satiri {m.rules_count} < yapilandirilmis cift {len(m.pairs)}", m.rules_count, len(m.pairs))
+    return _res(name, Status.OK, "ok", f"kural satiri {m.rules_count}/{len(m.pairs)}", m.rules_count, len(m.pairs))
+
+
+def _c_rules_age(snap, cfg):
+    m = snap.market
+    name = "rules_age"
+    bad = _db_problem(name, m)
+    if bad:
+        return bad
+    if m.rules_fetched_at is None:
+        return _unknown(name, "rules_age_unknown", "rules_fetched_at yok (kural hic cekilmemis)")
+    try:
+        age = _age_s(snap.now, m.rules_fetched_at, cfg)
+    except _Skew:
+        return _unknown(name, "clock_skew", "rules_fetched_at gelecekte; saat uyumsuz")
+    if age > cfg.rules_warn_s:
+        return _res(name, Status.WARN, "rules_stale", f"kurallar {age / 3600:.1f} sa once cekildi, esik "
+                    f"{cfg.rules_warn_s / 3600:.0f} sa", age, cfg.rules_warn_s)
+    return _res(name, Status.OK, "ok", f"kurallar {age / 3600:.1f} sa once cekildi", age, cfg.rules_warn_s)
+
+
+def _c_rules_missing(snap, bot, cfg):
+    name = f"rules_missing:{bot}"
+    cur = snap.market.rules_missing.get(bot)
+    if cur is None:
+        return _unknown(name, "rules_missing_unknown", f"{bot} rules_missing sayaci okunamadi")
+    prev = snap.prev_rules_missing.get(bot)
+    if prev is not None and cur > prev:
+        return _res(name, Status.CRIT, "rules_missing_increase",
+                    f"{bot} rules_missing {prev} -> {cur} (artti)", cur - prev, 0)
+    return _res(name, Status.OK, "ok", f"{bot} rules_missing {cur} (artis yok)", cur, 0)
+
+
 def _safe(name, fn, *args) -> CheckResult:
     try:
         r = fn(*args)
@@ -517,6 +635,14 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
     results.append(_safe("veto_file_age", _c_veto, snap, cfg))
     results.append(_safe("budget_status", _c_budget, snap, cfg))
 
+    if snap.market is not None:
+        results.append(_safe("feed_status_age", _c_feed_status, snap, cfg))
+        results.append(_safe("market_bar_age", _c_market_bars, snap, cfg))
+        results.append(_safe("rules_coverage", _c_rules_count, snap, cfg))
+        results.append(_safe("rules_age", _c_rules_age, snap, cfg))
+        for bot in cfg.require_bots:
+            results.append(_safe(f"rules_missing:{bot}", _c_rules_missing, snap, bot, cfg))
+
     have = {r.name for r in results}
     required = []
     for base in REQUIRED_CHECKS:
@@ -542,7 +668,8 @@ def should_send_ok(report: HealthReport) -> bool:
 # ---------------------------------------------------------------------------------------------
 # Uyari yolu
 # ---------------------------------------------------------------------------------------------
-IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed"})
+IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed",
+                             "rules_missing_increase"})
 
 
 @dataclass(frozen=True)
