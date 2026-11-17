@@ -28,6 +28,7 @@ __all__ = [
     "LogNotifier", "NullNotifier", "plan_alerts", "revert_failed_alerts", "empty_state",
     "PauseProbe", "quiet_http_loggers", "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
     "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS", "MarketProbe",
+    "MlProbe", "DriftProbe",
 ]
 
 log = logging.getLogger("trader.health")
@@ -147,6 +148,39 @@ class MarketProbe:
 
 
 @dataclass(frozen=True)
+class MlProbe:
+    """ML model paketi olcumleri (docs/saglik-spec.md Bolum 16.2). Olculemeyen alan None.
+    `present`: status.json `ml` blogu var mi (None = status okunamadi). `file_*`: diskteki paketin meta alanlari
+    (runner `scripts/health_run.py` hesaplar; bu modul paketi acmaz). `file_stale`: runner'in `ml_seen` karsilastirmasindan
+    cikan "yeni dosya, eski veri" bayragi (16.4)."""
+    present: bool | None = None
+    mode: str | None = None
+    state: str | None = None
+    model_id: str | None = None
+    expires_at: datetime | None = None
+    error: str | None = None
+    score_errors: int | None = None
+    file_state: str = "not_configured"      # "ok" | "missing" | "unreadable" | "not_configured"
+    file_model_id: str | None = None
+    file_created_at: datetime | None = None
+    file_expires_at: datetime | None = None
+    file_data_hash: str | None = None
+    file_train_end: datetime | None = None
+    file_gate_passed: bool | None = None
+    file_user_approved: bool | None = None
+    file_stale: bool = False
+
+
+@dataclass(frozen=True)
+class DriftProbe:
+    """Sapma izleyicisi cikti dosyasi olcumu (Bolum 16.6; WP-2). Saglik istatistik hesaplamaz."""
+    file_state: str = "missing"             # "ok" | "missing" | "unreadable"
+    generated_at: datetime | None = None
+    overall: str | None = None
+    rules_at_uyari: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class HealthSnapshot:
     now: datetime
     timeframe_s: int | None = None
@@ -171,6 +205,11 @@ class HealthSnapshot:
     # WP-B8: bot -> PauseProbe; onceki turda gorulen tutuslar (kayip tutus: kaybolan + gunlukte "remove" yok).
     pause: Mapping[str, PauseProbe] = field(default_factory=dict)
     prev_pause_holds: Mapping[str, tuple] = field(default_factory=dict)
+    # Bolum 16: bot -> MlProbe; None = ML denetimi kapali. prev_ml_score_errors: onceki turun sayaci (runner state.json).
+    ml: Mapping[str, MlProbe] | None = None
+    prev_ml_score_errors: Mapping[str, int] = field(default_factory=dict)
+    # Bolum 16.6 (WP-2 yer tutucusu): bot -> DriftProbe; None = yok.
+    drift: Mapping[str, DriftProbe] | None = None
 
     def __post_init__(self):
         if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
@@ -225,6 +264,12 @@ class HealthConfig:
     # borsa okunamiyorsa `exchange_unreachable_s` sonra CRIT (11 §10 F1), once WARN.
     naked_alarm_s: float = 0.0
     exchange_unreachable_s: int = 60
+    # ML model paketi (Bolum 16): sure uyari esikleri (gun; 7/3/1 ayri kodlar), mutlak veri yasi (gun; None = kapali)
+    ml_warn_days: tuple = (7, 3, 1)
+    ml_data_max_age_days: float | None = None
+    # Sapma izleyicisi kancasi (16.6): WP-2 teslimine kadar kapali
+    drift_max_age_s: int = 129600
+    drift_check_enabled: bool = False
 
     def __post_init__(self):
         for n in ("loop_warn_s", "loop_crit_s", "candle_warn_mult", "candle_crit_mult", "candle_margin_s",
@@ -233,8 +278,19 @@ class HealthConfig:
                   "swap_crit_ratio", "restart_warn_delta", "restart_crit_delta", "restart_crit_runs",
                   "backup_warn_s", "backup_crit_s", "warmup_s", "confirm_runs", "crit_repeat_min",
                   "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "rules_warn_s",
-                  "exchange_unreachable_s"):
+                  "exchange_unreachable_s", "drift_max_age_s"):
             _pos(n, getattr(self, n))
+        w = self.ml_warn_days
+        if not isinstance(w, tuple) or len(w) != 3:
+            raise ValueError("ml_warn_days 3 elemanli demet olmali")
+        for x in w:
+            _pos("ml_warn_days", x)
+        if not w[0] > w[1] > w[2]:
+            raise ValueError("ml_warn_days azalan olmali")
+        if self.ml_data_max_age_days is not None:
+            _pos("ml_data_max_age_days", self.ml_data_max_age_days)
+        if not isinstance(self.drift_check_enabled, bool):
+            raise ValueError("drift_check_enabled bool olmali")
         v = self.naked_alarm_s
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0:
             raise ValueError("naked_alarm_s sonlu ve >= 0 olmali")
@@ -629,6 +685,107 @@ def _c_rules_missing(snap, bot, cfg):
     return _res(name, Status.OK, "ok", f"{bot} rules_missing {cur} (artis yok)", cur, 0)
 
 
+_ML_RANK = {Status.CRIT: 3, Status.UNKNOWN: 2, Status.WARN: 1, Status.OK: 0}
+ML_FILE_FUTURE_TOL_S = 300
+
+
+def _c_ml(snap, bot, cfg):
+    """ml_package:<bot> (Bolum 16.3). Satirlar sirayla; en agir durum sonuc, esitlikte tablo sirasi."""
+    name = f"ml_package:{bot}"
+    p = snap.ml[bot]
+    now = snap.now
+    if p.present is None:
+        return _unknown(name, "ml_status_unreadable", "status.json okunamadi; ML durumu bilinmiyor")
+    if p.present is False or p.mode == "off":
+        return _res(name, Status.SKIPPED, "ml_off", "ML filtresi kapali")
+    found: list[tuple[Status, str, str]] = []
+    mode, state = p.mode, p.state
+    value = None
+    valid = mode in ("shadow", "active") and state in ("ok", "expired", "no_model")
+    if mode == "active" and state == "expired":
+        found.append((Status.CRIT, "ml_expired", "model suresi doldu; yeni girisler kapali"))
+    elif mode == "active" and state == "no_model":
+        found.append((Status.CRIT, "ml_no_model", f"model yuklenemedi; yeni girisler kapali (hata: {p.error or 'bilinmiyor'})"))
+    elif mode == "shadow" and state in ("expired", "no_model"):
+        found.append((Status.WARN, "ml_shadow_down", f"golge model calismiyor ({state})"))
+    elif valid and state == "ok":
+        if not isinstance(p.expires_at, datetime) or p.expires_at.tzinfo is None:
+            found.append((Status.UNKNOWN, "ml_status_invalid", "model suresi (expires_at) yok ya da gecersiz"))
+        else:
+            kalan = (p.expires_at - now).total_seconds() / 86400.0
+            value = kalan
+            d7, d3, d1 = cfg.ml_warn_days
+            tag = "kip=shadow; " if mode == "shadow" else ""
+            for lim, code in ((d1, "ml_expiring_1d"), (d3, "ml_expiring_3d"), (d7, "ml_expiring_7d")):
+                if kalan <= lim:
+                    found.append((Status.WARN, code, f"{tag}model suresi {kalan:.2f} gun sonra doluyor"))
+                    break
+    if not valid:
+        found.append((Status.UNKNOWN, "ml_status_invalid", "ml blogunda bilinmeyen kip/durum"))
+    note = ""
+    if p.file_state == "not_configured":
+        note = "paket yolu bilinmiyor"
+    else:
+        fok = p.file_state == "ok"
+        bozuk = (p.file_state in ("missing", "unreadable")
+                 or (fok and (p.file_model_id is None or not isinstance(p.file_created_at, datetime)
+                              or not isinstance(p.file_expires_at, datetime)))
+                 or (fok and isinstance(p.file_created_at, datetime) and p.file_created_at.tzinfo is not None
+                     and (p.file_created_at - now).total_seconds() > ML_FILE_FUTURE_TOL_S))
+        if fok and not bozuk and p.file_model_id != p.model_id:
+            gecerli = (now < p.file_expires_at and p.file_gate_passed is True
+                       and (mode != "active" or p.file_user_approved is True))
+            if gecerli:
+                found.append((Status.WARN, "ml_restart_needed", "diskte yeni paket var; motor eskisini kullaniyor"))
+        if fok and not bozuk:
+            stale = bool(p.file_stale)
+            lim = cfg.ml_data_max_age_days
+            if lim is not None and isinstance(p.file_train_end, datetime) \
+                    and (p.file_created_at - p.file_train_end).total_seconds() / 86400.0 > lim:
+                stale = True
+            if stale:
+                found.append((Status.WARN, "ml_stale_data", "yeni paket eski veriyle uretilmis gorunuyor"))
+        if bozuk:
+            found.append((Status.WARN, "ml_file_invalid", f"model dosyasi gecersiz ({p.file_state})"))
+    sc, prev = p.score_errors, snap.prev_ml_score_errors.get(bot)
+    if sc is None:
+        note = (note + "; " if note else "") + "puanlama hata sayaç okunamadı"
+    elif isinstance(prev, int) and not isinstance(prev, bool) and sc > prev:
+        found.append((Status.WARN, "ml_score_errors", f"puanlama hatalari {prev} -> {sc}"))
+    if not found:
+        return _res(name, Status.OK, "ok", "ML modeli normal" + (f" ({note})" if note else ""), value)
+    worst = max(found, key=lambda f: _ML_RANK[f[0]])
+    detail = "; ".join(f"{c}: {d}" for _s, c, d in found) + (f" ({note})" if note else "")
+    return _res(name, worst[0], worst[1], detail, value)
+
+
+def _c_drift(snap, bot, cfg):
+    """drift_monitor:<bot> (Bolum 16.6). Bilincli istisna: hicbir kosulda CRIT/UNKNOWN uretmez."""
+    name = f"drift_monitor:{bot}"
+    try:
+        if not cfg.drift_check_enabled or snap.drift is None:
+            return _res(name, Status.SKIPPED, "placeholder", "sapma izleyicisi kapali")
+        d = snap.drift.get(bot)
+        if d is None or d.file_state == "missing":
+            return _res(name, Status.WARN, "drift_missing", "drift.json yok")
+        if d.file_state != "ok" or not isinstance(d.generated_at, datetime) or d.generated_at.tzinfo is None:
+            return _res(name, Status.WARN, "drift_unreadable", "drift.json okunamadi/bozuk")
+        age = (snap.now - d.generated_at).total_seconds()
+        if age < -cfg.clock_skew_tolerance_s:
+            return _res(name, Status.WARN, "drift_unreadable", "drift.json zamani gelecekte")
+        if age > cfg.drift_max_age_s:
+            return _res(name, Status.WARN, "drift_stale",
+                        f"drift.json {age:.0f} sn eski, esik {cfg.drift_max_age_s} sn", age, cfg.drift_max_age_s)
+        if d.overall == "UYARI":
+            kurallar = ", ".join(str(x) for x in d.rules_at_uyari) or "-"
+            return _res(name, Status.WARN, "drift_alert", f"sapma izleyicisi UYARI; kurallar: {kurallar}")
+        if d.overall in ("OK", "IZLE", "YETERSIZ"):
+            return _res(name, Status.OK, "ok", f"sapma izleyicisi {d.overall}")
+        return _res(name, Status.WARN, "drift_unreadable", "drift.json genel durumu taninmiyor")
+    except Exception:  # noqa: BLE001 - UNKNOWN uretilmez (16.6)
+        return _res(name, Status.WARN, "drift_unreadable", "drift.json degerlendirilemedi")
+
+
 def _live_mode(a: ApiProbe) -> bool:
     return a.has_exchange or a.mode in ("testnet", "live")
 
@@ -846,6 +1003,12 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
         for bot in cfg.require_bots:
             results.append(_safe(f"rules_missing:{bot}", _c_rules_missing, snap, bot, cfg))
 
+    if snap.ml is not None:
+        for bot in snap.ml:
+            results.append(_safe(f"ml_package:{bot}", _c_ml, snap, bot, cfg))
+    for bot in dict.fromkeys(list(cfg.require_bots) + list(snap.drift or {})):
+        results.append(_c_drift(snap, bot, cfg))
+
     have = {r.name for r in results}
     required = []
     for base in REQUIRED_CHECKS:
@@ -874,7 +1037,7 @@ def should_send_ok(report: HealthReport) -> bool:
 IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed",
                              "rules_missing_increase", "naked_position", "pause_hold_unaudited",
                              "pause_hold_lost", "capital_floor", "drawdown_review", "ladder_missing",
-                             "capital_missing", "ladder_invalid", "equity_unreadable"})
+                             "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model"})
 
 
 @dataclass(frozen=True)
@@ -1002,8 +1165,39 @@ _HEALTH_TR: dict[str, tuple[str, str, str]] = {
                     "Yeni işlemler güvenlik için kapalı tutulur; kayıtlar incelenmeli."),
     "risk_ladder": ("Risk kademesi sorunlu", "Risk kademesi yeniden normal",
                     "Sermaye koruma kuralları devrede; yeni işlemler kısıtlanabilir."),
+    "ml_package": ("Yapay zekâ modeli sorunlu", "Yapay zekâ modeli yeniden normal",
+                   "Modelin durumu için günlük rapora bak."),
+    "drift_monitor": ("Bot beklenenden farklı davranıyor", "Bot yeniden beklendiği gibi davranıyor",
+                      "Bot durdurulmadı; ayrıntı günlük raporda. İnceleme gerekir."),
 }
+_ML_YENILENDI = "Model yenilendi"
+_DRIFT_YOK = ("Davranış izleyicisi çalışmıyor", "Davranış izleyicisi yeniden çalışıyor",
+              "Günlük karşılaştırma yapılamıyor; işlemler etkilenmez.")
 _HEALTH_TR_CODE: dict[str, tuple[str, str, str]] = {
+    "ml_expired": ("Modelin süresi doldu — yeni işlemler durdu", "Model yenilendi, yeni işlemler yeniden açık",
+                   "Model 21 günden eski olduğu için bot yeni işlem açmıyor; açık pozisyonlar korunuyor. "
+                   "Model yenilenip motor yeniden başlatılmalı."),
+    "ml_no_model": ("Model yüklenemedi — yeni işlemler durdu", "Model yüklendi, yeni işlemler yeniden açık",
+                    "Model dosyası yok, geçersiz ya da süresi dolmuş; bot yeni işlem açmıyor, açık pozisyonlar korunuyor."),
+    "ml_shadow_down": ("Gölgedeki model çalışmıyor", "Gölgedeki model yeniden çalışıyor",
+                       "İşlemler etkilenmiyor; yalnız modelin izleme kaydı duruyor."),
+    "ml_expiring_7d": ("Modelin süresi 7 gün içinde doluyor", _ML_YENILENDI,
+                       "Yenilenmezse süre dolduğunda yeni işlemler durur."),
+    "ml_expiring_3d": ("Modelin süresi 3 gün içinde doluyor", _ML_YENILENDI,
+                       "Yenilenmezse süre dolduğunda yeni işlemler durur."),
+    "ml_expiring_1d": ("Modelin süresi yarın doluyor!", _ML_YENILENDI,
+                       "Bugün yenilenmezse yeni işlemler durur."),
+    "ml_restart_needed": ("Yeni model hazır ama devrede değil", "Yeni model devrede",
+                          "Motor yeniden başlatılana kadar eski model kullanılır."),
+    "ml_stale_data": ("Yeni model eski veriyle üretilmiş", "Model güncel veriyle yenilendi",
+                      "Model dosyası yeni ama içindeki veri ilerlememiş; veri toplama ve eğitim hattı kontrol edilmeli."),
+    "ml_file_invalid": ("Model dosyası okunamıyor", "Model dosyası yeniden okunuyor",
+                        "Sıradaki yeniden başlatmada model yüklenemeyebilir."),
+    "ml_score_errors": ("Model bazı fırsatları puanlayamıyor", "Model yeniden puanlıyor",
+                        "Puanlanamayan fırsatlar alınmaz; işlem sayısı düşebilir."),
+    "drift_missing": _DRIFT_YOK,
+    "drift_stale": _DRIFT_YOK,
+    "drift_unreadable": _DRIFT_YOK,
     "budget_exhausted": ("Yapay zekâ bütçesi tükendi — yeni işlemler durdu", "Yapay zekâ bütçesi yeniden yeterli",
                          "Bütçe yenilenene kadar yapay zekâ filtresi çalışmaz; yeni işlem açılmaz."),
     "api_unreachable": ("Motor yanıt vermiyor", "Motor yeniden yanıt veriyor",
@@ -1013,10 +1207,13 @@ _HEALTH_TR_GENERIC = ("Bir sistem kontrolü sorunlu", "Sistem kontrolü yeniden 
                       "Ayrıntı için panoya ya da kayıtlara bak.")
 
 
-def _health_tr(name: str, code: str) -> tuple[str, str, str]:
-    """(sorun, düzeldi, anlamı) - ham kontrol adı/kodu kullanıcıya sızdırılmaz."""
+def _health_tr(name: str, code: str, detail: str = "") -> tuple[str, str, str]:
+    """(sorun, düzeldi, anlamı) - ham kontrol adı/kodu kullanıcıya sızdırılmaz.
+    `detail` yalnız gölge kipteki süre uyarısının anlam cümlesini ayırmak için okunur."""
     base, _, suffix = name.partition(":")
     sorun, duzeldi, anlam = _HEALTH_TR_CODE.get(code) or _HEALTH_TR.get(base) or _HEALTH_TR_GENERIC
+    if base == "ml_package" and code.startswith("ml_expiring_") and "kip=shadow" in detail:
+        anlam = "Yenilenmezse gölge izleme durur; işlemler etkilenmez."
     if suffix == "twin":
         sorun, duzeldi = f"{sorun} (ikiz bot)", f"{duzeldi} (ikiz bot)"
     return sorun, duzeldi, anlam
@@ -1073,7 +1270,7 @@ def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
                                 _cut(f"Sorunlar (ilk 5): {names}", 500), "multiple|multiple", now))
         else:
             for r, fp in due:
-                sorun, _duz, anlam = _health_tr(r.name, r.code)
+                sorun, _duz, anlam = _health_tr(r.name, r.code, r.detail)
                 mark = "⚠️ Dikkat" if r.status is Status.WARN else "🚨 Sorun"
                 alerts.append(Alert(r.status, r.code, _cut(f"{mark}: {sorun}", 80), _cut(anlam, 500), fp, now))
         for r, fp in due:

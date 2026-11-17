@@ -104,3 +104,10 @@ Ek notlar: Claude kredisi/harcama limiti dolarsa bot yeni işlem açmaz (açık 
   - **Bekletiliyor:** 22 (birkaç fikri aynı anda gölgede sınamak). Gerekçe: sunucu 2 GB, her gölge fikir kapı çıtasını yükseltir; önce 23 (otomatik deneme sayımı) ve bellek ölçümü gerekir. Yeniden mentor kararıyla açılır.
   - **İş paketleri:** WP-0 kağıt değerlendirme planı (mentor, yalnız belge) → WP-1 ML süre alarmı (8) ve WP-4 salt okunur raporlar (4, 7 karne, 16 tablo, 17, 19) paralel → WP-2 günlük izleyici (3; WP-0 ve WP-1'den sonra) → WP-3 defter/motor ek alanları (2, 16 `exit_regime`, 7 gölge satır, 18; tek ajan, sırayla, mentor incelemesi zorunlu) → WP-5 çıkış karşı-olgusu (5) → WP-6 canlı/geri test karşılaştırması (9) → WP-7 veri (12).
   - **Değişmeyenler:** kapı eşikleri, kilitli dönem, ön kayıt kuralı, r02/r03 ön kaydı ve donmuş derlem/katman, ML yalnız çıkarır. Hiçbir madde otomatik ayar değişikliği ya da otomatik gevşetme getirmez. Motor ya da `trader_ml` dosyasına dokunan her birleştirme, §10 dondurma kaydı commit'lendikten sonra ve mentor incelemesiyle yapılır.
+
+### 17 Kasım 2026 — Dış denetim triyajı: kullanıcı kararları
+
+Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare için ayrı maille hesap açamam, aynı maille üye olduğum yerden yapalım; diğerlerine Fable önerisi olur."
+- **D13 Cloudflare:** ayrı hesap **yok**; mevcut hesapta kalınır. Telafi: pano anahtarı yalnız `trader-pano` Worker'ına yetkili dar kapsamlı token ile değiştirilir ve Worker yoluna Cloudflare hız sınırı kuralı eklenir (canlıdan önce).
+- **D16 e-posta:** geçmiş yeniden yazılmaz (depo özel). Bundan sonraki commit'ler kişisel olmayan adresle yazılır (mevcut commit kimliği zaten kişisel değil).
+- **`live.expected_wallet_max`:** canlı başlangıçta **350 USD**; 1000 USD'ye tamamlanırken **1200 USD**. Canlı yapılandırma dosyası oluşturulurken bu değer yazılır.
