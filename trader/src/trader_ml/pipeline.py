@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import diagnostics, models, prechecks
+from . import config, diagnostics, models, prechecks
 from .config import BURN_IN_THRESHOLD, GATE, RECIPE_ID
 from .gate import GateResult, model_metrics, run_gate, select_threshold
 from .guards import assert_pre_holdout
@@ -95,7 +95,7 @@ def forward_calibrate(oof: pd.DataFrame, kinds: list[str]) -> None:
                 a, b, th[cur] = 1.0, 0.0, BURN_IN_THRESHOLD
                 p[cur] = 1.0 / (1.0 + np.exp(-(a * z[cur] + b)))
                 continue
-            c = models.fit_platt(z[prior], oof["label"].to_numpy()[prior])
+            c = models.fit_platt(z[prior], oof["label"].to_numpy()[prior], nonneg_slope=config.PLATT_NONNEG_SLOPE)
             p[cur] = 1.0 / (1.0 + np.exp(-(c["a"] * z[cur] + c["b"])))
             pt = prior & oof["taken"].to_numpy()
             thr, _ = select_threshold(p[pt], oof["net_r"].to_numpy()[pt]) if pt.any() else (None, None)
@@ -144,7 +144,7 @@ def run(t: pd.DataFrame, out_dir: str | Path, *, n_trials: int, synthetic: bool 
 
     # paket kalibrasyonu + esigi: tum OOF'a uydurulur (uretim artefakti; kapi bunu SKORLAMAZ)
     z_sel = oof[f"z_{selected}"].to_numpy()
-    cal_pkg = models.fit_platt(z_sel, oof["label"].to_numpy())
+    cal_pkg = models.fit_platt(z_sel, oof["label"].to_numpy(), nonneg_slope=config.PLATT_NONNEG_SLOPE)
     p_pkg = 1.0 / (1.0 + np.exp(-(cal_pkg["a"] * z_sel + cal_pkg["b"])))
     tk = oof["taken"].to_numpy()
     th, _ = select_threshold(p_pkg[tk], oof["net_r"].to_numpy()[tk])

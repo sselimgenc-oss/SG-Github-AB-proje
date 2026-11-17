@@ -87,3 +87,63 @@ def label_candidates(candles: pd.DataFrame, cands: pd.DataFrame, *, horizon: int
     res["label_end_ts"] = pd.to_datetime(end_ts, utc=True)
     res["exit_ts"] = pd.to_datetime(exit_ts, utc=True)       # referans (gercek) cikis zamani
     return res
+
+
+def _tag(r: float) -> str:
+    return f"{r:g}".replace(".", "p") + "r"
+
+
+def multi_r_labels(candles: pd.DataFrame, cands: pd.DataFrame, *, target_rs=(1.0, 1.5, 2.0),
+                   horizon: int = HORIZON_BARS, fee_rate: float = FEE_RATE,
+                   slippage_rate: float = SLIPPAGE_RATE) -> pd.DataFrame:
+    """Her hedef R icin (ML-G2) label_{tag}, label_end_ts_{tag}, barrier_net_r_{tag}; her r icin
+    label_candidates(target_r=r) ile BIREBIR ayni bariyer kurallari (stop once, cozulmemis NaN)."""
+    rs = [float(r) for r in target_rs]
+    if any(not (r > 0) for r in rs) or len(set(rs)) != len(rs):
+        raise ValueError("target_rs pozitif ve tekrarsiz olmali")
+    assert_pre_holdout(candles.index, "mum verisi")
+    idx = candles.index
+    hi, lo, cl = (candles[c].to_numpy(float) for c in ("high", "low", "close"))
+    n = len(candles)
+    nc = len(cands)
+    out = {}
+    for r in rs:
+        t = _tag(r)
+        out[f"label_{t}"] = np.full(nc, np.nan)
+        out[f"barrier_net_r_{t}"] = np.full(nc, np.nan)
+        out[f"label_end_ts_{t}"] = np.full(nc, np.datetime64("NaT", "ns"), dtype="datetime64[ns]")
+    pos_all = idx.searchsorted(pd.DatetimeIndex(cands["ts"]) - BAR)
+    for k, (side, e, s, p) in enumerate(zip(cands["side"], cands["planned_entry"], cands["planned_stop"], pos_all)):
+        rr = abs(e - s)
+        sgn = 1.0 if side == "long" else -1.0
+        cost = 2.0 * (fee_rate + slippage_rate) * e / rr
+        a, b = p + 1, min(p + 1 + horizon, n)
+        if a >= n:
+            continue
+        h, l, c = hi[a:b], lo[a:b], cl[a:b]
+        stop_hit = (l <= s) if side == "long" else (h >= s)
+        i_stop = int(np.argmax(stop_hit)) if stop_hit.any() else None
+        full = (b - a) == horizon
+        for r in rs:
+            t = _tag(r)
+            up = e + sgn * r * rr
+            up_hit = (h >= up) if side == "long" else (l <= up)
+            i_up = int(np.argmax(up_hit)) if up_hit.any() else None
+            if i_stop is not None and (i_up is None or i_stop <= i_up):
+                lab, j, g = 0.0, i_stop, -1.0
+            elif i_up is not None:
+                lab, j, g = 1.0, i_up, r
+            elif full:
+                lab, j, g = 0.0, horizon - 1, sgn * (c[-1] - e) / rr
+            else:
+                continue
+            out[f"label_{t}"][k] = lab
+            out[f"barrier_net_r_{t}"][k] = g - cost
+            out[f"label_end_ts_{t}"][k] = (idx[a + j] + BAR).to_datetime64()
+    res = pd.DataFrame(index=cands.index)
+    for r in rs:
+        t = _tag(r)
+        res[f"label_{t}"] = out[f"label_{t}"]
+        res[f"label_end_ts_{t}"] = pd.to_datetime(out[f"label_end_ts_{t}"], utc=True)
+        res[f"barrier_net_r_{t}"] = out[f"barrier_net_r_{t}"]
+    return res

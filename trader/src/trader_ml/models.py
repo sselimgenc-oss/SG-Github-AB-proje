@@ -49,8 +49,9 @@ def fit_logistic(X: np.ndarray, y: np.ndarray, w: np.ndarray, l2: float = LOGIT_
 
 
 # ------------------------------------------------------------------------------------- Platt
-def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50) -> dict:
-    """p = sigmoid(a*z + b); Newton. Dejenere durumda (a,b)=(1,0)."""
+def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, *, nonneg_slope: bool = False) -> dict:
+    """p = sigmoid(a*z + b); Newton. Dejenere durumda (a,b)=(1,0). nonneg_slope: a<0 ise a=0 ve
+    b = logit(mean(y)) (yalniz kesen)."""
     if len(z) < 20 or y.min() == y.max() or np.std(z) < 1e-12:
         return {"a": 1.0, "b": 0.0}
     A = np.column_stack([z, np.ones_like(z)])
@@ -63,6 +64,9 @@ def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50) -> dict:
         beta -= step
         if np.max(np.abs(step)) < 1e-10:
             break
+    if nonneg_slope and beta[0] < 0:
+        m = float(np.clip(np.mean(y), 1e-6, 1 - 1e-6))
+        return {"a": 0.0, "b": float(np.log(m / (1 - m)))}
     return {"a": float(beta[0]), "b": float(beta[1])}
 
 
