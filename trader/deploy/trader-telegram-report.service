@@ -15,3 +15,5 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/opt/trader/var/telegram
+# Gunluk rapor defterleri salt okunur okur ('-' oneki: ikiz kapaliyken dizin yok)
+ReadOnlyPaths=-/opt/trader/var/learner -/opt/trader/var/twin

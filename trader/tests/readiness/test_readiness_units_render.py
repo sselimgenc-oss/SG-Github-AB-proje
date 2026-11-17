@@ -91,7 +91,8 @@ def test_module_units_have_workingdirectory_and_pythonpath(rendered):
 def test_environment_files_are_created_by_install(rendered):
     t = install_text()
     created = set(re.findall(r'copy_env "[^"]+"\s+(/etc/trader-[\w-]+\.env)', t))
-    assert len(created) == 5, created
+    assert len(created) == 6, created
+    assert "/etc/trader-veto-hmac.env" in created
     for name, txt in rendered.items():
         for k, v in unit_kv(txt):
             if k == "EnvironmentFile":
@@ -122,6 +123,7 @@ def test_install_pre_creates_what_strict_units_need():
     for p in ("var", "shared", "shared/veto", "user_data", "var/telegram", "var/telegram/outbox"):
         assert f"{T}/{p}" in d, p
     assert "/var/backups/trader" in d
+    assert f"{T}/user_data/budget.sqlite" not in d          # dosya (install -d degil): ayrica 0600 trader sahipli olusturulur
 
 
 def test_restart_semantics_match_exit_codes():

@@ -37,7 +37,7 @@ def render_env_files(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR) -> dict
     snippet = snippet.replace('"$TRADER_DIR/deploy/', f'"{ROOT}/deploy/')
     # install -o/-g gercek kullanici gerektirir: sahip/grup bayraklarini tmp calismasi icin at
     snippet = snippet.replace('install -m "$4" -o "${3%%:*}" -g "${3##*:}" "$1" "$dst"', 'install -m "$4" "$1" "$dst"')
-    script = (f"set -euo pipefail\nTRADER_DIR={shlex.quote(trader_dir)}\nTRADER_USER=trader\nTG_GROUP=trader-tg\n{snippet}\n")
+    script = (f"set -euo pipefail\nTRADER_DIR={shlex.quote(trader_dir)}\nTRADER_USER=trader\nTG_GROUP=trader-tg\nWITH_TWIN=1\n{snippet}\n")
     subprocess.run(["bash", "-c", script], check=True, capture_output=True, text=True)
     out: dict[str, dict[str, str]] = {}
     for p in sorted(out_dir.glob("trader-*.env")):

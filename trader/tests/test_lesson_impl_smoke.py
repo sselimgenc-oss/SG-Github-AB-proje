@@ -262,7 +262,11 @@ def test_config_locks(tmp_path):
 
 def test_load_config_shipped_and_unknown(tmp_path):
     cfg = LS.load_config(ROOT / "config" / "lesson.json")
-    assert cfg == LS.LessonConfig() and cfg.shadow_weeks == 4 and cfg.model == "claude-sonnet-5-5"
+    import dataclasses
+    # gonderilen ayar = kod varsayilanlari + sunucu yollari/bildirimci (hazirlik denetimi OPEN-6)
+    assert cfg == dataclasses.replace(LS.LessonConfig(), ledger_path="var/learner/ledger.sqlite",
+                                      twin_ledger_path="var/twin/ledger.sqlite", notifier="telegram")
+    assert cfg.shadow_weeks == 4 and cfg.model == "claude-sonnet-5-5"
     p = tmp_path / "x.json"
     p.write_text(json.dumps({"zzz": 1}))
     with pytest.raises(LS.LessonConfigError):
@@ -1269,7 +1273,7 @@ def test_deploy_files():
     for need in ("Type=oneshot", "User=trader", "EnvironmentFile=/etc/trader-lesson.env", "lesson_run.py --once",
                  "TimeoutStartSec=300", "MemoryMax=256M", "CPUQuota=30%", "Nice=10", "ProtectSystem=strict",
                  "NoNewPrivileges=true", "PrivateTmp=true", "OnFailure=trader-health-fail@%n.service",
-                 "ledger_twin.sqlite", "lesson.lock"):
+                 "/opt/trader/var/twin", "/opt/trader/user_data"):
         assert need in svc
     tm = (ROOT / "deploy" / "trader-lesson.timer").read_text()
     assert "OnCalendar=*-*-* *:17:00" in tm and "Persistent=true" in tm and "RandomizedDelaySec=60" in tm

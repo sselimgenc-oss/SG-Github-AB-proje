@@ -149,6 +149,17 @@ def test_placeholder_gated_timers():
     t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
     for key in ("ANTHROPIC_API_KEY_LESSON", "ANTHROPIC_API_KEY_VETO", "TRADER_VETO_HMAC_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         assert re.search(rf"has_value \S+ {key}", t), key
+    # veto: API anahtari VE HMAC (ayri dosya); ders: Anthropic anahtari VE Telegram anahtarlari
+    assert re.search(r"has_value /etc/trader-veto\.env ANTHROPIC_API_KEY_VETO && has_value /etc/trader-veto-hmac\.env TRADER_VETO_HMAC_KEY", t)
+    assert re.search(r'has_value /etc/trader-lesson\.env ANTHROPIC_API_KEY_LESSON && \[ "\$TG_OK" -eq 1 \]', t)
+
+
+def test_twin_default_on_with_no_twin_opt_out():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert re.search(r"^WITH_TWIN=1$", t, re.M)
+    assert "--no-twin) WITH_TWIN=0" in t and "--with-twin) WITH_TWIN=1" in t      # eski secenek kabul edilir
+    assert "HEALTH_BOTS" in t and "learner,twin" in t
+    assert "HEALTH_BOTS=" in (DEPLOY / "trader-health.env.example").read_text(encoding="utf-8")
 
 
 def test_uninstall_only_trader_units():

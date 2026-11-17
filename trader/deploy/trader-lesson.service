@@ -21,9 +21,9 @@ CPUQuota=30%
 Nice=10
 ProtectSystem=strict
 ProtectHome=read-only
-# Dosyalar onceden olusturulmus olmali (ProtectSystem=strict dizine yazdirmaz): lesson.sqlite, lesson.sqlite.fallback.jsonl, lesson.lock
-# (install -m 0600 -o trader /dev/null <dosya>); '-' oneki: yoksa birim yine baslar, yazma fail-safe reddedilir.
-# ikiz defteri YALNIZCA salt okunur kullanilir (yazma ders servisi kodunda yasak, ders-spec 4.5.1); WAL -shm erisimi icin yolda
-ReadWritePaths=-/opt/trader/user_data/lesson.sqlite -/opt/trader/user_data/lesson.sqlite-wal -/opt/trader/user_data/lesson.sqlite-shm -/opt/trader/user_data/lesson.sqlite.fallback.jsonl -/opt/trader/user_data/ledger_learner.sqlite -/opt/trader/user_data/ledger_learner.sqlite-wal -/opt/trader/user_data/ledger_learner.sqlite-shm -/opt/trader/user_data/ledger_twin.sqlite -/opt/trader/user_data/ledger_twin.sqlite-wal -/opt/trader/user_data/ledger_twin.sqlite-shm -/opt/trader/user_data/budget.sqlite -/opt/trader/user_data/budget.sqlite-wal -/opt/trader/user_data/budget.sqlite-shm -/opt/trader/user_data/lesson.lock /opt/trader/var/telegram
+# user_data DIZIN duzeyinde yazilir: SQLite -journal/-wal/-shm yan dosyalari dizinde olusur (dosya-duzeyi RW bunu yapamaz; OPEN-2).
+# var/learner: aktivasyon icin ogrenen defteri yazma; var/twin: ikiz defteri YALNIZCA salt okunur (ders-spec 4.5.1). '-' oneki: ikiz kapaliyken dizin yok.
+ReadWritePaths=/opt/trader/user_data /opt/trader/var/telegram -/opt/trader/var/learner
+ReadOnlyPaths=-/opt/trader/var/twin
 NoNewPrivileges=true
 PrivateTmp=true

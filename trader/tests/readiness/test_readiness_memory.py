@@ -47,3 +47,12 @@ def test_soft_cap_below_hard_cap_and_swap_not_unbounded():
         kv = dict(unit_kv((DEPLOY / n).read_text(encoding="utf-8")))
         assert int(kv["MemoryHigh"][:-1]) < int(kv["MemoryMax"][:-1])
         assert kv["CPUQuota"] == "60%"
+
+
+def test_budget_assumes_twin_default_on_and_installed_units_unchanged():
+    """OPEN-4: ikiz varsayilan acik -> 2 motor tavani her zaman acik toplama zaten dahil (yukaridaki 1210 MB)."""
+    t = install_text()
+    assert re.search(r"^WITH_TWIN=1$", t, re.M) and "--no-twin) WITH_TWIN=0" in t
+    assert "enable_now trader-engine@twin.service" in t
+    # yeni birimler (veto-hmac env) bellek tavanlarini degistirmez; telegram-report hala sinirsiz hafif tek seferlik
+    assert _mem("trader-telegram.service") == 96

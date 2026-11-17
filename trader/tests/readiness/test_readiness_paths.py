@@ -145,7 +145,7 @@ def test_backup_paths_and_timer(envs, units):
     h = envs["trader-health.env"]
     assert h["BACKUP_DIR"] == "/var/backups/trader"
     assert _covered(h["BACKUP_DIR"], _rw(units, "trader-backup.service"))
-    assert f"{T}/var" in _ro(units, "trader-backup.service")
+    assert f"{T}/var" in _rw(units, "trader-backup.service")        # OPEN-10: var yazilabilir (WAL -shm); yedek mode=ro URI kullanir
     assert "/var/backups/trader" in install_text() and "EnvironmentFile=/etc/trader-health.env" in units["trader-backup.service"]
     assert "OnCalendar=*-*-* 03:10:00 UTC" in units["trader-backup.timer"]
     assert "ExecStart=" in units["trader-backup.service"] and "health_backup.py" in units["trader-backup.service"]
@@ -163,8 +163,7 @@ def test_every_timer_has_a_service_and_is_enabled_or_gated(units):
             assert f"enable_now {name}" in inst, f"{name} install.sh'te etkinlestirilmiyor"
 
 
-# ------------------------------------------------------------------ ACIK kusurlar (xfail strict: duzelince test kirilir, isareti kaldirin)
-@pytest.mark.xfail(strict=True, reason="ACIK OPEN-1 (P0): motor birimi TRADER_VETO_HMAC_KEY'i hic gormuyor (EnvironmentFile yok) -> veto 'key_missing', giris hic acilmaz")
+# ------------------------------------------------------------------ eski ACIK kusurlar (duzeltildi; regresyon testleri)
 def test_OPEN_engine_unit_receives_veto_hmac_key():
     eng = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
     files = [v.lstrip("-") for k, v in unit_kv(eng) if k == "EnvironmentFile"]
@@ -173,9 +172,15 @@ def test_OPEN_engine_unit_receives_veto_hmac_key():
     assert any(
         "TRADER_VETO_HMAC_KEY" in (DEPLOY / (n + ".example")).read_text(encoding="utf-8")
         for n in have if (DEPLOY / (n + ".example")).exists())
+    # API anahtari motora SIZMAZ; HMAC ayri dosyada, veto birimi de ayni dosyayi okur
+    assert "trader-veto.env" not in have and "trader-veto-hmac.env" in have
+    assert "ANTHROPIC" not in (DEPLOY / "trader-veto-hmac.env.example").read_text(encoding="utf-8")
+    ve = (DEPLOY / "trader-veto.env.example").read_text(encoding="utf-8")
+    assert "TRADER_VETO_HMAC_KEY" not in re.sub(r"#.*", "", ve)
+    vs = [v for k, v in unit_kv((DEPLOY / "trader-veto.service").read_text(encoding="utf-8")) if k == "EnvironmentFile"]
+    assert "/etc/trader-veto-hmac.env" in vs and "/etc/trader-veto.env" in vs
 
 
-@pytest.mark.xfail(strict=True, reason="ACIK OPEN-6 (P1): ders/telegram LEDGER_PATH=user_data/ledger_learner.sqlite; motor defteri var/learner/ledger.sqlite")
 def test_OPEN_lesson_and_telegram_ledger_path_is_the_engine_ledger(envs):
     want = _abs(_cfg("learner").ledger_path)
     assert envs["trader-lesson.env"]["LEDGER_PATH"] == want
@@ -184,13 +189,45 @@ def test_OPEN_lesson_and_telegram_ledger_path_is_the_engine_ledger(envs):
     assert _abs(lc["ledger_path"]) == want and _abs(lc["twin_ledger_path"]) == _abs(_cfg("twin").ledger_path)
 
 
-@pytest.mark.xfail(strict=True, reason="ACIK OPEN-2 (P1): dizin salt okunur (ProtectSystem=strict) iken dosya-duzeyi ReadWritePaths -journal/-wal/-shm olusturtmaz (bkz. docs/hazirlik-denetimi.md)")
 def test_OPEN_lesson_and_telegram_can_create_sqlite_sidecars(units):
     for u in ("trader-lesson.service", "trader-telegram.service"):
         assert any(p.rstrip("/") == f"{T}/user_data" for p in _rw(units, u)), u
 
 
 
-@pytest.mark.xfail(strict=True, reason="ACIK OPEN-6 (P1): config/lesson.json notifier=null -> `lesson_run.py --once` her saat cikis 1 (bildirimci yapilandirilmamis) -> OnFailure")
 def test_OPEN_lesson_config_has_a_notifier():
     assert json.loads((ROOT / "config/lesson.json").read_text())["notifier"] == "telegram"
+
+
+def test_health_unit_can_notify_telegram_and_write_outbox(envs, units):
+    h = units["trader-health.service"]
+    kv = unit_kv(h)
+    assert ("EnvironmentFile", "-/etc/trader-telegram.env") in kv
+    assert "SupplementaryGroups=trader-tg" in h
+    assert _covered(envs["trader-telegram.env"]["TELEGRAM_VAR_DIR"], _rw(units, "trader-health.service"))
+    assert envs["trader-health.env"]["NOTIFIER"] == "auto"
+    assert ("UMask", "0007") in kv                       # outbox dosyalari trader-tg grubuna okunur/yazilir (daemon siler)
+
+
+def test_health_env_has_bots_and_veto_freshness(envs):
+    h = envs["trader-health.env"]
+    assert h["HEALTH_BOTS"] in ("learner,twin", "learner")
+    assert h["VETO_FILE"] == f"{T}/shared/veto/veto.json"
+    assert h["VETO_MAX_AGE_S"] == "5400"
+    # veto.json'daki gercek cikis yolu ile ayni dosya
+    assert json.loads((ROOT / "config/veto.json").read_text())["veto_path"] == "shared/veto/veto.json"
+
+
+def test_lesson_and_telegram_sandbox_ledger_access(units):
+    for u in ("trader-lesson.service", "trader-telegram.service"):
+        assert f"-{T}/var/learner" in _rw(units, u), u
+        assert f"-{T}/var/twin" in _ro(units, u), u
+    assert f"-{T}/var/twin" in _ro(units, "trader-telegram-report.service")
+    assert _covered(f"{T}/var", _rw(units, "trader-backup.service"))                  # OPEN-10
+
+
+def test_budget_db_precreated_and_hmac_generated_without_echo():
+    t = install_text()
+    assert re.search(r'install -m 0600 -o "\$TRADER_USER" -g "\$TRADER_USER" /dev/null "\$TRADER_DIR/user_data/budget.sqlite"', t)
+    assert "openssl rand -hex 32" in t
+    assert not re.search(r"echo[^\n]*HMAC_NEW|printf[^\n]*HMAC_NEW(?!.*>>)", t)

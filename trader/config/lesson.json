@@ -1,6 +1,6 @@
 {
   "bot": "learner",
-  "ledger_path": "user_data/ledger_learner.sqlite",
+  "ledger_path": "var/learner/ledger.sqlite",
   "store_path": "user_data/lesson.sqlite",
   "run_at_utc": "02:40",
   "mode": "llm",
@@ -41,7 +41,7 @@
   "shadow_weeks": 4,
   "paper_start_day": null,
   "twin_enabled": true,
-  "twin_ledger_path": "user_data/ledger_twin.sqlite",
+  "twin_ledger_path": "var/twin/ledger.sqlite",
   "twin_min_keys": 10,
   "twin_z": 1.0,
   "twin_margin_r": 0.1,
@@ -49,6 +49,6 @@
   "blind_days": 3,
   "calibration": null,
   "report_show_twin": false,
-  "notifier": null,
+  "notifier": "telegram",
   "reject_cooldown_days": 7
 }

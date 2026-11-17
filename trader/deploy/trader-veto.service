@@ -10,6 +10,7 @@ Type=oneshot
 User=root
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/veto_run.py
 EnvironmentFile=/etc/trader-veto.env
+EnvironmentFile=/etc/trader-veto-hmac.env
 TimeoutStartSec=120
 # 10 bu tur karar yok, 11 butce/saglayici kaynakli unavailable belgesi: beklenen; 12 ve cokus OnFailure tetikler
 SuccessExitStatus=10 11

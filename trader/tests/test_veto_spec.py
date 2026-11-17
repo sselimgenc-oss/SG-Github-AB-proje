@@ -1723,8 +1723,10 @@ class TestSchedulingFiles:
 
     def test_env_example_has_names_no_secrets(self):
         e = self.read("deploy/trader-veto.env.example")
-        assert "ANTHROPIC_API_KEY_VETO" in e and "TRADER_VETO_HMAC_KEY" in e
-        assert not re.search(r"sk-ant-[A-Za-z0-9_-]{10,}", e)
+        assert "ANTHROPIC_API_KEY_VETO" in e and "TRADER_VETO_HMAC_KEY" not in re.sub(r"#.*", "", e)   # HMAC ayri dosyada (OPEN-1)
+        h = self.read("deploy/trader-veto-hmac.env.example")
+        assert "TRADER_VETO_HMAC_KEY=" in h and "ANTHROPIC" not in re.sub(r"#.*", "", h)
+        assert not re.search(r"sk-ant-[A-Za-z0-9_-]{10,}", e + h)
 
     def test_schedule_arithmetic_slots_before_candle_close(self):
         runs = [20, 50]

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Trader sunucu kurulumu (Ubuntu 22.04+/24.04, root olarak, etkilesimsiz, tekrar calistirilabilir).
-# Kullanim: bash install.sh [--with-twin]
+# Kullanim: bash install.sh [--no-twin]   (ikiz (twin) VARSAYILAN ACIK; --with-twin geriye uyumluluk icin kabul edilir, etkisizdir)
 # Yalniz "trader" kullanicisina ve trader-* systemd birimlerine dokunur; baska projeye, guvenlik duvarina, acik porta dokunmaz.
 set -euo pipefail
 
@@ -17,12 +17,13 @@ DEPLOY_KEY="${HOME_DIR}/.ssh/deploy_key"
 SWAP_FILE="/swapfile"
 SWAP_SIZE="4G"
 UNIT_DIR="/etc/systemd/system"
-WITH_TWIN=0
+WITH_TWIN=1
 
 for arg in "$@"; do
   case "$arg" in
-    --with-twin) WITH_TWIN=1 ;;
-    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--with-twin])" >&2; exit 2 ;;
+    --with-twin) WITH_TWIN=1 ;;   # geriye uyumluluk: varsayilan zaten acik
+    --no-twin) WITH_TWIN=0 ;;
+    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--no-twin])" >&2; exit 2 ;;
   esac
 done
 
@@ -33,6 +34,8 @@ fail() { printf '\nHATA: %s\n' "$*" >&2; exit 1; }
 
 # ---- 0. Ubuntu / python kontrolu -------------------------------------------
 say "Sistem kontrolu"
+echo "Bellek (kurulumdan once; diger projenin payini dusunun):"
+free -m | awk 'NR==1 || /Mem:|Swap:/ {print "  " $0}'
 command -v apt-get >/dev/null || fail "Bu betik Ubuntu/Debian icindir."
 command -v systemctl >/dev/null || fail "systemd bulunamadi."
 PY_BIN="$(command -v python3 || true)"
@@ -73,10 +76,10 @@ usermod -aG "$TG_GROUP" "$TRADER_USER"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$HOME_DIR"
 
 # ---- 3. paketler -----------------------------------------------------------------
-say "Paketler (python3-venv, git, sqlite3)"
+say "Paketler (python3-venv, git, sqlite3, openssl)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-venv git sqlite3 ca-certificates
+apt-get install -y -qq python3-venv git sqlite3 ca-certificates openssl
 
 # ---- 4. depo ------------------------------------------------------------------
 say "Kod deposu"
@@ -130,6 +133,11 @@ install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADE
   "$TRADER_DIR/var/telegram"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
 install -d -m 0750 -o root -g root /var/backups/trader
+# budget.sqlite'i trader sahipli onceden olustur (yoksa): ilk olusturan veto (root) olursa dosya root:root 0600 kalir ve ders/telegram acamaz (OPEN-8).
+# Sifir bayt dosya gecerlidir: budget.py bos dosyayi 'ilk olusturma' sayip semayi kendisi kurar.
+if [ ! -e "$TRADER_DIR/user_data/budget.sqlite" ]; then
+  install -m 0600 -o "$TRADER_USER" -g "$TRADER_USER" /dev/null "$TRADER_DIR/user_data/budget.sqlite"
+fi
 
 # ---- 7. env dosyalari (var olani asla ezme) -----------------------------------------
 say "Ayar dosyalari (/etc/trader-*.env)"
@@ -143,7 +151,17 @@ copy_env "$TRADER_DIR/deploy/trader-health.env.example"   /etc/trader-health.env
 copy_env "$TRADER_DIR/deploy/trader-lesson.env.example"   /etc/trader-lesson.env   "root:${TRADER_USER}" 0640
 copy_env "$TRADER_DIR/deploy/trader-telegram.env.example" /etc/trader-telegram.env "root:${TG_GROUP}"    0640
 copy_env "$TRADER_DIR/deploy/trader-veto.env.example"     /etc/trader-veto.env     "root:root"           0600
+copy_env "$TRADER_DIR/deploy/trader-veto-hmac.env.example" /etc/trader-veto-hmac.env "root:root"          0600
 copy_env "$TRADER_DIR/deploy/trader-panel-cf.env.example" /etc/trader-panel-cf.env "root:root"           0600
+# veto HMAC anahtari: bos ise otomatik uret (ekrana YAZILMAZ); veto birimi imzalar, motor dogrular
+if ! grep -Eq '^TRADER_VETO_HMAC_KEY=[^[:space:]]+' /etc/trader-veto-hmac.env; then
+  HMAC_NEW="$(openssl rand -hex 32)"
+  sed -i '/^TRADER_VETO_HMAC_KEY=/d' /etc/trader-veto-hmac.env
+  printf 'TRADER_VETO_HMAC_KEY=%s\n' "$HMAC_NEW" >> /etc/trader-veto-hmac.env
+  unset HMAC_NEW
+  chmod 0600 /etc/trader-veto-hmac.env
+  echo "Uretildi: /etc/trader-veto-hmac.env (veto HMAC anahtari; gosterilmez)"
+fi
 # yol alanlarini bu sunucunun gercek yoluna cevir (yalniz /opt/trader on eki ve bos ENGINE_VAR_DIR)
 for f in /etc/trader-health.env /etc/trader-lesson.env /etc/trader-telegram.env; do
   sed -i "s#/opt/trader/#${TRADER_DIR}/#g" "$f"
@@ -152,6 +170,13 @@ sed -i "s#^ENGINE_VAR_DIR=\$#ENGINE_VAR_DIR=${TRADER_DIR}/var#" /etc/trader-heal
 # piyasa verisi alarmlari varsayilan acik (bos ise doldur; kullanici degeri korunur)
 sed -i "s#^MARKET_DB=\$#MARKET_DB=${TRADER_DIR}/var/market.sqlite#" /etc/trader-health.env
 sed -i "s#^ENGINE_CONFIG_DIR=\$#ENGINE_CONFIG_DIR=${TRADER_DIR}/config#" /etc/trader-health.env
+# beklenen motorlar (ikiz varsayilan acik); her calistirmada guncellenir: --no-twin ile learner
+if [ "$WITH_TWIN" -eq 1 ]; then HEALTH_BOTS_VAL="learner,twin"; else HEALTH_BOTS_VAL="learner"; fi
+if grep -q '^HEALTH_BOTS=' /etc/trader-health.env; then
+  sed -i "s#^HEALTH_BOTS=.*#HEALTH_BOTS=${HEALTH_BOTS_VAL}#" /etc/trader-health.env
+else
+  echo "HEALTH_BOTS=${HEALTH_BOTS_VAL}" >> /etc/trader-health.env
+fi
 
 # ---- 8. systemd birimleri ---------------------------------------------------------
 say "systemd birimleri"
@@ -188,21 +213,27 @@ enable_now() { systemctl enable --now "$1" >/dev/null 2>&1 && echo "Etkin: $1" |
 
 enable_now trader-feed.service     # veri akisi once: motor kural + taze veri gormeden baslamaz (acilis kapisi)
 enable_now trader-engine@learner.service
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali: sonra 'bash $TRADER_DIR/deploy/install.sh --with-twin'."; fi
+if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali (--no-twin): acmak icin 'bash $TRADER_DIR/deploy/install.sh' (varsayilan acik)."; fi
 enable_now trader-health.timer
 enable_now trader-backup.timer
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
-if has_value /etc/trader-lesson.env ANTHROPIC_API_KEY_LESSON; then
-  enable_now trader-lesson.timer
-else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON  (ders servisi)"); fi
-if has_value /etc/trader-veto.env ANTHROPIC_API_KEY_VETO && has_value /etc/trader-veto.env TRADER_VETO_HMAC_KEY; then
-  enable_now trader-veto.timer
-else MISSING+=("/etc/trader-veto.env    -> ANTHROPIC_API_KEY_VETO ve TRADER_VETO_HMAC_KEY (veto)"); fi
+TG_OK=0
 if has_value /etc/trader-telegram.env TELEGRAM_BOT_TOKEN && has_value /etc/trader-telegram.env TELEGRAM_CHAT_ID; then
+  TG_OK=1
   enable_now trader-telegram.service
   enable_now trader-telegram-report.timer
+  # saglik uyarilari Telegram'a: anahtarlar tamam oldugunda NOTIFIER=auto zaten telegram'i secer (ornek dosyada auto); log kalmissa auto yap
+  sed -i 's#^NOTIFIER=log$#NOTIFIER=auto#' /etc/trader-health.env
 else MISSING+=("/etc/trader-telegram.env -> TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID (Telegram)"); fi
+# ders: Anthropic anahtari VE Telegram anahtarlari (config/lesson.json notifier=telegram; bildirimcisiz cikis 1)
+if has_value /etc/trader-lesson.env ANTHROPIC_API_KEY_LESSON && [ "$TG_OK" -eq 1 ]; then
+  enable_now trader-lesson.timer
+else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON ve Telegram anahtarlari (ders servisi; ikisi de dolu olmadan acilmaz)"); fi
+# veto: Anthropic anahtari VE HMAC anahtari (HMAC'i install.sh uretir)
+if has_value /etc/trader-veto.env ANTHROPIC_API_KEY_VETO && has_value /etc/trader-veto-hmac.env TRADER_VETO_HMAC_KEY; then
+  enable_now trader-veto.timer
+else MISSING+=("/etc/trader-veto.env    -> ANTHROPIC_API_KEY_VETO (veto; HMAC anahtari /etc/trader-veto-hmac.env'e otomatik uretilir)"); fi
 
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
