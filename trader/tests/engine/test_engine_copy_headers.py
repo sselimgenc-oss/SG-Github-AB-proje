@@ -10,7 +10,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 ENGINE = "src/trader_engine"
 COPIED = {"exchange/rules.py": "motor/canli/borsa/kurallar.py", "marketdata/rest_public.py": "motor/canli/paper_veri.py",
-          "fileio.py": "motor/canli/durum.py"}
+          "fileio.py": "motor/canli/durum.py", "exchange/binance_rest.py": "motor/canli/borsa/binance_futures.py"}
 _SRC_NAME = "1l3" + "a"
 _SRC_HOST = "ssel" + "imgenc"
 CUT_NAMES = ["ESLEME", "tradfi", "boyutlandir", "Boyut", "canli_limitler", "paper_takvim", "TekrarKaynagi", "BinanceHata", "FapiIstemci"]
