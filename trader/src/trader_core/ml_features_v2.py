@@ -27,6 +27,10 @@ Tanimlar (belirsiz olanlar):
   ikisi de yoksa HATA) icinde zamani KESINLIKLE < ts olan son oran ve (ts-24s, ts) araligindaki oranlarin toplami
   (ad tarihsel; "son 3" degil), her ikisi side_sign ile carpilir (pozitif = adayin
   yonundeki taraf oduyor/kalabalik). funding verilmediyse ya da cift icin olay yoksa NaN.
+  BAYAT FONLAMA (G5 fix 3, on kayit 3.2.1-6; egitim == canli): ts'den onceki en yeni olay ts - FUNDING_MAX_AGE (9 saat) ten
+  eskiyse (8s aralik + 1s pay; ornegin fonlama beslemesi/yedekleme gecikmesi) f_funding_last VE f_funding_sum3 NaN olur
+  ("NaN + sayac": cikti `attrs["funding_stale"]` = bu kurala dusen aday sayisi; canli taraf `ml_v2_funding_stale` sayacina yazar).
+  Hic olay yoksa da NaN (sayilmaz: 'veri yok' durumu ayri, `funding` verilmemesi gibi).
 - Verimlilik orani: BTC kapanis, 24 ve 96 mum (Kaufman). Varyans orani (`f_btc_vr`): BTC log fiyat, q=4, pencere 96.
 - BTC 1g oynaklik yuzdeligi (`f_btc_vol_1d_pct90`): 1g oynaklik (log getiri std, 14 gun) serisinin tam kapanmis son 90
   gunluk penceredeki (en az 30 GECERLI deger) yuzdeligi = gecerli degerler icinde degerden kucuk-esit olanlarin orani
@@ -65,6 +69,7 @@ from .ml_features import BAR, BTC, ETH, MAX_FEATURES, OHLC, _asof_close, _htf, f
 
 RECIPES = ("r02", "r03")
 LOOKBACK_1D_DAYS = 200       # 1g baglam ozellikleri icin SABIT geri bakis (mentor G4-1)
+FUNDING_MAX_AGE = pd.Timedelta(hours=9)   # bayat fonlama esigi (G5 fix 3): en yeni olay ts'den bundan eskiyse NaN
 MIN_VALID_PAIRS = 5          # genislik / siralama icin asgari gecerli cift (mentor G4-5)
 CORE_V1_NAMES = [
     "f_atr_ratio", "f_stop_dist_atr", "f_side_sign", "f_slope_1h", "f_slope_4h", "f_slope_1d", "f_slope_4h_aligned",
@@ -162,10 +167,10 @@ def _daily_ctx_fixed(df: pd.DataFrame, ts: pd.DatetimeIndex) -> pd.DataFrame:
     return pd.DataFrame([res[d] for d in day], columns=cols, index=ts)
 
 
-def _funding_at(fund: pd.DataFrame | None, ts: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
+def _funding_at(fund: pd.DataFrame | None, ts: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray, int]:
     nan = np.full(len(ts), np.nan)
     if fund is None or len(fund) == 0:
-        return nan, nan.copy()
+        return nan, nan.copy(), 0
     f = _utc_index(fund)
     col = "funding_rate" if "funding_rate" in f.columns else ("rate" if "rate" in f.columns else None)
     if col is None:
@@ -176,7 +181,11 @@ def _funding_at(fund: pd.DataFrame | None, ts: pd.DatetimeIndex) -> tuple[np.nda
     lo = f.index.searchsorted(ts - pd.Timedelta(hours=24), side="right")   # olay zamani > ts-24s
     last = np.where(hi >= 1, r[np.maximum(hi - 1, 0)], np.nan)
     s3 = np.where(hi > lo, cs[hi] - cs[np.minimum(lo, hi)], np.nan)
-    return last, s3
+    newest = f.index[np.maximum(hi - 1, 0)]
+    stale = (hi >= 1) & ((ts - newest) > FUNDING_MAX_AGE)              # bayat fonlama: NaN + sayac (egitim == canli)
+    last = np.where(stale, np.nan, last)
+    s3 = np.where(stale, np.nan, s3)
+    return last, s3, int(stale.sum())
 
 
 def _pct_rank_signed(mat: pd.DataFrame, cols: list[str], pair_of_row: np.ndarray, side: np.ndarray) -> np.ndarray:
@@ -228,6 +237,7 @@ def feature_frame_v2(pairs: dict[str, pd.DataFrame], cands: pd.DataFrame, *,
         return out[names]
 
     # ---- r02 ----
+    n_stale = 0
     for need_col in ("planned_entry", "planned_stop"):
         if need_col not in cands.columns:
             raise ValueError(f"r02 needs cands.{need_col} (f_stop_dist_atr)")
@@ -261,7 +271,8 @@ def feature_frame_v2(pairs: dict[str, pd.DataFrame], cands: pd.DataFrame, *,
         for n in (20, 50):
             res[f"f_dist_hi{n}_atr"][m] = _at((df["high"].rolling(n, min_periods=n).max() - c) / a, ot)
             res[f"f_dist_lo{n}_atr"][m] = _at((c - df["low"].rolling(n, min_periods=n).min()) / a, ot)
-        fl, s3 = _funding_at((funding or {}).get(p), ts[m])
+        fl, s3, ns = _funding_at((funding or {}).get(p), ts[m])
+        n_stale += ns
         res["f_funding_last"][m], res["f_funding_sum3"][m] = fl, s3
         # ---- v1 cekirdegi: yalniz bu cift icin, sinyal modulu + HTF ozellikleri (v1 ile ayni kod) ----
         # v1'in 1g egimi (pencereli, yavas) KULLANILMAZ: f_slope_1d/f_vol_1d asagida sabit 200g pencereden gelir -> pencere = len(df)
@@ -283,4 +294,6 @@ def feature_frame_v2(pairs: dict[str, pd.DataFrame], cands: pd.DataFrame, *,
     out["f_slope_4h_aligned"] = out["f_slope_4h"].to_numpy() * side
     for k in ("f_funding_last", "f_funding_sum3"):
         out[k] = out[k].to_numpy() * side
-    return out[names]
+    res_df = out[names]
+    res_df.attrs["funding_stale"] = n_stale
+    return res_df

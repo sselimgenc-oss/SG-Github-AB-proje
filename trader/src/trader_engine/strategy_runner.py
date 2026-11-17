@@ -134,6 +134,7 @@ class WindowedSignalSource:
         self.pairs = list(pairs) if pairs is not None else []
         self._bar_feats = None
         self._gathered: dict[str, tuple] = {}
+        self._last_v2_error: str | None = None
 
     # ------------------------------------------------------------------ ml v2 ilk gecis
     def _v2_active(self) -> bool:
@@ -145,6 +146,8 @@ class WindowedSignalSource:
         from trader_core.ml_live_v2 import BarFeatures
         self._gathered = {}
         try:
+            if str(params["trigger_tf"]) != "1h":     # v2 ozellikleri 1s mumlar uzerine kurulu (G5 fix 4a)
+                raise ValueError(f"ML v2 yalniz trigger_tf='1h' ile calisir (verilen: {params['trigger_tf']!r})")
             rows = []
             for pair in self.pairs:
                 g = self._gather(pair, D, params)
@@ -160,8 +163,12 @@ class WindowedSignalSource:
             self._bar_feats = self.ml_v2.features_for_bar(D, cands)
         except Exception as e:  # noqa: BLE001 - ozellik uretilemedi: aday puansiz kalir (active: elenir, shadow: gecer)
             self.counters["ml_v2_errors"] += 1
+            self._last_v2_error = f"{D.isoformat()} {type(e).__name__}: {e}"
             log.error("ML v2 ozellik hatasi %s: %s: %s", D.isoformat(), type(e).__name__, e)
             self._bar_feats = BarFeatures(D=D, recipe=getattr(self.ml_v2, "recipe", "?"), error=f"{type(e).__name__}: {e}")
+        finally:                                        # ctx sayaclari (ml_v2_ctx_gaps, ml_v2_funding_stale, ...) status'a akar
+            for k, v in getattr(self.ml_v2, "counters", {}).items():
+                self.counters[k] = v
 
     # ------------------------------------------------------------------ frame
     def frame(self, pair: str, D: datetime, params, version_id: int) -> SignalFrame:
@@ -265,6 +272,8 @@ class WindowedSignalSource:
         return {"mode": mode, "state": state, "model_id": None if m is None else m.model_id,
                 "threshold": None if m is None else m.threshold,
                 "expires_at": None if m is None else m.expires_at.isoformat(), "error": self.ml_error,
+                "features": "v1" if self.ml_v2 is None else getattr(self.ml_v2, "recipe", "v2"),
+                "v2_error": self._last_v2_error, "v2_errors": int(self.counters.get("ml_v2_errors", 0)),
                 "entries_blocked": mode == "active" and state in ("no_model", "expired")}
 
     # ------------------------------------------------------------------ exit_context

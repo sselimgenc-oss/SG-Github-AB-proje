@@ -141,6 +141,38 @@ def test_engine_two_pass_score_equals_training_score(world, cand_bars, recipe, n
         ).rows[expect_cands[0][0].split(":")[0]]["f_same_bar_signals"] == float(len(expect_cands))
 
 
+def _flag_off_digest(mod, px, fund, cand_bars, mode):
+    """Bayrak kapali (ml_v2 yok) cikti ozeti: ilk 25 aday mumu x 10 cift; `mod` = strategy_runner modulu (eski/yeni)."""
+    import hashlib
+    from trader_core.ml_features import FEATURE_NAMES
+    view = FakeView(px, fund)
+    strat = make_v1b_ml()
+    kw = {}
+    if mode != "off":
+        strat.set_ml_mode(mode)
+        kw = {"ml_model": _model(FEATURE_NAMES)}
+    src = mod.WindowedSignalSource(view, strat, strict=True, **kw)
+    out = []
+    for D in sorted(cand_bars)[:25]:
+        for p in PAIRS_E:
+            fr = src.frame(p, D.to_pydatetime(), PARAMS, 1)
+            out.append((p, str(D), fr.status, fr.detail,
+                        None if fr.last is None else tuple((k, repr(v)) for k, v in sorted(vars(fr.last).items()))))
+    return hashlib.sha256(repr(out).encode()).hexdigest()[:16], sum(1 for o in out if o[4] and dict(o[4]).get("signal") == "True"), view.calls
+
+
+# G5 oncesi (strategy_runner_old, mentor probe_g5.py A) koduyla uretilen ozetler: bayrak kapaliyken cikti BAYT BAYT ayni kalmali.
+_FLAG_OFF_GOLDEN = {"off": ("d7a10834a2006a10", 29, 500), "shadow": ("5040885aa41b9f9d", 29, 500)}
+
+
+@pytest.mark.parametrize("mode", ["off", "shadow"])
+def test_flag_off_output_identical_to_pre_g5_golden(world, cand_bars, mode):
+    """ml_v2 yok => v1 yolu: cikti ve gorunum cagri sayisi G5 oncesi koda esit (golden ozet)."""
+    import trader_engine.strategy_runner as mod
+    px, fund = world
+    assert _flag_off_digest(mod, px, fund, cand_bars, mode) == _FLAG_OFF_GOLDEN[mode]
+
+
 def test_flag_off_does_not_touch_features(world, cand_bars):
     """ml_v2 yok => v1 yolu (ctx.ml_v2 None); r02 modeli v1 ozellik listesiyle yuklenemez (eski kapi aynen)."""
     px, fund = world
@@ -151,24 +183,153 @@ def test_flag_off_does_not_touch_features(world, cand_bars):
     assert src.ml_v2 is None and not src._v2_active()
     fr = src.frame("BTC/USDT", D.to_pydatetime(), PARAMS, 1)
     assert fr.status == "ok" and src._bar_feats is None
+    assert src.ml_status(D.to_pydatetime())["features"] == "v1"
     with pytest.raises(Exception):
         load_model_view({"meta": {}}, expected_features=R02_FEATURE_NAMES, ml_mode="shadow")
 
 
-def test_short_history_makes_candidate_unscored_not_crash(world, cand_bars):
-    px, fund = world
-    early = [t for t in sorted(cand_bars) if t < START + pd.Timedelta(days=210)]
-    D = early[0] if early else sorted(cand_bars)[0]
-    view = FakeView({k: v.iloc[: 24 * 150] for k, v in px.items()}, fund)         # 150 gun: 200g baglam yok
+def _src(view, recipe, bars_fn=None, funding=True, *, strict=False):
     strat = make_v1b_ml()
     strat.set_ml_mode("shadow")
-    model = _model(R03_FEATURE_NAMES)
-    ctx2 = LiveContextV2("r03", PAIRS_E, lambda p, d, n: view.bars(p, "1h", d, n), None)
-    src = WindowedSignalSource(view, strat, strict=False, ml_model=model, ml_v2=ctx2, pairs=PAIRS_E)
-    Dm = (START + pd.Timedelta(days=149, hours=20)).to_pydatetime()
-    for p in PAIRS_E:
-        src.frame(p, Dm, PARAMS, 1)
-    assert src._bar_feats is None or src._bar_feats.error is None or "HistoryShort" in src._bar_feats.error
+    names = R02_FEATURE_NAMES if recipe == "r02" else R03_FEATURE_NAMES
+    ctx = LiveContextV2(recipe, PAIRS_E, bars_fn or (lambda p, d, n: view.bars(p, "1h", d, n)),
+                        (lambda p, a, b: funding_frame_from_points(view.funding(p, a, b))) if funding else None)
+    return WindowedSignalSource(view, strat, strict=strict, ml_model=_model(names), ml_v2=ctx, pairs=PAIRS_E), ctx
+
+
+def _run_bar(src, D):
+    return {p: src.frame(p, D.to_pydatetime(), PARAMS, 1) for p in PAIRS_E}
+
+
+def _unscored(frames):
+    return all(fr.last is None or fr.last.ml_score is None for fr in frames.values())
+
+
+def test_short_history_makes_candidate_unscored_not_crash(world, cand_bars):
+    px, fund = world
+    D = sorted(t for t, v in cand_bars.items() if len(v) >= 1)[0]
+    view = FakeView(px, fund)                                                       # adaylar tam gecmisle bulunur
+    src, ctx = _src(view, "r03", lambda p, d, n: view.bars(p, "1h", d, 24 * 150))   # ... ama v2 baglami yalniz 150 gun alir
+    frames = _run_bar(src, D)
+    assert src._bar_feats.error is not None and "HistoryShort" in src._bar_feats.error
+    assert src.counters["ml_v2_errors"] == 1 and _unscored(frames)
+    assert any(fr.last is not None and fr.last.signal for fr in frames.values())     # aday var, puansiz kaldi (shadow: gecer)
+
+
+def _cand_world(world, cand_bars):
+    px, fund = world
+    D = sorted(t for t, v in cand_bars.items() if len(v) >= 1 and all(c[0] != BTC for c in v))[0]
+    return px, fund, D, {c[0] for c in cand_bars[D]}
+
+
+def test_btc_last_bar_missing_or_hole_makes_candidate_unscored(world, cand_bars):
+    """G5 fix 1: BTC son mumu eksik ya da 200g penceresinde delik -> HistoryGap, aday puansiz (sessiz NaN/kayma yok)."""
+    px, fund, D, _ = _cand_world(world, cand_bars)
+    b = px[BTC]
+    for name, bad in (("son mum", b[b.index != D - pd.Timedelta("1h")]),
+                      ("delik", b[~((b.index >= D - pd.Timedelta("60h")) & (b.index < D - pd.Timedelta("40h")))])):
+        bad_view = FakeView({**px, BTC: bad}, fund)                                  # aday bulma saglikli, yalniz v2 baglami bozuk
+        src, ctx = _src(FakeView(px, fund), "r03", lambda p, d, n, v=bad_view: v.bars(p, "1h", d, n))
+        frames = _run_bar(src, D)
+        assert src._bar_feats.error is not None and "HistoryGap" in src._bar_feats.error, name
+        assert _unscored(frames) and src.counters["ml_v2_errors"] == 1
+
+
+def test_hole_in_non_candidate_pair_is_counted_not_fatal(world, cand_bars):
+    px, fund, D, cp = _cand_world(world, cand_bars)
+    other = next(p for p in PAIRS_I if p not in cp and p not in (BTC, ETH))
+    o = px[other]
+    bad = {**px, other: o[~((o.index >= D - pd.Timedelta("100h")) & (o.index < D - pd.Timedelta("90h")))]}
+    v = FakeView(bad, fund)
+    src, ctx = _src(FakeView(px, fund), "r03", lambda p, d, n: v.bars(p, "1h", d, n))
+    _run_bar(src, D)
+    assert src._bar_feats.error is None and ctx.counters["ml_v2_ctx_gaps"] == 1 and src.counters["ml_v2_ctx_gaps"] == 1
+
+
+def test_late_backfill_is_picked_up_by_full_reload(world, cand_bars):
+    """G5 fix 2: BTC deligi D-1s'de goruldu, sonra DB'de doldu (24 mumdan eski): sonraki mum tam yeniden yukleme -> taze deger."""
+    px, fund, D, cp = _cand_world(world, cand_bars)
+    b = px[BTC]
+    hole = (b.index >= D - pd.Timedelta("60h")) & (b.index < D - pd.Timedelta("40h"))
+    state = {"px": {**px, BTC: b[~hole]}}
+    view = FakeView(px, fund)
+    ctx = LiveContextV2("r03", PAIRS_E, lambda p, d, n: FakeView(state["px"], fund).bars(p, "1h", d, n), None)
+    ctx.refresh((D - pd.Timedelta("1h")).to_pydatetime())
+    state["px"] = px                                                                # gec doldurma
+    cands = pd.DataFrame([{"pair": p.split(":")[0], "side": s, "planned_entry": e, "planned_stop": st} for p, s, e, st in cand_bars[D]])
+    live = ctx.features_for_bar(D.to_pydatetime(), cands)
+    fresh = LiveContextV2("r03", PAIRS_E, lambda p, d, n: view.bars(p, "1h", d, n), None).features_for_bar(D.to_pydatetime(), cands)
+    assert live.error is None and ctx.counters["ml_v2_full_reloads"] == 1
+    for p in live.rows:
+        assert live.rows[p] == fresh.rows[p]
+
+
+def test_full_reload_once_per_utc_day(world, cand_bars):
+    """G5 fix 2: delik olmayan eski duzeltme (24 mumdan eski) ayni gun artimli yolda gorulmez, ertesi UTC gunu tam yuklemeyle gorulur."""
+    px, fund, D, cp = _cand_world(world, cand_bars)
+    D0 = D.floor("1D") + pd.Timedelta("2h")
+    state = {"px": px}
+    ctx = LiveContextV2("r03", PAIRS_E, lambda p, d, n: FakeView(state["px"], fund).bars(p, "1h", d, n), None)
+    ctx.refresh(D0.to_pydatetime())
+    old = D0 - pd.Timedelta("100h")
+    changed = px[BTC].copy()
+    changed.loc[old, "close"] *= 1.5                                                  # eski mum duzeltildi
+    state["px"] = {**px, BTC: changed}
+    ctx.refresh((D0 + pd.Timedelta("1h")).to_pydatetime())
+    assert ctx._held["BTC/USDT"].loc[old, "close"] == px[BTC].loc[old, "close"]       # ayni gun: artimli (belgeli)
+    ctx.refresh((D0 + pd.Timedelta("22h")).to_pydatetime())                          # ertesi gun 00:00
+    assert ctx._held["BTC/USDT"].loc[old, "close"] == changed.loc[old, "close"]       # tam yukleme
+
+
+@pytest.mark.parametrize("recipe", ["r02", "r03"])
+def test_stale_funding_nan_and_counted(world, cand_bars, recipe):
+    """G5 fix 3 (yalniz r02 etkilenir): en yeni olay 9 saatten eski -> NaN + sayac; r03 hic etkilenmez."""
+    px, fund, D, cp = _cand_world(world, cand_bars)
+    stale = {p: f[f.index < D - pd.Timedelta("5D")] for p, f in fund.items()}
+    view = FakeView(px, stale)
+    ctx = LiveContextV2(recipe, PAIRS_E, lambda p, d, n: view.bars(p, "1h", d, n),
+                        lambda p, a, b: funding_frame_from_points(view.funding(p, a, b)))
+    cands = pd.DataFrame([{"pair": p.split(":")[0], "side": s, "planned_entry": e, "planned_stop": st} for p, s, e, st in cand_bars[D]])
+    r = ctx.features_for_bar(D.to_pydatetime(), cands)
+    assert r.error is None
+    if recipe == "r02":
+        assert all(np.isnan(v["f_funding_last"]) and np.isnan(v["f_funding_sum3"]) for v in r.rows.values())
+        assert ctx.counters["ml_v2_funding_stale"] == len(cands)
+    else:
+        assert ctx.counters["ml_v2_funding_stale"] == 0
+
+
+def test_v2_requires_1h_trigger_tf(world, cand_bars):
+    """G5 fix 4a: trigger_tf != '1h' -> v2 ozellik hatasi (sayac + durum), puansiz."""
+    px, fund = world
+    D = sorted(cand_bars)[0]
+    src, ctx = _src(FakeView(px, fund), "r03")
+    src.frame("BTC/USDT", D.to_pydatetime(), {**PARAMS, "trigger_tf": "4h"}, 1)
+    assert src.counters["ml_v2_errors"] == 1 and "1h" in src._bar_feats.error
+
+
+def test_future_bar_never_held(world, cand_bars):
+    """G5 fix 4b: kapanisi D'yi asan mum tutulursa ozellik uretilmez."""
+    px, fund = world
+    D = sorted(t for t, v in cand_bars.items() if len(v) >= 1)[0]
+    view = FakeView(px, fund)
+    src, ctx = _src(view, "r03", lambda p, d, n: view.bars(p, "1h", pd.Timestamp(d) + pd.Timedelta("1h"), n))
+    _run_bar(src, D)
+    assert src._bar_feats.error is not None and src.counters["ml_v2_errors"] == 1
+    ctx2 = LiveContextV2("r03", PAIRS_E, lambda p, d, n: view.bars(p, "1h", pd.Timestamp(d) + pd.Timedelta("1h"), n), None)
+    ctx2.refresh(D.to_pydatetime())
+    with pytest.raises((AssertionError, Exception)):
+        ctx2.features_for_bar(D.to_pydatetime(), pd.DataFrame([{"pair": "SOL/USDT", "side": "long", "planned_entry": 1.0, "planned_stop": 0.9}]))
+
+
+def test_ml_status_exposes_v2_state(world, cand_bars):
+    px, fund = world
+    D = sorted(t for t, v in cand_bars.items() if len(v) >= 1)[0]
+    view = FakeView(px, fund)
+    src, ctx = _src(view, "r03", lambda p, d, n: view.bars(p, "1h", d, 24 * 150))
+    _run_bar(src, D)
+    st = src.ml_status(D.to_pydatetime())
+    assert st["features"] == "r03" and st["v2_errors"] == 1 and "HistoryShort" in st["v2_error"]
 
 
 def test_config_flag_default_off_and_validated(tmp_path):

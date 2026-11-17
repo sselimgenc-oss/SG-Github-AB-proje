@@ -158,3 +158,44 @@ def test_guarded_wrapper_equals_core_and_blocks_holdout(world):
     lf[BTC].index = lf[BTC].index + pd.Timedelta(days=800)
     with pytest.raises(HoldoutViolation):
         guarded_v2(px, cands, funding=lf, recipe="r03")
+
+
+# ---------------------------------------------------------------- G5 fix 3: bayat fonlama (NaN + sayac), egitim == canli
+def test_stale_funding_rule_boundary_9h():
+    """Tek olay E: ts - E <= 9s -> deger; > 9s -> NaN (f_funding_last ve f_funding_sum3), sayac = NaN'a dusen aday."""
+    from trader_core.ml_features_v2 import FUNDING_MAX_AGE
+    assert FUNDING_MAX_AGE == pd.Timedelta(hours=9)
+    px = {p: pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0},
+                          index=pd.date_range(START, periods=24 * 210, freq="1h", tz="UTC")) for p in PAIRS}
+    e = START + pd.Timedelta(days=205)
+    fund = {BTC: pd.DataFrame({"funding_rate": [0.001]}, index=[e])}
+    rows = [{"ts": e + pd.Timedelta(hours=h), "pair": BTC, "side": "long", "planned_entry": 1.0, "planned_stop": 0.9} for h in (1, 8, 9, 10, 20)]
+    ff = feature_frame_v2(px, pd.DataFrame(rows), funding=fund, recipe="r02")
+    last = ff["f_funding_last"].to_numpy(float)
+    assert list(np.isnan(last)) == [False, False, False, True, True]
+    assert list(np.isnan(ff["f_funding_sum3"].to_numpy(float))) == [False, False, False, True, True]
+    assert ff.attrs["funding_stale"] == 2
+    assert feature_frame_v2(px, pd.DataFrame(rows), funding=None, recipe="r02").attrs["funding_stale"] == 0
+
+
+def test_stale_funding_training_equals_engine_and_counted(world):
+    px, fund = world
+    cut = START + pd.Timedelta(hours=24 * 210)
+    fund = {p: f[f.index < cut] for p, f in fund.items()}                      # beslemesi kesilen fonlama
+    k0 = 24 * 210
+    cands = _cands(px, range(k0 - 6, k0 + 30), rng_seed=9)
+    train = feature_frame_v2(px, cands, funding=fund, recipe="r02")
+    bars_fn, funding_fn = _fns(px, fund)
+    ctx = LiveContextV2("r02", [_eng(p) for p in PAIRS], bars_fn, funding_fn)
+    live = pd.DataFrame(index=cands.index, columns=R02_FEATURE_NAMES, dtype=float)
+    for ts, g in cands.groupby("ts", sort=True):
+        c = g.assign(pair=g["pair"].map(_eng))
+        bf = ctx.features_for_bar(ts.to_pydatetime(), c[["pair", "side", "planned_entry", "planned_stop"]])
+        for ix, row in c.iterrows():
+            live.loc[ix] = [bf.rows[row["pair"]][n] for n in R02_FEATURE_NAMES]
+    a, b = train.to_numpy(float), live.to_numpy(float)
+    assert np.array_equal(np.isnan(a), np.isnan(b))
+    np.testing.assert_allclose(b, a, rtol=0, atol=1e-9, equal_nan=True)
+    f_nan = train["f_funding_last"].isna().to_numpy()
+    assert f_nan.any() and (~f_nan).any()                                        # hem taze hem bayat satirlar sinandi
+    assert train.attrs["funding_stale"] == int(f_nan.sum()) == ctx.counters["ml_v2_funding_stale"]
