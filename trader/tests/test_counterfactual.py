@@ -30,7 +30,7 @@ def dec(i=1, ts=None, side="long", entry=E_, stop=S_, target=T_, reason="veto_bl
                            final_action=final)
 
 
-def mk_market(tmp_path, n=72 + 5, start=None, *, flat=(2001.0, 1999.0, 2000.0), over=None, written_after=True, skip=()):
+def mk_market(tmp_path, n=72 + 5, start=None, *, flat=(2001.0, 1999.0, 2000.0), over=None, written_after=True, skip=(), open_=2000.0):
     """Karar mumu BASE+10h kapanir -> pencere BASE+10h'ten baslar. over: {k: (h, l, c)} pencere mumu k icin."""
     p = tmp_path / "market.sqlite"
     st = MarketStore(p)
@@ -40,7 +40,7 @@ def mk_market(tmp_path, n=72 + 5, start=None, *, flat=(2001.0, 1999.0, 2000.0), 
         if k in skip:
             continue
         h, l, c = (over or {}).get(k, flat)
-        bars.append(Bar(PAIR, "last", "1h", start + k * H, 2000.0, h, l, c, 1.0))
+        bars.append(Bar(PAIR, "last", "1h", start + k * H, open_, h, l, c, 1.0))
     now_ms = int((start + (n + 1) * H).timestamp() * 1000) if written_after else int(start.timestamp() * 1000)
     st.put_bars(bars, now_ms=now_ms)
     st.close()
@@ -119,12 +119,21 @@ def test_stop_barrier(tmp_path):
 
 
 def test_time_barrier_marks_to_last_close(tmp_path):
-    mk = mk_market(tmp_path, over={71: (2021.0, 1999.0, 2020.0)})               # son mum kapanisi +0.5R
+    mk = mk_market(tmp_path, over={71: (2021.0, 1999.0, 2020.0), 47: (2011.0, 1999.0, 2010.0)})   # 72. kapanis +0.5R, 48. +0.25R
     _, rows = run(tmp_path, [dec()], mk, NOW_OK)
-    for m in ("barrier", "plan"):
-        r = rows[(1, m)]
-        assert (r["exit_reason"], r["hyp_outcome"], r["bars_held"]) == ("time", 0, 72)
-        assert r["hyp_r_gross"] == pytest.approx(0.5) and r["hyp_r_net"] == pytest.approx(0.5 - COST)
+    r = rows[(1, "barrier")]
+    assert (r["exit_reason"], r["hyp_outcome"], r["bars_held"]) == ("time", 0, 72)
+    assert r["hyp_r_gross"] == pytest.approx(0.5) and r["hyp_r_net"] == pytest.approx(0.5 - COST)
+
+
+def test_plan_horizon_is_48_bars_and_barrier_stays_72(tmp_path):             # bulgu 1+2: plan ufku 48
+    assert CF.PLAN_HORIZON_BARS == 48 and CF.HORIZON_BARS == 72
+    mk = mk_market(tmp_path, over={47: (2011.0, 1999.0, 2010.0), 60: (2101.0, 1999.0, 2050.0)})
+    _, rows = run(tmp_path, [dec()], mk, NOW_OK)
+    p, b = rows[(1, "plan")], rows[(1, "barrier")]
+    assert (p["exit_reason"], p["bars_held"]) == ("time", 48) and p["hyp_r_gross"] == pytest.approx(0.25)
+    assert p["version"] == CF.VERSION == 2
+    assert b["exit_reason"] == "target" and b["bars_held"] == 61            # barrier 72 mum: 61. mumdaki hedef sayilir, plan gormez
 
 
 def test_same_bar_both_barriers_stop_first(tmp_path):
@@ -213,7 +222,8 @@ def test_telegram_report_line(tmp_path):
     cfg = T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), ledger_path=str(out / "ledger.sqlite"))
     now = NOW_OK + H
     s = T.section_counterfactual(cfg, now)
-    assert s.startswith("1, ort. varsayımsal net R -1.10")
+    assert s.startswith("1 (varsayımsal net R, üst sınır;") and "veto_blocked: 1, -1.10R" in s       # bulgu 9
+    assert "işlem yapılabilir kâr değildir" in s and "sonraki kapıları ve dolumları yok sayar" in s
     assert "Alınmayan sinyaller (son 7 gün)" in T.default_sections(cfg, now, "2026-12-05")
     cfg2 = T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), ledger_path=str(tmp_path / "bos" / "ledger.sqlite"))
     assert "henüz" in T.section_counterfactual(cfg2, now)
@@ -259,3 +269,51 @@ def test_cli_exit_codes(tmp_path, capsys):
     assert _main()(base + ["--once", "--market", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW_OK) == 3
     assert _main()(["--bot", "twin", "--once", "--ledger", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW_OK) == 0
     capsys.readouterr()
+
+
+# ---- bulgu 3: hedef kar tarafinda degilse plan satiri invalid_plan ---------------------------------------------------
+def test_plan_target_on_wrong_side_is_invalid_plan_not_a_fake_win(tmp_path):
+    mk = mk_market(tmp_path, flat=(101.0, 99.7, 100.0), open_=100.0)           # fiyat 99,7..101
+    r, rows = run(tmp_path, [dec(entry=100.0, stop=99.0, target=99.5)], mk, NOW_OK)   # long: hedef giris altinda (tam vaka)
+    p, b = rows[(1, "plan")], rows[(1, "barrier")]
+    assert p["exit_reason"] == "invalid_plan" and p["hyp_outcome"] is None and p["hyp_r_net"] is None
+    assert b["exit_reason"] != "invalid_plan" and b["hyp_r_net"] is not None   # barrier etkilenmez
+    _, rows = run(tmp_path, [dec(2, side="short", entry=100.0, stop=101.5, target=100.5)], mk, NOW_OK)
+    assert rows[(2, "plan")]["exit_reason"] == "invalid_plan"
+    _, rows = run(tmp_path, [dec(3, entry=100.0, stop=99.0, target=100.0)], mk, NOW_OK)   # hedef == giris: siki degil
+    assert rows[(3, "plan")]["exit_reason"] == "invalid_plan"
+    _, rows = run(tmp_path, [dec(4, entry=100.0, stop=99.0, target=100.8)], mk, NOW_OK)   # gecerli kontrol
+    assert rows[(4, "plan")]["exit_reason"] != "invalid_plan"
+
+
+def test_outcomes_only_known_by_as_of_and_plan_needs_version_2(tmp_path):    # bulgu 7
+    mk = mk_market(tmp_path)
+    run(tmp_path, [dec()], mk, NOW_OK)
+    dts = BASE + 10 * H
+    end = dts + 72 * H
+    path = tmp_path / "cf.sqlite"
+    assert len(CF.outcomes(path, "learner", now=end + 2 * H, days=30)) == 1
+    assert CF.outcomes(path, "learner", now=end - H, days=30) == []             # pencere bitmeden bilinmez
+    row = CF.outcomes(path, "learner", now=end + 2 * H, days=30, method="plan")[0]
+    assert {"side", "trigger_tf", "planned_entry", "planned_stop", "planned_target"} <= set(row)
+    db = sqlite3.connect(path)
+    db.execute("UPDATE cf_outcomes SET version=1 WHERE method='plan'")
+    db.commit()
+    db.close()
+    assert CF.outcomes(path, "learner", now=end + 2 * H, days=30, method="plan") == []
+
+
+def test_telegram_line_per_reason_top3(tmp_path):                              # bulgu 9
+    from trader_core import telegram as T
+    mk = mk_market(tmp_path)
+    out = tmp_path / "var"
+    out.mkdir()
+    st = CF.CounterfactualStore(out / "counterfactual.sqlite")
+    ds = [dec(1, reason="veto_blocked"), dec(2, reason="veto_blocked"), dec(3, reason="stop_width"),
+          dec(4, reason="stop_width"), dec(5, reason="rr_below_min"), dec(6, reason="ml_filter")]
+    CF.run_once(bot="learner", decisions=ds, market_path=mk, store=st, now=NOW_OK)
+    st.close()
+    cfg = T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), ledger_path=str(out / "ledger.sqlite"))
+    s = T.section_counterfactual(cfg, NOW_OK + H)
+    assert s.startswith("6 (") and "veto_blocked: 2" in s and "stop_width: 2" in s and "ml_filter: 1" in s
+    assert "rr_below_min" not in s                                                  # en fazla 3 neden

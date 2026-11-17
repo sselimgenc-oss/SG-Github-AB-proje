@@ -2,7 +2,7 @@
 
 Atlanan her karar (`final_action='skipped'`, her `skip_reason`), karar mumunun kapanisindan sonraki 1 saatlik mumlarda
 yeniden oynatilir: (a) `barrier` = ML etiketiyle AYNI uclu bariyer (trader_ml.labels.label_candidates; -1R stop, +2R hedef,
-72 mum zaman), (b) `plan` = defterdeki planned_stop/planned_target ile ayni ufukta. Sonuc `counterfactual.sqlite`'e
+72 mum zaman), (b) `plan` = defterdeki planned_stop/planned_target, 48 mumluk ufukta. Sonuc `counterfactual.sqlite`'e
 (var/<bot>/, bu isin TEK yazari) yazilir. Defter ve market.sqlite yalnizca `mode=ro` acilir. Saf standart kutuphane:
 trader_engine / trader_ml / pandas ice aktarilmaz (formul trader_ml.labels'ten kopyadir; esitlik tests/test_counterfactual.py).
 
@@ -19,12 +19,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-__all__ = ["VERSION", "HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
+__all__ = ["VERSION", "HORIZON_BARS", "PLAN_HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
            "run_once", "summary", "outcomes", "RunResult", "CounterfactualError"]
 
-VERSION = 1
+VERSION = 2                          # 2: plan ufku 48 mum; target yanlis tarafta -> invalid_plan
 # --- trader_ml.config'in KOPYASI (parite testi esitligi kilitler); ML etiketi degisirse VERSION artar
 HORIZON_BARS = 72
+PLAN_HORIZON_BARS = 48                # `plan` yontemi: planlanan stop/hedef icin ders kaniti ufku (<= HORIZON_BARS)
 TARGET_R = 2.0
 FEE_RATE = 0.0005                     # taraf basina
 SLIPPAGE_RATE = 0.0005                # taraf basina
@@ -295,9 +296,14 @@ def run_once(*, bot: str, decisions: Sequence, market_path, store: Counterfactua
             up = e + sgn * TARGET_R * abs(e - s)
             plan_tg = tg if tg is not None and math.isfinite(tg) else None
             r_bar = replay(hi, lo, cl, d.side, e, s, up, horizon=horizon)
-            r_plan = replay(hi, lo, cl, d.side, e, s, plan_tg, horizon=horizon)
             batch.append(_rows_for(bot, d, "barrier", r_bar, start, end, now))
-            batch.append(_rows_for(bot, d, "plan", r_plan, start, end, now))
+            if tg is not None and plan_tg is None:                     # hedef sonlu degil -> gecersiz plan
+                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))
+            elif plan_tg is not None and not ((plan_tg > e) if d.side == "long" else (plan_tg < e)):
+                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))   # hedef kar tarafinda degil
+            else:
+                r_plan = replay(hi, lo, cl, d.side, e, s, plan_tg, horizon=min(horizon, PLAN_HORIZON_BARS))
+                batch.append(_rows_for(bot, d, "plan", r_plan, start, end, now))
             res.computed += 1
         if batch and not dry_run:
             res.rows_written = store.insert(batch)
@@ -327,17 +333,20 @@ def summary(path, bot: str, *, now: datetime, days: int = 7, method: str = "barr
 
 
 def outcomes(path, bot: str, *, now: datetime, days: int = 28, method: str = "barrier") -> list[dict]:
-    """Ders servisi icin ham satirlar: [{"skip_reason", "decision_ts", "hyp_r_net"}] (karar zamani `[now-days, now)`,
-    hesaplanmis r_net, deterministik sira). Salt okunur; depo yoksa/okunamazsa CounterfactualError."""
+    """Ders servisi icin ham satirlar (karar zamani `[now-days, now)`, hesaplanmis r_net, deterministik sira). YALNIZ `now`
+    itibariyla bilinen sonuclar: `window_end_ts <= now`. `plan` yalnizca version>=2 (48 mumluk ufuk). Alanlar: skip_reason,
+    decision_ts, hyp_r_net, side, setup, trigger_tf, planned_entry/stop/target. Salt okunur; depo yoksa CounterfactualError."""
     if method not in METHODS:
         raise CounterfactualError("gecersiz yontem", "bad_method")
     since, until = _fmt(_utc(now) - timedelta(days=days)), _fmt(_utc(now))
+    minv = 2 if method == "plan" else 1
     with CounterfactualStore(path, read_only=True) as st:
         try:
             rows = st._db.execute(
-                "SELECT skip_reason, decision_ts, hyp_r_net FROM cf_outcomes WHERE bot=? AND method=? "
-                "AND hyp_r_net IS NOT NULL AND decision_ts>=? AND decision_ts<? ORDER BY decision_ts, decision_id",
-                (bot, method, since, until)).fetchall()
+                "SELECT skip_reason, decision_ts, hyp_r_net, side, setup, trigger_tf, planned_entry, planned_stop, "
+                "planned_target FROM cf_outcomes WHERE bot=? AND method=? AND version>=? "
+                "AND hyp_r_net IS NOT NULL AND decision_ts>=? AND decision_ts<? AND window_end_ts<=? "
+                "ORDER BY decision_ts, decision_id", (bot, method, minv, since, until, until)).fetchall()
         except sqlite3.Error as e:
             raise CounterfactualError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
-    return [{"skip_reason": r["skip_reason"], "decision_ts": r["decision_ts"], "hyp_r_net": r["hyp_r_net"]} for r in rows]
+    return [dict(r) for r in rows]

@@ -1098,7 +1098,10 @@ def section_counterfactual(cfg: TelegramConfig, now: datetime) -> str:
         raise SectionError(e.code) from None
     if not sm["n"]:
         return "0"
-    return f"{sm['n']}, ort. varsayımsal net R {sm['mean_r_net']:+.2f}"
+    top = sorted(sm["by_reason"].items(), key=lambda kv: (-kv[1]["n"], kv[0]))[:3]
+    parts = "; ".join(f"{k}: {b['n']}, {b['mean_r_net']:+.2f}R" for k, b in top)
+    return (f"{sm['n']} (varsayımsal net R, üst sınır; sonraki kapıları ve dolumları yok sayar, işlem yapılabilir kâr "
+            f"değildir) — {parts}")
 
 
 def default_sections(cfg: TelegramConfig, now: datetime, day: str) -> dict[str, Callable[[], str]]:

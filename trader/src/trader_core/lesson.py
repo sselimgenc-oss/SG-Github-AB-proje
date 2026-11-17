@@ -258,7 +258,7 @@ class LessonConfig:
     counterfactual_enabled: bool = True              # Revizyon 4: alinmayan sinyal kaniti (salt okunur, 17)
     counterfactual_path: str | None = None           # None => <ledger_path'in dizini>/counterfactual.sqlite
     counterfactual_min_n: int = 30                   # kilit: >= 30 hesaplanmis satir (barrier)
-    counterfactual_days: int = 28                    # karar zamanina gore pencere (gun); kilit >= 7
+    counterfactual_days: int = 56                    # karar zamanina gore pencere (gun); kilit >= 7; 3 gunluk >= 8 blok icin 56
 
     def __post_init__(self) -> None:
         def bad(msg):
@@ -1589,7 +1589,9 @@ def _recent_rows(rows_by_scope: Sequence[TradeRow], cfg: LessonConfig, as_of: da
 
 CF_WEIGHT = 0.5                      # varsayimsal kanit agirligi (alinan islemler birincil, agirlik 1)
 CF_METHOD = "barrier"
-CF_Z90 = 1.2815515655446004          # tek tarafli %90 sinir
+CF_Z90 = 1.2815515655446004          # tek tarafli %90 sinir (3 gunluk blok kumelemesiyle)
+CF_BLOCK_DAYS = 3                    # SE kume genisligi (sonuclar 48-72 saate yayilir; bitisik gunler ortusur)
+CF_MIN_BLOCKS = 8                    # hukum icin asgari ayri blok
 CF_REASONS = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
               "entry_gate_closed", "order_failed", "ml_filter", "other")
 # skip_reason -> menu girdisi YALNIZCA belirsizlik yoksa. rr_below_min: rr_min esigi (signals.py) -> gevsetme rr_min:down.
@@ -1605,9 +1607,48 @@ def counterfactual_path(cfg: LessonConfig) -> str:
     return os.path.join(os.path.dirname(os.path.abspath(cfg.ledger_path)), "counterfactual.sqlite")
 
 
-def build_counterfactual(cfg: LessonConfig, as_of: datetime, path=None) -> dict | None:
+def _cf_block(ts: str) -> str:
+    """3 gunluk, ortusmeyen blok (sabit epoch'a bagli): sonuclar 48-72 saate yayildigi icin bitisik GUNLER ortusur; 3 gunluk
+    bloklar ortusmeyi blok sinirlarina indirger."""
+    d = date.fromisoformat(str(ts)[:10])
+    return str((d - date(1970, 1, 1)).days // CF_BLOCK_DAYS)
+
+
+def _cf_plan_rr(r: Mapping) -> float | None:
+    """Planlanan RR = isaretli (hedef-giris)/|giris-stop| (yone gore); hedef yok/gecersiz => None."""
+    e, s_, t = r.get("planned_entry"), r.get("planned_stop"), r.get("planned_target")
+    if e is None or s_ is None or t is None or e == s_ or r.get("side") not in SIDES:
+        return None
+    sgn = 1.0 if r["side"] == "long" else -1.0
+    return sgn * (float(t) - float(e)) / abs(float(e) - float(s_))
+
+
+def _cf_stats(cfg: LessonConfig, x: list) -> dict:
+    n = len(x)
+    zr = cluster_mean(x, 0.0, CF_MIN_BLOCKS)
+    m = zr.mean
+    lb = ub = None
+    if zr.z is not None:
+        lb, ub = m - CF_Z90 * zr.se, m + CF_Z90 * zr.se
+    if n < cfg.counterfactual_min_n:
+        verdict = "insufficient_n"
+    elif lb is None:
+        verdict = "insufficient_days"
+    elif lb > 0:
+        verdict = "supports_relaxing"
+    elif ub < 0:
+        verdict = "filter_works"
+    else:
+        verdict = "inconclusive"
+    return {"n": n, "mean_r_net": r4(m), "lb90": r4(lb), "ub90": r4(ub), "blocks": zr.g, "verdict": verdict}
+
+
+def build_counterfactual(cfg: LessonConfig, as_of: datetime, path=None, rr_min: float | None = None) -> dict | None:
     """Defterin yanindaki `counterfactual.sqlite`ten (salt okunur) skip_reason basina net R kaniti. Dosya yok / kapali /
-    okunamiyor => None (kanit yok; hata yok, davranis degismez). Yalnizca `decision_ts < as_of` (gelecegi gorme yok)."""
+    okunamiyor => None (kanit yok; hata yok, davranis degismez). Yalnizca `decision_ts < as_of` ve `window_end_ts <= as_of`.
+    trigger_tf='15m' satirlari kanita girmez (1h izgarada tekrar oynatilamaz). Eslenen neden (rr_below_min -> rr_min:down):
+    `plan` yontemi (planlanan stop/hedef) ve yalniz plan RR'si [rr_min-adim, rr_min) araligindaki satirlar; digerleri `barrier`,
+    hukum `info_only`. SE: 3 gunluk bloklara kumelenmis; >= CF_MIN_BLOCKS blok sart."""
     if not cfg.counterfactual_enabled:
         return None
     p = path or counterfactual_path(cfg)
@@ -1615,34 +1656,40 @@ def build_counterfactual(cfg: LessonConfig, as_of: datetime, path=None) -> dict 
         return None
     try:
         rows = _cf_mod.outcomes(p, cfg.bot, now=as_of, days=cfg.counterfactual_days, method=CF_METHOD)
+        plan_rows = _cf_mod.outcomes(p, cfg.bot, now=as_of, days=cfg.counterfactual_days, method="plan") \
+            if CF_REASON_MENU else []
     except Exception as e:  # noqa: BLE001  fail-safe: kanit yok sayilir
         log.warning("counterfactual okunamadi: %s", scrub(e))
         return None
     groups: dict[str, list] = {}
     for r in rows:
-        if r["skip_reason"] in CF_REASONS and r["hyp_r_net"] is not None:
-            groups.setdefault(r["skip_reason"], []).append((float(r["hyp_r_net"]), str(r["decision_ts"])[:10]))
+        if r["skip_reason"] in CF_REASONS and r["hyp_r_net"] is not None and r.get("trigger_tf") != "15m" \
+                and r["skip_reason"] not in CF_REASON_MENU:
+            groups.setdefault(r["skip_reason"], []).append((float(r["hyp_r_net"]), _cf_block(r["decision_ts"])))
+    band: dict[str, tuple] = {}
+    for reason, menu_id in CF_REASON_MENU.items():
+        param = menu_id.split(":")[0]
+        if rr_min is None or param != "rr_min":
+            continue
+        lo, hi = float(rr_min) - _step_of(param) - _EPS, float(rr_min) - _EPS
+        x = []
+        for r in plan_rows:
+            if r["skip_reason"] != reason or r.get("trigger_tf") == "15m" or r["hyp_r_net"] is None:
+                continue
+            rr = _cf_plan_rr(r)
+            if rr is not None and lo <= rr < hi:
+                x.append((float(r["hyp_r_net"]), _cf_block(r["decision_ts"])))
+        if x:
+            band[reason] = (x, [r4(float(rr_min) - _step_of(param)), r4(float(rr_min))])
     by_reason: dict[str, dict] = {}
-    for reason in sorted(groups):
-        x = groups[reason]
-        n = len(x)
-        zr = cluster_mean(x, 0.0, cfg.min_distinct_days)
-        m = zr.mean
-        lb = ub = None
-        if zr.z is not None:
-            lb, ub = m - CF_Z90 * zr.se, m + CF_Z90 * zr.se
-        if n < cfg.counterfactual_min_n:
-            verdict = "insufficient_n"
-        elif lb is None:
-            verdict = "insufficient_days"
-        elif lb > 0:
-            verdict = "supports_relaxing"
-        elif ub < 0:
-            verdict = "filter_works"
+    for reason in sorted(set(groups) | set(band)):
+        if reason in band:
+            x, rng = band[reason]
+            b = {**_cf_stats(cfg, x), "method": "plan", "rr_band": rng, "menu_id": CF_REASON_MENU[reason]}
         else:
-            verdict = "inconclusive"
-        by_reason[reason] = {"n": n, "mean_r_net": r4(m), "lb90": r4(lb), "ub90": r4(ub), "days": zr.g,
-                             "verdict": verdict, "menu_id": CF_REASON_MENU.get(reason)}
+            b = {**_cf_stats(cfg, groups[reason]), "method": CF_METHOD, "menu_id": None}
+            b["verdict"] = "info_only"                      # esleme yok: gevsetme dayanagi degil, yalniz tablo
+        by_reason[reason] = b
     n_all = sum(b["n"] for b in by_reason.values())
     mean_all = (sum(b["n"] * b["mean_r_net"] for b in by_reason.values()) / n_all) if n_all else None
     return {"available": True, "method": CF_METHOD, "days": cfg.counterfactual_days, "min_n": cfg.counterfactual_min_n,
@@ -1650,7 +1697,8 @@ def build_counterfactual(cfg: LessonConfig, as_of: datetime, path=None) -> dict 
 
 
 def counterfactual_extra(cf: Mapping | None, menu_id: str, n_a=None, mean_a=None) -> dict:
-    """Menu girdisine yalnizca BILGI olarak eklenen alanlar (uygunluk/skor/kontrol noktasi bunlardan etkilenmez)."""
+    """Menu girdisine yalnizca BILGI olarak eklenen alanlar (uygunluk/skor/kontrol noktasi bunlardan etkilenmez).
+    `n_a/mean_a` geriye uyumluluk icin kabul edilir, kullanilmaz (birlesik ortalama ikiz kanitini cift sayardi)."""
     if not cf:
         return {}
     out: dict[str, float | int] = {}
@@ -1663,22 +1711,21 @@ def counterfactual_extra(cf: Mapping | None, menu_id: str, n_a=None, mean_a=None
         if b["lb90"] is not None:
             out["cf_lb90"] = b["lb90"]
         out["cf_support"] = 1 if b["verdict"] == "supports_relaxing" else 0
-        if n_a and mean_a is not None:
-            out["cf_combined_mean_r"] = r4((n_a * mean_a + CF_WEIGHT * b["n"] * b["mean_r_net"])
-                                           / (n_a + CF_WEIGHT * b["n"]))
     return out
 
 
 def counterfactual_line(cf: Mapping | None) -> str:
-    """Gunluk ozet icin tek satir (Telegram)."""
+    """Gunluk ozet icin tek satir (Telegram): neden basina kompakt (en fazla 3)."""
     if not cf:
         return "Alinmayan sinyaller: henuz hesaplanmadi"
     sup = sorted(b["menu_id"] for b in cf["by_reason"].values() if b["verdict"] == "supports_relaxing" and b["menu_id"])
     tail = f"; gevsetmeyi destekleyen: {', '.join(sup)}" if sup else ""
     if not cf["n"]:
         return f"Alinmayan sinyaller (son {cf['days']} gun): 0"
-    return (f"Alinmayan sinyaller (son {cf['days']} gun): {cf['n']}, ort. varsayimsal net R "
-            f"{cf['mean_r_net']:+.2f} (kanit agirligi {CF_WEIGHT}){tail}")
+    top = sorted(cf["by_reason"].items(), key=lambda kv: (-kv[1]["n"], kv[0]))[:3]
+    parts = ", ".join(f"{k} n={b['n']} {b['mean_r_net']:+.2f}R" for k, b in top)
+    return (f"Alinmayan sinyaller (son {cf['days']} gun, varsayimsal net R, ust sinir; sonraki kapilari ve dolumlari "
+            f"yok sayar, islem yapilabilir kar degildir): {parts}{tail}")
 
 
 def build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None, twin_code: str | None = None,
@@ -1830,7 +1877,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         results_by_stream[key] = res
         for r in sorted(res.values(), key=lambda r: r.c):
             cp_summary.append({"stream": r.stream_key, "c": r.c, "passed": r.passed, "valid_until": r.valid_until})
-    cf = build_counterfactual(cfg, as_of)
+    cf = build_counterfactual(cfg, as_of, rr_min=params.get("rr_min"))
     menu: list[MenuEntry] = []
     for pl in plans:
         rule, p, from_v, to_v, eclass = pl["rule"], pl["p"], pl["from"], pl["to"], pl["eclass"]
@@ -1852,8 +1899,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         auto_cap = (eligible and eclass in ("observed_subset", "twin_observed") and not always_user
                     and checks["checkpoint_passed"] and cg_ok and n_scope >= cfg.checkpoints[0])
         extra = dict(stats.get("extra", {})) if stats else {}
-        extra.update(counterfactual_extra(cf, rule.menu_id, stats.get("n_a") if stats else None,
-                                          stats.get("mean_a") if stats else None))
+        extra.update(counterfactual_extra(cf, rule.menu_id))
         if pl["twin"]:
             extra["n_twin"] = n_scope
             extra.setdefault("n_only_twin", sum(1 for u in units if u.category == "only_twin"))
@@ -2059,10 +2105,10 @@ def _render_user(snap: Snapshot, recent_n: int) -> str:
     if cfb and cfb.get("by_reason"):
         lines.append("[counterfactual]")
         lines.append(f"note: hypothetical net-of-cost outcomes of skipped signals (method={cfb['method']}, "
-                     f"days={cfb['days']}); supporting evidence only, weight={_fv(cfb['weight'])}; "
+                     f"days={cfb['days']}); upper bound: ignores later gates and fills; supporting evidence only, weight={_fv(cfb['weight'])}; "
                      f"never a sole basis; min_n={cfb['min_n']}")
         for reason, b in cfb["by_reason"].items():
-            lines.append(f"cf reason={reason} param_menu={b['menu_id'] or '-'} n={b['n']} "
+            lines.append(f"cf reason={reason} param_menu={b['menu_id'] or '-'} method={b['method']} n={b['n']} "
                          f"mean_net_r={_fv(b['mean_r_net'])} lb90={_fv(b['lb90'])} ub90={_fv(b['ub90'])} "
                          f"verdict={b['verdict']}")
     lines.append("[recent_trades]")
@@ -2286,8 +2332,8 @@ def classify_route(snapshot: Snapshot, draft: ProposalDraft, cfg: LessonConfig) 
             reasons.add("weak_evidence")
         if entry.evidence_class == "extrapolated":
             reasons.add("extrapolated")
-        if entry.extra.get("cf_support") == 1:
-            reasons.add("counterfactual_support")          # varsayimsal kanit ASLA otomatik uygulama yolu acmaz
+        if entry.extra.get("cf_n") is not None:
+            reasons.add("counterfactual_support")          # varsayimsal kanit (herhangi hukum) ASLA otomatik yol acmaz
         now_s, after = entry.extra.get("steps_from_twin_now"), entry.extra.get("steps_from_twin_after")
         if now_s is not None and after is not None and after > now_s and after > cfg.max_steps_from_twin:
             reasons.add("ratchet_guard")
@@ -4181,7 +4227,7 @@ class LessonService:
         if snap.shadow["active"] and route.klass == "auto":
             route = dataclasses.replace(route, klass="ask_user", reason_code="shadow_period")
         # yapisal engel: karsi-olgusal destek tasiyan oneri hicbir zaman otomatik uygulanmaz
-        if route.klass == "auto" and entry is not None and entry.extra.get("cf_support") == 1:
+        if route.klass == "auto" and entry is not None and entry.extra.get("cf_n") is not None:
             route = dataclasses.replace(route, klass="ask_user", reason_code="counterfactual_support")
         require_user = route.klass != "auto"
         ev = self._evidence(snap, entry)
