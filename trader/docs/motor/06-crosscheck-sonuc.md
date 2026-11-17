@@ -224,3 +224,28 @@ Karar kaynaklı çıkışlar (`regime_flip`, `target`, `time_stop`, planlı çı
 - (a) geçti, (c) geçti, (d) ücret geçti; (b) fiyat ≤ 1 tik (%96,1-96,3 < %97) ve (d) f2_s5 funding (+%10,5, ölçekli −%0,6) harfi **tutmadı**. İz gecikmesi 15m'de C'yi geçirdi (%97,96) ama 1h'de kötüleştirdi; bu turda başka uyum kuralı eklenmedi.
 - Açıklanmış eşdeğerlik adayları (mentor kararı): kalan 1h çıkış fiyatı farkı iz-stop ham değeri (adım 3'te 5/5 satır bir-bar-eski yol; 1h'de bayrakla genel uyum bozuluyor, hipotez: 1h koşuda gecikme bir ayrıntı mumu); funding farkı miktar zinciri (miktarı eşit işlemlerde +%0,01).
 - Tüm testler: `tests/engine` (mentor kararı gereği `test_engine_ml_filter.py`, `test_engine_05_impl_smoke.py::test_end_to_end_one_month_backtest` ve `::test_paper_replay_and_kill` çalıştırılmadı): 626 geçti, 1 atlandı.
+
+## 1h iz-stop gecikmesi tanısı ve mentor onayı "açıklanmış eşdeğerlik" (17 Kasım 2026)
+
+Salt okunur tanı: `research/bt_trail_lag_diag.py` (motor kodu değişmedi, koşu yapılmadı; kapalı-bayrak motor çıktıları `var/bt_base/*_compat`, referans `user_data/backtest_results/<ID>`, ham: `research/crosscheck/trail_lag_diag.json`). Üç 1h koşuda anahtarı eşleşen, neden+zaman eşleşip çıkış fiyatı 1 tikten fazla farklı her satır için: (i) referans çıkış fiyatı, motorun iz-stop yolunun (`signals.trail_stop_path`, `PrecomputedSignalSource` tabloları) **bir bar önceki** değerine tik hassasiyetinde eşit mi; (ii) referans çıkışı saatin hangi 15 dk alt mumunda (1–4; referans `close_date` dakikası // 15 + 1). Saglama: yolun son değeri (motorun kullandığı) motor çıkış fiyatına ≤ 1 tik eşit (49/51; ikisi aynı AVAX short işlemi, iki koşuda: motor 23,902, yol 23,9037).
+
+| Koşu | fiyat farklı satır (hepsi iz stop) | (i) ref = yol[-2], en yakın tik | (i) ref = yol[-2], yönlü tik (kısa aşağı / uzun yukarı) | (i) ref ≤ 1 tik yol[-2] | yol[-2] = yol[-1] (güncelleme yok) | (ii) alt mum 1 / 2 / 3 / 4 |
+|---|---|---|---|---|---|---|
+| 1h_IS_f1_s0 | 21 | 8 | 21 | 21 | 0 | 21 / 0 / 0 / 0 |
+| 1h_WF_f1_s0 | 10 | 5 | 10 | 10 | 0 | 10 / 0 / 0 / 0 |
+| 1h_IS_f2_s5 | 20 | 8 | 20 | 20 | 0 | 20 / 0 / 0 / 0 |
+| **toplam** | **51** | 21 | **51** | 51 | 0 | **51** / 0 / 0 / 0 |
+
+Sonuç: 51 satırın **51'inde** referans çıkış fiyatı motorun bir bar önceki iz-stop değerine, freqtrade'in yönlü tik yuvarlamasıyla (kısa aşağı, uzun yukarı) birebir eşit (en yakın tikle 21/51; kalan 30 satır tam 1 tik farklı, hepsi yuvarlama yönü). Yani çıkış fiyatı farkı mekanizması tek: stop değeri bir bar eski yoldan okunuyor. Hepsi saatin **ilk** 15 dk alt mumunda (referans çıkış saat açılışında, :00) gerçekleşiyor; 2.–4. alt mumda eşleşen fiyat-farkı satırı yok. Yorum: çıkış zamanı (neden+zaman %99,4–99,8) bayraksız motorla zaten uyuşuyor, yalnız fiyat bir bar eski stoptan alınıyor; adım 3'te bayrağın 1h'de C'yi düşürmesi büyük olasılıkla bayrağın fiyatla birlikte tetik/zamanı da kaydırmasındandı (bayrak yol[-2]'yi hem fiyat hem çapraz-denetim için kullanıyordu; çıkarım, ayrıca sınanmadı). Bu tanı **yeni kural eklemez, kapıyı yeniden açmaz**; salt okunur kanıttır ve (b) fiyat farkının açıklaması olarak kayda geçer (çekince 3'ün "mekanizma 5 satırda doğrulandı" ifadesi bu tabloyla 51 satıra genişledi). Bayrak kodu bu tanıdan sonra kaldırıldı (`--compat-trail-lag`, `ExitContext.trail_lag`).
+
+### Mentor onayı: "açıklanmış eşdeğerlik"
+
+Yeni uyum kuralı ve ayar turu yok; kapı çekincelerle geçti. (b) çıkış fiyatı 1h'de %96,1–96,3 (hedef 97): açıklanmış sapma olarak kabul — neden+zaman %99,4–99,8; fark iz süren stopun hangi mumla güncellendiği; bizim motor nedensel ve spec'e uygun taraf. (d) fonlama: büyüklüğe göre düzeltilmiş okuma kabul (eşit büyüklükte +%0,01; yazılı koşul yanlış tanımlanmıştı).
+
+Çekinceler:
+1. (a) iki aynı-mum cüzdan varsayımına dayanır (1h tüm kapanışlar, 15m yalnız önceki çiftler), freqtrade kaynağıyla doğrulanmadı, yalnız tanıyı etkiler.
+2. (a) ±%0,5 adet eşleşmesiyle, tam eşitlik %83–94.
+3. (b) mekanizma 5 satırda doğrulandı, kalanlar çıkarım — sınırlı salt okunur tanı kayda geçecek, kapıyı yeniden açmaz (bkz. yukarıdaki tablo).
+4. f2_s5 fonlaması yazıldığı haliyle +%10,5, 15m düzeltilmiş hesaplanmadı (ham +%39,9), 1h_WF düzeltilmiş +%4,6.
+5. Bilinçli asıl mod farkları: freqtrade'in büyüklük kısması yerine `insufficient_margin` reddi, giriş anında fonlama yok (+0,04), kapanan pozisyonda yuva/risk tutulur (≤ 3 giriş, ~%0,16; kağıdın 4. haftası).
+6. freqtrade dönemi araştırma sayıları (eski deneme defteri, backtest-raporu-v1) asıl modla doğrudan kıyaslanmaz; bundan sonra asıl mod tabanı geçerlidir, köprü §7.4 tablosu.
