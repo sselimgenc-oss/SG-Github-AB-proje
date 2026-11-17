@@ -26,13 +26,14 @@ log = logging.getLogger("engine.strategy.ml")
 ML_MODES = ("off", "shadow", "active")
 
 
-def load_engine_model(path: str | None, ml_mode: str, now: datetime) -> tuple[MlModelView | None, str | None]:
+def load_engine_model(path: str | None, ml_mode: str, now: datetime,
+                      expected_features=None) -> tuple[MlModelView | None, str | None]:
     """Motor tarafi yukleme: kapi (gate_passed True) + hash + 21 gun + ozellik listesi (+ active icin kullanici onayi).
     Hata -> (None, kod): `active`te yeni giris yok, `shadow`da yalniz uyari (log + sayac)."""
     if not path:
         return None, "ml_model_path_missing"
     try:
-        return load_model_view(path, expected_features=FEATURE_NAMES, ml_mode=ml_mode, now=now), None
+        return load_model_view(path, expected_features=FEATURE_NAMES if expected_features is None else expected_features, ml_mode=ml_mode, now=now), None
     except (OSError, ValueError, KeyError, TypeError) as e:
         log.warning("ML modeli yuklenemedi (%s): %s: %s", ml_mode, type(e).__name__, e)
         return None, f"{type(e).__name__}: {e}"
@@ -79,8 +80,11 @@ class PriceActionV1Ml:
         if model is None or model.expired(ctx.D):
             return sig                                      # etiket yok; post_filter durumu (shadow: uyari, active: eleme) belirler
         try:
-            fr = feature_frame(ctx.bars[ctx.tf][["open", "high", "low", "close"]])
-            X = fr.loc[sig.index[cand], list(model.features)].to_numpy(dtype=float)
+            if ctx.ml_v2 is not None:                       # ML-G5 (bayrakli): r02/r03, motor hesapladi (iki gecisli)
+                X = self._x_v2(ctx, model, sig.index[cand])
+            else:
+                fr = feature_frame(ctx.bars[ctx.tf][["open", "high", "low", "close"]])
+                X = fr.loc[sig.index[cand], list(model.features)].to_numpy(dtype=float)
             p = np.asarray(model.score(X), dtype=float)
             if not np.isfinite(p).all():
                 raise ValueError("puan sonlu degil")
@@ -94,6 +98,25 @@ class PriceActionV1Ml:
         reasons.loc[cand] = tags + reasons.loc[cand].astype(str)
         out["reasons"] = reasons
         return out
+
+    def native_candidate(self, ctx: StrategyContext) -> dict | None:
+        """ML-G5 birinci gecis: yerel v1b adayi (ML'siz `inner.compute`, karar mumu) ya da None. Yalniz okur."""
+        sig = self._inner.compute(ctx)
+        last = sig.iloc[-1]
+        if not bool(last["signal"]) or last["side"] not in ("long", "short"):
+            return None
+        return {"side": last["side"], "planned_entry": float(last["planned_entry"]),
+                "planned_stop": float(last["planned_stop"])}
+
+    @staticmethod
+    def _x_v2(ctx: StrategyContext, model: MlModelView, idx) -> np.ndarray:
+        bf = ctx.ml_v2
+        if getattr(bf, "error", None):
+            raise ValueError(f"ml_v2: {bf.error}")
+        if len(idx) != 1:
+            raise ValueError("ml_v2 yalniz karar mumunun tek adayini puanlar")
+        row = bf.rows[ctx.pair]
+        return np.array([[row[n] for n in model.features]], dtype=float)
 
     # ------------------------------------------------------------------ post_filter (yalniz kaldirma)
     def post_filter(self, row: pd.Series, ctx: StrategyContext) -> pd.Series:

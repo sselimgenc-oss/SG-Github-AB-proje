@@ -1330,9 +1330,26 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
     status = StatusWriter(cfg.status_path, clock, cfg)
     ml_model, ml_error = None, None
+    ml_v2 = None
+    v2_on = getattr(strategy, "ml_mode", "off") != "off" and cfg.ml_features != "v1"     # ML-G5 bayragi (varsayilan kapali)
     if getattr(strategy, "ml_mode", "off") != "off":
-        ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
-    signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error)
+        if v2_on:
+            from trader_core.ml_live_v2 import RECIPE_NAMES, LiveContextV2, funding_frame_from_points
+            ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
+                                                   expected_features=RECIPE_NAMES[cfg.ml_features])
+            # >= 200 gun kapanmis 1s mum (r02/r03 1g baglam): cift basina 5000 mum tutulur (~2 MB / 10 cift); ilk karar adiminda yuklenir
+            ml_v2 = LiveContextV2(
+                cfg.ml_features, cfg.pairs,
+                lambda p, D, n: view.bars(p, "1h", D, n),
+                lambda p, a, b: funding_frame_from_points(view.funding(p, a, b)))
+            try:
+                ml_v2.refresh(clock.now())                # baslangic yuklemesi (best-effort; karar adiminda yeniden denenir)
+            except Exception as e:  # noqa: BLE001
+                log.warning("ML v2 baslangic gecmisi yuklenemedi: %s: %s", type(e).__name__, e)
+        else:
+            ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
+    signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
+                                   ml_v2=ml_v2, pairs=cfg.pairs if ml_v2 is not None else None)
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,

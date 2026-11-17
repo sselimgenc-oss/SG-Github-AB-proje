@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
@@ -117,7 +117,8 @@ class WindowedSignalSource:
 
     def __init__(self, view: MarketView, strategy: Strategy, *, strict: bool = False,
                  last_exit_fn: Callable[[str, datetime], tuple[datetime, str] | None] | None = None,
-                 ml_model: MlModelView | None = None, ml_error: str | None = None) -> None:
+                 ml_model: MlModelView | None = None, ml_error: str | None = None,
+                 ml_v2=None, pairs: Sequence[str] | None = None) -> None:
         self.view = view
         self.strategy = strategy
         self.strict = strict
@@ -128,6 +129,39 @@ class WindowedSignalSource:
         self._cache: dict[tuple[str, datetime, int], SignalFrame] = {}
         self._latest: dict[tuple[str, datetime], SignalFrame] = {}
         self._cache_d: datetime | None = None
+        # ML-G5 (bayrakli, varsayilan None): r02/r03 canli ozellikleri; iki gecisli (once TUM ciftlerin yerel adaylari, sonra ozellik)
+        self.ml_v2 = ml_v2                  # trader_core.ml_live_v2.LiveContextV2 | None
+        self.pairs = list(pairs) if pairs is not None else []
+        self._bar_feats = None
+        self._gathered: dict[str, tuple] = {}
+
+    # ------------------------------------------------------------------ ml v2 ilk gecis
+    def _v2_active(self) -> bool:
+        return (self.ml_v2 is not None and self.ml_model is not None and bool(self.pairs)
+                and getattr(self.strategy, "ml_mode", "off") != "off" and hasattr(self.strategy, "native_candidate"))
+
+    def _v2_prepass(self, D: datetime, params: Mapping[str, object]) -> None:
+        """Birinci gecis: tum ciftlerin yerel adaylari (ML'siz) -> ikinci gecis: ozellikler (ayni-mum sayisi tum ciftlerde)."""
+        from trader_core.ml_live_v2 import BarFeatures
+        self._gathered = {}
+        try:
+            rows = []
+            for pair in self.pairs:
+                g = self._gather(pair, D, params)
+                self._gathered[pair] = g
+                if g[2] is not None:                                   # veri yok/delik: _build ayni nedenle ok olmaz
+                    continue
+                tf = str(params["trigger_tf"])
+                c = self.strategy.native_candidate(
+                    StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=g[0], last_exit=None, model=None))
+                if c is not None:
+                    rows.append({"pair": pair, **c})
+            cands = pd.DataFrame(rows, columns=["pair", "side", "planned_entry", "planned_stop"])
+            self._bar_feats = self.ml_v2.features_for_bar(D, cands)
+        except Exception as e:  # noqa: BLE001 - ozellik uretilemedi: aday puansiz kalir (active: elenir, shadow: gecer)
+            self.counters["ml_v2_errors"] += 1
+            log.error("ML v2 ozellik hatasi %s: %s: %s", D.isoformat(), type(e).__name__, e)
+            self._bar_feats = BarFeatures(D=D, recipe=getattr(self.ml_v2, "recipe", "?"), error=f"{type(e).__name__}: {e}")
 
     # ------------------------------------------------------------------ frame
     def frame(self, pair: str, D: datetime, params, version_id: int) -> SignalFrame:
@@ -135,6 +169,10 @@ class WindowedSignalSource:
             self._cache.clear()
             self._latest.clear()
             self._cache_d = D
+            self._bar_feats = None
+            self._gathered = {}
+            if self._v2_active():
+                self._v2_prepass(D, _params_map(params))
         key = (pair, D, int(version_id))
         hit = self._cache.get(key)
         if hit is not None:
@@ -149,32 +187,44 @@ class WindowedSignalSource:
         log.log(logging.CRITICAL if error else logging.WARNING, "sinyal karesi %s: %s (%s)", pair, status, detail)
         return SignalFrame(pair=pair, status=status, detail=detail, last=None, table=None)  # type: ignore[arg-type]
 
+    def _gather(self, pair: str, D: datetime, params: Mapping[str, object]):
+        """Yan etkisiz pencere toplama -> (bars, trig, None) ya da (None, None, (durum, ayrinti)). `_build` ile ML v2 ilk gecisi paylasir."""
+        info = self.strategy.info
+        tf = str(params["trigger_tf"])
+        if tf not in info.allowed_trigger_tfs:
+            raise StrategyError("bad_table", f"trigger_tf izinli degil: {tf}")
+        names = {("trigger" if t == "trigger" else t): (tf if t == "trigger" else t) for t in info.timeframes}
+        bars: dict[str, pd.DataFrame] = {}
+        for key, real in names.items():
+            bars[real] = self.view.bars(pair, real, D, info.window_bars[real])
+        trig = bars[tf]
+        for key, real in names.items():
+            if len(bars[real]) < info.warmup_bars[real]:
+                return None, None, ("no_history", f"{real}:{len(bars[real])}<{info.warmup_bars[real]}")
+        if len(trig) == 0 or trig.index[-1].to_pydatetime() != D - tf_delta(tf):
+            return None, None, ("data_gap", "trigger_bar_missing")
+        for key, real in names.items():
+            need = info.min_contiguous.get(key)
+            if need is not None and self.view.contiguous_tail(pair, real, D) < need:
+                return None, None, ("data_gap", "hole")
+        return bars, trig, None
+
     def _build(self, pair: str, D: datetime, params: Mapping[str, object], version_id: int) -> SignalFrame:
         info = self.strategy.info
         try:
             tf = str(params["trigger_tf"])
             if tf not in info.allowed_trigger_tfs:
                 raise StrategyError("bad_table", f"trigger_tf izinli degil: {tf}")
-            names = {("trigger" if t == "trigger" else t): (tf if t == "trigger" else t) for t in info.timeframes}
-            bars: dict[str, pd.DataFrame] = {}
-            for key, real in names.items():
-                bars[real] = self.view.bars(pair, real, D, info.window_bars[real])
-            trig = bars[tf]
-            for key, real in names.items():
-                if len(bars[real]) < info.warmup_bars[real]:
-                    return self._bad(pair, "no_history", f"{real}:{len(bars[real])}<{info.warmup_bars[real]}")
-            if len(trig) == 0 or trig.index[-1].to_pydatetime() != D - tf_delta(tf):
-                return self._bad(pair, "data_gap", "trigger_bar_missing")
-            for key, real in names.items():
-                need = info.min_contiguous.get(key)
-                if need is not None and self.view.contiguous_tail(pair, real, D) < need:
-                    return self._bad(pair, "data_gap", "hole")
-            ctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=None, model=self.ml_model)
+            bars, trig, bad = self._gathered.get(pair) or self._gather(pair, D, params)
+            if bad is not None:
+                return self._bad(pair, bad[0], bad[1])
+            ctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=None, model=self.ml_model,
+                                  ml_v2=self._bar_feats)
             sig = self.strategy.compute(ctx)
             validate_table(sig, info, trig.index)
             last_exit = self.last_exit_fn(pair, D) if self.last_exit_fn is not None else None
             fctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=last_exit,
-                                   model=self.ml_model)
+                                   model=self.ml_model, ml_v2=self._bar_feats)
             last_row = self.strategy.post_filter(sig.iloc[-1], fctx)
             validate_row(last_row, info)
             if bool(last_row["signal"]) and not bool(sig.iloc[-1]["signal"]):

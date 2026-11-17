@@ -64,6 +64,7 @@ class StrategyContext:
     bars: Mapping[str, pd.DataFrame]
     last_exit: tuple[datetime, str] | None = None
     model: MlModelView | None = None       # 05 §13.2 (ML-0a): yuklenmis model, SALT OKUNUR; yoksa None (motor tedarik eder)
+    ml_v2: object | None = None            # ML-G5: trader_core.ml_live_v2.BarFeatures (r02/r03, motor hesaplar); bayrak kapaliyken None
 
 
 class ExitPolicy(Protocol):

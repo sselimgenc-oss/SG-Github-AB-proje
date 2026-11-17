@@ -45,9 +45,14 @@ Tanimlar (belirsiz olanlar):
 - Hacim z-skoru sifir std'de NaN (sonsuz degil). `f_side_sign` cands.side'tan.
 
 ETH 1g oynakligi 40 ozellik sinirina uymak icin (BTC ile yuksek korelasyonlu) birakildi.
-G5 ZORUNLULUKLARI (bu modulde YOK): (a) motor >= 200 gun 1g/1s gecmis saglar; (b) trader_ml sarmalayicisi HER cift
-cercevesi ve funding uzerinde guards.assert_pre_holdout cagirir; (c) f_same_bar_signals icin iki gecisli degerlendirme.
-TODO (G5, canli motor baglami gerektirir; bu modulde YOK): acik aday sayisi, son cikistan bu yana mum sayisi.
+G5 ZORUNLULUKLARI (ML-G5'te KARSILANDI, bu modulun disinda): (a) motor >= 200 gun (4800 mum) 1s gecmis tutar ->
+`trader_core.ml_live_v2.LiveContextV2` (cift basina 5000 mum); (b) `trader_ml.features_v2.feature_frame_v2` HER cift cercevesi ve
+funding uzerinde guards.assert_pre_holdout cagirir; (c) iki gecisli degerlendirme -> `trader_engine.strategy_runner.
+WindowedSignalSource` once TUM ciftlerin yerel adaylarini toplar, sonra `LiveContextV2.features_for_bar`. Egitim/motor esitligi:
+tests/ml/test_g5_parity.py (1e-9). Bayrak: motor yapilandirmasi `ml_features` (varsayilan "v1").
+KARAR (G5, mentor 3.2.1-1): acik aday sayisi, son cikistan bu yana mum sayisi ve f_eth_vol_1d ozellik listesinde YOKTUR
+(r02 = tam olarak R02_FEATURE_NAMES, 40) ve G5'te EKLENMEDI; ancak ileride eklenirse (yeni on kayit gerekir) bunlar canli motor
+durumuna (acik pozisyon/defter) baglidir ve egitimde yeniden uretilebilmesi icin ayri bir tablo-duzeyi adim gerektirir.
 Sonuca dayali defter ozellikleri yasak.
 """
 from __future__ import annotations
@@ -259,7 +264,9 @@ def feature_frame_v2(pairs: dict[str, pd.DataFrame], cands: pd.DataFrame, *,
         fl, s3 = _funding_at((funding or {}).get(p), ts[m])
         res["f_funding_last"][m], res["f_funding_sum3"][m] = fl, s3
         # ---- v1 cekirdegi: yalniz bu cift icin, sinyal modulu + HTF ozellikleri (v1 ile ayni kod) ----
-        v1 = feature_frame(df[["open", "high", "low", "close", "volume"]])
+        # v1'in 1g egimi (pencereli, yavas) KULLANILMAZ: f_slope_1d/f_vol_1d asagida sabit 200g pencereden gelir -> pencere = len(df)
+        # (yeniden hesap yok; diger sutunlar degismez, motor yolunda aday basina ~6 sn -> ~1 sn)
+        v1 = feature_frame(df[["open", "high", "low", "close", "volume"]], slope_1d_window=len(df))
         for k in CORE_V1_NAMES:
             if k not in ("f_side_sign", "f_stop_dist_atr", "f_slope_1d", "f_vol_1d"):
                 core[k][m] = v1[k].reindex(ot).to_numpy(float)
