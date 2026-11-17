@@ -21,7 +21,8 @@ from .fileio import atomic_write_json, fmt_ts
 log = logging.getLogger(__name__)
 
 SCHEMA = "pause/1"
-REASONS = ("user_cmd", "drawdown_review", "unknown_position", "late_fill", "exchange_ban", "exchange_auth", "manual")
+REASONS = ("user_cmd", "drawdown_review", "capital_floor", "unknown_position", "late_fill", "exchange_ban", "exchange_auth",
+           "manual")      # 12 ile guncellendi: capital_floor (son taban; yalniz sunucuda CLI ile kalkar)
 UNREADABLE = "unreadable"
 AUDIT_NAME = "pause_audit.jsonl"
 
@@ -89,7 +90,10 @@ class EntryPause:
     def code(self) -> str | None:
         if not self.active():
             return None
-        return "drawdown_review" if any(h.reason == "drawdown_review" for h in self.holds()) else "paused"
+        reasons = {h.reason for h in self.holds()}
+        if "capital_floor" in reasons:                      # 12 §2: capital_floor -> drawdown_review -> paused
+            return "capital_floor"
+        return "drawdown_review" if "drawdown_review" in reasons else "paused"
 
     # ------------------------------------------------------------------ yazma
     @contextmanager

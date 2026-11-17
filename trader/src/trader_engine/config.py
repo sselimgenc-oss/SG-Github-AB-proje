@@ -3,6 +3,7 @@ LOCKED_CFG'den SIKI olabilir (gevsek/gecersiz => ConfigError, fail-closed)."""
 from __future__ import annotations
 
 import dataclasses
+import functools
 import json
 import math
 import os
@@ -81,10 +82,12 @@ class EngineConfig:
     startup_wait_s: float = 600.0                             # paper acilis kapisi: kural+taze 1m veri icin azami bekleme
     leverage: int = LOCKED_CFG.min_leverage                   # 11 §3.1: [min_leverage, max_leverage]
     live: LiveSettings | None = None                          # 11 §3.1: testnet/live icin ZORUNLU, digerlerinde yasak
+    ladder_follow: str | None = None                          # 12 §8.4: baska botun kademe gunlugunun yolu; yalniz paper
 
-    @property
+    @functools.cached_property
     def risk_config(self) -> RiskConfig:
-        """Boyutlama/kapi icin tek RiskConfig (twin ve learner ayni degeri okur)."""
+        """Boyutlama/kapi icin tek RiskConfig (twin ve learner ayni degeri okur). Nesne tek kez kurulur (12 §8.3:
+        K0'da `step_config` ayni nesneyi dondurur)."""
         return build_risk_config(self.target_trade_risk)
 
     def _bot_path(self, name: str) -> str:
@@ -112,7 +115,7 @@ _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wa
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "startup_wait_s", "pause_file",
-                  "leverage", "live"}
+                  "leverage", "live", "ladder_follow"}
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -284,6 +287,12 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     startup_wait = _num("startup_wait_s", raw.get("startup_wait_s", 600.0), 0.0, 86_400.0)
     lev = _int("leverage", raw.get("leverage", LOCKED_CFG.min_leverage),
                LOCKED_CFG.min_leverage, LOCKED_CFG.max_leverage)
+    ladder_follow = raw.get("ladder_follow")
+    if ladder_follow is not None:
+        if not isinstance(ladder_follow, str) or not ladder_follow:
+            raise ConfigError("ladder_follow bos olmayan str ya da null olmali")
+        if mode != "paper":
+            raise ConfigError(f"ladder_follow yalniz mode='paper' ile verilebilir (mode={mode!r})")
     live_raw = raw.get("live")
     if mode in ("testnet", "live"):
         if live_raw is None:
@@ -314,7 +323,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
         start_delay_s=nums["start_delay_s"], strategy=strategy,
         target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path, ml_features=ml_features,  # type: ignore[arg-type]
-        startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live,
+        startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live, ladder_follow=ladder_follow,
         **{n: raw[n] for n in _STR},
     )
 

@@ -543,6 +543,23 @@ class LiveBroker:
         self._acct = (now, acc)
         return acc
 
+    def transfers(self, since: datetime, until: datetime) -> list:
+        """12 §7 [V-8]: `GET /fapi/v1/income?incomeType=TRANSFER` (sembolsuz): vadeli cuzdana giren (+) / cikan (-) aktarimlar,
+        `tranId` ile tekillestirilir. Okuma hatasi istisna olarak yukselir (cagiran fail-closed)."""
+        from trader_core.risk_ladder import Transfer
+        rows = self._read("income", None, "TRANSFER", _ms(since), _ms(until))
+        out: dict[str, Transfer] = {}
+        for r in rows or []:
+            if not isinstance(r, Mapping):
+                continue
+            amt = _strict_float(r.get("income"))
+            t_ms = _strict_float(r.get("time"))
+            tid = str(r["tranId"]) if r.get("tranId") not in (None, "") else f"t{r.get('time')}:{r.get('income')}"
+            if amt is None or t_ms is None:
+                continue
+            out[tid] = Transfer(ts=_ts(t_ms, until), amount=amt, tran_id=tid, asset=str(r.get("asset") or ""))
+        return sorted(out.values(), key=lambda x: (x.ts, x.tran_id))
+
     def _note_positions(self, rows: list[dict], now: datetime, track: bool = False) -> dict[str, dict]:
         """track=True yalniz `_sync`ten: orada gorulen acik pozisyon izlenir. Saf okumalar (positions()) izleme baslatmaz;
         kayit icin register_position() ya da `_sync` gerekir (acilis zamani yetkili olsun)."""

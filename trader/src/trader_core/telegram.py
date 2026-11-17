@@ -17,13 +17,16 @@ import re
 import secrets
 import sys
 import time
+import math
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
 from . import lesson as LS
+from . import risk_ladder as RL
 
 
 # trader_core -> trader_engine bagimliligi yasak (08 §4.7): motorun fileio bicimiyle ayni kucuk yardimcilar.
@@ -480,7 +483,7 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-HELP = ("/durum  /rapor  /hepsini_kapat  /durdur  /devam  /onayla <id>  /reddet <id>  /yardim\n"
+HELP = ("/durum  /rapor  /hepsini_kapat  /durdur  /devam  /kademe  /kademe_devam  /onayla <id>  /reddet <id>  /yardim\n"
         "/durdur: yeni girisleri durdurur, pozisyonlar acik kalir (tam kapatma icin /hepsini_kapat)")
 PAUSE_USER = "user_cmd"
 
@@ -511,11 +514,95 @@ def pause_lines(pauses: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+@dataclass(frozen=True)
+class LadderFiles:
+    """12 §9: bot basina kademe gunlugu (okuma/yazma), motorun status.json yolu ve duraklatma (tutus kaldirma)."""
+    log: Any
+    status_path: str
+    pause: Any
+
+
+def _tr(x: Any, nd: int = 2) -> str:
+    """Turkce ondalik: 262,40."""
+    try:
+        v = float(x)
+        if not math.isfinite(v):
+            return "?"
+        return f"{v:.{nd}f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _num_ok(x: Any) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def ladder_view(lf: LadderFiles, now: datetime) -> dict:
+    """12 §9: status.json `risk_ladder` blogu (taze ise) ya da gunlukten katlama ("motor durumu bayat"). Asla istisna atmaz.
+    Anahtarlar: state ok|review|floor|uninitialized|invalid, step_name, step_risk, dep_net, base, peak, equity, dd_base_pct,
+    stop_at, floor_at, gate_code, counters, stopped_at (datetime|None), step, stale (bool), status_fresh, enforce."""
+    out: dict = {"state": "invalid", "stale": True, "status_fresh": False, "equity": None, "gate_code": None,
+                 "counters": None, "enforce": None, "step": None, "step_name": None, "step_risk": None,
+                 "dep_net": None, "base": None, "peak": None, "stop_at": None, "floor_at": None, "dd_base_pct": None,
+                 "dd_peak_pct": None, "stopped_at": None, "near": None, "loop_ok": False}
+    blk, eq, fresh = None, None, False
+    try:
+        d = json.loads(Path(lf.status_path).read_text(encoding="utf-8"))
+        loop = parse_ts_z(d["loop_at"])
+        fresh = -RL.STATUS_FRESH_S <= (now - loop).total_seconds() <= RL.STATUS_FRESH_S
+        eq = d.get("equity") if _num_ok(d.get("equity")) and d.get("equity") > 0 else None
+        b = d.get("risk_ladder")
+        blk = b if isinstance(b, dict) else None
+    except Exception:  # noqa: BLE001
+        pass
+    out["status_fresh"] = fresh
+    out["equity"] = eq if fresh else None
+    out["loop_ok"] = fresh and eq is not None
+    try:
+        st = lf.log.state()
+    except Exception:  # noqa: BLE001
+        st = False
+    if st is False:
+        out["state"] = "invalid"
+        return out
+    if st is None:
+        out["state"] = "uninitialized"
+    else:
+        sa = st.stopped_at
+        out.update(state=st.status, step=st.step, step_name=RL.STEP_NAMES[st.step], step_risk=RL.STEPS[st.step],
+                   dep_net=st.dep_net, base=st.base, peak=st.peak, stopped_at=sa,
+                   stop_at=round(RL.STOP_RATIO * st.base, 8), floor_at=round(RL.FLOOR_RATIO * st.dep_net, 8))
+        e = out["equity"]
+        if e is not None:
+            out["dd_base_pct"] = max(0.0, (st.base - e) / st.base * 100.0)
+            out["dd_peak_pct"] = max(0.0, (st.peak - e) / st.peak * 100.0)
+            out["near"] = e <= round(RL.NEAR_RATIO * st.base, 8)
+    if fresh and blk is not None:
+        out["gate_code"] = blk.get("gate_code")
+        out["counters"] = blk.get("counters")
+        out["enforce"] = blk.get("enforce")
+        if blk.get("equity") is not None and out["equity"] is None and _num_ok(blk.get("equity")):
+            out["equity"] = blk.get("equity")
+    out["stale"] = not fresh
+    return out
+
+
+def ladder_line(bot: str, v: dict) -> str:
+    """12 §9 /durum ve rapor satiri (bot basina tek)."""
+    pre = {"review": "İNCELEME ", "floor": "TABAN "}.get(v["state"], "")
+    if v["state"] in ("uninitialized", "invalid"):
+        return f"{bot}: Kademe: {'sermaye kaydı yok' if v['state'] == 'uninitialized' else 'günlük bozuk'}"
+    n = (v.get("counters") or {}).get("total_trades")
+    return (f"{bot}: {pre}Kademe: {v['step_name']} %{_tr(v['step_risk'] * 100)} | özsermaye {_tr(v['equity'])} | "
+            f"taban {_tr(v['base'])} (düşüş %{_tr(v['dd_base_pct'], 1)}) | durma {_tr(v['stop_at'])} | "
+            f"son taban {_tr(v['floor_at'])} | işlem {n if n is not None else '?'}")
+
+
 class TelegramDaemon:
     def __init__(self, cfg: TelegramConfig, client: TelegramClient, *, now_fn: Callable[[], datetime] | None = None,
                  runner: Callable | None = None, killswitch=None, report_fn: Callable[[], str] | None = None,
                  sleep: Callable[[float], None] = time.sleep, random_code: Callable[[], str] | None = None,
-                 pauses: Mapping[str, Any] | None = None):
+                 pauses: Mapping[str, Any] | None = None, ladders: Mapping[str, LadderFiles] | None = None):
         self.cfg, self.client = cfg, client
         self.now = now_fn or (lambda: datetime.now(UTC))
         if runner is None:
@@ -529,6 +616,7 @@ class TelegramDaemon:
         self.killswitch = killswitch          # motorun Killswitch'i disaridan verilir (scripts/telegram_run.py)
         # bot -> EntryPause (active/holds/add/remove); yalniz scripts/telegram_run.py enjekte eder; yedek gerceklenim YOK (11 §9.5)
         self.pauses = dict(pauses) if pauses else None
+        self.ladders = dict(ladders) if ladders else None       # 12 §9: bot -> LadderFiles (yalniz scripts/telegram_run.py enjekte eder)
         self.start_ts = self.now().timestamp()
         self._seen: set[int] = set()
         self._rand = random_code or (lambda: "%04d" % secrets.randbelow(10000))
@@ -682,6 +770,10 @@ class TelegramDaemon:
             return self._cmd_devam_start()
         if cmd == "/durdur":
             return self._cmd_durdur_start()
+        if cmd == "/kademe":
+            return self._cmd_kademe()
+        if cmd == "/kademe_devam":
+            return self._cmd_kademe_devam_start()
         if cmd in ("/onayla", "/reddet"):
             return self._lesson(arg, cmd == "/onayla")
         self._reply("bilinmeyen komut. " + HELP)
@@ -697,6 +789,7 @@ class TelegramDaemon:
                  f"entries_open={st.get('entries_open')} equity={st.get('equity')} "
                  f"loop_at={st.get('loop_at')}", f"acik pozisyon: {len(st.get('open_positions') or [])}"]
         lines += self._pause_lines()
+        lines += self._ladder_lines()
         self._reply("\n".join(lines), "INFO")
         return "ok"
 
@@ -742,7 +835,8 @@ class TelegramDaemon:
         if st and not others:
             others = ["unreadable"]
         if others:
-            extra = (" (kademe inceleme akışıyla ya da sunucuda operatör tarafından kaldırılır)"
+            extra = (" (Son taban: sunucuda, yazılı kararla kaldırılır)" if "capital_floor" in others
+                     else " (kademe inceleme akışıyla ya da sunucuda operatör tarafından kaldırılır)"
                      if "drawdown_review" in others else "; yalnız sunucuda kaldırılır")
             return f"Bu durdurma Telegram'dan kaldırılamaz: {', '.join(others)}{extra}"
         return "KILL etkin degil"
@@ -754,6 +848,150 @@ class TelegramDaemon:
         if self.pauses:
             return "pause", self._pause_devam_refusal()
         return "kill", self._devam_refusal()
+
+    # -- risk kademesi (12 §9) ---------------------------------------------------
+    def _ladder_views(self) -> dict[str, dict]:
+        now = self.now()
+        return {b: ladder_view(lf, now) for b, lf in (self.ladders or {}).items()}
+
+    def _ladder_lines(self) -> list[str]:
+        if not self.ladders:
+            return []
+        return [ladder_line(b, v) for b, v in self._ladder_views().items()]
+
+    def _cmd_kademe(self) -> str:
+        if not self.ladders:
+            self._reply("kademe denetimi yapılandırılmadı", "INFO")
+            return "noconfig"
+        lines = []
+        for b, v in self._ladder_views().items():
+            if v["state"] in ("uninitialized", "invalid"):
+                lines.append(f"{b}: {'sermaye kaydı yok' if v['state'] == 'uninitialized' else 'kademe günlüğü bozuk'}")
+                continue
+            dur = {"ok": "ok", "review": "inceleme", "floor": "taban"}[v["state"]]
+            c = v.get("counters") or {}
+            ln = [f"{b}: basamak {v['step_name']} (risk %{_tr(v['step_risk'] * 100)}) | durum {dur}",
+                  f"  yatırılan {_tr(v['dep_net'])} | taban {_tr(v['base'])} | tepe {_tr(v['peak'])} | "
+                  f"özsermaye {_tr(v['equity'])}",
+                  f"  düşüş: tabandan %{_tr(v['dd_base_pct'], 1)}, tepeden %{_tr(v['dd_peak_pct'], 1)}",
+                  f"  durma seviyesi {_tr(v['stop_at'])} USD | son taban {_tr(v['floor_at'])} USD"]
+            if v.get("gate_code"):
+                ln.append(f"  kapı: {v['gate_code']}")
+            if c:
+                ln.append(f"  işlem {c.get('total_trades')} | basamakta {c.get('step_trades')} işlem / "
+                          f"{c.get('step_days')} gün | ort. R {_tr(c.get('step_mean_r'))} | ardışık zarar "
+                          f"{c.get('consec_losses')} | son30 R {_tr(c.get('last30_sum_r'))}")
+            if v["stale"]:
+                ln.append("  (motor durumu bayat: değerler günlükten; özsermaye bilinmiyor)")
+            lines.append("\n".join(ln))
+        self._reply("\n".join(lines), "INFO")
+        return "ok"
+
+    def _ladder_candidates(self) -> list[tuple[str, LadderFiles, Any]]:
+        """review durumundaki botlar (ya da durum ok iken drawdown_review tutusu kalmis olanlar)."""
+        out = []
+        for b, lf in (self.ladders or {}).items():
+            try:
+                st = lf.log.state()
+            except Exception:  # noqa: BLE001
+                continue
+            if st is None:
+                continue
+            if st.status == "review":
+                out.append((b, lf, st))
+            elif st.status == "ok":
+                try:
+                    if any(h.reason == "drawdown_review" for h in lf.pause.holds()):
+                        out.append((b, lf, st))
+                except Exception:  # noqa: BLE001
+                    continue
+        return out
+
+    def _ladder_resume_refusal(self) -> tuple[str | None, list]:
+        """12 §9 /kademe_devam ret kosullari (ilk tutan). -> (ret metni | None, [(bot, lf, st, view)])."""
+        if not self.ladders:
+            return "kademe denetimi yapılandırılmadı", []
+        cands = self._ladder_candidates()
+        if not cands:
+            for b, lf in self.ladders.items():
+                try:
+                    st = lf.log.state()
+                except Exception:  # noqa: BLE001
+                    continue
+                if st is not None and st.status == "floor":
+                    return "Son taban: Telegram'dan açılamaz; yazılı karar + sunucu gerekir", []
+            return "Bekleyen kademe incelemesi yok", []
+        if self.killswitch is not None and self.killswitch.active():
+            return "Önce KILL: /devam", []
+        now = self.now()
+        out = []
+        for b, lf, st in cands:
+            v = ladder_view(lf, now)
+            if st.status == "review" and st.stopped_at is not None:
+                wait = RL.RESUME_MIN_WAIT_S - (now - st.stopped_at).total_seconds()
+                if wait > 0:
+                    at = (st.stopped_at + timedelta(seconds=RL.RESUME_MIN_WAIT_S)).astimezone(TR)
+                    return f"En erken {at.strftime('%d.%m.%Y %H:%M')} (kalan {math.ceil(wait / 3600)} saat)", []
+            if not v["loop_ok"]:
+                return "Motor durumu okunamıyor; sunucuda `ladder resume`", []
+            if v.get("gate_code"):
+                return f"Önce sermaye kaydı sorunu çözülmeli: {v['gate_code']}", []
+            out.append((b, lf, st, v))
+        return None, out
+
+    def _cmd_kademe_devam_start(self) -> str:
+        why, items = self._ladder_resume_refusal()
+        if why:
+            self._reply(why)
+            return "refused"
+        code = self._new_pending("ladder_resume")
+        parts = []
+        for b, lf, st, v in items:
+            e = v["equity"]
+            nb = min(st.base, e) if st.status == "review" else st.base
+            step = min(st.step, 0) if st.status == "review" else st.step
+            parts.append(f"{b}: yeni taban {_tr(nb)} USD, yeni durma seviyesi {_tr(RL.STOP_RATIO * nb)} USD, "
+                         f"basamak {RL.STEP_NAMES[step]}, son taban {_tr(RL.FLOOR_RATIO * st.dep_net)} USD")
+        self._reply("Onaylarsan: " + "; ".join(parts) + f". Onay icin {CODE_TTL_S} sn icinde yalniz su 4 haneli kodu "
+                    f"yanitla: {code}")
+        return "code_sent"
+
+    def _ladder_resume_apply(self, who: str) -> str:
+        why, items = self._ladder_resume_refusal()           # kod aninda yeniden denetlenir
+        if why:
+            self._reply(why)
+            return "refused"
+        by = f"telegram:{who}"
+        now = self.now()
+        notes, crit = [], False
+        for b, lf, st, v in items:
+            if st.status == "review":
+                try:
+                    lf.log.append("review_resume", by, now, equity=float(v["equity"]), rebase=True, decision="")
+                except Exception as e:  # noqa: BLE001 - satir yazilamadi: tutus KALDIRILMAZ
+                    log.error("review_resume yazilamadi: %s", type(e).__name__)
+                    notes.append(f"{b}: kademe satırı YAZILAMADI ({type(e).__name__}); tutuş kaldırılmadı; sunucuda "
+                                 "`ladder resume`")
+                    crit = True
+                    continue
+            try:
+                lf.pause.remove("drawdown_review", by)
+            except Exception as e:  # noqa: BLE001
+                log.error("drawdown_review kaldirilamadi: %s", type(e).__name__)
+                notes.append(f"{b}: kademe satırı yazıldı ama tutuş KALDIRILAMADI ({type(e).__name__}); komutu yineleyin "
+                             "(yalnız tutuş kaldırılır)")
+                crit = True
+                continue
+            notes.append(f"{b}: kademe incelemesi kapandı; yeni taban {_tr(min(st.base, v['equity']))} USD")
+        rem = []
+        for b, lf, *_ in items:
+            try:
+                rs = ", ".join(h.reason for h in lf.pause.holds())
+            except Exception:  # noqa: BLE001
+                rs = "okunamadi"
+            rem.append(f"{b}: {rs + ' — girişler hâlâ kapalı' if rs else 'girişler açık'}")
+        self._reply("\n".join(notes + rem), "CRIT" if crit else "WARN")
+        return "ladder_partial" if crit else "ladder_resumed"
 
     # -- iki adimli kod -----------------------------------------------------
     def _new_pending(self, action: str, **extra) -> str:
@@ -827,6 +1065,8 @@ class TelegramDaemon:
         if not hmac.compare_digest(want, p["token_hash"]):
             self._reply("yanlis kod, iptal edildi")
             return "wrong_code"
+        if p["action"] == "ladder_resume":
+            return self._ladder_resume_apply(who)
         if p["action"] == "kill":
             self.killswitch.set(by=f"telegram:{who}", reason="user_cmd")
             self.kill_watch = self.now().timestamp()
@@ -1237,11 +1477,14 @@ def section_counterfactual(cfg: TelegramConfig, now: datetime) -> str:
             f"değildir) — {parts}")
 
 
-def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None
-                     ) -> dict[str, Callable[[], str]]:
+def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None,
+                     ladders: Mapping[str, LadderFiles] | None = None) -> dict[str, Callable[[], str]]:
     out: dict[str, Callable[[], str]] = {}
     if pauses:                                                   # 11 §9.5: bot basina duraklatma satiri
         out["Duraklatma"] = lambda: "\n" + "\n".join("  " + ln for ln in pause_lines(pauses))
+    if ladders:                                                  # 12 §9: bot basina tek satir
+        out["Risk kademesi"] = lambda: "\n" + "\n".join(
+            "  " + ladder_line(b, ladder_view(lf, now)) for b, lf in ladders.items())
     out.update({"Defter": lambda: section_ledger(cfg, day), "Bütçe": lambda: section_budget(cfg),
                 "Ders": lambda: section_lesson(cfg, now),
                 "Alınmayan sinyaller (son 7 gün)": lambda: section_counterfactual(cfg, now)})
@@ -1249,7 +1492,7 @@ def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mappi
 
 
 def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, sections=None,
-               pauses: Mapping[str, Any] | None = None) -> str:
+               pauses: Mapping[str, Any] | None = None, ladders: Mapping[str, LadderFiles] | None = None) -> str:
     """-> 'sent' | 'spooled' | 'skipped' | 'already'. last_report.json gun anahtari yalniz teslimde yazilir."""
     lp = Path(cfg.var_dir) / "last_report.json"
     try:
@@ -1259,7 +1502,7 @@ def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, s
     decision, day = report_decision(now, last)
     if decision == "atla":
         return "already" if last == day else "skipped"
-    text = build_report(cfg, now, day, default_sections(cfg, now, day, pauses) if sections is None else sections)
+    text = build_report(cfg, now, day, default_sections(cfg, now, day, pauses, ladders) if sections is None else sections)
     if decision == "gecikmis":
         text = "[gecikmiş] " + text
     ok = notifier.send_text(text, "INFO", f"report-{day}")

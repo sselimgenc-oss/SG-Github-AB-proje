@@ -8,7 +8,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 ENGINE = "src/trader_engine"
 CORE = "src/trader_core"
-CORE_ALLOWED = {"risk", "signals", "regime", "indicators", "ledger", "veto", "config_loader", "ml_package", "ml_features", "ml_live_v2"}
+CORE_ALLOWED = {"risk", "signals", "regime", "indicators", "ledger", "veto", "config_loader", "ml_package", "ml_features", "ml_live_v2",
+                "risk_ladder"}   # 12 (RK-1): kademe sabitleri/katlama; yalniz ladder.py (ve cli.py) kullanir
 CORE_NAME_ALLOWED = {"config_loader": {"deep_merge"}}
 LEAVES = {"types", "errors", "numeric", "clock", "bars", "fileio", "config", "holdout"}
 # ALLOWED_EDGES: yaprak modüller yalnız birbirini içe aktarabilir (stdlib + izinli trader_core hariç).

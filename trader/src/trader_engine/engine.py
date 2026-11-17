@@ -74,8 +74,12 @@ class Engine:
     def __init__(self, cfg: EngineConfig, *, clock: Clock, view: MarketView, broker: Broker, ledger: L.Ledger,
                  state: StateStore, signals: SignalSource, strategy: Strategy, veto: VetoSource, kill: Killswitch,
                  status: StatusWriter | None, orders: OrderManager | None = None, entry_ref_fn=None,
-                 strict: bool = False, tick_fn=None, pause: EntryPause | None = None, reconciler=None) -> None:
+                 strict: bool = False, tick_fn=None, pause: EntryPause | None = None, reconciler=None,
+                 ladder=None) -> None:
+        if cfg.mode == "live" and ladder is None:
+            raise ConfigError("mode='live': risk kademe denetimi (ladder) olmadan motor kurulamaz (12 §8.1)")
         self.cfg = cfg
+        self.ladder = ladder
         self.clock = clock
         self.view = view
         self.broker = broker
@@ -108,7 +112,7 @@ class Engine:
             self.orders.close_unopened_fn = self._close_unopened    # giris penceresi kapanisi: defter duzeltmesi + _entry_events
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
-        self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause)
+        self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause, ladder)
         self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
@@ -227,6 +231,10 @@ class Engine:
             return "kill"
         if self.pause is not None and self.pause.active():
             return self.pause.code() or "paused"
+        if self.ladder is not None:                          # 12 §8.3: duraklatmadan sonra
+            gc = self.ladder.gate_code()
+            if gc:
+                return gc
         return "ok"
 
     def kill_state(self) -> str | None:
@@ -258,6 +266,7 @@ class Engine:
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
             "pause": self._pause_status(),
+            "risk_ladder": self._ladder_status(),
             **({} if self.is_paper else {"exchange": self._exchange_status()}),
         }
 
@@ -274,6 +283,36 @@ class Engine:
         if self.pause is None:
             return None
         return {"active": self.pause.active(), "holds": [asdict(h) for h in self.pause.holds()]}
+
+    def _ladder_status(self) -> dict | None:
+        if self.ladder is None:
+            return None
+        try:
+            return self.ladder.status()
+        except Exception as e:  # noqa: BLE001 - blok yazimi bozmaz
+            log.warning("risk_ladder durum blogu uretilemedi: %r", e)
+            return None
+
+    def _ladder_step(self, now: datetime) -> None:
+        """12 §8.2: kademe degerlendirmesi (kisma ladder icinde). Ozsermaye okunamazsa NaN verilir (kapi: equity_unreadable);
+        hicbir istisna disari sizmaz."""
+        if self.ladder is None:
+            return
+        try:
+            try:
+                acct = self.broker.account()
+                equity, wallet = float(acct.equity), float(acct.wallet)
+            except Exception as e:  # noqa: BLE001
+                log.warning("kademe icin hesap okunamadi: %r", e)
+                equity = wallet = float("nan")
+            try:
+                flat = not self.state.open_positions() and not self.state.unresolved_orders()
+            except Exception:  # noqa: BLE001
+                flat = False
+            self.ladder.tick(now, equity, wallet, flat=flat)
+        except Exception as e:  # noqa: BLE001
+            self._c["ladder_errors"] += 1
+            log.critical("kademe adimi hatasi: %r", e)
 
     def _ml_status(self, now: datetime) -> dict | None:
         f = getattr(self.signals, "ml_status", None)
@@ -799,6 +838,7 @@ class Engine:
         with self._outer_tx():
             self.ensure_day_start(D)
             self._kill_step(now)
+            self._ladder_step(now)                                  # 12 §8.2 (a): kapilardan once
             if self.cfg.mode in FEED_MODES:
                 self._reconcile(now)
             self._refresh_params()
@@ -1061,6 +1101,7 @@ class Engine:
         self._guard("kill", lambda: self._kill_step(now))
         self._guard("events", lambda: self._drain_events())
         self._post_commit()
+        self._guard("ladder", lambda: self._ladder_step(now))     # 12 §8.2 (b): olaylardan sonra, mutabakattan once
         self._guard("watchdog", lambda: self._stop_watchdog(self.clock.now()))
         self._guard("bans", self._sync_bans)
         self._mirror_broker_blocks()
@@ -1298,6 +1339,28 @@ def _check_rules_drift(broker, view, cfg: EngineConfig) -> None:
         log.warning("kural karsilastirmasi yapilamadi: %r", e)
 
 
+def _build_ladder(cfg: EngineConfig, clock: Clock, pause: EntryPause, broker, led):
+    """12 §8.1: backtest -> yok; paper -> gozlem (bellek gunlugu, sanal initial = wallet_start); testnet/live -> zorlama
+    (dosya gunlugu; canlida `broker.transfers` ile aktarim eslestirme)."""
+    if cfg.mode == "backtest":
+        return None
+    from trader_core import risk_ladder as RL
+
+    from .ladder import RiskLadder
+
+    def trades_fn(since):
+        return led.list_closed_trades(since=since, limit=L.Ledger.LIST_CLOSED_MAX)
+
+    if cfg.mode == "paper":
+        mem = RL.LadderLog(None)
+        mem.append("initial", "engine:paper", clock.now(), amount=float(cfg.wallet_start))
+        follow = RL.LadderLog(cfg.ladder_follow) if cfg.ladder_follow else None
+        return RiskLadder(cfg, clock, pause, log=mem, enforce=False, follow=follow, trades_fn=trades_fn)
+    xfer = getattr(broker, "transfers", None) if cfg.mode == "live" else None
+    return RiskLadder(cfg, clock, pause, log=RL.LadderLog(cfg.path("risk_ladder.jsonl")), enforce=True,
+                      transfers_fn=xfer if callable(xfer) else None, trades_fn=trades_fn)
+
+
 def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketView | None = None,
                  broker: Broker | None = None, env: Mapping[str, str] | None = None) -> Engine:
     from .brokers.paper import PaperBroker, PaperConfig
@@ -1329,6 +1392,7 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     kill = Killswitch(cfg.kill_file, clock)
     pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
     status = StatusWriter(cfg.status_path, clock, cfg)
+    ladder = _build_ladder(cfg, clock, pause, broker, led)
     ml_model, ml_error = None, None
     ml_v2 = None
     v2_on = getattr(strategy, "ml_mode", "off") != "off" and cfg.ml_features != "v1"     # ML-G5 bayragi (varsayilan kapali)
@@ -1353,4 +1417,4 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
-                  strategy=strategy, veto=vsrc, kill=kill, status=status, pause=pause)
+                  strategy=strategy, veto=vsrc, kill=kill, status=status, pause=pause, ladder=ladder)

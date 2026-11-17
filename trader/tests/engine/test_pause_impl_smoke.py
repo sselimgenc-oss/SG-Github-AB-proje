@@ -80,8 +80,8 @@ def test_bad_reason(tmp_path):
         p.add("nope", "x")
     with pytest.raises(ValueError):
         p.remove("nope", "x")
-    assert set(REASONS) == {"user_cmd", "drawdown_review", "unknown_position", "late_fill", "exchange_ban",
-                            "exchange_auth", "manual"}
+    assert set(REASONS) == {"user_cmd", "drawdown_review", "capital_floor", "unknown_position", "late_fill",
+                            "exchange_ban", "exchange_auth", "manual"}   # 12 ile guncellendi: capital_floor
 
 
 def test_audit_log(tmp_path):

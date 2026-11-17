@@ -84,6 +84,7 @@ class StatusWriter:
             "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),
+            **({"risk_ladder": f["risk_ladder"]} if f.get("risk_ladder") is not None else {}),   # 12 §10
             **({"exchange": xb} if (xb := _exchange_block(engine, f, self.cfg.mode)) is not None else {}),
         }
 

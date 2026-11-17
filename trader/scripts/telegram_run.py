@@ -18,6 +18,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from trader_core import risk_ladder as RL  # noqa: E402
 from trader_core import telegram as T  # noqa: E402
 from trader_engine.killswitch import Killswitch  # noqa: E402
 from trader_engine.pause import EntryPause  # noqa: E402
@@ -61,6 +62,20 @@ def build_pauses(env, now_fn, root: Path | None = None) -> dict:
     return {b: EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b) for b in bots}
 
 
+def build_ladders(env, now_fn, root: Path | None = None) -> dict:
+    """bot -> T.LadderFiles (12 §9). `LADDER_BOTS` (virgullu; varsayilan BOS: kademe komutlari kapali; canliya gecista
+    canli bot yazilir). Yollar `build_pauses` ile ayni cozumle MUTLAK: kademe gunlugu ENGINE_VAR_DIR/<bot>/risk_ladder.jsonl,
+    motor durumu ENGINE_VAR_DIR/<bot>/status.json, tutus PAUSE_FILE.<bot>."""
+    root = root or _HERE.parent
+    base = _abs(root, env.get("PAUSE_FILE") or "shared/PAUSE")
+    var = _abs(root, (env.get("ENGINE_VAR_DIR") or "var")).rstrip("/")
+    bots = [b.strip() for b in (env.get("LADDER_BOTS") or "").split(",") if b.strip()]
+    clk = _Clk(now_fn)
+    return {b: T.LadderFiles(log=RL.LadderLog(f"{var}/{b}/risk_ladder.jsonl"), status_path=f"{var}/{b}/status.json",
+                             pause=EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b))
+            for b in bots}
+
+
 def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, stop=None, runner=None) -> int:
     ap = argparse.ArgumentParser(prog="telegram_run.py")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -91,13 +106,16 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
             return EXIT_OK
         if args.cmd == "report":
             n = T.TelegramNotifier(client, cfg.chat_id, T.Outbox(cfg.var_dir, now_fn), now_fn, sleep)
-            print(T.run_report(cfg, n, now_fn(), pauses=build_pauses(env, now_fn)))
+            print(T.run_report(cfg, n, now_fn(), pauses=build_pauses(env, now_fn), ladders=build_ladders(env, now_fn)))
             return EXIT_OK
         ks = Killswitch(cfg.kill_file, _Clk(now_fn)) if cfg.kill_file else None
         pauses = build_pauses(env, now_fn)
+        ladders = build_ladders(env, now_fn)
         d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks, pauses=pauses,
+                             ladders=ladders,
                              report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
-                                                       T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(), pauses)))
+                                                       T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(), pauses,
+                                                                          ladders)))
         flag = {"stop": False}
         signal.signal(signal.SIGTERM, lambda *_: flag.update(stop=True))
         d.run_forever(stop or (lambda: flag["stop"]))

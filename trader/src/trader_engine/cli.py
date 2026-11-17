@@ -205,6 +205,282 @@ def _cmd_pause(a) -> int:
         return EXIT_FAZ_B
 
 
+# ====================================================================== 12 (RK-1): sermaye ve kademe CLI'si
+EXIT_LADDER = 4          # 12 §5: "4 bulgu" (bozuk gunluk, kosulu tutmayan step-up)
+
+
+def _ladder_ctx(a, *, write: bool):
+    """-> (cfg, LadderLog, hata_kodu). write=True: paper/backtest'te ret (cikis 2)."""
+    from trader_core import risk_ladder as RL
+
+    from .errors import ConfigError
+    try:
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return None, None, EXIT_FAZ_B
+    if write and cfg.mode in ("backtest", "paper"):
+        print("kagitta sermaye kaydi yok (backtest/paper kipinde yazan komut reddedildi)", file=sys.stderr)
+        return cfg, None, EXIT_FAZ_B
+    return cfg, RL.LadderLog(cfg.path("risk_ladder.jsonl")), None
+
+
+def _by_of(a) -> str | None:
+    import re
+    by = getattr(a, "by", None)
+    if not isinstance(by, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", by):
+        print("hata: --by zorunlu (1-32 karakter: harf, rakam, _ . -)", file=sys.stderr)
+        return None
+    return f"cli:{by}"
+
+
+def _state_or_exit(log, *, need: bool):
+    """-> (state, rows, kod). Bozuk gunluk: kod 4; gerekli ama yok: kod 2."""
+    from trader_core import risk_ladder as RL
+    try:
+        rows = log.rows()
+        st = RL.fold(rows)
+    except RL.LadderLogError as e:
+        print(f"gunluk bozuk: {e}", file=sys.stderr)
+        return None, None, EXIT_LADDER
+    if need and st is None:
+        print("gunluk bos: once `capital init --amount <tutar>`", file=sys.stderr)
+        return None, rows, EXIT_FAZ_B
+    return st, rows, None
+
+
+def _status_equity(cfg, now):
+    """12 §4.3: status.json `equity` (loop_at en cok STATUS_FRESH_S eski) -> (equity | None, neden)."""
+    import math
+
+    from trader_core import risk_ladder as RL
+    try:
+        d = json.loads(Path(cfg.status_path).read_text(encoding="utf-8"))
+        loop = RL.parse_at(d["loop_at"])
+        eq = d["equity"]
+    except (OSError, ValueError, KeyError, TypeError, RL.LadderLogError):
+        return None, "status.json okunamadi"
+    if (now - loop).total_seconds() > RL.STATUS_FRESH_S:
+        return None, f"status.json bayat (> {int(RL.STATUS_FRESH_S)} sn)"
+    if isinstance(eq, bool) or not isinstance(eq, (int, float)) or not math.isfinite(eq) or eq <= 0:
+        return None, "status.json equity gecersiz"
+    return float(eq), ""
+
+
+def _equity_arg(a, cfg, now):
+    import math
+    if getattr(a, "equity", None) is not None:
+        e = a.equity
+        if not math.isfinite(e) or e <= 0:
+            print("hata: --equity sonlu ve > 0 olmali", file=sys.stderr)
+            return None
+        return float(e)
+    eq, why = _status_equity(cfg, now)
+    if eq is None:
+        print(f"hata: ozsermaye bilinmiyor ({why}); --equity verin", file=sys.stderr)
+    return eq
+
+
+def _print_levels(st) -> None:
+    from trader_core import risk_ladder as RL
+    print(json.dumps({"basamak": RL.STEP_NAMES[st.step], "durum": st.status, "dep_net": st.dep_net, "base": st.base,
+                      "durma_seviyesi": round(RL.STOP_RATIO * st.base, 8),
+                      "taban_seviyesi": round(RL.FLOOR_RATIO * st.dep_net, 8)}, ensure_ascii=False))
+
+
+def _ladder_pause(cfg):
+    from .clock import SystemClock
+    from .pause import EntryPause
+    return EntryPause(f"{cfg.pause_file}.{cfg.bot}", SystemClock(), audit_path=cfg.path("pause_audit.jsonl"),
+                      bot=cfg.bot)
+
+
+def _write_row(log, kind, a, now, **fields):
+    from trader_core import risk_ladder as RL
+    by = _by_of(a)
+    if by is None:
+        return None, EXIT_FAZ_B
+    try:
+        row = log.append(kind, by, now, note=getattr(a, "note", "") or "", **fields)
+    except RL.LadderLogError as e:
+        print(f"gecersiz istek, hicbir sey yazilmadi: {e}", file=sys.stderr)
+        return None, EXIT_FAZ_B
+    except OSError as e:
+        print(f"gunluk yazilamadi: {type(e).__name__}", file=sys.stderr)
+        return None, EXIT_LADDER
+    return row, None
+
+
+def _cmd_capital(a) -> int:
+    import math
+
+    from trader_core import risk_ladder as RL  # noqa: F401 - list/withdraw yollari
+
+    from .clock import SystemClock
+    op = a.cap_cmd
+    write = op != "list"
+    cfg, log, rc = _ladder_ctx(a, write=write)
+    if rc is not None:
+        return rc
+    now = SystemClock().now()
+    if op == "list":
+        st, rows, rc = _state_or_exit(log, need=False)
+        if rc is not None:
+            return rc
+        sd = None
+        if st is not None:
+            sd = {k: (RL.fmt_at(v) if hasattr(v, "tzinfo") and v is not None else v)
+                  for k, v in dataclasses.asdict(st).items()}
+            sd["fired"] = sorted(st.fired)
+            sd["step_name"] = RL.STEP_NAMES[st.step]
+        print(json.dumps({"bot": cfg.bot, "rows": rows, "state": sd}, ensure_ascii=False))
+        return EXIT_OK
+    if _by_of(a) is None:
+        return EXIT_FAZ_B
+    st, rows, rc = _state_or_exit(log, need=(op != "init"))
+    if rc is not None:
+        return rc
+    if op == "init":
+        if rows:
+            print("gunluk dolu: ikinci `capital init` yok (duzeltme icin `capital adjust`)", file=sys.stderr)
+            return EXIT_FAZ_B
+        row, rc = _write_row(log, "initial", a, now, amount=a.amount)
+    elif op == "deposit":
+        row, rc = _write_row(log, "deposit", a, now, amount=a.amount)
+    elif op == "adjust":
+        if not (a.note or "").strip():
+            print("hata: adjust icin --note zorunlu", file=sys.stderr)
+            return EXIT_FAZ_B
+        row, rc = _write_row(log, "adjust", a, now, amount=a.amount)
+    else:                                               # withdraw (§4.3: once karden)
+        eq = _equity_arg(a, cfg, now)
+        if eq is None:
+            return EXIT_FAZ_B
+        if not (math.isfinite(a.amount) and a.amount > 0):
+            print("hata: --amount > 0 olmali", file=sys.stderr)
+            return EXIT_FAZ_B
+        cap = max(0.0, a.amount - max(0.0, eq - st.base))
+        row, rc = _write_row(log, "withdraw", a, now, amount=a.amount, equity=eq, capital_part=cap)
+    if rc is not None:
+        return rc
+    st2 = log.state()
+    print(f"yazildi: seq={row['seq']} {row['kind']}")
+    _print_levels(st2)
+    if op in ("deposit", "withdraw"):
+        print("Canlida bu kayit borsadaki aktarimla eslesene kadar yeni giris kapalidir.")
+    return EXIT_OK
+
+
+def _closed_trades_for_cli(cfg, since):
+    from trader_core import ledger as L
+    if not Path(cfg.ledger_path).exists():
+        return []
+    led = L.open_ledger(cfg.ledger_path, cfg.bot, create=False, read_only=True)
+    try:
+        return led.list_closed_trades(since=since, limit=L.Ledger.LIST_CLOSED_MAX)
+    finally:
+        led.close()
+
+
+def _cmd_ladder(a) -> int:
+    from trader_core import risk_ladder as RL
+
+    from .clock import SystemClock
+    op = a.lad_cmd
+    write = op != "status"
+    cfg, log, rc = _ladder_ctx(a, write=write)
+    if rc is not None:
+        return rc
+    now = SystemClock().now()
+    if op == "status":
+        try:
+            blk = json.loads(Path(cfg.status_path).read_text(encoding="utf-8")).get("risk_ladder")
+        except (OSError, ValueError, AttributeError):
+            blk = None
+        if isinstance(blk, dict):
+            print(json.dumps({"bot": cfg.bot, "source": "status.json", "risk_ladder": blk}, ensure_ascii=False))
+            return EXIT_OK
+        st, _rows, rc = _state_or_exit(log, need=False)
+        if rc is not None:
+            return rc
+        out = None if st is None else {
+            "state": st.status, "step": st.step, "step_name": RL.STEP_NAMES[st.step], "dep_net": st.dep_net,
+            "base": st.base, "peak": st.peak, "stop_at": round(RL.STOP_RATIO * st.base, 8),
+            "floor_at": round(RL.FLOOR_RATIO * st.dep_net, 8), "log_seq": st.seq}
+        print(json.dumps({"bot": cfg.bot, "source": "log", "risk_ladder": out}, ensure_ascii=False))
+        return EXIT_OK
+    by = _by_of(a)
+    if by is None:
+        return EXIT_FAZ_B
+    st, rows, rc = _state_or_exit(log, need=True)
+    if rc is not None:
+        return rc
+    pause = _ladder_pause(cfg)
+    if op == "resume":
+        hold = any(h.reason == "drawdown_review" for h in pause.holds())
+        if st.status == "floor":
+            print("durum floor: `ladder floor-restart` gerekir", file=sys.stderr)
+            return EXIT_FAZ_B
+        if st.status == "ok":
+            if not hold:
+                print("kademe incelemesi yok (durum ok, drawdown_review tutusu yok)", file=sys.stderr)
+                return EXIT_FAZ_B
+            print("durum zaten ok: yalniz artik tutus kaldiriliyor")
+        else:
+            eq = _equity_arg(a, cfg, now)
+            if eq is None:
+                return EXIT_FAZ_B
+            row, rc = _write_row(log, "review_resume", a, now, equity=eq, rebase=not a.no_rebase,
+                                 decision=a.decision or "")
+            if rc is not None:
+                return rc
+            print(f"yazildi: seq={row['seq']} review_resume")
+        ok = pause.remove("drawdown_review", by)               # satir yazildi, SONRA tutus kalkar
+        print("drawdown_review tutusu kaldirildi" if ok else "drawdown_review tutusu yoktu")
+        _print_levels(log.state())
+        return EXIT_OK
+    if op == "floor-restart":
+        if not (a.decision or "").strip():
+            print("hata: --decision (yazili karar referansi) zorunlu", file=sys.stderr)
+            return EXIT_FAZ_B
+        if st.status != "floor":
+            print(f"durum floor degil ({st.status})", file=sys.stderr)
+            return EXIT_FAZ_B
+        eq = _equity_arg(a, cfg, now)
+        if eq is None:
+            return EXIT_FAZ_B
+        row, rc = _write_row(log, "floor_restart", a, now, equity=eq, decision=a.decision)
+        if rc is not None:
+            return rc
+        print(f"yazildi: seq={row['seq']} floor_restart")
+        for reason in ("capital_floor", "drawdown_review"):
+            ok = pause.remove(reason, by)
+            print(f"{reason} tutusu kaldirildi" if ok else f"{reason} tutusu yoktu")
+        _print_levels(log.state())
+        return EXIT_OK
+    # step-up
+    if not (a.decision or "").strip():
+        print("hata: --decision (karar referansi) zorunlu", file=sys.stderr)
+        return EXIT_FAZ_B
+    try:
+        trades = _closed_trades_for_cli(cfg, st.started_at)
+    except Exception as e:  # noqa: BLE001
+        print(f"defter okunamadi: {type(e).__name__}", file=sys.stderr)
+        return EXIT_LADDER
+    cnt = RL.counters(trades, st, now)
+    bad = RL.step_up_problems(st, cnt, now)
+    if bad:
+        for b in bad:
+            print(f"kosul tutmuyor: {b}", file=sys.stderr)
+        return EXIT_LADDER
+    row, rc = _write_row(log, "step_up", a, now, step=st.step + 1, decision=a.decision)
+    if rc is not None:
+        return rc
+    print(f"yazildi: seq={row['seq']} step_up")
+    _print_levels(log.state())
+    return EXIT_OK
+
+
 def _cmd_feed(a) -> int:
     from .marketdata import feed as F  # noqa: F401
     runner = getattr(F, "main", None)
@@ -278,6 +554,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="")
     env_arg(p)
     p.set_defaults(fn=_cmd_pause)
+    p = sub.add_parser("capital")                       # 12 §5
+    csub = p.add_subparsers(dest="cap_cmd", required=True)
+    for name in ("init", "deposit", "withdraw", "adjust", "list"):
+        q = csub.add_parser(name)
+        bot_args(q)
+        env_arg(q)
+        q.add_argument("--note", default="")
+        if name != "list":
+            q.add_argument("--by", default=None, required=True)
+            q.add_argument("--amount", type=float, required=True)
+        if name == "withdraw":
+            q.add_argument("--equity", type=float, default=None)
+        q.set_defaults(fn=_cmd_capital)
+    p = sub.add_parser("ladder")
+    lsub = p.add_subparsers(dest="lad_cmd", required=True)
+    for name in ("status", "resume", "floor-restart", "step-up"):
+        q = lsub.add_parser(name)
+        bot_args(q)
+        env_arg(q)
+        if name != "status":
+            q.add_argument("--by", default=None, required=True)
+            q.add_argument("--note", default="")
+            q.add_argument("--decision", default="")
+        if name in ("resume", "floor-restart"):
+            q.add_argument("--equity", type=float, default=None)
+        if name == "resume":
+            q.add_argument("--no-rebase", action="store_true")
+        q.set_defaults(fn=_cmd_ladder)
     for name, fn in (("feed", _cmd_feed), ("backtest", _cmd_backtest), ("rules-snapshot", _cmd_rules)):
         p = sub.add_parser(name)
         p.add_argument("rest", nargs=argparse.REMAINDER)

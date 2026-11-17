@@ -17,7 +17,8 @@ ALLOWED_MODULES_A = {
 # Faz B (11 §2): dört yeni modül izinli (binance_rest B1, pause B6, binance_futures B3, reconcile_live B5).
 ALLOWED_MODULES_B = ALLOWED_MODULES_A | {"exchange/binance_rest.py", "pause.py", "brokers/binance_futures.py",
                                          "reconcile_live.py",
-                                         "marketdata/oi_collector.py"}   # ML-G7: yalniz acik uclar, OI/oran toplayici
+                                         "marketdata/oi_collector.py",   # ML-G7: yalniz acik uclar, OI/oran toplayici
+                                         "ladder.py"}                    # 12 (RK-1): risk kademe calisma zamani sarmalayicisi
 PHASE_B_FILES = ["brokers/binance_futures.py", "exchange/binance_rest.py", "marketdata/ws.py", "reconcile_live.py"]
 FORBIDDEN_TEXT_B = ["listen" + "Key", "web" + "sockets"]   # Faz B: algo metni serbest, kullanıcı veri akışı ertelendi (11 §2)
 FORBIDDEN_TEXT = ["listen" + "Key", "userData" + "Stream", "algo" + "Order", "web" + "sockets"]

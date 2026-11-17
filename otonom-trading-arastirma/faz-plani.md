@@ -51,7 +51,7 @@ Hedef: aralık sonu–ocak başı canlı (1000 $, Binance global alt hesap). Tek
 25c. Kapıyı geçen model olunca (en erken 2. hafta): `ml_mode=shadow` — model her karara puan yazar, hiçbir kararı değiştirmez. Canlıya geçişte de gölge sürer.
 
 ## Faz 4 — Canlıya geçiş (28 Aralık – 4 Ocak)
-26. Geçiş kontrol listesi: açık teknik hata yok; risk kilidi testleri geçiyor.
+26. Geçiş kontrol listesi: açık teknik hata yok; risk kilidi testleri geçiyor; **RK-1 (risk kademe denetimi: `trader/docs/motor/12-risk-kademe.md` RK1–RK4 + testnet tatbikatları D-1…D-3) bitmiş** — RK-1 bitmeden canlı başlamaz (−%20 durma ve %60 taban elle denetlenemez); canlıya geçiş operatör adımları (`capital init`, `LADDER_BOTS`, ikizde `ladder_follow`, `/kademe` kontrolü, 1000 USD'ye tamamlamada `capital deposit`) için `11-canli-broker.md` §12.
 27. **Teknik duman testi (28–29 Aralık):** gerçek hesapta en küçük tutarla 1 long + 1 short; borsadaki zarar durdur emri, kaldıraç, izole teminat, en küçük emir tutarı doğrulanır. Kâr-zarar testi değildir.
 28. Geçerse 1000 $ ile canlı; ilk hafta yakın izleme. **Canlı, ML filtresi etkin olmadan başlar** (`off` ya da `shadow`).
 28a. ML filtresinin etkinleştirilmesi (`active`) tarihe değil kapıya bağlıdır: en az 6 hafta gölge + en az 150 puanlı aday (en az 50'si alınmış) + ileri dönemde net R farkı > 0 ve IC > 0 + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş + o an gözlem altında başka değişiklik yok. En erken ocak ortası; gerçekçi beklenti ocağın ikinci yarısı.

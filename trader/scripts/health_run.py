@@ -202,8 +202,21 @@ def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | 
     last_sync = _parse_dt(ex.get("last_sync")) if has_ex else None
     naked = _naked_rows(ex.get("naked")) if has_ex else None
     probe = H.ApiProbe(ping, loop_at, _parse_dt(d.get("last_candle_open")), _ids(d.get("open_trade_ids")), dry,
-                       gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked)
+                       gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked, _ladder_block(d))
     return probe, timeframe_to_s(d.get("trigger_tf"))
+
+
+def _ladder_block(d: dict):
+    """12 §11: status.json `risk_ladder` blogu (+ status.pause.holds, 'ladder_hold_stale' icin). Blok yok/bozuk -> None."""
+    b = d.get("risk_ladder")
+    if not isinstance(b, dict):
+        return None
+    out = dict(b)
+    p = d.get("pause")
+    holds = p.get("holds") if isinstance(p, dict) else None
+    out["pause_holds"] = [{"reason": h.get("reason"), "at": h.get("at")} for h in holds
+                          if isinstance(h, dict)] if isinstance(holds, list) else []
+    return out
 
 
 def _naked_rows(v):

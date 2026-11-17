@@ -8,7 +8,7 @@ Kaynak karar: `tasarim-kararlari.md`, 16 Kasım 2026 "Backtest sonrası" madde 3
 - Risk yalnız basamak basamak artar: **%0,5 → %0,75 → %1,0 → %1,2 → %1,4**. %1,4 risk kilidinin tavanıdır; üstü yoktur.
 - Bir üst basamağa çıkmak için ölçülebilir koşulların **hepsi** tutmalı ve **sen Telegram'dan onaylamalısın**. Bot, ders servisi ve makine öğrenmesi riski kendi başına artıramaz.
 - Riski **düşürmek** otomatiktir ve onay gerektirmez: hesap tepe değerinden %10 düşerse bir basamak iner, %15 düşerse en alta iner.
-- Hesap tepe değerinden **%20** düşerse yeni işlem açılmaz. Açık işlemler zarar durdurlarıyla yönetilmeye devam eder. Mentor 3 gün içinde değerlendirme yazar; devam edip etmemeye **yalnız sen** karar verirsin.
+- Özsermaye, **yatırılan tutara göre ölçülen durma tabanının** %80'ine inerse (−%20) yeni işlem açılmaz. Açık işlemler zarar durdurlarıyla yönetilmeye devam eder. Mentor 3 gün içinde değerlendirme yazar; devam edip etmemeye **yalnız sen** karar verirsin.
 - En erken takvim: ilk artış mart başı; %1,4'e en erken ağustos civarı. Gerçekte daha geç olması, hiç olmaması da geçerli bir sonuçtur.
 - Neden bu kadar yavaş: bugünkü geçmiş testte stratejinin kazandırdığına dair kanıt yok (beklenen sonuç sıfır civarı). Kanıt gelmeden riski büyütmek yalnızca dalgalanmayı büyütür.
 
@@ -16,8 +16,10 @@ Kaynak karar: `tasarim-kararlari.md`, 16 Kasım 2026 "Backtest sonrası" madde 3
 
 - **R:** bir işlemin, girişte planlanan kayıp tutarına oranla sonucu. −1 R = planlanan kadar kayıp. **Net R** komisyon, kayma ve fonlama düşüldükten sonraki değerdir. Bu belgede her ölçüm net R'dir.
 - **Özsermaye:** cüzdan bakiyesi + açık işlemlerin anlık kâr/zararı.
-- **Tepe değer:** canlı başlangıcından beri gün sonu özsermayesinin en yüksek değeri; en az yatırılan tutar (1000 USD). Para yatırma/çekme olursa tepe değer aynı tutarda düzeltilir.
-- **Düşüş:** (tepe değer − şimdiki özsermaye) ÷ tepe değer.
+- **Net yatırılan (`dep_net`):** yatırılanlar − sermayeden çekilenler (+ düzeltmeler). Kârdan çekilen para `dep_net`'i düşürmez (çekme önce kârdan sayılır). *(12 ile güncellendi, 17 Kasım: ölçü tabanı.)*
+- **Durma tabanı (`base`):** −%20 durmasının ölçüldüğü taban. Başta `dep_net`; yatırma/çekmeyle aynı tutarda değişir; devam kararında `min(taban, o anki özsermaye)` olur. *(12 ile güncellendi.)*
+- **Tepe değer (`peak`):** yeni UTC gününün ilk değerlendirmesindeki özsermaye tepenin üstündeyse yükselir; en az yatırılan tutar. Para yatırma/çekme olursa tepe değer aynı tutarda düzeltilir. **Yalnız otomatik inişi (Bölüm 4 madde 1–2) sürer; −%20 durmasının ölçüsü değildir.** *(12 ile güncellendi: eski tanım "gün sonu özsermayesinin en yüksek değeri" idi.)*
+- **Düşüş:** iniş için (tepe değer − şimdiki özsermaye) ÷ tepe değer; durma için (taban − şimdiki özsermaye) ÷ taban.
 - **Basamaktaki işlem:** o basamak yürürlükteyken açılıp kapanmış canlı işlem. Kağıt (sahte para) işlemleri sayılmaz.
 - **Alt güven sınırı:** ortalama net R − 1,28 × standart hata (tek yönlü %90). Standart hata, ders servisindeki gibi gün kümelerine göre hesaplanır (aynı günün işlemleri bağımsız sayılmaz; `ders-spec.md` `z_cl` yöntemi).
 
@@ -74,7 +76,7 @@ Açıklamalar:
 |---|---|---|
 | 1 | Düşüş ≥ %10 (tepe değerden) | Bir basamak iner (K0'daysa K−1) |
 | 2 | Düşüş ≥ %15 | K0 ya da altındaysa K−1; üstündeyse doğrudan K0 |
-| 3 | Düşüş ≥ %20 | Bölüm 5: yeni giriş durur |
+| 3 | Özsermaye ≤ durma tabanının %80'i (yatırılan tutara göre, Bölüm 5) | Bölüm 5: yeni giriş durur |
 | 4 | Art arda 12 zararlı işlem (yalnız K1 ve üstünde) | Bir basamak iner |
 | 5 | Son 30 işlemin toplamı ≤ −12 R (yalnız K1 ve üstünde) | Bir basamak iner |
 | 6 | Tutarlılık bozuldu: son 30 işlemde canlı maliyet modelden > 0,10 R kötü, ya da eşleşen işlemlerde (≥ 20) fark ≤ −0,20 R | Bir basamak iner; neden açıklanana kadar artış dondurulur |
@@ -83,12 +85,12 @@ Açıklamalar:
 
 - Aynı gün birden çok tetik olursa en sert olan uygulanır. Madde 4–5 günde en fazla bir basamak indirir.
 - İnişten sonra basamak sayaçları sıfırlanır. Yeniden çıkmak için Bölüm 3'ün tüm koşulları baştan aranır.
-- Tepe değer inişte sıfırlanmaz; yalnız −%20 durmasından sonra devam kararıyla yenilenir (Bölüm 5).
+- Tepe değer inişte sıfırlanmaz; yalnız −%20 durmasından sonra devam kararıyla yenilenir (Bölüm 5). Her tetik **art arda iki** değerlendirmede tutmalıdır (yanlış alarm koruması; 12 `CONFIRM_N`).
 - K0'da madde 4–5 uygulanmaz: %0,5'te uzun zarar serileri geçmiş testte de var (en uzunu 20 işlem ≈ −%10) ve bu, madde 1 ile zaten yakalanır.
 
 ## 5. −%20 durup değerlendirme
 
-**Tetik:** özsermaye ≤ tepe değerin %80'i. Tepe değer en az 1000 USD olduğundan bu eşik "başlangıca göre −%20"den (800 USD) asla daha gevşek değildir; kâr edilmişse daha erken devreye girer. Her karar adımında ve gün sonunda denetlenir.
+**Tetik:** özsermaye ≤ durma tabanının %80'i; **taban yatırılan tutara göre ölçülür** (başta `dep_net`; yatırma/çekmeyle aynı tutarda değişir; devam kararında `min(taban, özsermaye)` olur). *(12 ile güncellendi — 17 Kasım kullanıcı kararı "yatırılan tutara göre"; önceki taslak tepe değere göre ölçüyordu.)* Sonuç: 1000 USD yatırılmış hesap 1300'e çıkmışsa giriş 800'de durur (tepeden −%38); 1040'ta (tepeden −%20) **durmaz**, yalnız Bölüm 4 madde 1–2 uyarınca en alt basamağa iner ve uyarı verir. Canlı 250–300 USD ile başlar: durma 200–240 USD, son taban 150–180 USD; 1000 USD'ye tamamlama (`deposit`) tabanları aynı tutarda yükseltir. Her değerlendirmede (dakikada bir; art arda iki kez tutmalı) denetlenir.
 
 **Olduğu anda (otomatik):**
 1. Canlı botta yeni giriş kapanır. Bu bir KILL değildir: açık işlemler kapatılmaz, borsadaki zarar durdurları ve normal çıkış kurallarıyla yönetilir. (O anda açık risk, risk kilidi gereği en fazla %6'dır; %0,5 basamağında pratikte %1–2.)
@@ -101,10 +103,10 @@ Açıklamalar:
 
 **Devam kararı:** yalnız kullanıcı, Telegram'dan iki adımlı onayla (4 haneli kod). Mentor, ders servisi, ML ya da zamanlayıcı girişi açamaz. Devam edilirse:
 - risk K0 ya da K−1 olur (daha yukarıdan devam edilmez);
-- tepe değer o anki özsermayeye çekilir (yoksa durma hemen yeniden tetiklenir);
+- durma tabanı `min(taban, o anki özsermaye)` olur ve tepe değer o anki özsermayeye çekilir (yoksa durma hemen yeniden tetiklenir); Telegram yolunda en erken durmadan 24 saat sonra;
 - karar ve gerekçe `tasarim-kararlari.md`ye yazılır.
 
-**İkinci durma ve son taban:** devamdan sonra yeni tepe değerden yine −%20 olursa aynı süreç işler. Ayrıca özsermaye, yatırılan toplam paranın %60'ına (1000 USD için 600 USD) inerse canlı tamamen durur; yeniden başlamak Telegram onayıyla değil, `tasarim-kararlari.md`ye yazılan yeni bir kullanıcı kararıyla olur. (%60 tabanı mentor önerisidir; Bölüm 10 madde 3.)
+**İkinci durma ve son taban:** devamdan sonra yeni tepe değerden yine −%20 olursa aynı süreç işler. Ayrıca özsermaye, net yatırılan paranın %60'ına (1000 USD için 600 USD) inerse canlı tamamen durur (`capital_floor` tutuşu; girişler kapanır, açık pozisyonlar zarar durdurlarıyla yaşar, KILL kurulmaz); yeniden başlamak Telegram onayıyla değil, `tasarim-kararlari.md`ye yazılan yeni bir kullanıcı kararıyla ve yalnız sunucuda CLI ile olur (`ladder floor-restart`). (%60 tabanı mentor önerisidir; Bölüm 10 madde 3.)
 
 ## 6. Riski kim değiştirebilir
 
@@ -140,11 +142,11 @@ Açıklamalar:
 
 ## 9. Kodda nerede zorlanacak (sonraki iş; bu belgeyle yapılmadı)
 
-**İş adı: RK-1 "risk kademe denetimi".** Bugünkü durum: kod yalnız `target_trade_risk ≤ 0.014` denetler (`trader_core/risk.py` `tightened()`, `trader_engine/config.py` `build_risk_config`). Yani biri yapılandırmada 0.005'i 0.014 yapsa kod kabul eder; basamak kuralı şu an yalnız yazılı kuraldır.
+**İş adı: RK-1 "risk kademe denetimi".** *(Durum, 17 Kasım: asgari kısım — sermaye kaydı, düşüş ölçümü, otomatik iniş, −%20 durma, %60 taban, kullanıcı onaylı devam, durum ve alarmlar — uygulandı; ayrıntı `12-risk-kademe.md`. Basamak artışı K0 üstü RK-1b'dedir.)* Önceki durum: kod yalnız `target_trade_risk ≤ 0.014` denetler (`trader_core/risk.py` `tightened()`, `trader_engine/config.py` `build_risk_config`). Yani biri yapılandırmada 0.005'i 0.014 yapsa kod kabul eder; basamak kuralı şu an yalnız yazılı kuraldır.
 
-RK-1 kapsamı:
-1. **Yapılandırma:** `config/risk_ladder.json` — basamaklar ve bu belgedeki eşikler. Eşiklerin kilitli sınırları olur (daha sıkı serbest, daha gevşek hata; risk kilidi ve ders yapılandırmasıyla aynı ilke).
-2. **Durum:** geçerli basamak, tepe değer, basamak başlangıç zamanı, durma bayrağı — motorun durum deposunda, kalıcı.
+RK-1 kapsamı *(12 ile güncellendi, 17 Kasım: asgari kısım `trader/docs/motor/12-risk-kademe.md` şartnamesine bağlandı; aşağıdaki madde 1 ve 2 o belgedeki hâliyle okunur)*:
+1. **Yapılandırma — İPTAL:** `config/risk_ladder.json` **yoktur**. Basamaklar ve tüm eşikler **kod sabitidir** (`trader_core/risk_ladder.py`); `config/*.json`'a yazılmaz (risk sabiti tarayıcısı ve "kilit gevşetilemez" ilkesi). Yapılandırmada yalnız bir yol anahtarı vardır (`ladder_follow`, ikiz/kağıt botunun canlı günlüğü izlemesi için). Etkin risk = `min(cfg.target_trade_risk, basamak değeri)`, yalnız `tightened` ile (daha sıkı serbest, daha gevşek hata).
+2. **Durum:** geçerli basamak, durma tabanı, tepe değer, basamak başlangıç zamanı, durma bayrağı — bot başına tek, yalnız eklenen, özet zincirli günlükte (`var/<bot>/risk_ladder.jsonl`); durum bu günlüğün saf katlamasıdır, motorun `state.sqlite`'ında tutulmaz. Sermaye hareketleri (operatör CLI), durma/iniş (motor) ve devam kararları (kullanıcı) aynı dosyadadır.
 3. **Artış kaydı:** basamak artışı defterde kullanıcı onaylı bir kayıt olmadan geçersizdir (ML `active` kipindeki "onaylı model sürümü defterde yoksa reddet" kalıbının aynısı). Motor başlarken `target_trade_risk`, onaylı basamağın değerinden büyükse başlamaz (`ConfigError`, hata durumunda kapalı).
 4. **Giriş kapısı:** `trader_engine/gates.py` içinde düşüş denetimi; −%20'de giriş `entry_gate_closed`, neden `gate:drawdown_review`. Mevcut `entries_blocked_reason` mekanizması kullanılabilir, ama o bugün bazı nedenleri kendiliğinden temizliyor (`engine.py`); durma nedeni kendiliğinden temizlenmemeli.
 5. **Otomatik iniş:** Bölüm 4 tetikleri; günlük iş ya da karar adımında; yalnız aşağı yönde yazar.
@@ -155,7 +157,7 @@ RK-1 kapsamı:
 
 ## 10. Yalnız kullanıcının verebileceği kararlar
 
-1. **−%20 neye göre ölçülsün?** Karar metni "bakiye −%20" diyor. Bu belge "tepe değerden −%20" olarak yazıldı (başlangıca göre −%20'den asla gevşek değil). Alternatif: yalnız başlangıç tutarına göre (800 USD). Onayın ya da değişikliğin gerekli.
+1. **−%20 neye göre ölçülsün?** *Kapandı (17 Kasım, kullanıcı kararı "yatırılan tutara göre"; 12 §3/§16):* yatırılan tutara (durma tabanı). Tepe değer yalnız otomatik inişi sürer. Alternatif ("ikisinden hangisi önce gelirse"; yarım saatlik değişiklik) yalnız kullanıcı isterse.
 2. **Durma anında açık işlemler:** bu belgede zarar durdurlarıyla açık kalır. Alternatif: hepsi hemen kapatılır.
 3. **Son taban:** yatırılan paranın %60'ı (600 USD) önerildi. Başka bir tutar ya da "taban olmasın" senin kararın.
 4. **Tavan:** kural %1,4'e kadar izin veriyor. İstersen canlının ilk yılı için tavanı %1,0'da tutabilirsin (mentor önerisi: ilk yıl %1,0).

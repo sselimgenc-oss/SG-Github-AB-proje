@@ -102,6 +102,8 @@ class ApiProbe:
     exchange_reachable: bool | None = None
     exchange_last_sync: datetime | None = None
     naked: tuple[tuple[int, str, float], ...] | None = None   # (trade_id, cift, stopsuz sure sn); None = okunamadi
+    # 12 §11: status.json `risk_ladder` blogu (+ opsiyonel "pause_holds": [{reason, at}] = status.pause.holds); None = blok yok.
+    ladder: Mapping | None = None
 
 
 @dataclass(frozen=True)
@@ -699,6 +701,86 @@ def _c_pause_audit(snap, bot, cfg):
     return _res(name, Status.OK, "ok", f"{bot} duraklatma tutuslari denetim gunluguyle tutarli ({len(p.holds)})")
 
 
+# 12 §11: risk kademe denetimi alarmlari (status.json risk_ladder blogundan). Zaman esikleri alarm zamanlamasidir (risk sabiti degil).
+LADDER_MISMATCH_CRIT_S = 30 * 60
+LADDER_STEP_DOWN_WINDOW_S = 24 * 3600
+LADDER_HOLD_STALE_S = 10 * 60
+_LADDER_RANK = {Status.CRIT: 2, Status.WARN: 1, Status.OK: 0}
+
+
+def _z(s):
+    return _from_iso(s) if isinstance(s, str) else None
+
+
+def _num_s(x, nd=2) -> str:
+    try:
+        return f"{float(x):.{nd}f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def _c_ladder(snap, bot, cfg):
+    """12 §11 tablosu: en agir tek sonuc. Blok yoksa yalniz testnet/live'da CRIT `ladder_missing`."""
+    name = f"risk_ladder:{bot}"
+    a = snap.api[bot]
+    b = a.ladder
+    if not isinstance(b, Mapping):
+        if a.mode in ("live", "testnet"):
+            return _res(name, Status.CRIT, "ladder_missing",
+                        f"{bot} kademe denetimi calismiyor (status.json'da risk_ladder blogu yok)")
+        return _res(name, Status.OK, "ok", f"{bot} kademe blogu yok (kagit/bilinmeyen kip)")
+    now = snap.now
+    state = b.get("state")
+    gate = b.get("gate_code")
+    enforce = bool(b.get("enforce"))
+    n_open = len(a.open_trade_ids) if a.open_trade_ids is not None else "?"
+    found: list[CheckResult] = []
+
+    def add(status, code, detail, value=None, threshold=None):
+        found.append(_res(name, status, code, detail, value, threshold))
+
+    if state == "floor":
+        add(Status.CRIT, "capital_floor",
+            f"{bot} son taban: ozsermaye {_num_s(b.get('equity'))}, yatirilan {_num_s(b.get('dep_net'))}; girisler kapali; "
+            "hepsini kapatmak icin /hepsini_kapat; yeniden baslama yazili kararla (sunucuda)")
+    if state == "review":
+        add(Status.CRIT, "drawdown_review",
+            f"{bot} -%20 durma: taban {_num_s(b.get('base'))}, ozsermaye {_num_s(b.get('equity'))}, acik pozisyon {n_open}; "
+            "/hepsini_kapat secenegi; mentor degerlendirmesi <= 3 gun; devam /kademe_devam")
+    if enforce and (state in ("uninitialized", "invalid") or gate in ("capital_missing", "ladder_invalid", "equity_unreadable")):
+        code = {"uninitialized": "capital_missing", "invalid": "ladder_invalid"}.get(state) or gate
+        add(Status.CRIT, code, f"{bot} kademe kapisi: {code}; girisler kapali; sunucuda bakilmali")
+    if gate == "capital_mismatch":
+        since = _z(b.get("gate_since"))
+        old = since is not None and (now - since).total_seconds() > LADDER_MISMATCH_CRIT_S
+        add(Status.CRIT if old else Status.WARN, "capital_mismatch",
+            f"{bot} borsadaki aktarim ile sermaye kaydi eslesmiyor")
+    if gate == "capital_unverified":
+        add(Status.WARN, "capital_unverified", f"{bot} aktarim kayitlari okunamiyor")
+    if b.get("near") is True and state == "ok":
+        add(Status.WARN, "ladder_near",
+            f"{bot} durma esigine yaklasildi (ozsermaye {_num_s(b.get('equity'))} <= tabanin %85'i)")
+    ld = _z(b.get("last_down_at"))
+    if state == "ok" and ld is not None and 0 <= (now - ld).total_seconds() <= LADDER_STEP_DOWN_WINDOW_S:
+        add(Status.WARN, "ladder_step_down", f"{bot} basamak indi: {b.get('step_name')}")
+    if state == "ok":
+        for h in b.get("pause_holds") or ():
+            if isinstance(h, Mapping) and h.get("reason") == "drawdown_review":
+                t = _z(h.get("at"))
+                if t is not None and (now - t).total_seconds() > LADDER_HOLD_STALE_S:
+                    add(Status.WARN, "ladder_hold_stale",
+                        f"{bot} devam yarim kaldi (kademe ok ama drawdown_review tutusu duruyor); /kademe_devam yinelenmeli")
+                    break
+    w = b.get("would")
+    if isinstance(w, Mapping):
+        wt = _z(w.get("at"))
+        if wt is not None and 0 <= (now - wt).total_seconds() <= LADDER_STEP_DOWN_WINDOW_S:
+            add(Status.WARN, "ladder_would", f"{bot} kagitta: canli olsaydi {w.get('kind')}")
+    if not found:
+        return _res(name, Status.OK, "ok", f"{bot} kademe denetimi normal")
+    return max(found, key=lambda r: _LADDER_RANK.get(r.status, 0))      # esitlikte tablo sirasi (ilk bulunan)
+
+
 def _safe(name, fn, *args) -> CheckResult:
     try:
         r = fn(*args)
@@ -731,6 +813,8 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
             if _live_mode(snap.api[bot]):
                 results.append(_safe(f"naked_position:{bot}", _c_naked, snap, bot, cfg))
                 results.append(_safe(f"exchange_reachable:{bot}", _c_exchange, snap, bot, cfg))
+            if snap.api[bot].ladder is not None or snap.api[bot].mode in ("live", "testnet"):
+                results.append(_safe(f"risk_ladder:{bot}", _c_ladder, snap, bot, cfg))
         if bot in snap.pause:
             results.append(_safe(f"pause_audit:{bot}", _c_pause_audit, snap, bot, cfg))
         if bot in snap.ledger:
@@ -789,7 +873,8 @@ def should_send_ok(report: HealthReport) -> bool:
 # ---------------------------------------------------------------------------------------------
 IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed",
                              "rules_missing_increase", "naked_position", "pause_hold_unaudited",
-                             "pause_hold_lost"})
+                             "pause_hold_lost", "capital_floor", "drawdown_review", "ladder_missing",
+                             "capital_missing", "ladder_invalid", "equity_unreadable"})
 
 
 @dataclass(frozen=True)

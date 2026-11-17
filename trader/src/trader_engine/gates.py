@@ -132,9 +132,10 @@ class EntryGate:
     def __init__(self, cfg: EngineConfig, ledger: L.Ledger, state: StateStore, kill: Killswitch, veto: VetoSource,
                  clock: Clock, broker: Broker, rules_fn: Callable[[str], SymbolRules],
                  entry_ref_fn: Callable[[str, datetime, SignalRow], float] | None = None,
-                 pause: EntryPause | None = None) -> None:
+                 pause: EntryPause | None = None, ladder=None) -> None:
         self.cfg = cfg
         self.pause = pause
+        self.ladder = ladder                                       # 12 §8.3: RiskLadder | None (backtest: hep None)
         self.ledger = ledger
         self.state = state
         self.kill = kill
@@ -166,6 +167,10 @@ class EntryGate:
             return GateVerdict(False, "kill", closed)
         if self.pause is not None and self.pause.active():          # 11 §9.3: kill'den sonra, stale_data'dan once
             return GateVerdict(False, self.pause.code() or "paused", closed)
+        if self.ladder is not None:                                 # 12 §8.3: duraklatmadan sonra, stale_data'dan once
+            gc = self.ladder.gate_code()
+            if gc:
+                return GateVerdict(False, gc, closed)
         if self.clock.now() - D > self.cfg.stale_factor * tf_delta(tf):
             return GateVerdict(False, "stale_data", "other")
         return GateVerdict(True, "ok", None)
@@ -237,7 +242,8 @@ class EntryGate:
         ref = self.entry_ref_fn(pair, D, row) if self.entry_ref_fn is not None else row.planned_entry
         cand = K.Candidate(pair, row.side, float(ref), float(row.planned_stop), float(lev),
                            rules.step, rules.min_notional)
-        dec = K.check_entry(acct, cand, self.cfg.risk_config)
+        src = self.ladder if self.ladder is not None else self.cfg
+        dec = K.check_entry(acct, cand, src.risk_config)
         if not dec.allowed:
             return self._skip(row, tf, "risk_denied", skip_reason="risk_denied", veto_status="allowed",
                               veto_reason=lk.reason, risk_allowed=False, risk_reason=dec.reason)
