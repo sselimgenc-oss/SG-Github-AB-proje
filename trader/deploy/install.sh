@@ -174,7 +174,11 @@ sed -i "s#^ENGINE_VAR_DIR=\$#ENGINE_VAR_DIR=${TRADER_DIR}/var#" /etc/trader-heal
 sed -i "s#^MARKET_DB=\$#MARKET_DB=${TRADER_DIR}/var/market.sqlite#" /etc/trader-health.env
 sed -i "s#^ENGINE_CONFIG_DIR=\$#ENGINE_CONFIG_DIR=${TRADER_DIR}/config#" /etc/trader-health.env
 # sapma izleyicisi kancasi (saglik-spec 16.6): izleyici birimleri kuruldugu icin drift_check_enabled acilir; bos/eksik ise 1 yazilir, kullanici degeri korunur
-grep -q '^DRIFT_CHECK_ENABLED=' /etc/trader-health.env || echo "DRIFT_CHECK_ENABLED=1" >> /etc/trader-health.env
+if ! grep -q '^DRIFT_CHECK_ENABLED=' /etc/trader-health.env; then
+  # dosya sonunda satir sonu yoksa once ekle (son satirin sonuna yapismasin)
+  if [ -s /etc/trader-health.env ] && [ -n "$(tail -c1 /etc/trader-health.env)" ]; then echo >> /etc/trader-health.env; fi
+  echo "DRIFT_CHECK_ENABLED=1" >> /etc/trader-health.env
+fi
 sed -i "s#^DRIFT_CHECK_ENABLED=\$#DRIFT_CHECK_ENABLED=1#" /etc/trader-health.env
 # beklenen motorlar (ikiz varsayilan acik); her calistirmada guncellenir: --no-twin ile learner
 if [ "$WITH_TWIN" -eq 1 ]; then HEALTH_BOTS_VAL="learner,twin"; else HEALTH_BOTS_VAL="learner"; fi
@@ -233,9 +237,13 @@ enable_now trader-engine-retry@learner.timer   # acilis kapisi (cikis 7) yeniden
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine-retry@twin.timer; fi
 enable_now trader-backup.timer
 enable_now trader-oi.timer   # ML-G7: OI/long-short orani toplayici (5 dk; salt okunur Binance uclari, anahtar yok); var/market.sqlite positioning_5m
-enable_now trader-drift@learner.timer   # gunluk sapma izleyicisi (WP-2; 20:20 TSI, salt okunur; var/<bot>/drift.json tek yazar; Telegram'a mesaj atmaz)
+drift_first_run() { # var/<bot> dizinini hazirla ve ilk olcumu hemen al (yoksa saglik 20:20'ye kadar yanlis drift_missing der)
+  install -d -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/$1"
+  systemctl start "trader-drift@$1.service" || true
+}
+enable_now trader-drift@learner.timer; drift_first_run learner   # gunluk sapma izleyicisi (WP-2; 20:20 TSI, salt okunur; var/<bot>/drift.json tek yazar; Telegram'a mesaj atmaz)
 enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23:10 UTC); defter/market salt okunur, var/<bot>/counterfactual.sqlite tek yazar
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-counterfactual@twin.timer; enable_now trader-drift@twin.timer; fi
+if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-counterfactual@twin.timer; enable_now trader-drift@twin.timer; drift_first_run twin; fi
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
 TG_OK=0

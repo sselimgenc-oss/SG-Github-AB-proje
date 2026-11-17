@@ -5,6 +5,10 @@ geri test calistirmaz, kilitli donem verisini okumaz, Telegram'a mesaj ATMAZ (te
 `drift_alert` sonucudur; docs/saglik-spec.md 16.6). Tek cikti: `<var>/<bot>/drift.json` (sema `drift/1`) ve kendi
 durum dosyasi `<var>/<bot>/drift_state.json`.
 
+Pencere sifirlama kapsami (v1): `param_activations` (apply/rollback) ve status.json'dan gozlenen strateji surumu / ML kipi
+(active, model_id) degisikligi algilanir. Plan Bolum 2 madde 4 (veto kipi, maliyet ayari, cift listesi, `target_trade_risk`)
+v1'de ALGILANMAZ; bu degisiklikler pencereyi kendilignden sifirlamaz (motor yapilandirmasi okunmaz).
+
 Duzeyler YALNIZ: OK, IZLE, UYARI, YETERSIZ (UYARI ustu yoktur). Referans sabitleri plandan AYNEN gomulur; yeniden hesaplanmaz,
 bootstrap kosulmaz (plan 4.4: "izleyici bootstrap kosmaz"). Esitlik iyi tarafa duser.
 """
@@ -174,7 +178,8 @@ def verify_reference(ref_dir: str) -> dict:
 
 # ---------------------------------------------------------------------------- islem temizligi
 def _clean_trades(rows):
-    """-> (gecerli islemler, atlanan satir sayisi). Gecerli: sirali (exit_ts, trade_id)."""
+    """-> (gecerli islemler, atlanan satir sayisi). Gecerli: sirali (exit_ts, trade_id).
+    Atlanan satir sessizce temizlenmez: sayisi `skipped_rows` olarak yazilir ve ilgili kurallari en iyi IZLE yapar (plan 4.0)."""
     good, skipped = [], 0
     for r in rows:
         try:
@@ -326,7 +331,7 @@ def _cost_rules(good, status, mode):
     fm = None
     if status is not None:
         cnt = status.get("counters")
-        fm = cnt.get("funding_missing", 0) if isinstance(cnt, dict) else None
+        fm = cnt.get("funding_missing") if isinstance(cnt, dict) else None
         fm = fm if isinstance(fm, int) and not isinstance(fm, bool) and fm >= 0 else None
     if fm is None:
         rules["F2"] = _rule(YETERSIZ, None, None, 0, "status.json okunamadi")
@@ -349,19 +354,28 @@ def _window_rules(win, state_prev, now, same_window):
         p25, p10, med, p90 = interp_p1(n)
         lvl = UYARI if _lt(c, p25) else IZLE if _lt(c, p10) else OK
         rules["P1"] = _rule(lvl, c, {"IZLE": f"< {p10:.2f}", "UYARI": f"< {p25:.2f}"}, n,
-                            f"kumulatif net R {c:.2f}; olagan aralik {p25:.1f} ... +{p90:.1f}; ortanca {med:.1f}")
+                            f"kumulatif net R {c:.2f}; olagan aralik {p10:.1f} ... +{p90:.1f}; ortanca {med:.1f}")
+        rules["P1"]["p10"], rules["P1"]["p90"] = p10, p90
     # C1
     cu = cusum_replay(rs)
     prev = state_prev.get("cusum") if same_window and isinstance(state_prev.get("cusum"), dict) else None
+    last_alarm = cu["alarms"][-1] if cu["alarms"] else None
     new_alarm = False
-    if cu["alarms"]:
-        la = cu["alarms"][-1]
+    if last_alarm is not None:
         if prev is not None and isinstance(prev.get("processed_n"), int):
-            new_alarm = la > prev["processed_n"]
+            new_alarm = last_alarm > prev["processed_n"]
         else:
-            new_alarm = la == n                      # durum dosyasi yok: yalniz en son islemdeki alarm "yeni" sayilir
+            # kullanilabilir onceki durum yok (dosya yok/bozuk/pencere degisti): alarm islemi son 36 saatte kapandiysa yeni sayilir
+            new_alarm = win[last_alarm - 1]["exit"] >= now - timedelta(hours=36)
     reported_at = None
     sticky = False
+    if new_alarm:
+        reported_at = fmt_ts(now)
+    elif (prev is not None and last_alarm is not None and prev.get("uyari_trade_n") == last_alarm
+          and prev.get("processed_n") == n):       # yeni islem geldiyse (sogutma basladi) UYARI tasinmaz
+        rep_dt = parse_ts(prev.get("uyari_reported_at"))
+        if rep_dt is not None and timedelta(0) <= now - rep_dt < timedelta(hours=20):
+            sticky, reported_at = True, prev.get("uyari_reported_at")   # ayni gun yeniden calistirma UYARI'yi dusurmez
     S = cu["S"]
     if n < MIN_N:
         lvl, note = YETERSIZ, "pencerede en az 20 kapanmis islem gerekir"
@@ -376,7 +390,7 @@ def _window_rules(win, state_prev, now, same_window):
     rules["C1"] = _rule(lvl, S, {"IZLE": ">= 3.0", "UYARI": ">= 4.0"}, n, f"S={S:.3f}; {note}")
     state_cusum = {"S": round(S, 9), "processed_n": n, "last_trade_id": win[-1]["trade_id"] if win else None,
                    "cooldown": cu["cooldown"], "uyari_trade_n": cu["alarms"][-1] if cu["alarms"] else None,
-                   "uyari_reported_at": fmt_ts(now) if new_alarm else None}
+                   "uyari_reported_at": reported_at}
     return rules, state_cusum
 
 
@@ -394,7 +408,7 @@ def evaluate(data: dict | None, status: dict | None, state: dict | None, now: da
     state = state if isinstance(state, dict) else {}
     now = now.astimezone(timezone.utc)
     st_mode = status.get("mode") if isinstance(status, dict) and isinstance(status.get("mode"), str) else None
-    mode = mode or st_mode or "unknown"
+    mode = mode or st_mode or (state.get("mode") if isinstance(state.get("mode"), str) else None) or "unknown"
     out = {"schema": SCHEMA, "generated_at": fmt_ts(now), "bot": bot, "mode": mode, "plan_version": PLAN_VERSION}
     ids = ("S1", "S2", "S3", "M1", "M2_giris", "M2_stop", "M2_piyasa", "M3", "F1", "F2", "P1", "C1")
     if data is None:
@@ -412,7 +426,13 @@ def evaluate(data: dict | None, status: dict | None, state: dict | None, now: da
     pw = state.get("window") if isinstance(state.get("window"), dict) else {}
     runtime_start = pw.get("runtime_start")
     if status_key is not None and pw.get("status_key") not in (None, status_key):
-        runtime_start = fmt_ts(now)        # strateji surumu / ML kipi degisti: yeni pencere (gozlenen andan itibaren)
+        # strateji surumu / ML kipi degisti: yeni pencere; motorun baslama zamani anlamliysa (gecmis degil-gelecek degil, onceki
+        # baslangictan sonra) oradan, degilse gozlenen andan
+        runtime_start = fmt_ts(now)
+        sa = parse_ts(status.get("started_at")) if isinstance(status, dict) else None
+        prev_start = parse_ts(pw.get("start"))
+        if sa is not None and sa <= now and (prev_start is None or sa > prev_start):
+            runtime_start = fmt_ts(sa)
     elif status_key is None:
         status_key, runtime_start = pw.get("status_key"), pw.get("runtime_start")
     act_ts = [parse_ts(a.get("activated_at")) for a in acts if a.get("kind") != "initial"]
@@ -421,11 +441,12 @@ def evaluate(data: dict | None, status: dict | None, state: dict | None, now: da
     wstart = max(starts) if starts else None
     pv = None
     for a in acts:
-        if a.get("version_id") is not None:
+        ts = parse_ts(a.get("activated_at"))
+        if a.get("version_id") is not None and (ts is None or ts <= now):   # gelecek tarihli etkinlestirme sayilmaz
             pv = a["version_id"]
     wkey = f"{bot}|{mode}|{status_key}|pv{pv}"
     win = [t for t in good if wstart is None or t["entry"] >= wstart]
-    same = pw.get("key") == wkey and pw.get("start") == (fmt_ts(wstart) if wstart else None)
+    same = pw.get("start") == (fmt_ts(wstart) if wstart else None)      # yalniz pencere baslangicina bakilir (anahtar metni degil)
     mode_note = "; bot bu surede kapali ya da duraklatilmis olabilir"
     rules = {}
     rules.update(_frequency_rules(data["decisions"], acts, now, mode_note))
@@ -436,6 +457,7 @@ def evaluate(data: dict | None, status: dict | None, state: dict | None, now: da
         for k in ("M1", "M2_giris", "M2_stop", "M2_piyasa", "M3", "F1", "P1", "C1"):
             if rules[k]["level"] == OK:
                 rules[k]["level"] = IZLE
+                rules[k]["skip_downgraded"] = True
                 rules[k]["note"] += f"; {skipped} bozuk satir atlandi"
     for k in rules:
         if rules[k]["level"] not in LEVELS:
@@ -444,7 +466,7 @@ def evaluate(data: dict | None, status: dict | None, state: dict | None, now: da
     out.update(window={"key": wkey, "start": fmt_ts(wstart) if wstart else None, "n": n}, rules={k: rules[k] for k in ids},
                overall=_worst([r["level"] for r in rules.values()]), skipped_rows=skipped, next_checkpoint=_next_checkpoint(n))
     new_state = {"schema": 1, "window": {"key": wkey, "start": out["window"]["start"], "status_key": status_key,
-                                         "runtime_start": runtime_start}, "cusum": cusum_state, "updated_at": fmt_ts(now)}
+                                         "runtime_start": runtime_start}, "cusum": cusum_state, "mode": mode, "updated_at": fmt_ts(now)}
     return out, new_state
 
 
@@ -461,7 +483,10 @@ def report_lines(body: dict) -> list[str]:
     """drift.json govdesinden "📐" ile baslayan sade Turkce satirlar (kural kimligi/ham kod/Ingilizce alan adi yok)."""
     rules, n = body.get("rules", {}), body.get("window", {}).get("n", 0)
     lines = []
-    lv = lambda *ks: _worst([rules[k]["level"] for k in ks if k in rules])  # noqa: E731
+    sk = int(body.get("skipped_rows") or 0)
+    # yalniz bozuk satir yuzunden IZLE'ye inen kurallar uyari satiri uretmez; tek "okunamadi" satiri yazilir
+    lv = lambda *ks: _worst([(OK if rules[k].get("skip_downgraded") else rules[k]["level"])  # noqa: E731
+                             for k in ks if k in rules])
     rem = body.get("next_checkpoint", {}).get("remaining")
     tail = f" · sıradaki değerlendirmeye {rem} işlem kaldı" if isinstance(rem, int) else ""
     freq, cost, fund = lv("S1", "S2", "S3"), lv("M1", "M2_giris", "M2_stop", "M2_piyasa", "M3"), lv("F1", "F2")
@@ -490,13 +515,17 @@ def report_lines(body: dict) -> list[str]:
             lines.append("📐 Bot beklendiği gibi davranıyor (sıklık, maliyet, fonlama normal)" + tail)
     p1, c1 = rules.get("P1", {}), rules.get("C1", {})
     if p1.get("level") in (OK, IZLE, UYARI) and p1.get("value") is not None:
-        thr = p1.get("threshold") or {}
-        lo = f" (olağan aralık {thr['UYARI'][2:]} ...)" if isinstance(thr.get("UYARI"), str) else ""
+        def _tr(x):
+            return ("−" if x < 0 else "+") + f"{abs(x):.1f}".replace(".", ",")
+        lo = (f" (olağan aralık {_tr(p1['p10'])} … {_tr(p1['p90'])})"
+              if isinstance(p1.get("p10"), (int, float)) and isinstance(p1.get("p90"), (int, float)) else "")
         lines.append(f"📐 Kâr/zarar: {n} işlemde {p1['value']:+.1f} R{lo}. {_confidence(n)}")
     else:
         lines.append(f"📐 Kâr/zarar: {n} işlem; henüz değerlendirilemiyor. {_confidence(n)}")
-    if c1.get("level") in (IZLE, UYARI):
+    if c1.get("level") in (IZLE, UYARI) and not c1.get("skip_downgraded"):
         lines.append("📐 Kayıplar art arda birikiyor; bot durdurulmadı, inceleme gerekir.")
+    if sk > 0:
+        lines.append(f"📐 {sk} kayıt okunamadı; karşılaştırma yaklaşık")
     return lines
 
 
@@ -504,11 +533,18 @@ def report_lines(body: dict) -> list[str]:
 def atomic_write_json(path: str, obj) -> None:
     d = os.path.dirname(os.path.abspath(path))
     tmp = os.path.join(d, f".{os.path.basename(path)}.tmp-{os.getpid()}")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, sort_keys=True, indent=1)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False, sort_keys=True, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
     try:
         os.chmod(path, 0o644)      # saglik (root) ve rapor okur; icerik gizli degil
     except OSError:

@@ -22,4 +22,7 @@ ProtectHome=read-only
 ReadWritePaths=-/opt/trader/var/%i
 ReadOnlyPaths=-/opt/trader/var/%i/ledger.sqlite
 NoNewPrivileges=true
+# yalniz yerel dosya okur/yazar: ag yok
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
 PrivateTmp=true

@@ -157,7 +157,7 @@ def test_cusum_formula_and_cooldown():
     res = run([trade(i, r=-1.0) for i in range(18)])
     assert lv(res, "C1") == "YETERSIZ"
     assert D.cusum_replay([-1.0] * 18)["S"] == pytest.approx(4.07, abs=0.01)
-    assert lv(run([trade(i, r=-1.0) for i in range(20)]), "C1") == "UYARI"
+    assert lv(run([trade(i, r=-1.0, exit_at=NOW - timedelta(hours=20 - i)) for i in range(20)]), "C1") == "UYARI"
     # once 20 kazanan, sonra kayiplar
     rs = [0.5] * 20 + [-1.0] * 14
     assert D.cusum_replay(rs)["S"] == pytest.approx(3.17, abs=0.01)
@@ -175,13 +175,69 @@ def test_cusum_missed_days_equals_incremental():
 
 
 def test_c1_uyari_reported_once_then_sticky_then_gone():
-    ts = [trade(i, r=-1.0) for i in range(20)]
-    res, st = run(ts)
-    assert lv((res, st), "C1") == "UYARI"
-    later = NOW + timedelta(days=1)
+    ts = [trade(i, r=-1.0, exit_at=NOW - timedelta(hours=20 - i)) for i in range(20)]
     data = {"trades": ts, "decisions": [], "activations": []}
-    res2, st2 = D.evaluate(data, None, st, later, bot="learner", mode="paper")
+    res, st = D.evaluate(data, None, None, NOW, bot="learner", mode="paper")
+    assert res["rules"]["C1"]["level"] == "UYARI"
+    # ayni gun yeniden calistirma (yeni islem yok): UYARI duser degil, kalir
+    res_b, st_b = D.evaluate(data, None, st, NOW + timedelta(hours=6), bot="learner", mode="paper")
+    assert res_b["rules"]["C1"]["level"] == "UYARI"
+    assert st_b["cusum"]["uyari_reported_at"] == st["cusum"]["uyari_reported_at"]
+    # 20 saati asinca (yeni islem yok) duser
+    res2, _ = D.evaluate(data, None, st_b, NOW + timedelta(hours=21), bot="learner", mode="paper")
     assert res2["rules"]["C1"]["level"] != "UYARI"
+
+
+def test_alarm_not_lost_without_state_or_status():
+    ts = [trade(i, r=-1.0, exit_at=NOW - timedelta(hours=20 - i)) for i in range(20)]       # alarm islemi (20.) son 36 saat icinde kapandi
+    data = {"trades": ts, "decisions": [], "activations": []}
+    res, st = D.evaluate(data, None, None, NOW, bot="learner")
+    assert res["rules"]["C1"]["level"] == "UYARI"
+    old = [trade(i, r=-1.0, exit_at=NOW - timedelta(days=10, hours=-i)) for i in range(20)]
+    res3, _ = D.evaluate({"trades": old, "decisions": [], "activations": []}, None, None, NOW, bot="learner")
+    assert res3["rules"]["C1"]["level"] != "UYARI"
+    # mod durumdan geri alinir; status.json okunamazsa kip kaybolmaz; pencere yalniz baslangictan eslesir
+    s1 = {"schema": "engine-status/1", "bot": "learner", "mode": "testnet", "strategy": {"name": "a", "version": "1"}}
+    _, st1 = D.evaluate(data, s1, None, NOW, bot="learner")
+    res4, st4 = D.evaluate(data, None, st1, NOW + timedelta(hours=1), bot="learner")
+    assert res4["mode"] == "testnet" and st4["mode"] == "testnet"
+
+
+def test_window_start_uses_status_started_at_when_sane():
+    base = {"schema": "engine-status/1", "bot": "learner", "mode": "paper", "ml": {"mode": "off"}}
+    data = {"trades": [], "decisions": [], "activations": []}
+    _, s1 = D.evaluate(data, dict(base, strategy={"name": "a", "version": "1"}), None, NOW, bot="learner")
+    sa = NOW - timedelta(hours=3)
+    r2, _ = D.evaluate(data, dict(base, strategy={"name": "a", "version": "2"}, started_at=z(sa)), s1, NOW, bot="learner")
+    assert r2["window"]["start"] == z(sa)
+    fut = dict(base, strategy={"name": "a", "version": "2"}, started_at=z(NOW + timedelta(hours=1)))
+    r3, _ = D.evaluate(data, fut, s1, NOW, bot="learner")
+    assert r3["window"]["start"] == z(NOW)
+
+
+def test_skip_downgrade_flag_and_report_lines():
+    ts = [trade(i, r=0.5) for i in range(30)] + [trade(99, planned_risk=0.0)]
+    res = run(ts)[0]
+    assert res["rules"]["M1"].get("skip_downgraded") is True
+    lines = D.report_lines(res)
+    assert any("1 kayıt okunamadı; karşılaştırma yaklaşık" in l for l in lines)
+    assert not any("maliyeti beklenenin dışında" in l for l in lines)
+
+
+def test_p1_report_line_range_and_f2_missing_key():
+    res = run([trade(i, r=-0.1) for i in range(60)])[0]
+    p1 = res["rules"]["P1"]
+    assert p1["p10"] == pytest.approx(-19.72) and p1["p90"] > 30
+    line = [l for l in D.report_lines(res) if "Kâr/zarar" in l][0]
+    assert "olağan aralık −19,7 … +" in line and "," in line
+    st = {"schema": "engine-status/1", "bot": "learner", "mode": "paper", "counters": {}}
+    assert lv(run(status=st), "F2") == "YETERSIZ"
+
+
+def test_future_activation_ignored_for_pv():
+    acts = [dict(activated_at=z(NOW - timedelta(days=9)), kind="initial", version_id=1),
+            dict(activated_at=z(NOW + timedelta(days=2)), kind="apply", version_id=7)]
+    assert "|pv1" in run(acts=acts)[0]["window"]["key"]
 
 
 # ------------------------------------------------------------------ pencere
@@ -328,7 +384,7 @@ def test_deploy_units_and_install_wiring():
     svc = (dep / "trader-drift@.service").read_text(encoding="utf-8")
     tm = (dep / "trader-drift@.timer").read_text(encoding="utf-8")
     ins = (dep / "install.sh").read_text(encoding="utf-8")
-    assert "Slice=trader.slice" in svc and "Type=oneshot" in svc and "MemoryMax=64M" in svc and "--bot %i --once" in svc
+    assert "Slice=trader.slice" in svc and "Type=oneshot" in svc and "MemoryMax=64M" in svc and "PrivateNetwork=true" in svc and "RestrictAddressFamilies=AF_UNIX" in svc and "--bot %i --once" in svc
     assert "OnFailure=trader-health-fail@%n.service" in svc and "Telegram" not in svc.replace("Telegram'a", "")
     assert "EnvironmentFile=/etc/trader-telegram.env" not in svc
     assert "Europe/Istanbul" in tm and "WantedBy=timers.target" in tm
@@ -336,3 +392,9 @@ def test_deploy_units_and_install_wiring():
         assert f"enable_now {name}" in ins
     assert "DRIFT_CHECK_ENABLED=1" in ins
     assert "DRIFT_CHECK_ENABLED=" in (dep / "trader-health.env.example").read_text(encoding="utf-8")
+
+
+def test_install_first_run_and_env_newline_safe():
+    ins = (ROOT / "deploy" / "install.sh").read_text(encoding="utf-8")
+    assert 'systemctl start "trader-drift@$1.service" || true' in ins and 'install -d -o "$TRADER_USER"' in ins
+    assert "tail -c1 /etc/trader-health.env" in ins

@@ -1484,11 +1484,11 @@ def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping
         out += risk
     elif got.get("Duraklatma"):
         out.append(got["Duraklatma"])
-    for name in ("Model", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)"):
+    for name in ("Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)"):
         if got.get(name):
             out.append(got[name])
     for name, text in got.items():                         # tanınmayan (dışarıdan verilen) bölümler
-        if name not in ("Defter", "Duraklatma", "Model", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)") and text:
+        if name not in ("Defter", "Duraklatma", "Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)") and text:
             out.append(f"{name}: {text}")
     if cfg.health_state:
         try:
@@ -1871,6 +1871,52 @@ def rapor_model(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, Ladder
     return "\n".join(out)
 
 
+DAVRANIS_YOK = "📐 Davranış değerlendirmesi henüz yok"
+DAVRANIS_MAX_YAS_S = 36 * 3600
+
+
+def _davranis_satirlari(path: Path, now: datetime) -> list[str]:
+    """`<var>/<bot>/drift.json` (şema drift/1) -> report_lines. Eksik/bayat (36 sa)/bozuk dosya -> tek 'henüz yok' satırı.
+    Yalnız standart kütüphane; hiçbir hata dışarı sızmaz (günlük raporu bozmaz)."""
+    try:
+        raw = path.read_bytes()[:1_000_000]
+        d = json.loads(raw.decode("utf-8"))
+        if not isinstance(d, Mapping) or d.get("schema") != "drift/1":
+            return [DAVRANIS_YOK]
+        gen = parse_ts_z(d["generated_at"])
+        if (now - gen).total_seconds() > DAVRANIS_MAX_YAS_S:
+            return [DAVRANIS_YOK]
+        lines = d.get("report_lines")
+        if not isinstance(lines, list):
+            return [DAVRANIS_YOK]
+        out = [str(x) for x in lines if isinstance(x, str) and x.strip()]
+        return out or [DAVRANIS_YOK]
+    except Exception:  # noqa: BLE001
+        return [DAVRANIS_YOK]
+
+
+def rapor_davranis(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, LadderFiles] | None = None) -> str:
+    """Sapma izleyicisi satırları (docs/kagit-degerlendirme-plani.md 4.6): öğrenen her zaman, ikiz yalnız varsa
+    (' (ikiz bot)' eki). Asla istisna fırlatmaz."""
+    try:
+        base = Path(cfg.status_path).parent if cfg.status_path else (
+            Path(cfg.ledger_path).parent if cfg.ledger_path else None)
+        if base is None:
+            return DAVRANIS_YOK
+        out = _davranis_satirlari(base / "drift.json", now)
+        twin_dir = None
+        lf = (ladders or {}).get("twin")
+        if lf is not None and getattr(lf, "status_path", ""):
+            twin_dir = Path(lf.status_path).parent
+        elif cfg.twin_ledger_path:
+            twin_dir = Path(cfg.twin_ledger_path).parent
+        if twin_dir is not None and twin_dir.is_dir():
+            out += [x + " (ikiz bot)" for x in _davranis_satirlari(twin_dir / "drift.json", now)]
+        return "\n".join(out)
+    except Exception:  # noqa: BLE001
+        return DAVRANIS_YOK
+
+
 def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None,
                      ladders: Mapping[str, LadderFiles] | None = None) -> dict[str, Callable[[], str]]:
     out: dict[str, Callable[[], str]] = {}
@@ -1880,6 +1926,7 @@ def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mappi
         out["Risk kademesi"] = lambda: "\n".join(
             "📶 " + ladder_line(b, ladder_view(lf, now)) for b, lf in ladders.items())
     out["Model"] = lambda: rapor_model(cfg, now, ladders)
+    out["Davranış"] = lambda: rapor_davranis(cfg, now, ladders)
     out.update({"Defter": lambda: rapor_defter(cfg, day), "Bütçe": lambda: rapor_butce(cfg),
                 "Ders": lambda: rapor_ders(cfg, now),
                 "Alınmayan sinyaller (son 7 gün)": lambda: rapor_kacirilan(cfg, now)})
