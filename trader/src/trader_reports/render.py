@@ -72,6 +72,7 @@ def _load_run(run_dir: Path, since, until):
 
 def build_report(o: Options) -> dict:
     cfg = _cfg(o.config)
+    del I.FALLBACK_LOG[:]
     now_iso = guard.iso(o.now)
     since = guard.iso(o.since) if o.since else None
     until = guard.iso(o.until) if o.until else now_iso
@@ -88,20 +89,25 @@ def build_report(o: Options) -> dict:
         target = f"bt_{rid}"
         per = bmeta.get("period")
         merge(meta, {"mod": f"backtest:{rid}", "kural_kaynagi_kosu": bmeta.get("rules_source")})
-        if per and len(per) == 2:
-            try:
-                guard.check_run(I.utc_dt(per[0]), I.utc_dt(per[1]))
-            except guard.BacktestArgError:
-                return {"status": "holdout_locked", "target": target, "meta": meta, "files": {
-                    "rapor.json": json.dumps({"status": "holdout_locked"}, sort_keys=True) + "\n",
-                    "rapor.md": "Kilitli dönem kesişimi: koşu okunmadı (holdout_locked).\n",
-                    "cikis_islemler.csv": "", "ozet.txt": ""}, "counters": counters, "n_trades": 0, "n_decisions": 0, "k_rapor": 0}
-            meta["donem"] = f"{per[0]}..{per[1]}"
+        try:
+            if not isinstance(per, (list, tuple)) or len(per) != 2:
+                raise ValueError("period")
+            ps, pe = I.utc_dt(per[0]), I.utc_dt(per[1])
+        except (TypeError, ValueError, IndexError, KeyError, AttributeError) as e:
+            raise I.ReportError("meta_period", "meta.json period [baslangic, bitis] olmali") from e
+        try:
+            guard.check_run(ps, pe)
+        except guard.BacktestArgError:
+            return {"status": "holdout_locked", "target": target, "meta": meta, "files": {
+                "rapor.json": json.dumps({"status": "holdout_locked"}, sort_keys=True) + "\n",
+                "rapor.md": "Kilitli dönem kesişimi: koşu okunmadı (holdout_locked).\n",
+                "cikis_islemler.csv": "", "ozet.txt": ""}, "counters": counters, "n_trades": 0, "n_decisions": 0, "k_rapor": 0}
+        meta["donem"] = f"{per[0]}..{per[1]}"
         ledger_path = run_dir / "ledger.sqlite"
     else:
         target = o.bot
         ledger_path = Path(o.ledger)
-        meta["mod"] = f"{cfg.get('mode', 'paper')}:{o.bot}"
+        meta["mod"] = f"{cfg.get('mode') or 'bilinmiyor'}:{o.bot}"
     conn = I.open_ro(ledger_path, "ledger_missing")
     reader = None
     try:
@@ -161,13 +167,27 @@ def build_report(o: Options) -> dict:
             period_days = (I.utc_dt(until) - I.utc_dt(lo)).total_seconds() / 86400
         base_cfg = _cfg(Path(o.config).parent / "engine.base.json") if o.config else {}
         tau = o.risk if o.risk is not None else float(base_cfg.get("target_trade_risk", cfg.get("target_trade_risk", 0.005)))
-        risk_usd = o.risk_usd if o.risk_usd is not None else tau * float(base_cfg.get("wallet_start", cfg.get("wallet_start", 1000.0)))
+        cfg_tau = float(base_cfg.get("target_trade_risk", cfg.get("target_trade_risk", 0.005)))
+        risk_usd = o.risk_usd if o.risk_usd is not None else cfg_tau * float(base_cfg.get("wallet_start", cfg.get("wallet_start", 1000.0)))
         if "gates" in secs:
             cost = None if backtest else I.veto_cost_usd(o.budget, since, until) if o.budget else None
             ga = GA.build(trades, decisions, cf, mode_backtest=backtest, period_days=period_days, veto_cost=cost,
                           risk_usd=risk_usd, cf_warning=cf_warn)
             if o.compare_backtest:
                 cdir = Path(o.compare_backtest)
+                cmp_ok = False
+                try:
+                    cm_meta = json.loads((cdir / "meta.json").read_text(encoding="utf-8"))
+                    cper = cm_meta["period"]
+                    if not isinstance(cper, (list, tuple)) or len(cper) != 2:
+                        raise ValueError("period")
+                    guard.check_run(I.utc_dt(cper[0]), I.utc_dt(cper[1]))
+                    cmp_ok = True
+                except guard.BacktestArgError:
+                    warnings.append("compare_holdout_locked")
+                except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError):
+                    warnings.append("compare_meta_period")
+            if o.compare_backtest and cmp_ok:
                 bconn = I.open_ro(cdir / "ledger.sqlite", "ledger_missing")
                 try:
                     I.check_ledger_schema(bconn)
@@ -196,6 +216,8 @@ def build_report(o: Options) -> dict:
     finally:
         if reader is not None:
             reader.close()
+
+    warnings.extend(f"immutable_fallback:{x}" for x in I.FALLBACK_LOG)
 
     # ---- alt grup tablolari: K_rapor ve z_K
     sub = []
@@ -348,7 +370,7 @@ def summary_line(trades, ozet, out, n_engel) -> str:
     if n_engel is not None and "gates" in out:
         for b in out["gates"]["blocks"]:
             if b.get("id") == "kapi_karnesi":
-                bad = [r["hucre"].split(":", 1)[-1].replace("_", " ") for r in b["rows"]
+                bad = [GA.tr_name(r["hucre"]) for r in b["rows"]
                        if str(r.get("bayrak", "")).startswith("kazanani_engelliyor")]
     def assemble(nbad):
         q = list(p)

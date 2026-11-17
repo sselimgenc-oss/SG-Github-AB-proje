@@ -660,7 +660,7 @@ def test_h3_market_holdout_bars_never_influence_results(tmp_path):
     a = build(tmp_path / "clean", False)
     b = build(tmp_path / "poison", True)
     assert a.rc == 0 and b.rc == 0, a.text + b.text
-    assert "NaN" not in b.md and not re.search(r"\bnan\b", b.md.lower())  # lead: "atlanan" kelimesi "nan" icerir
+    assert "NaN" not in b.md and not re.search(r"(?<![a-zçğıöşü])nan", b.md.lower())  # lead: "atlanan" kelimesi "nan" icerir
     assert a.js == b.js
     assert a.csv_rows() == b.csv_rows()
 

@@ -170,6 +170,8 @@ def build(trades: list[dict], decisions: list[dict], cf: dict | None, *, mode_ba
             row["yargi"] = "kanit_yok"
         r = {"hucre": name, "kapi": name}
         merge(r, {c: row[c] for c in ("n_engel", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak")})
+        if not dids:
+            r["bayrak"] = ""
         r["not"] = "" if dids else "gölge karar satırı WP-3'te"
         rows.append(r)
     blocks.append(plain("aday_uretmeyen", "2.4 Aday üretmeyen yasaklar",
@@ -186,3 +188,21 @@ def compare(live_trades, live_counts: dict, bt_trades, bt_counts: dict, period_d
     only_gates = [] if early else sorted(k for k, n in bt_counts.items() if n > 0 and live_counts.get(k, 0) == 0)
     return {"yalniz_backtest_cikis_nedenleri": only_reasons, "yalniz_backtest_kapilari": only_gates,
             "durum": "erken" if early else "degerlendirilebilir", "kagit_donemi_gun": period_days}
+
+
+_TR_NAMES = {"stop_width": "stop genişliği", "rr_below_min": "kazanç/risk oranı", "ml_filter": "öğrenen filtre",
+             "order_failed": "emir hatası", "entry_gate_closed": "giriş kapısı kapalı", "other": "diğer",
+             "veto:claude": "veto", "veto:yok": "veto yok", "veto:bayat": "veto bayat",
+             "risk:ayni_yon": "aynı yön riski", "risk:gunluk_butce": "günlük zarar bütçesi", "risk:gunluk_sinir": "günlük sınır",
+             "risk:acik_risk": "toplam açık risk", "risk:teminat_toplam": "toplam teminat", "risk:likidasyon": "likidasyon yakınlığı",
+             "risk:boyut": "boyutlandırma", "risk:boyut_min_emir": "en küçük emir", "risk:cift_acik": "çift zaten açık",
+             "risk:diger": "diğer risk", "gate:kill": "acil durdurma", "gate:stale_data": "bayat veri",
+             "gate:rules_missing": "borsa kuralı yok", "gate:day_start_missing": "gün başı bakiyesi yok",
+             "gate:params_unavailable": "ayarlar okunamadı", "gate:trigger_tf_changed": "zaman dilimi değişti"}
+
+
+def tr_name(key: str) -> str:
+    """Telegram satiri icin Turkce kapi adi (Ingilizce anahtar gosterilmez)."""
+    if key in _TR_NAMES:
+        return _TR_NAMES[key]
+    return key.split(":", 1)[-1].replace("_", " ")

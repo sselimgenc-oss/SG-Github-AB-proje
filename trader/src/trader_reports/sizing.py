@@ -74,13 +74,14 @@ def _agg(res: list[dict], gunler: list[str]) -> dict:
     out["bayrak"] = ("bozulma" if (n and (out["red_oran"] >= 0.05 or (out["risk_orani_medyan"] is not None
                                                                        and out["risk_orani_medyan"] < 0.90))) else "")
     out["etiket"] = label_basic(n, out["G"])
+    out["bayrak_not"] = "(yetersiz)" if out["etiket"] == "yetersiz" else ""
     return out
 
 
 COLS = ["pair", "W", "tau", "n_aday", "G", "red_min_emir", "red_min_emir_oran", "red_min_emir_aralik", "red_min_adet",
         "red_min_adet_oran", "red_min_adet_aralik", "red_teminat", "red_teminat_oran", "red_teminat_aralik", "red_oran",
         "tavan_bagli_oran", "risk_orani_min", "risk_orani_p5", "risk_orani_p25", "risk_orani_medyan", "risk_orani_ort",
-        "adim_kaybi_medyan", "bayrak", "etiket"]
+        "adim_kaybi_medyan", "bayrak", "bayrak_not", "etiket"]
 
 
 def build(decisions, trades, rules: dict, wallets, taus, mode_backtest: bool) -> dict:

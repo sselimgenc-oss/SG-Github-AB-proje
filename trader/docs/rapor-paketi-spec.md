@@ -92,7 +92,7 @@ trader/scripts/report_run.py   # CLI (argparse, saat, dosya yazımı, isteğe ba
 `H0, H1 = trader_engine.holdout.HOLDOUT`. Sabitler pakette yeniden yazılmaz.
 
 1. **Koşu düzeyi:** backtest kipinde `meta.json period` için `check_holdout(start, end)` çağrılır; `BacktestArgError("holdout_locked")` ⇒ koşu **okunmaz**; çıktı yalnız `{"status": "holdout_locked"}` içeren `rapor.json` + tek satırlık `rapor.md`, çıkış kodu 3.
-2. **Satır düzeyi (SQL'de, satır belleğe alınmadan):** `PAD = 72 saat` (en uzun ileri pencere). İşlem sorguları `NOT (entry_ts < :H1 AND exit_ts >= :H0_eksi_PAD)` koşulunu, karar ve `cf_outcomes` sorguları `NOT (ts < :H1 AND ts >= :H0_eksi_PAD)` koşulunu taşır. Atlanan satır sayısı ayrı `COUNT(*)` sorgusuyla (yalnız sayı) `holdout_skipped` olarak raporlanır. `trades.csv` satırları aynı koşulla, satır ayrıştırılırken ilk iş olarak elenir.
+2. **Satır düzeyi (SQL'de, satır belleğe alınmadan):** `PAD = 72 saat` (en uzun ileri pencere). İşlem sorguları `NOT (entry_ts < :H1 AND exit_ts >= :H0_eksi_PAD)` koşulunu, karar ve `cf_outcomes` sorguları `NOT (ts < :H1 AND ts >= :H0_eksi_PAD)` koşulunu taşır. Atlanan satır sayısı ayrı `COUNT(*)` sorgusuyla (yalnız sayı) `holdout_skipped` olarak raporlanır. **Tanım:** `holdout_skipped` = atlanan kapanmış işlem sayısı + atlanan `final_action='skipped'` karar sayısı. Girilmiş kararlar kendi işlemiyle birlikte sayılır (aynı olay), karşı-olgu satırları atlanan kararla aynı olaydır (ayrı kırılımda `holdout_skipped_cf`); kilitli bölgedeki girilmiş ama henüz kapanmamış kararlar hiçbir yerde sayılmaz. Kilitli bir işlemin giriş kararı da okunmaz. `meta.json period` eksik, 2 elemanlı olmayan ya da ayrıştırılamıyorsa koşu `meta_period` hatasıyla (kod 2) reddedilir; `--compare-backtest` koşusu aynı denetimden geçer, kesişirse karşılaştırma uyarıyla atlanır ve o koşu okunmaz. `trades.csv` satırları aynı koşulla, satır ayrıştırılırken ilk iş olarak elenir.
 3. **Mum düzeyi (tek geçit):** her `BarReader.window` çağrısı I/O'dan **önce** `check_holdout(start, end)` çağırır; kesişme ⇒ okuma yapılmaz, çağıran satır `holdout_skipped` olur. Feather okuyucuda yalnız `date` sütunu konum bulmak için taranabilir; kilitli döneme ait `open/high/low/close/volume` değerleri hiçbir zaman dilimlenmez, numpy dizisine çevrilmez (mevcut `HistoricalSource._synthetic_rules` ile aynı sözleşme).
 4. Yıl satırlarında (§5.5) 2026 yılı `kısmi (kilitli dönem hariç)` notuyla basılır.
 5. Rapor başlığında her zaman şu satır bulunur: `Kilitli dönem 2026-05-01..2026-11-01 okunmadı; atlanan satır: <holdout_skipped>.`
@@ -109,7 +109,7 @@ Wilson %90 (`z = 1,645`): `merkez = (p + z²/2n)/(1 + z²/n)`, `yarı = z·sqrt(
 
 ### 5.3 `yetersiz` etiketi
 
-`n < 30` **ya da** `G < 8` ⇒ satır etiketi `yetersiz`; ortalama yine basılır, aralık `—`, satır hiçbir bayrak alamaz.
+`n < 30` **ya da** `G < 8` ⇒ satır etiketi `yetersiz`; ortalama yine basılır, aralık `—`, satır hiçbir bayrak alamaz. **İstisna:** §9 `bozulma` bayrağı `yetersiz` etiketiyle bastırılmaz (test S4); satır `bayrak_not = "(yetersiz)"` taşır.
 
 ### 5.4 Alt grup çıtası (madde 17, A-13)
 
@@ -203,7 +203,7 @@ Beklenen kapı listesi (hiç satırı olmasa da basılır): yukarıdaki tüm `sk
 | `ort_r_plan` | `method='plan' AND version>=2` ortalaması (bilgi) |
 | `bekleyen` | `n_engel − (bu kararlar için herhangi bir barrier satırı olanlar)` |
 | `veri_yok` | `exit_reason IN ('data_gap','invalid_plan')` sayısı |
-| `yargi` | `yetersiz` (§5.3, `n_cf` üzerinden) · `kanit_yok` (`n_engel = 0` ya da `n_cf = 0`) · `uyumlu` (aralık üst ucu < 0) · `celiskili` (aralık alt ucu > 0) · `belirsiz` (aralık 0'ı içerir) |
+| `yargi` | `yetersiz` (§5.3, `n_cf` üzerinden) · `kanit_yok` (`n_engel = 0` ya da `n_cf = 0`) · `uyumlu` (aralık üst ucu < 0) · `celiskili` (aralık alt ucu > 0) · `belirsiz` (aralık 0'ı içerir). `n ≥ 30`, `G ≥ 8` iken `SE < 1e-12` (ör. sabit değerli seri) ise aralık `[m, m]` dejenere sayılır ve yalnız `yargi` için kullanılır (`m > 0` ⇒ `celiskili`, `m < 0` ⇒ `uyumlu`); gösterilen aralık `—` kalır. |
 | `bayrak` | `kazanani_engelliyor` (`yargi = celiskili`) · `hic_devreye_girmedi` (`n_engel = 0`, dönem ≥ 28 gün) · boş |
 
 Karşılaştırma satırı `alınanlar`: `n`, ortalama `r_multiple`, aralık (not: *"gerçek çıkışla; karşı-olgu satırlarıyla birebir kıyaslanamaz"*). Kapı tablosu alt grup tablosudur (§5.4; ölçüt `hyp_r_net`); `kazanani_engelliyor` bayrağı etiketi `varsayım` olan satırda *"(varsayım)"* ekiyle basılır. **Otomatik devre dışı bırakma yoktur.**
@@ -252,6 +252,8 @@ tavan_bagli = qty_tavan < qty_risk
 Çift × W × τ tablosu: `n_aday`, `red_min_emir` / `red_min_adet` / `red_teminat` sayı ve oranı (Wilson), `tavan_bagli` oranı, `risk_orani` (yalnız `kabul`) en küçük / %5 / %25 / medyan / ortalama, `adim_kaybi` medyanı, bayrak `bozulma` (toplam red oranı ≥ 0,05 **ya da** medyan `risk_orani` < 0,90). Karşılaştırma tablosu: her küçük cüzdan için 1000'e göre red oranı farkı ve medyan `risk_orani` farkı. Gerçekleşen (yalnız backtest kipi; `equity_at_entry` var): `gercek_oran = planned_risk / (τ·equity_at_entry)` dağılımı çift başına.
 
 Sabit notlar: *"Varsayım: özsermaye W'de sabit, başka açık pozisyon yok, giriş fiyatı planlanan fiyat. Portföy sınırları (aynı yön, günlük bütçe) hesaba katılmaz."* ve kural kaynağı etiketi. Çalışan örnek (test §12-S1): `e=100000, s=98000, long, c=0,001, adım=0,001, min_notional=100` ⇒ `birim = 2198`; `W=250, τ=0,005` ⇒ `qty_risk = 0,000568…`, `qty = 0` ⇒ `red_min_emir`; `W=1000, τ=0,014` ⇒ `qty_risk = 0,006369…`, `qty = 0,006`, tutar 600, `risk = 13,188`, `risk_orani = 0,942`.
+
+`bozulma` bayrağı, §5.3'ün `yetersiz` bayrak yasağının istisnasıdır: küçük örneklemde de basılır ve `bayrak_not = "(yetersiz)"` ile işaretlenir. `--risk` ve `--synthetic-step` değerleri pozitif olmalıdır (aksi halde kod 2, `arg_error`); `risk_usd` (§7.3) yalnız yapılandırmadaki `target_trade_risk · wallet_start` değerinden türetilir, `--risk-usd` tek geçersiz kılmadır.
 
 ## 10. Çıktılar, CLI, Telegram
 
@@ -371,7 +373,7 @@ Testler `tests/reports/` altında, sentetik defter/depo/mum dosyalarını kendis
 - C3. `ozet.txt` tek satır, ≤ 300 karakter, şu sözcükleri içermez: `MFE`, `MAE`, `CI`, `counterfactual`, `gate`, `regime`; ondalık ayırıcı virgül.
 - C4. `--telegram`: sahte bildirici bir kez, `dedup_key = rapor:<hedef>:<tarih>`, önem `INFO` ile çağrılır; bildirici hata verirse kod 0; `--run-dir` ile birlikte kod 2.
 - C5. `--bot` + `--run-dir` birlikte ⇒ kod 2. `--sections sizing` ⇒ yalnız o bölüm.
-- C6. Bellek: 600 işlem + 2 000 karar + 10 çift × 2 yıl 1h/15m sentetik veriyle `resource.getrusage` tepe RSS ≤ 300 MB (alt süreçte ölçülür); `1m` tablosuna/dosyasına hiç erişilmez (izleyici).
+- C6. Bellek: 600 işlem + 2 000 karar + 10 çift × 2 yıl 1h/15m sentetik veriyle tepe RSS ≤ 300 MB; alt süreçte `/proc/self/status` `VmHWM` ile ölçülür (`getrusage` ru_maxrss kullanılmaz: çocuk süreç, fork öncesi üst sürecin tepe RSS değerini devralır); `1m` tablosuna/dosyasına hiç erişilmez (izleyici).
 - C7. Gerçek veriyle duman testi (varsa, yoksa atlanır): `--run-dir var/backtests/1h_IS_f1_s0_native_last --history var/history --synthetic-rules` kod 0; `n_trades = 610`.
 
 ## 13. Açık noktalar (mentor notu; uygulamayı engellemez)

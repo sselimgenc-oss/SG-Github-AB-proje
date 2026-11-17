@@ -20,6 +20,9 @@ TF_MS = {"15m": 900_000, "1h": 3_600_000}
 LOW_TS, HIGH_TS = "0000", "9999"
 
 
+FALLBACK_LOG: list = []   # immutable acilis kullanilan dosyalar (rapor uyarisi icin)
+
+
 class ReportError(Exception):
     def __init__(self, code: str, msg: str = "") -> None:
         super().__init__(msg or code)
@@ -60,7 +63,11 @@ def open_ro(path, missing_code: str = "ledger_missing") -> sqlite3.Connection:
     if not p.is_file():
         raise ReportError(missing_code, f"dosya yok: {p}")
     last = None
-    for uri_extra in ("", "&immutable=1"):   # ikincisi yalniz salt okunur dizinde -shm acilamazsa
+    wal = Path(str(p) + "-wal")
+    wal_busy = wal.is_file() and wal.stat().st_size > 0
+    for uri_extra in ("", "&immutable=1"):   # ikincisi yalniz salt okunur dizinde ve bos/yok -wal ile
+        if uri_extra and wal_busy:
+            break
         uri = "file:" + quote(str(p)) + "?mode=ro" + uri_extra
         for attempt in range(2):
             try:
@@ -68,6 +75,8 @@ def open_ro(path, missing_code: str = "ledger_missing") -> sqlite3.Connection:
                 conn.execute("PRAGMA busy_timeout=5000")
                 conn.execute("PRAGMA query_only=ON")
                 conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+                if uri_extra:
+                    FALLBACK_LOG.append(p.name)
                 return conn
             except sqlite3.OperationalError as e:
                 last = e
@@ -426,6 +435,8 @@ def parse_synth_steps(items) -> dict:
         k, v = it.split("=", 1)
         try:
             out[_norm_pair(k)] = float(v)
+            if not out[_norm_pair(k)] > 0:
+                raise ValueError("pozitif olmali")
         except ValueError as e:
             raise ReportError("arg_error", f"--synthetic-step sayi degil: {it}") from e
     return out

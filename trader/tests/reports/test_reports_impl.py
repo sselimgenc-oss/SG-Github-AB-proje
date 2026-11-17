@@ -326,3 +326,113 @@ def test_static_rules():
     for base in ("trader_engine", "trader_core", "trader_ml"):
         for p in (ROOT / "src" / base).rglob("*.py"):
             assert "trader_reports" not in p.read_text(encoding="utf-8"), p
+
+
+# --------------------------------------------------------------------------- mentor duzeltmeleri
+def _run_dir(tmp_path, period, name="run"):
+    run = tmp_path / name
+    run.mkdir()
+    meta = {"id": name} if period == "MISSING" else {"id": name, "period": period}
+    (run / "meta.json").write_text(json.dumps(meta))
+    return run
+
+
+@pytest.mark.parametrize("period", ["MISSING", None, ["2025-01-01T00:00:00.000Z"], ["x", "y"], "ab", [1, 2, 3]])
+def test_meta_period_fail_closed(tmp_path, capsys, period):
+    run = _run_dir(tmp_path, period)
+    rc, j = run_cli(["--run-dir", str(run), "--now", NOW, "--out", str(tmp_path / "o")], capsys)
+    assert rc == 2 and j["code"] == "meta_period"
+
+
+def test_compare_backtest_holdout_skipped(tmp_path, capsys):
+    led = tmp_path / "l.sqlite"
+    make_ledger(led, 3, trades=[{"entry": "2025-01-01T00:00:00.000Z", "exit": "2025-01-02T00:00:00.000Z"}])
+    cmp_dir = _run_dir(tmp_path, ["2026-03-01T00:00:00.000Z", "2026-06-01T00:00:00.000Z"], "cmp")
+    (cmp_dir / "ledger.sqlite").write_bytes(b"okunursa hata verir")
+    rc, j = run_cli(["--bot", "learner", "--ledger", str(led), "--cf", str(tmp_path / "c"), "--now", NOW,
+                     "--out", str(tmp_path / "o"), "--compare-backtest", str(cmp_dir)], capsys)
+    assert rc == 0
+    rj = json.loads((Path(j["out_dir"]) / "rapor.json").read_text(encoding="utf-8"))
+    assert "compare_holdout_locked" in rj["warnings"] and "compare" not in rj["gates"]
+
+
+@pytest.mark.skipif(hasattr(__import__("os"), "geteuid") and __import__("os").geteuid() == 0, reason="root salt okunur dizini aşar")
+def test_readonly_dirs_immutable_fallback(tmp_path, capsys):
+    import os
+    d = tmp_path / "ro"
+    d.mkdir()
+    led = d / "ledger.sqlite"
+    make_ledger(led, 3, trades=[{"entry": "2025-01-01T00:00:00.000Z", "exit": "2025-01-02T00:00:00.000Z"}])
+    c = sqlite3.connect(str(led))
+    c.execute("PRAGMA journal_mode=WAL")
+    c.close()
+    for p in d.glob("*-wal"):
+        if p.stat().st_size == 0:
+            p.unlink()
+    os.chmod(d, 0o555)
+    try:
+        rc, j = run_cli(["--bot", "learner", "--ledger", str(led), "--cf", str(tmp_path / "c"), "--now", NOW,
+                         "--out", str(tmp_path / "o")], capsys)
+        assert rc == 0
+        rj = json.loads((Path(j["out_dir"]) / "rapor.json").read_text(encoding="utf-8"))
+        assert any(w.startswith("immutable_fallback:") for w in rj["warnings"])
+    finally:
+        os.chmod(d, 0o755)
+
+
+def test_wal_nonempty_blocks_immutable(tmp_path, monkeypatch):
+    p = tmp_path / "x.sqlite"
+    make_ledger(p, 3)
+    (tmp_path / "x.sqlite-wal").write_bytes(b"x")
+    real = sqlite3.connect
+
+    def fail_ro(target, *a, **k):
+        if "immutable" in target:
+            raise AssertionError("immutable denenmemeli")
+        raise sqlite3.OperationalError("unable to open database file")
+    monkeypatch.setattr(I.sqlite3, "connect", fail_ro)
+    with pytest.raises(I.ReportError) as e:
+        I.open_ro(p, "ledger_missing")
+    assert e.value.code == "ledger_unreadable"
+    monkeypatch.setattr(I.sqlite3, "connect", real)
+
+
+def test_risk_usd_from_config_only(tmp_path, capsys):
+    led = tmp_path / "l.sqlite"
+    make_ledger(led, 3, decisions=[{"ts": "2025-01-0%dT00:00:00.000Z" % i, "skip_reason": "veto_blocked"} for i in range(1, 4)])
+    cfgp = tmp_path / "engine.base.json"
+    cfgp.write_text(json.dumps({"target_trade_risk": 0.01, "wallet_start": 500.0, "mode": "paper"}))
+    for extra in ([], ["--risk", "0.002"]):
+        rc, j = run_cli(["--bot", "learner", "--ledger", str(led), "--cf", str(tmp_path / "c"), "--now", NOW, "--config", str(cfgp),
+                         "--out", str(tmp_path / "o"), *extra], capsys)
+        assert rc == 0
+
+
+@pytest.mark.parametrize("extra", [["--risk", "0"], ["--synthetic-step", "BTC/USDT=0"]])
+def test_zero_args_exit_2(tmp_path, capsys, extra):
+    run = _run_dir(tmp_path, ["2025-01-01T00:00:00.000Z", "2025-02-01T00:00:00.000Z"])
+    rc, j = run_cli(["--run-dir", str(run), "--now", NOW, "--out", str(tmp_path / "o"), *extra], capsys)
+    assert rc == 2 and j["code"] == "arg_error"
+
+
+def test_tr_copies_parity_with_telegram():
+    from trader_core import telegram as T
+    for x in (0.0, 1.5, -3.0, 1234.5, 0.85, -0.04):
+        for d in (0, 1, 2):
+            assert ST.tr_sayi(x, d) == T.tr_sayi(x, d)
+            assert ST.tr_isaretli(x, d) == T.tr_isaretli(x, d)
+            assert ST.tr_yuzde(x, d) == T.tr_yuzde(x, d)
+
+
+def test_tr_gate_names_and_fixed_rows_flag():
+    for k in GA.EXPECTED:
+        n = GA.tr_name(k)
+        assert n and not re.search(r"[a-z]_[a-z]|gate|veto:", n), (k, n)
+    out = GA.build([], [], _cf([]), mode_backtest=False, period_days=60, veto_cost=None, risk_usd=5.0, cf_warning=None)
+    fixed = next(b for b in out["blocks"] if isinstance(b, dict) and b.get("id") == "aday_uretmeyen")
+    assert all(r["bayrak"] == "" for r in fixed["rows"])
+
+
+def test_sizing_yetersiz_note():
+    mk = {"sonuc": "kabul", "risk_orani": 1.0, "adim_kaybi": 0.0, "tavan_bagli": False}
+    assert SZ._agg([mk] * 5, ["d"] * 5)["bayrak_not"] == "(yetersiz)"

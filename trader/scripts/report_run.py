@@ -92,6 +92,8 @@ def main(argv=None, *, now_fn=None, notifier=None) -> int:
             wallets = tuple(float(x) for x in args.wallets.split(",") if x.strip())
         except ValueError:
             return fail("arg_error", "--wallets sayi listesi olmali")
+        if args.risk is not None and not args.risk > 0:
+            return fail("arg_error", "--risk > 0 olmali")
         bot = args.bot
         o = R.Options(mode="bot" if bot else "run", bot=bot,
                       ledger=_p(args.ledger or (f"var/{bot}/ledger.sqlite" if bot else None)),
