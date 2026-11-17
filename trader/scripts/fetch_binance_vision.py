@@ -270,7 +270,13 @@ def build(files: list[Path], reader, errors: list[str] | None = None) -> pd.Data
 
 
 def tf_step(tf: str) -> pd.Timedelta:
-    return pd.Timedelta(tf.replace("m", "min")) if tf.endswith("m") else pd.Timedelta(tf)
+    if tf.endswith("m"):
+        return pd.Timedelta(minutes=int(tf[:-1]))
+    if tf.endswith("h"):
+        return pd.Timedelta(hours=int(tf[:-1]))
+    if tf.endswith("d"):
+        return pd.Timedelta(days=int(tf[:-1]))          # 'd' birimi pandas'ta kullanimdan kalkiyor
+    return pd.Timedelta(tf)
 
 
 # ------------------------------------------------------------------------------------------- birlestirme
