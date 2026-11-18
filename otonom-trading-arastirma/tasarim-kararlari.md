@@ -126,3 +126,7 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 ### 18 Kasım 2026 — Kasa tavanı: kullanıcı kararı
 
 - **`live.expected_wallet_max` = 1500 USD** (kullanıcı: "1500 dolar yapalım"). 17 Kasım'daki 350 → 1200 kademesinin yerine geçer; başlangıçta da 1000 USD'ye tamamlamada da 1500. DD-8 O4 ile tavan aşılınca motor durmaz, yalnız yeni girişler kalıcı tutuşla kapanır (`wallet_above_expected`; sunucuda CLI ile kaldırılır). Canlı yapılandırma dosyası (DD-9) oluşturulurken bu değer yazılır.
+
+### 18 Kasım 2026 — Gerçek para takvimi: kullanıcı kararı
+
+- Kullanıcı, `karar-notu-strateji-2026-11-18.md` sorusuna **A: Bekleyelim** dedi. Bir strateji CANLI-K1 ölçütünü (K6) geçene kadar para yatırılmaz, canlı anahtar sunucuya konmaz. Kâğıt botlar ve 14 Aralık testnet gölge koşusu sürer; 31 Aralık durum gözden geçirmesidir. Araştırma turu S2 (K8) başlar: önce maliyet dökümü denetimi.
