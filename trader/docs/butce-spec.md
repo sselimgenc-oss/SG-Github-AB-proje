@@ -1,5 +1,7 @@
 # Claude API harcama koruması (bütçe) — arayüz ve kurallar (spesifikasyon v1, 16 Kasım 2026)
 
+> 18 Kasım: kullanıcı kararıyla değişti. LLM aylık bütçe **30 USD** (eski 10 USD, veto 0,25 $/gün, ders 0,10 $/gün geçersiz); veto payı kaldırıldı (LLM veto yok); LLM aday önerisi açık, günlük adet sınırı yok.
+
 Kaynak kararlar: `otonom-trading-arastirma/tasarim-kararlari.md` ("15–16 Kasım kararları", Claude API bütçesi maddesi ve MVP ek notu: limit dolarsa yeni işlem açılmaz, açık pozisyonlar SL/TP ile yönetilmeye devam eder), `mimari-taslak.md` (parça 5: analist + veto + harcama koruması; dosya yok/bayat/limit dolu → giriş yok), `research_notes/diger-hesap/gorev9_claude_api_maliyet.md` (fiyat tablosu, `usage` alanları, 400/429 davranışı, hata sınıfları).
 
 Modül: `src/trader_core/budget.py`. Yalnızca standart kütüphane (`sqlite3`, `json`, `decimal`, `dataclasses`, `datetime`, `os`, `uuid`); anthropic SDK, pandas/numpy ve freqtrade import edilmez. Modül **hiçbir HTTP çağrısı yapmaz** ve **API anahtarını okumaz**; yalnızca "bu çağrıya izin var mı, ne kadar harcandı" sorusunu yanıtlar. Hata durumunda her zaman kapalı (fail-closed): bütçe doğrulanamıyorsa Claude çağrısı yapılmaz.

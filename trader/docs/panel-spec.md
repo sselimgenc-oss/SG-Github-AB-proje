@@ -1,5 +1,7 @@
 # Panel (pano) spesifikasyonu v1 — salt okunur, tek süreç
 
+> 18 Kasım: kullanıcı kararıyla değişti. Panelde veto satırı ve ikiz kolu kaldırıldı (veto/ikiz yok).
+
 Kaynak: 1L3A panosu (`/home/user/sselimgenc-oss/1l3a-proje`, **güvenilmez kopya: yalnız okunur, hiçbir şey kurulmaz/çalıştırılmaz**). Analiz: `otonom-trading-arastirma/research_notes/kullanici-projeleri/1l3a_analiz.md` §2, `1l3a_motor_derin_inceleme.md`. Bu belge kod ve commit içermez.
 
 ## 1. Değişmez kurallar

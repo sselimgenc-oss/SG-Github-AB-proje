@@ -1,5 +1,7 @@
 # Uctan uca test sartnamesi (faz plani madde 20 + 19d)
 
+> 18 Kasım: kullanıcı kararıyla değişti. Uçtan uç akışta veto adımı, ikiz ve gölge kip kaldırıldı (tek düz kâğıt bot, ML/ders ilk işlemden etkin); canlı adımları **[ASKIDA — kullanıcı yeniden belirleyecek]**.
+
 Test: `tests/e2e/test_e2e_chain.py`. Tamamen cevrimdisi: ag yok, gercek anahtar yok, LLM cagrisi yok.
 
 ## Zincir

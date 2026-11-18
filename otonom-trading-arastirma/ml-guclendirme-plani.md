@@ -1,5 +1,7 @@
 # ML güçlendirme planı (17 Kasım 2026 — mentor)
 
+> **18 Kasım: kullanıcı kararıyla değişti.** Kâğıtta gölge kip, ikiz, ayrı ml-deney botu yok; ML ilk işlemden etkin (kapı/6 hafta/onay/minimum işlem şartı yok), kendi adaylarını önerir, dersler ML'e girer. Aşağıdaki gölge, `active` şartı ve canlı takvimi (28 Aralık – 4 Ocak, ocak etkinleştirme) **[ASKIDA — kullanıcı yeniden belirleyecek]**; ön kayıt/kilitli dönem/kapı eşikleri araştırma kaydı olarak durur, kâğıtta aranmaz.
+
 Kullanıcı talimatı (17 Kasım): *"Makina öğrenmesi kapanmayacak, fable makina öğrenmesi konusunda beğendiği repoların makina öğrenmesi bölümünü iyice araştırıp didik didik etsin, makina öğrenmesini canlıya kadar iyice geliştirip güçlendirmek asli görevi."*
 
 Bu belge kod içermez; kodda hiçbir şey değiştirilmedi. `tasarim-kararlari.md` ile çelişirse o belge geçerlidir. İncelenen repolar çalıştırılmadı, kurulmadı; yalnız okundu. Kapı (19c) yeniden koşulmadı; kilitli dönem (2026-05 → 2026-10) okunmadı.
@@ -11,7 +13,7 @@ Bu belge kod içermez; kodda hiçbir şey değiştirilmedi. `tasarim-kararlari.m
 **"ML kapanmayacak" talimatını şöyle uyguluyorum:**
 
 1. ML çalışması hiçbir aşamada bırakılmaz. Eski tasarımdaki "hiçbir tarif kapıyı geçemezse ML durur" cümlesi kalkar; yerine "tur biter, rapor yazılır, sonraki tur açılır" gelir.
-2. Bir model kapıyı geçtiği gün kağıt hesabında gölge puanlama başlar (model her karara puan yazar, hiçbir kararı değiştirmez).
+2. ~~Bir model kapıyı geçtiği gün kağıt hesabında gölge puanlama başlar (model her karara puan yazar, hiçbir kararı değiştirmez).~~ **[KALDIRILDI 18 Kasım — kullanıcı: kâğıtta gölge yok, ML etkin]**
 3. Paranızı koruyan kurallar aynen kalır, çünkü kaldırılmalarını istemediniz: kapı eşikleri sonuç görüldükten sonra gevşetilmez; her deneme koşudan önce deftere yazılır; kilitli dönem ML'ye açılmaz; ML yalnız işlem çıkarabilir (ekleyemez, boyut/stop değiştiremez); gerçek paraya dokunması için kapı + en az 6 hafta gölge + sizin Telegram onayınız gerekir.
 
 **İlk denemenin (19c) neden kaldığı — dört neden, önem sırasıyla:**
@@ -28,7 +30,7 @@ Bu belge kod içermez; kodda hiçbir şey değiştirilmedi. `tasarim-kararlari.m
 - Soruyu düzeltmek: "1R'a stoptan önce ulaşır mı?" (doğal cevap ~%45–50; kapının ızgarasıyla uyumlu).
 - 8 tariflik bütçeyi bir kerede harcamamak: önce 5 tarif, 3'ü yedek. Her tarif kapıyı biraz daha zorlaştırır (deneme sayısı cezası), bu yüzden az ve iyi düşünülmüş tarif.
 
-**Dürüst beklenti:** Canlıya kadar (aralık sonu) bir modelin dondurulmuş kapının tamamını geçme olasılığını %15–25 görüyorum. Geçerse gölge aralık ortasında başlar; etkin filtre en erken ocak sonu–şubat. Geçemezse canlı yine ML'siz (ya da gölgede) başlar, takvim etkilenmez ve ML çalışması ikinci turla sürer. ML, zayıf bir stratejiyi kurtaramaz; yalnız kötü koşulları ayıklayabilir.
+**Dürüst beklenti:** Canlıya kadar (aralık sonu) bir modelin dondurulmuş kapının tamamını geçme olasılığını %15–25 görüyorum. ~~Geçerse gölge aralık ortasında başlar; etkin filtre en erken ocak sonu–şubat. Geçemezse canlı yine ML'siz (ya da gölgede) başlar, takvim etkilenmez~~ (18 Kasım: kâğıtta ML zaten etkin; canlı askıda) ve ML çalışması ikinci turla sürer. ML, zayıf bir stratejiyi kurtaramaz; yalnız kötü koşulları ayıklayabilir.
 
 **Sizden beklenen kararlar** Bölüm 6'da; en önemlisi geçmiş verinin 2021'e uzatılması.
 
@@ -219,7 +221,7 @@ Dilim IC'leri −0,10 / +0,08 / +0,05 / +0,01: işaret tutarlı değil, büyükl
 - Tur 1: en fazla 8 tarif hakkı var; **5'i koşulur, 3'ü yedek kalır.** Tarifler sırayla, her biri koşudan önce `research/ml_trial_registry.csv`'ye yazılır. Deneme sayısı asla sıfırlanmaz.
 - Her tarifin kaydında: özellik listesi (ad ad) ve kod özeti, etiket, ağırlık kuralı, model ayarları, kalibrasyon kuralı, derlem sha256, yürüyen pencere tanımı. Kayıttan sonra hiçbiri değişmez.
 - Kayıttan önce **güç ön hesabı** yazılır: o derlem ve deneme sayısıyla kapıyı geçmek için gereken t ve IC. Gereken etki gerçek dışıysa tarif koşulmaz (deneme harcanmaz).
-- Bir tarif geçerse sonraki tarifler durur; geçen model gölgeye gider. Geçen modelin üstüne "daha iyisini arama" yeni turdur.
+- Bir tarif geçerse sonraki tarifler durur; ~~geçen model gölgeye gider~~ (18 Kasım: kâğıtta ML zaten etkin). Geçen modelin üstüne "daha iyisini arama" yeni turdur.
 - Tur biterse rapor yazılır, ML **durmaz**: Tur 2 biriken kağıt/canlı kayıtları, karşı-olgusal derlem ve yeni veri kaynaklarıyla açılır.
 
 ### 3.1 Önce derlem v2 (tarif değil, ön koşul)
@@ -294,7 +296,7 @@ Bu bölüm r02 ve r03 için belirsiz bırakılabilecek her tanımı önceden sab
 
 ---
 
-## 4. İş takvimi (bugün 17 Kasım Salı → canlı 28 Aralık – 4 Ocak)
+## 4. İş takvimi (bugün 17 Kasım Salı → ~~canlı 28 Aralık – 4 Ocak~~ canlı tarihi **[ASKIDA — kullanıcı yeniden belirleyecek]**; 18 Kasım: kâğıtta ML etkin, aşağıdaki gölge/`active` adımları geçersiz)
 
 Kurallar: ana yapı (faz planı 13–20) her zaman önce. Aynı anda en fazla 2 Sonnet uygulayıcı; 30 Kasım'a kadar ML'ye **en fazla bir şerit**, o da ana yapı işi beklemiyorsa. ML işleri 27 Kasım akşamı kesilir; bitmeyen kağıt dönemine kayar. ML hiçbir tarihte kağıdı ya da canlıyı bekletmez.
 
@@ -332,7 +334,7 @@ Sonnet paketleri için ortak kabul ölçütleri: `ml_mode=off` kararları v1b il
 2. Her tarif koşudan önce `research/ml_trial_registry.csv`'de. Başarısız denemeler silinmez; deneme sayısı sıfırlanmaz.
 3. Kilitli dönem 2026-05-01 → 2026-11-01 ML tarafından okunmaz (geçmişi 2021'e uzatmak buna dokunmaz).
 4. ML yalnız çıkarır. Boyut, kaldıraç, stop, hedef belirlemez; risk kilidini gevşetemez.
-5. `active` = mevcut kapı + ≥ 6 hafta gölge (≥ 150 puanlı aday, ≥ 50'si alınmış, ileri dönemde fark > 0 ve IC > 0) + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş.
+5. **[ASKIDA — yalnız canlı; kâğıtta kaldırıldı, 18 Kasım]** `active` = mevcut kapı + ≥ 6 hafta gölge (≥ 150 puanlı aday, ≥ 50'si alınmış, ileri dönemde fark > 0 ve IC > 0) + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş.
 6. Üçüncü taraf kod: MIT/Apache ise seçili parça, kendi testimizle; GPL/AGPL/lisanssız/"tüm hakları saklı" ise yalnız fikir. Hiçbir repo çalıştırılmaz, bağımlılıkları kurulmaz.
 7. Canlıda RL yok, LLM model eğitmez, her mumda ağırlık güncellemesi yok.
 
@@ -344,7 +346,7 @@ Güncellenmesi gereken belgeler (bu işte dokunulmadı): `ml-faz-tasarimi.md` §
 
 | # | Karar | Mentor önerisi | Neden size soruluyor |
 |---|---|---|---|
-| 1 | "ML kapanmayacak" yorumu: ML çalışması durmaz, turlar halinde sürer; ama koruma kuralları (Bölüm 5) aynen kalır ve canlı, kapıyı geçmiş model yoksa ML'siz başlar | Onay | Yazılı "faz durur" kuralını değiştiriyor; talimatınızı doğru anladığımı teyit için |
+| 1 | "ML kapanmayacak" yorumu: ML çalışması durmaz, turlar halinde sürer; ama koruma kuralları (Bölüm 5) aynen kalır ~~ve canlı, kapıyı geçmiş model yoksa ML'siz başlar~~ (canlı askıda, 18 Kasım) | Onay | Yazılı "faz durur" kuralını değiştiriyor; talimatınızı doğru anladığımı teyit için |
 | 2 | Geçmiş verinin 2021-01'e uzatılması (Binance'in herkese açık arşivinden, sunucuda indirme; birkaç GB) | **Evet** — planın en önemli adımı | Yeni veri indirme; ayrıca v1b'nin 2021–2024 sonucu da görünür olur (kötü çıkabilir; strateji planını da ilgilendirir) |
 | 3 | Etiketin "2R" yerine "1R'a stoptan önce" olması | Evet | Eşik değişmiyor ama tasarımda "etiket tanımı sabittir" yazıyordu. Şeffaflık: bu değişiklik kapının [0,45–0,70] ızgarasıyla uyumu sağlar; sinyalsiz model yine kalır |
 | 4 | Tanı sırasında derlemin tamamına baktığım için deneme defterine `diag-19c-univariate` satırı (deneme sayısı 4 → 6) | Evet (sıkılaştırma) | Kapıyı biraz zorlaştırır; dürüst muhasebe |

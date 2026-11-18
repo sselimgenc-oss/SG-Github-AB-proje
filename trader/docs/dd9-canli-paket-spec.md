@@ -1,5 +1,7 @@
 # DD-9 — Canlı paket ve kurulum sertleştirme (uygulama şartnamesi v1, 18 Kasım 2026)
 
+> **[ASKIDA — kullanıcı yeniden belirleyecek]** 18 Kasım: kullanıcı kararıyla gerçek para kararları (1000 USD, 1500 USD tavan, canlı tarihi) askıya alındı; canlı yapılandırma değerleri uygulanmaz.
+
 **Hazırlayan:** mentor · **Taban:** `claude/charming-hawking-ab5w5q` @ `0f2ef52` (DD-2, DD-7, DD-8 birleşmiş)
 **Kaynak:** `otonom-trading-arastirma/dis-denetim/triyaj-2026-11-18.md` — K1 (paket), O7, O12, O13, O15; `docs/dd7-ban-kalicilik-spec.md` "DD-9 için devredilenler" (8 madde); `docs/dd8-canli-baslangic-spec.md` Not-2; DD-7 mentor inceleme notları; `tasarim-kararlari.md` 18 Kasım (kasa tavanı 1500 USD).
 **Hedef:** O12/O13 **canlı anahtar sunucuya konmadan önce**; birim değişiklikleri 14 Aralık gölge koşusundan önce (gölge koşu canlı birimin provasıdır). Canlı çalışmıyor; bu paket para riski taşımaz.

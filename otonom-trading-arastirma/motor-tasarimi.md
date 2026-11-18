@@ -1,5 +1,7 @@
 # Kendi işlem motorumuz — tasarım (mentor, 16 Kasım 2026)
 
+> **18 Kasım: kullanıcı kararıyla değişti.** Güncel: tek düz kâğıt bot (learner); ikiz (twin) süreci/`engine.twin.json` kaldırıldı; LLM veto kapısı kaldırıldı (giriş kapısında veto adımı yok); 44 enstrüman × 15dk/1s/4s/1g (1d ilk günden, aylık enstrüman güncellemesi şimdi); ders ve ML ilk işlemden etkin; canlıya geçiş/tek hesap maddeleri **[ASKIDA — kullanıcı yeniden belirleyecek]**. Aşağıdaki twin/veto satırları tarihsel.
+
 Kullanıcı kararı (16 Kasım 2026, parça ilkesi; geçmiş kayıt: o tarihte freqtrade çalışma zamanındaydı): freqtrade yerine kendi motorumuz ("1l3a'yı uyarla ya da sıfırdan yaz, ama şimdi başla").
 Girdi: `research_notes/kullanici-projeleri/1l3a_motor_derin_inceleme.md`, `faz-plani.md`, `tasarim-kararlari.md`,
 `trader/src/trader_core/*`, `trader/user_data/strategies/TraderV1.py`.
@@ -77,8 +79,8 @@ Bırakılanlar: `motor/portfoy/motor.py`, `motor/backtest/motor.py`, `motor/canl
 Binance public REST ──> feed (tek süreç) ──> market.sqlite (kapalı barlar: last 1m/15m/1h/4h, mark 1m, funding)
                                                    │ (salt okunur)
                               ┌────────────────────┴────────────────────┐
-                        engine[learner]                            engine[twin]
-   MarketView → StrategyRunner → EntryGate(ledger, params, stale, veto, risk) → OrderManager → Broker
+                        engine[learner]                            ~~engine[twin]~~ (kaldırıldı 18 Kasım)
+   MarketView → StrategyRunner → EntryGate(ledger, params, stale, ~~veto~~, risk) → OrderManager → Broker
                       │                                                             │
                  PositionManager (stop/trail/target/time/regime çıkışları) <── Fill/BrokerEvent
                       │
@@ -99,7 +101,7 @@ Backtest: aynı `Engine`, veri kaynağı `HistoricalSource` (feather), saat `Sim
 | `marketdata/feed.py` | Süreç: dakikada bir (kapanış + 3 sn) her çift için 1m last + 1m mark; tf kapanışında 15m/1h/4h; saatte bir exchangeInfo ve funding; açılışta boşluk doldurma | Bar builder görevi: 1m → tf toplamı REST barıyla karşılaştırılır, fark uyarıdır; boşluk varsa bar "eksik" işaretlenir |
 | `marketdata/sources.py` | `StoreSource` (canlı), `HistoricalSource` (feather; backtest) — aynı `MarketView` arayüzü: `bars(pair, tf, until)`, `minute_bars(pair, a, b)`, `funding(pair, a, b)` | `until` zorunlu: gelecek bar verilemez |
 | `strategy_runner.py` | tf bar kapanışında: `regime.classify_series(4h)` → `align_to_base` → `signals.compute_signals` → son satır. Parametre: `ledger.get_active_params()` (her turda sürüm kontrolü) | `TraderV1.populate_indicators` karşılığı; hata → o çift için giriş yok |
-| `gates.py` | Giriş kapısı, sırayla: params_ok → `ledger.entries_allowed()` → stale_data → kill → mum başına tek karar → `veto.read_veto_file`+`lookup` (yok/eski/blocked → giriş yok) → `risk.check_entry` | Her ret `record_decision` ile yazılır (`skip_reason` ledger sözlüğünden) |
+| `gates.py` | Giriş kapısı, sırayla: params_ok → `ledger.entries_allowed()` → stale_data → kill → mum başına tek karar → ~~`veto.read_veto_file`+`lookup` (yok/eski/blocked → giriş yok)~~ [KALDIRILDI 18 Kasım: veto yok] → `risk.check_entry` | Her ret `record_decision` ile yazılır (`skip_reason` ledger sözlüğünden) |
 | `order_manager.py` | `Intent` → `OrderRequest`; idempotent client id; emir günlüğü (state.sqlite `orders`: POST'tan **önce** `pending` yazılır) ; belirsiz yanıtta kimlikle sorgu, yalnız "emir yok" ise tek yeniden gönderim | §2.4 |
 | `brokers/base.py` | `Broker` protokolü (§2.3) | |
 | `brokers/paper.py` | `PaperBroker`: dolum modeli (§2.5), sanal cüzdan, funding, likidasyon | Paper ve backtest ortak |
@@ -188,7 +190,7 @@ Bayatlık: karar anı bar kapanışından > 1 tf geçtiyse giriş yapılmaz (`st
 |---|---|
 | `populate_indicators` | `strategy_runner` |
 | `_gate`, `_stale`, `_bar_final`/`_decided` (mum başına tek karar) | `gates.py`; tek karar anahtarı state.sqlite'ta kalıcı |
-| `veto_check` (şu an stub: `not_evaluated`) | Gerçek `veto.lookup`; fail-closed |
+| ~~`veto_check` (şu an stub: `not_evaluated`) | Gerçek `veto.lookup`; fail-closed~~ [KALDIRILDI 18 Kasım: LLM veto yok] | |
 | `leverage` (= `LOCKED_CFG.min_leverage`) | Aynı kural |
 | `custom_stake_amount` + `confirm_trade_entry` (iki kez risk) | Tek `check_entry` + dolum sonrası doğrulama |
 | `order_filled` → `record_trade_entry/exit`; `trade.id` | Motor `trade_id` üretir (state.sqlite sayaç) |
@@ -205,14 +207,14 @@ Not (tarihsel; §4.3 madde 5 ile ad değişikliği planlandı): `Ledger.find_unl
 
 | Süreç | Bellek (tahmin) | Not |
 |---|---|---|
-| `trader-feed` | ~60 MB (pandas yok) | Tek hız sınırı bütçesi; L ve T **aynı barları** görür |
+| `trader-feed` | ~60 MB (pandas yok) | Tek hız sınırı bütçesi (T kaldırıldı, 18 Kasım) |
 | `trader-engine@learner` | ~180 MB | pandas/numpy |
-| `trader-engine@twin` | ~180 MB | 3 sn gecikmeli başlar; her zaman `PaperBroker` |
+| ~~`trader-engine@twin`~~ [KALDIRILDI 18 Kasım: ikiz yok] | ~~~180 MB~~ | |
 | veto / health / backup zamanlayıcıları | geçici | Mevcut |
 
 - systemd birimleri (`Restart=always`, `MemoryMax=400M`), 1 GB swap. Docker'a gerek yok (freqtrade imajı kalkıyor); istenirse tek `python:3.13-slim` imajı.
 - Feed ölürse: motorlar bayat veri görür → giriş yok; paper stopları feed dönünce yeniden oynatmayla işlenir; canlıda stop borsada.
-- Canlıda tek hesap = tek net pozisyon → **yalnız learner canlıya geçer**, twin paper kalır.
+- **[ASKIDA — kullanıcı yeniden belirleyecek]** Canlıda tek hesap = tek net pozisyon → yalnız learner canlıya geçer ~~, twin paper kalır~~ (ikiz yok).
 - İstek yükü: 10 çift × 2 istek/dk + tf kapanışları ≈ 25 istek/dk, ağırlık sınırının çok altında.
 
 ### 2.10 Dosya düzeni (`trader/` altında)
@@ -264,8 +266,8 @@ Faz A'da **yok**: imzalı istemci, `BinanceFuturesBroker`, algo emirleri, emir h
 Dürüst değerlendirme: bu takvimde **tampon yok**. 30 Kasım'ı tutturma olasılığını ~%55–60 görüyorum; gerçekçi aralık **30 Kasım – 4 Aralık**. Kayma olursa en olası sebepler: çapraz doğrulamada açıklanamayan farklar, yeniden başlatma/yeniden oynatma hataları, health toplayıcısının uyarlanması.
 
 Kayan / ertelenenler:
-- Faz 2'nin motor dışı işleri (ders servisi, Telegram raporu) aynı inceleme kapasitesini kullanır. Öncelik: motor > veto bağlantısı > kill komutu > günlük rapor > ders. Ders servisi paper'ın ilk haftasına kayabilir (zaten gölge dönemde, otomatik uygulama yok — kayıp küçük).
-- 1d zaman dilimi ve aylık coin güncellemesi: paper 1. haftadan 2. haftaya.
+- Faz 2'nin motor dışı işleri (ders servisi, Telegram raporu) aynı inceleme kapasitesini kullanır. Öncelik: motor > ~~veto bağlantısı~~ > kill komutu > günlük rapor > ders. ~~Ders servisi paper'ın ilk haftasına kayabilir (zaten gölge dönemde, otomatik uygulama yok — kayıp küçük).~~ [KALDIRILDI 18 Kasım: ders ilk işlemden etkin, gölge dönem yok]
+- ~~1d zaman dilimi ve aylık coin güncellemesi: paper 1. haftadan 2. haftaya.~~ 18 Kasım: 1g ve aylık enstrüman güncellemesi şimdi başlar.
 - Paper 4 Aralık'ta başlarsa: ya paper 3,5 haftaya iner (canlı 28 Aralık kalır) ya da 4 hafta korunur ve duman testi 2–3 Ocak, canlı ~5 Ocak olur. İkisi de "aralık sonu–ocak başı" içinde; **kullanıcı kararı**. Önerim: 4 haftayı koru.
 
 ### 3.2 Faz B — canlı öncesi zorunlular (30 Kasım – 27 Aralık, paper sürerken)

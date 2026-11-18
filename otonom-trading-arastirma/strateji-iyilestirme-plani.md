@@ -1,5 +1,7 @@
 # Strateji iyileştirme planı (v1 backtest sonrası)
 
+> **18 Kasım: kullanıcı kararıyla değişti.** Kâğıtta tek düz bot: v1b-kısıtları (15 dk kapalı, R1 kapalı/gölge) ve gölge etiket kararı kalktı; bütün kurulum aileleri × 15dk/1s/4s/1g, 44 enstrüman, ML ve ders ilk işlemden etkin, risk %1 / 16 pozisyon. Bölüm 4'teki canlı seçenekleri (1000 $, %0,5, kademe takvimi) ve takvim **[ASKIDA — kullanıcı yeniden belirleyecek]**. Deneme kayıt/kilitli dönem kuralları araştırma kaydı olarak durur.
+
 _Tarih: 16 Kasım 2026 · Kaynak: `backtest-raporu-v1.md`, `trader/research/trial_registry.csv` (42 kayıt), `strateji-v1.md` · Bu belge için **yeni backtest koşulmadı**; ek kırılımlar mevcut `trades_enriched.csv` dosyalarından (1h ana kol, IS ve WF) hesaplandı. HOLDOUT'a dokunulmadı._
 
 ## 0. Kısa sonuç
@@ -110,7 +112,7 @@ Sıralama: beklenen değer yüksek, aşırı uyum riski ve emek düşük olan ü
 | 2 | **+1R'de stopu girişe çekme** (başa baş + maliyet) | Orta. +1R görüp zarara dönen %37–47'yi hedefler. Büyük kazananları erken kesme riski var; `trail_atr` 2,5 IS'te daha kötüydü | Orta (tek yapısal değişiklik, parametre yok; ama fikir aynı veriden çıktı) | Düşük | Deneme 3 |
 | 3 | **4s tetik kolu** (rejim 4s kalır, tetik ve stop 4s) | Maliyet 0,2 R → yaklaşık 0,07–0,10 R. Brüt kazancın korunacağına dair kanıt yok | Düşük (mekanik gerekçe) ama n ≈ 150–200/dönem → SH ≈ 0,15 R; sonuç zayıf kanıt olur | Orta (defter şeması `trigger_tf` yalnız 1h/15m kabul ediyor) | Deneme 4 |
 | 4 | **Limit (maker) giriş:** tetik kapanışına post-only limit, N mum içinde dolmazsa vazgeç | Giriş tarafında yaklaşık 0,03–0,06 R tasarruf. Ters seçim riski: kaybedenler hep dolar, kaçan kazananlar dolmaz | Orta; asıl risk backtest–canlı farkı | Orta-yüksek; tutucu dolum modeli gerekir, yalnız kendi backtester'ımızda | Deneme 5 |
-| 5 | **Saat filtresi** (08–16 UTC giriş yok) | Kâğıt üstünde en büyük etki | Yüksek (sonradan bulundu, WF onu doğrulayamaz) | Düşük | Deneme değil. Sahte parada **gölge etiket**; ileri veriyle sınanır |
+| 5 | **Saat filtresi** (08–16 UTC giriş yok) | Kâğıt üstünde en büyük etki | Yüksek (sonradan bulundu, WF onu doğrulayamaz) | Düşük | Deneme değil. ~~Sahte parada **gölge etiket**; ileri veriyle sınanır~~ [KALDIRILDI 18 Kasım — kullanıcı: seans yasağı/gölge yok] |
 | 6 | `stop_buffer_atr` 0,4 + `trail_atr` 3,5 | En çok +0,06 R; 1 SH içinde | Orta | Düşük | Şimdilik hayır; tek başına işareti çevirmez |
 | 7 | Long tarafı kapatma, çift eleme | — | Yüksek (rejime bağlı; çiftler kararsız) | Düşük | Hayır. Yerine sıra 1 |
 | 8 | Funding / açık pozisyon filtresi | Bilinmiyor | Orta-yüksek (yeni eşikler) | Orta; Binance OI geçmişi yalnız yaklaşık 30 gün veriyor, IS/WF için veri yok | Ertele. OI şimdiden biriktirilsin; funding her işlemde kayda yazılsın |
@@ -136,7 +138,7 @@ Kendi backtester'ımız 26–27 Kasım'da geliyor; 30 Kasım'a kadar hiçbir den
 - 1h tetik, yalnız T1, varsayılan parametreler, 15m kapalı, R1 kapalı, aynı mumda yeniden giriş yok.
 - İşlem başı risk tasarımdaki gibi (%1,4 hedef). Sahte parada küçültmenin faydası yok; amaç risk kilidini, emir yolunu ve defteri gerçek büyüklükte sınamak.
 - Long açık kalsın: para riski yok, her işlem ileri (out-of-sample) kanıt.
-- Her kararda **gölge etiketler** kayda yazılsın (işlemi etkilemez): 1g yön filtresi ne derdi, giriş saati dilimi, stop mesafesi/ATR, limit emir dolabilir miydi, +1R'de başa baş stop olsaydı sonuç, R1 sinyali. Böylece dört haftada aday filtreler sıfır ek denemeyle ileri veride ölçülür.
+- ~~Her kararda **gölge etiketler** kayda yazılsın (işlemi etkilemez):~~ **[KALDIRILDI 18 Kasım — kullanıcı: kâğıtta gölge yok]** 1g yön filtresi ne derdi, giriş saati dilimi, stop mesafesi/ATR, limit emir dolabilir miydi, +1R'de başa baş stop olsaydı sonuç, R1 sinyali. Böylece dört haftada aday filtreler sıfır ek denemeyle ileri veride ölçülür.
 - Ders servisi kararlaştırıldığı gibi 4 hafta yalnız öneri kipinde.
 
 Seçenekler: (a) v1'i olduğu gibi koşmak — R1 ve yeniden giriş hatası bilinen zarar kaynağı, önerilmez; (b) yalnız short — tek rejime uyum, veri yarıya iner, önerilmez; (c) yukarıdaki v1b.
@@ -168,7 +170,7 @@ Tutar ve takvim kullanıcının kararı; faz planına göre kâr/zarar geçişi 
 **Seçenekler** (hepsi risk kilidinin içinde; %2 üst sınır ve diğer sınırlar değişmez):
 
 - **A.** 1000 $, %1,4 risk, v1b. Yukarıdaki düşüş aralığı aynen geçerli.
-- **B.** 1000 $ yatırılır, işlem başı risk %0,5 ile başlanır; kademeli artış kuralı önceden yazılır (örnek: en az 100 canlı işlemde gerçekleşen maliyetle E[R] ≥ 0 → %1,0; ikinci 100'de aynı → %1,4).
+- **B.** **[ASKIDA — kullanıcı yeniden belirleyecek]** 1000 $ yatırılır, işlem başı risk %0,5 ile başlanır; kademeli artış kuralı önceden yazılır (örnek: en az 100 canlı işlemde gerçekleşen maliyetle E[R] ≥ 0 → %1,0; ikinci 100'de aynı → %1,4).
 - **C.** B'ye ek olarak hesap düzeyinde gözden geçirme eşiği (örnek: tepe değerden −%20'de yeni giriş durur, Telegram'dan sorulur).
 - **D.** Sahte para ya da holdout'ta geçen bir aday varsa canlıya onunla, yoksa v1b ile girmek (A–C'den bağımsız).
 
@@ -180,7 +182,7 @@ Tutar ve takvim kullanıcının kararı; faz planına göre kâr/zarar geçişi 
 
 | Gün | İş | Motor inşasıyla çakışma |
 |---|---|---|
-| 17 Kas | Kararları `tasarim-kararlari.md`'ye yaz: 15m kapalı, R1 kapalı (gölge), v1b sahte para başlangıcı; aynı mumda yeniden giriş yasağını `position_manager` şartnamesine ekle | Yok (belge) |
+| 17 Kas | Kararları `tasarim-kararlari.md`'ye yaz: ~~15m kapalı, R1 kapalı (gölge), v1b sahte para başlangıcı~~ (18 Kasım: kaldırıldı, tüm aileler açık); aynı mumda yeniden giriş yasağını `position_manager` şartnamesine ekle | Yok (belge) |
 | 17–18 Kas | Ön kayıt: Deneme 1–5'in tam kural tanımı ve Bölüm 2.1 kapıları tek dosyada; kayıt defterine "planlandı" satırları | Yok |
 | 18–19 Kas | Teşhis betiği (`research/diag_slices.py`): Bölüm 1.2 tablolarını `trades_enriched.csv`'den yeniden üretir. Bundan sonraki her ek dilimleme yalnız IS'te | Yok (salt okuma) |
 | 18–20 Kas | Veri: 1g ve 4s geçmişi en az 2024-01'e uzat; IS/WF için 1m veri; gerçek `exchangeInfo` anlık görüntüsü; hesabın gerçek komisyon kademesi; açık pozisyon (OI) verisini biriktirmeye başla | Yok (indirme; veri indirmek deneme değildir) |

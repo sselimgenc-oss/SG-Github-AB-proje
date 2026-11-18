@@ -1,5 +1,7 @@
 # Strateji v1 — kural seti (16 Kasım 2026)
 
+> **18 Kasım: kullanıcı kararıyla değişti.** Kâğıt bot tek ve düz; bütün kurulum aileleri (trend takip, geri çekilme, kırılım, yatay) × 15dk/1s/4s/1g, 44 enstrüman; 15 dk/R1 kapatma ve gölge etiket kararları, seans/hafta sonu yasakları kalktı; ders ve ML ilk işlemden etkin, işlem/kanıt eşiği yok. Aşağıdaki v1b kuralları başlangıç/araştırma tabanıdır.
+
 Kaynak: `price-action-kural-katalogu.md` (58 kural) ve `tasarim-kararlari.md` (15–16 Kasım bölümü).
 Bu belge v1 kural motorunun ne yapacağını tanımlar. Buradaki hiçbir sayı kârlılık kanıtı değildir; hepsi backtest ile sınanacak başlangıç değeridir.
 
@@ -100,7 +102,7 @@ Ders servisi kuralları:
 - Yalnızca yukarıdaki **5 parametreye** dokunabilir; bir seferde bir parametre, bir adım.
 - Backtest sonrası sınırlar seçilen değerin çevresine yeniden ortalanır (seçilen değer ± yaklaşık bir-iki adım, tarama aralığının dışına çıkmadan).
 - `vol_ratio_max` için sıkılaştırma (düşürme) küçük değişikliktir; gevşetme büyük değişiklik sayılır ve kullanıcıya sorulur.
-- 1, 3 ve 4 numaralı parametreler ders servisine kapalıdır: bunlar hangi işlemlerin açıldığını değiştirir, 20–30 işlemlik kanıt önceki işlemlerle karşılaştırılamaz hale gelir. Yalnızca yeni backtest ile değişir.
+- 1, 3 ve 4 numaralı parametreler ders servisine kapalıdır: bunlar hangi işlemlerin açıldığını değiştirir, ~~20–30 işlemlik kanıt~~ (18 Kasım: kanıt eşiği kalktı) önceki işlemlerle karşılaştırılamaz hale gelir. Yalnızca yeni backtest ile değişir.
 
 ### 6.2 Sabitler (taranmaz)
 
@@ -174,5 +176,5 @@ Diğer çelişkiler (2, 6, 9, 10, 12, 14, 16–20, 22, 23) v1'e girmeyen kuralla
 
 1. **Rejim etiketi tek hata noktası.** İki kurulum da 4s etiketine bağlı ve etiket gecikmeli. Geçiş anlarında (range'den trende, trendden range'e) ikisi birden yanlış tarafta kalır.
 2. **Varsayılan sayıların çoğu kitaptan değil.** Katalogda "(varsayılan)" etiketli değerler çıkarımı yapan modelin önerisidir; range eşikleri ayrıca 4s/günlük forex-hisse için yazılmıştır. Kripto için kalibrasyon tamamen backtest'e kalıyor.
-3. **R1 seyrek olabilir.** Dar range + iki kenarda ikişer dokunuş + red mumu şartı az işlem üretebilir. Az işlemle walk-forward güvenilir sonuç vermez ve ders servisi 20–30 işlem kanıtına geç ulaşır.
+3. **R1 seyrek olabilir.** Dar range + iki kenarda ikişer dokunuş + red mumu şartı az işlem üretebilir. Az işlemle walk-forward güvenilir sonuç vermez ve ~~ders servisi 20–30 işlem kanıtına geç ulaşır~~ (18 Kasım: ders için işlem eşiği yok).
 4. **İlk 10 coin birlikte hareket eder.** T1 sinyalleri aynı saatte aynı yönde kümelenir. Aynı yön %4 sınırı kaybı kapatır, ama fiilen aynı bahsin 2–3 kopyası açılmış olur.

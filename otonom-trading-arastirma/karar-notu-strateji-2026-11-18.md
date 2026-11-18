@@ -1,5 +1,7 @@
 # Karar notu: v1b uzun dönemde zararda — kâğıt, testnet, canlı ve araştırma (18 Kasım 2026, mentor)
 
+> **18 Kasım (gece): kullanıcı kararıyla değişti.** Bu nottaki "A: Bekleyelim", K2 (v1b aynen, ikiz), K6/CANLI-K1, §2 ölçüt ve eşikleri, canlı seçenekleri (300/1000 USD, %0,5, 1500 USD tavan) **[ASKIDA — kullanıcı yeniden belirleyecek]**. Kâğıt: tek düz bot (ikiz/gölge yok), bütün aileler, 44 enstrüman, risk %1, ders ve ML ilk işlemden etkin; LLM veto yok. S2-1 (4s) durduruldu. Araştırma kayıtları (§3 maliyet/ön kayıt) araştırma dürüstlüğü olarak durur.
+
 **Kaynak:** `trader/docs/ml/r02-kapi-raporu.md` §6, `r03-kapi-raporu.md`, `tasarim-kararlari.md` (18 Kasım "açık karar"), `strateji-iyilestirme-plani.md`, `faz-plani.md`. Yeni geri test koşulmadı. Kilitli dönem (2026-05-01 → 2026-11-01) okunmadı.
 
 ## 0. Kullanıcı için özet
@@ -14,11 +16,11 @@
 | # | Karar |
 |---|---|
 | K1 | **v1b'nin statüsü:** canlı adayı değil, "bilinen eksi taban" (karşılaştırma stratejisi). Uzun dönem sonucu bundan sonraki resmi tabandır; 19b'nin kısa dönem +0,123 R'si taban olarak kullanılmaz. |
-| K2 | **Kâğıt botlar (öğrenen + ikiz) v1b ile aynen sürer.** Görevleri: altyapı sınaması, ileri dönem verisi, gölge etiketler, ders servisi, alınmayan sinyal işi. Kâğıtta hafif zarar beklenen sonuçtur, arıza sayılmaz. v1b'yi "düzeltmek" için kâğıtta ayar oynanmaz. `kagit-degerlendirme-plani.md` sayıları değiştirilmez (ön kayıtlı); kontrol noktası raporlarına "referans iyimser, uzun dönem tabanı −0,026 R" notu düşülür. |
+| K2 | ~~**Kâğıt botlar (öğrenen + ikiz) v1b ile aynen sürer.** Görevleri: altyapı sınaması, ileri dönem verisi, gölge etiketler, ders servisi, alınmayan sinyal işi.~~ **[KALDIRILDI 18 Kasım — kullanıcı: tek düz kâğıt bot, ikiz/gölge yok, tüm aileler]** ~~ Kâğıtta hafif zarar beklenen sonuçtur, arıza sayılmaz. v1b'yi "düzeltmek" için kâğıtta ayar oynanmaz.~~ `kagit-degerlendirme-plani.md` sayıları değiştirilmez (ön kayıtlı); kontrol noktası raporlarına "referans iyimser, uzun dönem tabanı −0,026 R" notu düşülür. |
 | K3 | **Testnet gölge koşusu 14 Aralık'ta başlar**, değişiklik yok. Para riski yok; canlı emir yolunu sınar ve stratejiden bağımsızdır. |
 | K4 | **Gerçek para:** §5'teki soru cevaplanana kadar hesaba para yatırılmaz, canlı anahtar sunucuya konmaz. Duman testi (en küçük tutarla 1 long + 1 short) canlı başlangıcından önceki haftaya bağlıdır; canlı kayarsa o da kayar. |
 | K5 | **31 Aralık** "canlıya geç" günü olmaktan çıkar, **durum değerlendirmesi** olur: mentor tek sayfa yazar (teknik liste, testnet sonucu, araştırma turunun durumu, canlı ölçütünün neresindeyiz). |
-| K6 | **Canlı ölçütü CANLI-K1** bugün, yeni koşu yapılmadan donduruldu (§2). Sonuca bakılarak gevşetilmez. |
+| K6 | **[ASKIDA — kullanıcı yeniden belirleyecek]** **Canlı ölçütü CANLI-K1** bugün, yeni koşu yapılmadan donduruldu (§2). Sonuca bakılarak gevşetilmez. |
 | K7 | **ML durmuyor, hedefi değişiyor:** v1b üstüne yeni filtre tarifi (r04+) yazılmaz; iki bağımsız özellik kümesi aynı +0,04 R tavanına takıldı. ML işi şimdi veri toplayıcılar, alınmayan sinyal işi ve yeni taban adayı için derlem hazırlığıdır. Yeni ML turu, bir taban aday CANLI-K1'in 1. adımını geçince açılır. ML yalnız çıkarır; kapı eşikleri aynen. |
 | K8 | **Strateji araştırma turu S2** açılır: kilitli dönem öncesinde en fazla **6 ön kayıtlı deneme**, sıra ve kurallar §3'te. Eski "6 denemelik plan"ın yerine geçer (o plan 10 aylık veriye göreydi). |
 | K9 | Mühendislik önceliği değişmez: DD-* güvenlik paketleri 14 Aralık'tan önce gelir; araştırma sunucu dışında, motor ekibini bekletmeden yürür. |
@@ -32,7 +34,7 @@ Gerçek para ancak **tek bir dondurulmuş strateji sürümü** aşağıdakilerin
 3. **Çoklu deneme düzeltmesi:** DSR ≥ 0,95; deneme sayısı = max(10, 1 + S2'de kayıtlı deneme). (10 tabanı, kısa dönemde yapılmış eski keşfin payıdır.)
 4. **Kilitli dönem:** yalnız 1–3'ü geçen dondurulmuş aday için, kullanıcı onayıyla, **bir kez** açılır. Geçme: beklenti > 0 ve kâr faktörü > 1. Kalırsa aday biter; kilitli dönem o andan sonra kanıt değeri taşımaz, yeni adaylar için ileri dönem kâğıt verisi kullanılır.
 5. **İleri dönem:** aday en az 4 hafta kâğıtta + 14 gün testnette teknik olarak temiz; kâğıt sonucu geri testle çelişmiyor (4 hafta kâr kanıtı değildir, tutarlılık kontrolüdür).
-6. Geçerse canlı mevcut kurallarla başlar: 300 USD, işlem başı %0,5, RK-1 (−%20 duruş, %60 taban), kasa tavanı 1500 USD; 1000 USD'ye tamamlama eski kural (3–4 hafta ya da 40–50 işlem, kayma ve komisyon kâğıtla uyumlu).
+6. **[ASKIDA — kullanıcı yeniden belirleyecek]** Geçerse canlı mevcut kurallarla başlar: 300 USD, işlem başı %0,5, RK-1 (−%20 duruş, %60 taban), kasa tavanı 1500 USD; 1000 USD'ye tamamlama eski kural (3–4 hafta ya da 40–50 işlem, kayma ve komisyon kâğıtla uyumlu).
 
 Dürüstlük notu: bu çıta yüksektir (5 yılda kabaca +0,08 R gerekir). Bugün elimizde bunu geçeceğine dair kanıtı olan aday yok; en erken gerçekçi tarih **ocak ortası–sonu**, geçen aday çıkmazsa tarih yoktur.
 
@@ -49,7 +51,7 @@ Ortak disiplin: her deneme koşudan **önce** tek dosyada yazılır ve `research
 | 4 | **S2-4: geçenlerin birleşimi** (tek aday) | Kilitli döneme gidecek aday budur. | 1 | 0,5 gün |
 | 5 | **S2-5/6: ikinci strateji ailesi** (katalogdan kırılım + retest PA-KIR-01/02, ya da az parametreli 4s/1g kanal kırılımı; 1–3 sonuçları görüldükten sonra tek tanım yazılır) | 1–3 tutmazsa giriş sinyalinin kendisi değişmeli (v1 girişi yazı-turadan ayırt edilemiyor). Yeni parametreler getirir; her tanım en az 1 hak. | 2 (yedek) | 4–6 gün |
 | — | **WP-5 çıkış karşı-olgusu** | Planlandığı gibi sürer (kendi ön kaydı `exitcf-v1`, 2 alternatif, yalnız kendi defterimiz, 21 Aralık sonrası girişler). Ders servisi için kanıt üretir; beklenen etki küçük (≤ 0,06 R), canlı yolunu tek başına açmaz. S2 bütçesinden yemez. | ayrı | planlı |
-| — | **Rejim/saat filtresi tek başına** | Yapılmaz: r02/r03 bu soruyu cevapladı. Saat filtresi kâğıtta gölge etiket olarak kalır. | 0 | — |
+| — | **Rejim/saat filtresi tek başına** | Yapılmaz: r02/r03 bu soruyu cevapladı. ~~Saat filtresi kâğıtta gölge etiket olarak kalır.~~ (18 Kasım: kâğıtta gölge/seans yasağı yok.) | 0 | — |
 | — | **Daha az çift** | Performansa göre çift seçimi yapılmaz (sıralama dönemler arası ters dönüyor). Likiditeye göre önceden seçim, gerçek dolum verisi gelince yeniden bakılır. | 0 | — |
 | — | **Komisyon kademesi** | VIP kademeleri bizim hacimle ulaşılmaz. Komisyonu BNB ile ödeme indirimi (yaklaşık %10, gerçek hesapta doğrulanır) toplam masrafın birkaç yüzdesidir; bedava ama sonucu değiştirmez. Canlı hesabı açarken bakılır. | 0 | — |
 
@@ -60,7 +62,7 @@ Takvim: sıra 0 → 20 Kasım; S2 ön kayıt belgesi → 21 Kasım; S2-1…3 son
 ## 4. Aynen kalanlar
 
 - Motor güvenlik işleri (DD-4b … DD-10), RK-1, risk kilidi, kasa tavanı 1500 USD, testnet kampanyası ve 14 Aralık gölge koşusu.
-- Kâğıt botlar, veri akışı, veto, sağlık, yedek, Telegram, pano.
+- Kâğıt bot, veri akışı, ~~veto~~ (18 Kasım: LLM veto kaldırıldı), sağlık, yedek, Telegram, pano.
 - Ders servisi (ilk haftalar yalnız öneri kipi). Dersler beş ayarı küçük adımlarla oynatır; tabanı kâra çevirmesi beklenmez, öğrenme zincirinin sınanması için değerlidir.
 - ML kapı eşikleri, ön kayıt kuralı, kilitli dönem, "ML yalnız çıkarır".
 - Açık pozisyon / uzun-kısa veri toplayıcıları, alınmayan sinyal gece işi, WP-5/6/7.

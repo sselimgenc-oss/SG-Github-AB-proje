@@ -1,9 +1,11 @@
 # ML gölge deneyi (learner paper) — belirtim
 
+> **[KALDIRILDI 18 Kasım — kullanıcı: kâğıtta gölge kip yok, tek düz kâğıt bot; ML etkin (`active`), kapı/süre/onay şartı yok, ayrı deney botu yok]**. 18 Kasım: kullanıcı kararıyla değişti. Bu belge tarihsel kayıttır; aşağıdaki `ml_mode: shadow` / `ml_experimental` tasarımı uygulanmayacak, yerine kâğıtta `ml_mode: active` ve kendi adaylarını üreten ML gelir.
+
 Tarih: 18 Kasım 2026. Dayanak: `otonom-trading-arastirma/tasarim-kararlari.md` "18 Kasım 2026 — Paper'da ders ve makine öğrenmesi açık" (kullanıcı onayı + mentor notu).
 
 ## Amaç
-Öğrenen (learner) paper botta, kapıdan geçmemiş r03 modeli **yalnız gölge kipte** (`ml_mode: shadow`) yüklenir: her aday puanlanır (`ml:p=` gerekçe satırı), hiçbir aday elenmez. Testnet, canlı, ikiz ve geri test davranışı değişmez.
+~~Öğrenen (learner) paper botta, kapıdan geçmemiş r03 modeli **yalnız gölge kipte** (`ml_mode: shadow`) yüklenir: her aday puanlanır (`ml:p=` gerekçe satırı), hiçbir aday elenmez.~~ (18 Kasım: kaldırıldı; kâğıtta ML etkin.) Testnet, canlı, ikiz ve geri test davranışı değişmez.
 
 ## G-1 Yapılandırma: `ml_experimental`
 - `src/trader_engine/config.py`: yeni isteğe bağlı anahtar `ml_experimental: bool = False` (`_OPTIONAL_KEYS`'e eklenir; bool değilse ConfigError).

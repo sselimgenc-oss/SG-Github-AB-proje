@@ -1,5 +1,7 @@
 # Sağlık (madde 19): bekleyen değişiklikler (spec Bölüm 11) ve açık noktalar
 
+> 18 Kasım: kullanıcı kararıyla değişti. Veto ve ikiz ile ilgili bekleyen değişiklikler geçersiz (veto/ikiz kaldırıldı).
+
 Bu iş paketinde dokunulmadı; sonraki adımda ilgili sahibi yapacak.
 
 1. `docker-compose.yml`: her servise `mem_limit` (öneri learner 700m, twin 500m) ve `memswap_limit`; `oom_kill_disable` kullanılmaz.

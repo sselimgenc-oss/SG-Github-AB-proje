@@ -1,5 +1,7 @@
 # Sağlık izleme, dış nabız, günlük yedek ve yeniden başlatma kurtarma — arayüz ve kurallar (spesifikasyon v1, 16 Kasım 2026)
 
+> 18 Kasım: kullanıcı kararıyla değişti. Veto tazeliği alarmı ve ikiz sağlık kontrolleri kaldırıldı (veto/ikiz yok).
+
 Bu belge kod ve test içermez; testler bu belgeden yazılır. Biçim `risk-kilidi-spec.md` ile aynıdır. Defter arayüzleri `defter-spec.md`'den (Bölüm 4, 7.2, 8) alınmıştır; çelişkide o belge geçerlidir.
 
 Modül: `src/trader_core/health.py` (yalnızca standart kütüphane; `pandas`, `numpy`, `freqtrade`, `docker` SDK import edilmez; saf: dosya, ağ, saat, süreç okumaz). Ölçümleri toplayan kod modülde değil, `scripts/health_run.py` içindedir. Her belirsizlikte **fail-closed**: sağlık belirlenemiyorsa sağlıklı sayılmaz, nabız gönderilmez, uyarı gider; sağlık modülü hiçbir koşulda işlem açmaz, bot başlatmaz, defter satırı yazmaz.

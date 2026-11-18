@@ -327,3 +327,6 @@ Uygulayıcı ve test yazarı ayrı ajanlardır; test yazarı yalnız bu belgeyi 
 - Ön kayıt commit'i: bu belgeyi ekleyen commit (karması deneme raporlarına yazılır).
 - `research/trial_registry.csv`: `S2-1_onkayit` ve `S2-2_onkayit` satırları bu commit'te eklendi (sonuç alanları boş). `research/build_registry.py` bu turda çalıştırılmaz (dosyayı `runs/` üzerinden yeniden üretir, elle eklenen satırları siler).
 - Bu belge yazılırken görülen tek sonuç tabanın (v1b) dondurulmuş koşusudur; S2-1 ve S2-2 için hiçbir dönemde koşu yapılmadı.
+
+---
+**Not (18 Kasım 2026, kullanıcı kararıyla; §1, §2, §5, §6, §7 donuk metin değişmedi):** S2-1 (4 saatlik tetik) kullanıcı isteğiyle **durduruldu** (kod `f0c6089` park/beklemede; koşu yapılmaz). CANLI-K1 ölçütü ve ona bağlı gerçek para adımları kullanıcı tarafından **askıya alındı** — kullanıcı yeniden belirleyene kadar bu belgedeki CANLI-K1 ve canlı geçiş atıfları uygulanmaz. Kâğıt tarafı: tek düz bot, gölge/ikiz yok; bu ön kayıt yalnız araştırma kaydıdır.

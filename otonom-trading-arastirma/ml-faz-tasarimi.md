@@ -1,5 +1,7 @@
 # ML fazı tasarımı (v2, 17 Kasım 2026 — kullanıcı onaylı)
 
+> **18 Kasım: kullanıcı kararıyla değişti.** Kâğıt bot tek ve düz: kâğıtta gölge kip, ikiz, ayrı deney botu YOK; ML ilk işlemden etkin (süre/kapı/onay/minimum işlem eşiği yok) ve kendi adaylarını önerir; dersler ML'e girdi olur. Aşağıdaki gölge / ikiz / ML-2 / ML-3 şartları yalnız **canlı** için tasarlanmıştı ve gerçek para kararları askıda olduğundan **[ASKIDA — kullanıcı yeniden belirleyecek]**. Kapı eşikleri araştırma dürüstlüğü olarak kayıtlıdır; kâğıtta aranmaz.
+
 **Durum (17 Kasım 2026): ML-0a (faz planı 19a, 19d test kancaları) kodlandı ve test edildi; commit/inceleme bekliyor.** Motor `StrategyContext.model` alanı (05 §13.2, §13.4a); defter şema 3 (`ml_filter` atlama nedeni + `ml_score` sütunu, göç 2→3; defter-spec Revizyon 3, §10.3); ağaç okuyucu + paket okuyucu + özellik üretici `trader_core`'a taşındı (`ml_eval`, `ml_package`, `ml_features`; motor `trader_ml` import etmez); `price_action_v1_ml` kayıtlı, `ml_mode` varsayılan `off` (`config/engine.base.json`). `off`/`shadow` kararları v1b ile birebir (test). Açık kalan: `precomputed.py`'ye `ctx.model` geçişi (backtest'te ML, 19b ile), BTC/ETH/fonlama özelliklerinin canlıda NaN olması ve `f_bars_since_exit`/1g-eğim pencere farkı (05 §13.4a "Bilinen sınırlar").
 
 Kullanıcı 17 Kasım'da açık noktalardaki mentor önerilerini onayladı ve ML'yi Faz 2'ye aldı (Bölüm 9 ve 10; takvim Bölüm 7). Kod içermez. `tasarim-kararlari.md` ile çelişirse o belge geçerlidir.
@@ -102,11 +104,11 @@ Bu bölüm eşik gevşetmesi değil, tanım düzeltmesidir; eşikler (§3.4) ayn
 - **Rapor:** iki IC satırı (bağlayıcı: alınanlar; tanı: tüm satırlar), korpus sha256, tarif kimliği, n_trials, lightgbm sürümü.
 - **19c:** yeniden kurulumdan sonra tek koşu; yeniden koşu/ayar yok; KIRMIZI geçerli sonuçtur ve kayda geçer.
 
-### 3.5 Gölge ve ikiz
+### 3.5 Gölge ve ikiz *(18 Kasım: kâğıtta yok; yalnız canlı için tasarım, askıda)*
 
 - **Gölge:** aday model her karara puan yazar, hiçbir kararı etkilemez. Filtre yalnız işlem çıkardığı için "filtre açık olsaydı" sonucu, alınan işlemlerin alt kümesi olarak defterden doğrudan hesaplanır; ayrı bir bot gerekmez. Tek yaklaşıklık: çıkarılan işlemin boşalttığı risk payına başka işlem girebilirdi; raporda ayrıca gösterilir.
-- **İkiz:** değişmez; ilk sürüm parametreleriyle donmuş kontroldür ve ML'siz kalır. Model devredeyken "aynı mumda ikiz aldı, öğrenen ML yüzünden almadı" eşleşmesi doğal karşılaştırmayı verir.
-- İlk terfi **büyük değişikliktir**: en az 6 hafta gölge + kullanıcının Telegram onayı. Aynı tarifin haftalık yenilemesi, kullanıcı onaylı ilk üç terfiden sonra kapıdan geçerse otomatik uygulanır.
+- **İkiz:** ~~değişmez; ilk sürüm parametreleriyle donmuş kontroldür ve ML'siz kalır.~~ **[KALDIRILDI 18 Kasım — kullanıcı: ikiz bot yok]** Model devredeyken "aynı mumda ikiz aldı, öğrenen ML yüzünden almadı" eşleşmesi doğal karşılaştırmayı verir.
+- ~~İlk terfi **büyük değişikliktir**: en az 6 hafta gölge + kullanıcının Telegram onayı.~~ (kâğıtta kaldırıldı, 18 Kasım; canlı için askıda) Aynı tarifin haftalık yenilemesi, kullanıcı onaylı ilk üç terfiden sonra kapıdan geçerse otomatik uygulanır.
 - Ders servisiyle çakışma yok: aynı anda yalnız **bir** değişiklik gözlem altındadır; model terfisi de bu sıraya girer.
 
 ### 3.6 Sıcak yükleme, kayma alarmı, geri alma
@@ -146,7 +148,7 @@ Eğitim işi botla aynı süreçte çalışmaz, deftere salt okunur bağlanır, 
 
 ## 7. Aşamalı yol haritası (v2, faz-plani.md ile aynı)
 
-İlke: ana yapı (faz planı 13–19) her zaman önce gelir. 30 Kasım'dan önceki ML işleri 27 Kasım akşamı kesilir; bitmeyen kağıt dönemine kayar. ML hiçbir aşamada kağıt başlangıcını (30 Kasım) ya da canlı tarihini (28 Aralık – 4 Ocak) bekletmez. v1'deki "ML-1 27 Aralık'tan önce başlamaz" eşiği kalktı; yerine aşağıdaki sıra geçerli. v1'deki "gölge için 8 hafta kayıt + 300 etiketli aday" eşiği de kalktı: hacmi geçmiş tarama verir, canlı kanıt şartı etkinleştirme kapısına (ML-2 çıkışı) taşındı.
+İlke: ana yapı (faz planı 13–19) her zaman önce gelir. 30 Kasım'dan önceki ML işleri 27 Kasım akşamı kesilir; bitmeyen kağıt dönemine kayar. ML hiçbir aşamada kağıt başlangıcını bekletmez (canlı tarihi: askıda, 18 Kasım). v1'deki "ML-1 27 Aralık'tan önce başlamaz" eşiği kalktı; yerine aşağıdaki sıra geçerli. v1'deki "gölge için 8 hafta kayıt + 300 etiketli aday" eşiği de kalktı: hacmi geçmiş tarama verir, canlı kanıt şartı etkinleştirme kapısına (ML-2 çıkışı) taşındı.
 
 | Aşama | Faz planı | İçerik | Ne zaman | Çıkış ölçütü |
 |---|---|---|---|---|
@@ -155,8 +157,8 @@ Eğitim işi botla aynı süreçte çalışmaz, deftere salt okunur bağlanır, 
 | ML-0c Eğitim hattı | 19c | Aurum montajı, özellik üretici, taban + LightGBM, JSON döküm, ağaç okuyucu, kapı betiği | Hedef 28 Kasım; olmazsa kağıt 1.–2. hafta | Bir uçtan uca koşu + kapı raporu; istatistikler makale örnekleriyle tutuyor; eşlik testi geçer |
 | ML-0d Alınmayan sinyal gece işi | 25a | Atlanan kararların varsayımsal net R'si | Kağıt 1. hafta | 14 gün kesintisiz etiket üretimi |
 | ML-1 Araştırma (sunucu dışı) | 25b | En fazla 8 ön kayıtlı tarif | ML-0b + ML-0c bitince; gerçekçi ilk sonuç aralık 1.–2. hafta | Bir tarif Bölüm 3.4'ü geçer; geçemezse **tur raporu yazılır, sonraki tur açılır** |
-| ML-2 Gölge | 25c | Model her karara puan yazar; kayma alarmı; DI | ML-1 geçince; en erken kağıt 2. hafta. Canlıda da sürer | ≥ 6 hafta ve ≥ 150 puanlı aday (≥ 50'si alınmış); ileri dönemde net R farkı > 0 ve IC > 0 |
-| ML-3 Etkin filtre | 28a | `price_action_v1_ml` devrede; son kullanma süresi; geri alma izleyicisi | ML-2 geçti + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş + gözlem altında başka değişiklik yok. En erken ocak ortası | 8 hafta geri almasız; ikize karşı net R farkı ≥ 0 |
+| ~~ML-2 Gölge~~ [KALDIRILDI 18 Kasım — kâğıtta gölge yok; canlı için askıda] | 25c | Model her karara puan yazar; kayma alarmı; DI | ML-1 geçince; en erken kağıt 2. hafta. Canlıda da sürer | ≥ 6 hafta ve ≥ 150 puanlı aday (≥ 50'si alınmış); ileri dönemde net R farkı > 0 ve IC > 0 |
+| ML-3 Etkin filtre (kâğıtta ilk işlemden etkin, 18 Kasım; canlı şartları askıda) | 28a | `price_action_v1_ml` devrede; son kullanma süresi; geri alma izleyicisi | ML-2 geçti + kullanıcının Telegram onayı + canlının ilk 2 haftası geçmiş + gözlem altında başka değişiklik yok. En erken ocak ortası | 8 hafta geri almasız; ikize karşı net R farkı ≥ 0 |
 | ML-4 Kendi kendine yenileme | Sonraki | Sunucuda haftalık eğitim + otomatik terfi | ML-3 geçti; ilk üç terfi kullanıcı onaylı | 8 hafta elle müdahalesiz, geri almasız |
 | ML-5 ML stratejisi | Sonraki | Kendi adayını üreten model | ML-4'te en az 6 ay kayıt; ayrı ön kayıt | Bölüm 1 ölçütleri, tabanı filtreli strateji |
 
@@ -191,7 +193,7 @@ Kullanıcı: "Fable ne diyorsa onayım var" — mentor önerileri aynen geçerli
 4. **Model süresi dolunca — güvenli tarafta kapanır.** Etkin modda model yok / hash tutmuyor / 21 günü geçmiş / aday DI dışındaysa yeni giriş açılmaz; çıkışlar çalışır; Telegram uyarır (14. ve 18. günde ön uyarı). Filtresiz stratejiye dönüş yalnız kullanıcı kararıyla. Bu kural `off` ve `shadow` modunda işlem engellemez.
 5. **Kapı eşikleri — onaylandı ve donduruldu.** Bölüm 1 (net R farkı ≥ +0,10 R ve bootstrap %90 alt sınırı > 0; filtreli net beklenti > 0; DSR ≥ 0,95; PBO ≤ 0,25; düşüş filtresizden kötü değil; adayların ≥ %30'u alınır; tek çift çıkarılınca çökmez) ve Bölüm 3.4 aynen geçerli. İlk koşudan önce yazıldıkları için "ML-1'de bir kez kalibre et" adımı kaldırıldı: eşikler sonuç görüldükten sonra gevşetilmez, yalnız sıkılaştırılabilir. Tek teknik düzeltme: walk-forward penceresi eldeki veriye uyduruldu (Bölüm 3.3).
 
-**Etkinleştirme kuralı (özet):** kağıt `ml_mode=off` ile başlar; `shadow` kapıdan geçmiş dondurulmuş modelle açılır; `active` yalnız ML-2 çıkış ölçütü + kullanıcının Telegram onayıyla. Canlı, filtre etkin olmadan başlar.
+**Etkinleştirme kuralı (özet):** ~~kağıt `ml_mode=off` ile başlar; `shadow` kapıdan geçmiş dondurulmuş modelle açılır; `active` yalnız ML-2 çıkış ölçütü + kullanıcının Telegram onayıyla.~~ **[KALDIRILDI 18 Kasım — kullanıcı: kâğıtta ML etkin, gölge/kapı/onay yok.]** Canlı kuralları **[ASKIDA — kullanıcı yeniden belirleyecek]**.
 
 ## 11. Mentor kararları — 19a sonrası (17 Kasım 2026)
 1. **`meta.user_approved` kalır.** Eğitim hattı bunu asla yazmaz. Kullanıcı Telegram'da ders önerileri gibi `/onayla` akışıyla verir; onay deftere yazılır ve paket özetine (hash) bağlanır. Onay gerekir: ilk etkinleştirme; özellik listesi, etiket tanımı ya da eşik politikası değiştiğinde. Aynı tarifle haftalık yeniden eğitim kapıyı geçerse onayı devralır, yalnız bildirim gider (`/reddet` ya da geri alma mümkün).

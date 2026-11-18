@@ -1,5 +1,7 @@
 # Rapor paketi: çıkış karnesi, kapı/veto karnesi, piyasa koşulu tabloları, "varsayım" etiketi, küçük hesap kontrolü (spesifikasyon v1.1, 17 Kasım 2026)
 
+> 18 Kasım: kullanıcı kararıyla değişti. İkiz kıyası ve veto raporları kaldırıldı; gerçek para ile ilgili ölçütler **[ASKIDA — kullanıcı yeniden belirleyecek]**.
+
 İş paketi **WP-4** (`tasarim-kararlari.md` 17 Kasım "Repo denetimi onay listesi"). Onay listesi maddeleri: **4, 7 (yalnız karne), 16 (yalnız tablolar), 17, 19**. Denetim kimlikleri: B-01, B-02 (1. adım), C-01, A-10, B-03, A-09, B-27 · B-07, D-17, A-16 · A-14, D-05, B-18 · A-13 · A-19.
 
 Bu belge kod, test ve commit içermez; testler bu belgeden yazılır (§12). Çelişkide `defter-spec.md`, `alinmayan-sinyal-spec.md`, `motor/06-backtester.md` geçerlidir.

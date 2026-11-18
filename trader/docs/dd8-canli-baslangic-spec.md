@@ -1,5 +1,7 @@
 # DD-8 — Canlı başlangıç güvenliği (uygulama şartnamesi v1, 18 Kasım 2026)
 
+> **[ASKIDA — kullanıcı yeniden belirleyecek]** 18 Kasım: kullanıcı kararıyla gerçek paraya ilişkin bütün kararlar (başlangıç tutarı, kasa tavanı 1500 USD, duman testi/canlı tarihleri) askıya alındı; bu belgedeki değerler uygulanmaz.
+
 **Hazırlayan:** mentor · **Taban:** `claude/charming-hawking-ab5w5q` @ `3586d93` (DD-2 birleşmiş)
 **Kaynak:** `otonom-trading-arastirma/dis-denetim/triyaj-2026-11-18.md` — O4, O8, O6, D7, D2 + DD-2 incelemesinden devreden dört madde (E1–E4).
 **Hedef:** 14 Aralık testnet gölge koşusundan önce birleşmiş olmak. Canlı çalışmıyor; bu paket para riski taşımaz.

@@ -1,5 +1,7 @@
 # Risk kademe kuralı (v1, 17 Kasım 2026 — mentor)
 
+> **18 Kasım: kullanıcı kararıyla değişti — bu belgedeki bütün gerçek para kuralları (başlangıç %0,5 / 1000 USD, basamak artış takvimi mart–ağustos, K0–K4, ölçütler) [ASKIDA — kullanıcı yeniden belirleyecek]; hiçbiri uygulanmaz.** Kâğıtta işlem başı risk %1, en çok 16 pozisyon; kâğıtta ikiz yok. Yalnızca para koruması kod yolu (RK-1 iniş/durma) kodda durur; değerleri kullanıcı yeniden belirleyecek.
+
 Kaynak karar: `tasarim-kararlari.md`, 16 Kasım 2026 "Backtest sonrası" madde 3: canlı 1000 USD, işlem başı hedef risk %0,5 ile başlar; kademeli artış için yazılı kural ve bakiye −%20'de durup değerlendirme eşiği. Bu belge o kuraldır. Kod içermez; koda bağlanması ayrı bir iştir (Bölüm 9).
 
 ## Kısa özet
@@ -9,7 +11,7 @@ Kaynak karar: `tasarim-kararlari.md`, 16 Kasım 2026 "Backtest sonrası" madde 3
 - Bir üst basamağa çıkmak için ölçülebilir koşulların **hepsi** tutmalı ve **sen Telegram'dan onaylamalısın**. Bot, ders servisi ve makine öğrenmesi riski kendi başına artıramaz.
 - Riski **düşürmek** otomatiktir ve onay gerektirmez: hesap tepe değerinden %10 düşerse bir basamak iner, %15 düşerse en alta iner.
 - Özsermaye, **yatırılan tutara göre ölçülen durma tabanının** %80'ine inerse (−%20) yeni işlem açılmaz. Açık işlemler zarar durdurlarıyla yönetilmeye devam eder. Mentor 3 gün içinde değerlendirme yazar; devam edip etmemeye **yalnız sen** karar verirsin.
-- En erken takvim: ilk artış mart başı; %1,4'e en erken ağustos civarı. Gerçekte daha geç olması, hiç olmaması da geçerli bir sonuçtur.
+- **[ASKIDA — kullanıcı yeniden belirleyecek]** En erken takvim: ilk artış mart başı; %1,4'e en erken ağustos civarı. Gerçekte daha geç olması, hiç olmaması da geçerli bir sonuçtur.
 - Neden bu kadar yavaş: bugünkü geçmiş testte stratejinin kazandırdığına dair kanıt yok (beklenen sonuç sıfır civarı). Kanıt gelmeden riski büyütmek yalnızca dalgalanmayı büyütür.
 
 ## 1. Tanımlar
@@ -134,10 +136,10 @@ Açıklamalar:
 
 ## 8. Takvim beklentisi
 
-- Kağıt: 30 Kasım–27 Aralık, %0,5 riskle (yapılandırmadaki değer). Kağıt işlemleri basamak sayaçlarına girmez; maliyet modelinin tabanını verir.
+- Kağıt: ~~30 Kasım–27 Aralık, %0,5 riskle~~ (18 Kasım: kâğıt %1 riskle, 16 pozisyon, süre sınırsız). Kağıt işlemleri basamak sayaçlarına girmez; maliyet modelinin tabanını verir.
 - Canlı başlangıç (aralık sonu–ocak başı): K0.
 - İlk değerlendirme: canlının 8. haftası (şubat sonu–mart başı). Ayda yaklaşık 60 işlemle 100 işlem koşulu o tarihte dolar.
-- Her şey ilk seferde tutarsa: K1 mart, K2 nisan sonu, K3 haziran, K4 ağustos. Gerçekçi beklenti daha yavaştır.
+- **[ASKIDA]** Her şey ilk seferde tutarsa: K1 mart, K2 nisan sonu, K3 haziran, K4 ağustos. Gerçekçi beklenti daha yavaştır.
 - ML etkinleştirmesi (en erken ocak ortası) ile çakışma beklenmez; çakışırsa koşul 9 geçerlidir.
 
 ## 9. Kodda nerede zorlanacak (sonraki iş; bu belgeyle yapılmadı)
@@ -168,7 +170,7 @@ RK-1 kapsamı *(12 ile güncellendi, 17 Kasım: asgari kısım `trader/docs/moto
 
 ## 11. Mevcut belgelerle çelişkiler ve açık noktalar
 
-1. **Kağıt riski:** `strateji-iyilestirme-plani.md` Bölüm 3 kağıtta %1,4 öneriyordu; yapılandırma (`engine.base.json`) ve 17 Kasım ML kararı %0,5 kullanıyor. Bu belge %0,5'i geçerli sayar (canlıyla aynı olması tutarlılık ölçümü için de doğrusu). Strateji planındaki cümle eskidi.
+1. **Kağıt riski:** `strateji-iyilestirme-plani.md` Bölüm 3 kağıtta %1,4 öneriyordu; yapılandırma (`engine.base.json`) ve 17 Kasım ML kararı %0,5 kullanıyor. ~~Bu belge %0,5'i geçerli sayar.~~ 18 Kasım: kâğıtta risk %1 (kullanıcı kararı); canlı riski askıda.
 2. **Eski örnek kural:** aynı planın B seçeneğindeki örnek ("100 işlemde E[R] ≥ 0 → %1,0; ikinci 100'de → %1,4") bu belgeyle geçersizdir; bu belge daha sıkıdır (basamak atlamaz, güven sınırı ister).
 3. **"Girişi durdur, pozisyonu tut" mekanizması yok:** `telegram-spec.md` karar 1'e göre bugün yalnız KILL var ve KILL açık pozisyonları da kapatır; `/durdur` "desteklenmiyor". Bölüm 5 bu mekanizmayı gerektirir; spec zaten "canlıya geçmeden önce yeniden ele alınır" diyor. RK-1 ile birlikte çözülmeli.
 4. **Canlı kip henüz yok:** motor `mode: "live"` değerini reddediyor (Faz B). Bu kuralın zorlanması Faz B işleriyle birlikte gelir.

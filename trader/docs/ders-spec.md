@@ -1,5 +1,15 @@
 # Günlük ders servisi — arayüz ve kurallar (spesifikasyon v1 + Revizyon 2 + Revizyon 3, 16 Kasım 2026)
 
+## Revizyon 5 (18 Kasım 2026 — kullanıcı kararıyla değişti)
+
+Kâğıt bot tek ve düzdür (learner); **ikiz YOK, gölge dönem YOK**. Aşağıdaki metin bu karara göre okunur; çelişen yerlerde bu madde geçerlidir:
+1. **Gölge dönem kaldırıldı:** `shadow_weeks = 0`; her öneri `needs_user` kuralı (madde 9) ve `shadow_period` kodu kâğıtta işlemez. Ders ilk işlemden etkindir.
+2. **Eşik/kanıt şartı yok:** 30/45/60 kontrol noktası, "≥ 20–30 işlem", `min_evidence_trades` ve kalibrasyon şartı (`calibration_required`) kâğıtta aranmaz; haftalık "en çok bir değişiklik" ve haftalık kullanıcı isteği sınırı yok. Tek adım, sınırlar ve otomatik geri alma kalır.
+3. **İkiz kaldırıldı:** `twin_enabled=false`; ikiz kontrolü, `twin_observed`, `steps_from_twin`/`max_steps_from_twin`, 4.5 ve "ikiz kullanılabilir" ön koşulu geçersiz (ikiz yokluğu otomatik uygulamayı KAPATMAZ).
+4. **Her işleme gece ders notu:** her kapanan işlem için gece bir ders notu yazılır, ertesi gün "aday ders" olarak kullanılır; işe yaramazsa emekli olur. Dersler ML'e girdi olur.
+5. **LLM:** aylık bütçe 30 $; LLM aday önerir (günlük adet sınırı yok); LLM veto yok. Eski günlük ders sınırı (0,10 $) geçersiz.
+6. Gerçek para / canlı ilişkili koşullar **[ASKIDA — kullanıcı yeniden belirleyecek]**.
+
 ## Revizyon 2 (mentor incelemesi)
 
 Bu revizyon (a) kullanıcı kararını (gölge dönem) ve (b) mentor incelemesinin bulgularını işler. Karar kaydı: `otonom-trading-arastirma/tasarim-kararlari.md` ("15–16 Kasım kararları", 16 Kasım 2026 satırı). Defter tarafındaki karşılıkları `defter-spec.md` Revizyon 2'dedir (şema sürüm 2). Bu belge kod ve test içermez.
@@ -127,14 +137,14 @@ Geçersiz değer → `LessonConfigError(ValueError)`. Bazı alanların **kilitli
 | `ref_max_n` | 60 | | Referans (önceki sürüm) için en son N işlem |
 | `blacklist_days` | 14 | ≥ 14 | Geri alınan (param, yön) için bekleme |
 | `user_request_ttl_days` / `pending_ttl_days` | 3 / 3 | | Onay isteği / bekleyen öneri ömrü |
-| `max_user_requests_per_week` | 1 | ≤ 2 | Kullanıcıyı yormamak için; **gölge dönemde etkin değer 2**'dir (her öneri kullanıcıya gittiği için) |
+| `max_user_requests_per_week` | ~~1~~ (18 Kasım: haftalık sınır kaldırıldı) | ≤ 2 | Kullanıcıyı yormamak için; **gölge dönemde etkin değer 2**'dir (her öneri kullanıcıya gittiği için) |
 | `allow_off_menu` | `false` | | `true` ise menü dışı seçim **her zaman** `needs_user` |
 | `proxy_include_ask_user` | `false` | | Proxy yalnız otomatik uygulanabilir adayları seçer |
 | `batch_max_age_h` | 25 | ≥ 24 | Batch zaman aşımı (6.6) |
 | `prompt_max_est_tokens` | 12000 | ≤ 20000 | Girdi token üst tahmini (6.5) |
-| `shadow_weeks` | 4 | **4–6** (tam sayı) | Gölge dönem uzunluğu (hafta); dışı → `LessonConfigError` |
+| `shadow_weeks` | ~~4~~ **0** (18 Kasım) | ~~4–6~~ 0 | ~~Gölge dönem uzunluğu (hafta)~~ gölge dönem kaldırıldı; 0 kabul edilir |
 | `paper_start_day` | `null` | `YYYY-MM-DD` ya da `null` | Gölge dönem başlangıcı; `null` ⇒ ilk ders çalışmasının `run_day`'i |
-| `twin_enabled` | `true` | | `false` ⇒ ikiz kontrolü yok (`twin_disabled`; otomatik uygulama kapanır, 8.3) |
+| `twin_enabled` | ~~`true`~~ **`false`** (18 Kasım) | | ikiz yok; `false` iken otomatik uygulama kapanmaz (Revizyon 5) |
 | `twin_ledger_path` | `user_data/ledger_twin.sqlite` | | İkiz defteri; yalnızca salt okunur açılır (4.5) |
 | `twin_min_keys` | 10 | ≥ 8 | İkiz karşılaştırmasında karar için asgari eşleşen sinyal sayısı |
 | `twin_z` / `twin_margin_r` | 1.0 / 0.10 | ≤ 1.64 / ≤ 0.30 | İkiz `harm`/`benefit` eşikleri (4.5.3); kalibrasyonla ayarlanır |
@@ -376,7 +386,7 @@ LLM/proxy çıktısı 6.4 G0–G5'ten geçince:
 ### 8.3 Küçük / büyük kuralı (otomatik uygulama ve kullanıcıya sorma)
 
 Sınıf, `propose_change`'den **önce** hesaplanır. Bir öneri **küçük (otomatik uygula)** sayılır ancak şunların **hepsi** doğruysa:
-0. **Gölge dönem bitmiş** (`run_day ≥ shadow_end_day`, madde 9); `calibration.ok` ve taze (7.3.8) ve yapılandırma eşikleri kalibre değerlerden gevşek değil; **ikiz kullanılabilir** (`twin_unavailable` değil, 4.5.1; otomatik değişikliğin çarka karşı kontrolü yoksa uygulanmaz).
+0. ~~**Gölge dönem bitmiş** (`run_day ≥ shadow_end_day`, madde 9); `calibration.ok` ve taze (7.3.8) ve yapılandırma eşikleri kalibre değerlerden gevşek değil; **ikiz kullanılabilir** (`twin_unavailable` değil, 4.5.1; otomatik değişikliğin çarka karşı kontrolü yoksa uygulanmaz).~~ **[KALDIRILDI 18 Kasım — kullanıcı: gölge/kalibrasyon/ikiz şartı yok]**
 1. Defter `proposed` döndü (`needs_user` değil; `vol_ratio_max` gevşetmesi hiçbir zaman otomatik değil).
 2. Menü girdisi `auto_capable` (5): `observed_subset` ya da `twin_observed`, `ALWAYS_USER` (`stop_buffer_atr:up`) dışı, geçerli kontrol noktası geçti (`n_scope ≥ checkpoints[0]`), kümelenme koruması geçti, hâlâ `eligible`.
 3. **Çark koruması:** `steps_from_twin` artışı `max_steps_from_twin`'i aşmıyor (4.5.5).

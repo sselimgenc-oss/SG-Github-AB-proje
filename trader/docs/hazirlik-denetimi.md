@@ -1,5 +1,7 @@
 # Paper hazirlik denetimi (30 Kasim baslangici; DigitalOcean 2 GB, baska proje ile paylasimli)
 
+> 18 Kasım: kullanıcı kararıyla değişti. İkiz, veto tazeliği/HMAC, gölge dönem ve canlı hazırlık maddeleri kâğıt için geçersiz (ikiz/veto/gölge kaldırıldı; gerçek para askıda).
+
 Kapsam: statik + kuru kosu. Strateji/ML mantigi, kilitli donem ve canli islem kapsam disi. Ag yok (Binance 451), gercek anahtar yok.
 Yontem: `deploy/install.sh`'in GERCEK `render()` sed'i ve env kopyalama adimlari tmp dizinde calistirildi; sahte Binance REST + tmp "sunucu" agaci ile
 feed/motor/saglik/panel/yedek surec-ici ve alt surec olarak kosturuldu. Kanitlar `tests/readiness/` altindadir
