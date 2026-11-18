@@ -1037,14 +1037,16 @@ def test_startup_check_live_key_permission_failures_exit_8(field, val):
     assert ei.value.code == 8 and f"key_permission:{field}" in str(ei.value)
 
 
-def test_startup_check_live_unverifiable_restrictions_exit_8():
+def test_startup_check_live_unreadable_restrictions_uncertain_is_retryable_exit_5():
+    """DD-8 O6 ile degisti (eski: ag/zaman asimi -> 8 key_permission_unverifiable): okunamayan yanit ag sorunudur -> cikis 5
+    (yeniden denenir); kalici ret/bozuk govde -> 8 (asagidaki testler). Beyan yolu yok."""
     clock = SimClock(T0)
     rest = FakeRest(clock, "live")
     rest.sticky["api_restrictions"] = ExchangeUncertain("down")
     b, _, _ = make_broker("live", startup=False, rest=rest)
     with pytest.raises(EngineExit) as ei:
         b.startup_check()
-    assert ei.value.code == 8 and "key_permission_unverifiable" in str(ei.value)
+    assert ei.value.code == 5 and "exchange_unreachable" in str(ei.value)
 
 
 def test_startup_check_live_unrecognised_restrictions_shape_exit_8():
@@ -1097,16 +1099,17 @@ def test_startup_check_account_cannot_trade_and_wallet_above_expected():
     rest2 = FakeRest(SimClock(T0), "live")
     rest2.acct["totalWalletBalance"] = "5000.0"                      # expected_wallet_max = 1000
     b2, _, _ = make_broker("live", startup=False, rest=rest2)
-    with pytest.raises(EngineExit) as ei2:
-        b2.startup_check()
-    assert ei2.value.code == 8 and "wallet_above_expected" in str(ei2.value)
+    b2.startup_check()                                               # DD-8 O4: istisna YOK (eski: EngineExit 8); bulgu motor tutusuna donusur
+    assert b2.startup_findings == ("wallet_above_expected",)
 
 
-def test_startup_check_wallet_above_expected_ignored_on_testnet():
+def test_startup_check_wallet_above_expected_finding_on_testnet_too():
+    """DD-8 O4 ile degisti (eski: tavan denetimi yalniz live): testnet de denetler; asim istisna degil bulgudur."""
     clock = SimClock(T0)
     rest = FakeRest(clock)
     rest.acct["totalWalletBalance"] = "5000.0"
-    make_broker(startup=True, rest=rest)                             # "yalniz live"
+    b, _, _ = make_broker(startup=True, rest=rest)
+    assert b.startup_findings == ("wallet_above_expected",)
 
 
 def test_startup_check_multi_asset_flat_is_switched_off_with_positions_exits():

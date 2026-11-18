@@ -1786,6 +1786,28 @@ class Ledger:
                                  equity_low=r["equity_low"], n_open=r["n_open"], src=r["src"], id=r["id"],
                                  bot=r["bot"], recorded_at=_parse_ts(r["recorded_at"])) for r in rows]
 
+    # -- meta (yalniz ekleme) ------------------------------------------------
+
+    def get_meta(self, key: str) -> str | None:
+        """DD-8: `meta` tablosundan tek anahtar; yoksa None. Salt okunur."""
+        with self._read() as c:
+            r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return None if r is None else r[0]
+
+    def set_meta_once(self, key: str, value: str) -> None:
+        """DD-8: `meta` yalniz-ekleme tablosudur. Anahtar yoksa ekler; ayni deger varsa sessiz; farkli deger varsa
+        LedgerError (satir degismez)."""
+        self._require_writable()
+        key = _text(key, "key", required=True)
+        value = _text(value, "value", required=True)
+        with self._tx() as c:
+            r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+            if r is not None:
+                if r[0] == value:
+                    return
+                raise LedgerError(f"meta.{key} zaten farkli degerde")
+            c.execute("INSERT INTO meta (key, value) VALUES (?, ?)", (key, value))
+
     # -- parametre surumleri -------------------------------------------------
 
     def init_params(self, params: Mapping[str, Any], *, reason: str,

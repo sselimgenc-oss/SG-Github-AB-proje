@@ -145,6 +145,7 @@ class EntryGate:
         self.rules_fn = rules_fn
         self.entry_ref_fn = entry_ref_fn
         self.counters: Counter = Counter()
+        self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
     # ------------------------------------------------------------------ cift-bagimsiz kapilar (4-8)
     def pre(self, D: datetime, tf: str, params_ok: bool, active_tf: str) -> GateVerdict:
@@ -167,6 +168,8 @@ class EntryGate:
             return GateVerdict(False, "kill", closed)
         if self.pause is not None and self.pause.active():          # 11 §9.3: kill'den sonra, stale_data'dan once
             return GateVerdict(False, self.pause.code() or "paused", closed)
+        if self.memory_lock:                                        # DD-8 O4 (fail-closed): tutus dosyaya yazilamadi
+            return GateVerdict(False, self.memory_lock, closed)
         if self.ladder is not None:                                 # 12 §8.3: duraklatmadan sonra, stale_data'dan once
             gc = self.ladder.gate_code()
             if gc:

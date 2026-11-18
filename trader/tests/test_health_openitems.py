@@ -108,7 +108,7 @@ def test_veto_file_default_follows_config_and_env_overrides():
 
 def _healthy_snap(veto_age_s=None):
     api = {"learner": H.ApiProbe(True, NOW, NOW - timedelta(minutes=30), (), True, "ok", False, 0, ())}
-    led = {"learner": H.LedgerProbe(NOW - timedelta(minutes=5), 0, (), (), True, True)}
+    led = {"learner": H.LedgerProbe(NOW - timedelta(minutes=5), 0, (), (), True, True, 0)}
     cont = {"trader-learner": H.ContainerProbe("running", 0, NOW - timedelta(days=1), None)}
     return H.HealthSnapshot(now=NOW, timeframe_s=3600, api=api, ledger=led, disk_free_bytes=50 * 1024 ** 3,
                             mem_available_bytes=2 * 1024 ** 3, swap_total_bytes=0, swap_used_bytes=0, containers=cont,

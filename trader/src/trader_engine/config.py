@@ -256,6 +256,24 @@ def check_live_confirm(cfg: "EngineConfig", env: Mapping[str, str] | None = None
         raise ConfigError("live_confirm")  # deger iletiye/gunluge yazilmaz
 
 
+def _tail(path: str, n: int) -> tuple[str, ...]:
+    parts = [c for c in os.path.normpath(path).split(os.sep) if c]
+    return tuple(parts[-n:])
+
+
+def check_shared_paths(mode: str, var_dir: str, kill_file: str, pause_file: str) -> None:
+    """DD-8 (O8 §2.1): testnet/live, kagit botlarinin `var` dizinini ve paylasimli `shared/KILL`, `shared/PAUSE` dosyalarini
+    kullanamaz (yanlis hesapla acilis / kagit bota KILL-PAUSE sizmasi). paper/backtest: uygulanmaz."""
+    if mode not in ("testnet", "live"):
+        return
+    if _tail(var_dir, 1) == ("var",):
+        raise ConfigError(f"var_dir kagit dizini ('var') olamaz (mode={mode}): {var_dir!r}")
+    if _tail(kill_file, 2) == ("shared", "KILL"):
+        raise ConfigError(f"kill_file kagit botlarinin dosyasi (shared/KILL) olamaz (mode={mode}): {kill_file!r}")
+    if _tail(pause_file, 2) == ("shared", "PAUSE"):
+        raise ConfigError(f"pause_file kagit botlarinin dosyasi (shared/PAUSE) olamaz (mode={mode}): {pause_file!r}")
+
+
 def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     if not isinstance(raw, Mapping):
         raise ConfigError("yapilandirma sozluk olmali")
@@ -339,6 +357,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
             raise ConfigError(f"mode={mode!r}: cost.trigger_source='mark' zorunlu")
     if mode == "live" and veto_mode != "required":
         raise ConfigError("mode='live': veto_mode='required' zorunlu")
+    if mode in ("testnet", "live"):
+        check_shared_paths(mode, raw["var_dir"], raw["kill_file"], pause_file)
     return EngineConfig(
         schema=SCHEMA, mode=mode, bot=bot, pairs=pairs,  # type: ignore[arg-type]
         wallet_start=nums["wallet_start"], cost=cost, target_mode="bar_close",
@@ -366,17 +386,22 @@ def _read(path: Any) -> dict[str, Any]:
     return data
 
 
-def absolutize_kill_file(cfg: EngineConfig, base_path: Any) -> EngineConfig:
-    """DD-2 (D7): goreli `kill_file` (`shared/KILL`) yapilandirma dizinine gore mutlak yola cevrilir; boylece `trader_engine kill`
-    baska bir dizinden calistirilsa da motorun izledigi dosyaya yazar. Dizin `config/` ise kok onun ustudur (`<kok>/shared/KILL`).
-    `load_engine_config` ham degeri aynen dondurur ("paper config loads unchanged" sozlesmesi); donusum CLI girisinde (`cli._load_cfg`)
-    yapilir, boylece `run` ve `kill` ayni mutlak yolu kullanir."""
-    kf = cfg.kill_file
-    if os.path.isabs(kf):
-        return cfg
+def absolutize_paths(cfg: EngineConfig, base_path: Any) -> EngineConfig:
+    """DD-2 (D7) + DD-8 (E1): goreli `kill_file` ve `pause_file` (her kipte) ile, testnet/live'da ayrica `var_dir`, yapilandirma
+    dizinine gore mutlak yola cevrilir; boylece `trader_engine kill|pause|...` baska bir dizinden calistirilsa da motorun
+    izledigi dosyalara yazar. Dizin `config/` ise kok onun ustudur (`<kok>/shared/KILL`), degilse dizinin kendisidir. Zaten mutlak
+    alan degismez. paper/backtest'te `var_dir`, `market_db`, `history_dir`, `veto_config` OLDUGU GIBI kalir.
+    `load_engine_config` ham degeri aynen dondurur ("paper config loads unchanged" sozlesmesi)."""
     cdir = Path(base_path).resolve().parent
     root = cdir.parent if cdir.name == "config" else cdir
-    return dataclasses.replace(cfg, kill_file=str(root / kf))
+    names = ["kill_file", "pause_file"] + (["var_dir"] if cfg.mode in ("testnet", "live") else [])
+    kw = {n: str(root / getattr(cfg, n)) for n in names if not os.path.isabs(getattr(cfg, n))}
+    return dataclasses.replace(cfg, **kw) if kw else cfg
+
+
+def absolutize_kill_file(cfg: EngineConfig, base_path: Any) -> EngineConfig:
+    """Geriye uyum adi (DD-2); `absolutize_paths`a yonlenir."""
+    return absolutize_paths(cfg, base_path)
 
 
 def load_engine_config(base_path: Any, bot_path: Any = None, *,
@@ -408,3 +433,14 @@ def apply_overrides(cfg: EngineConfig, **kw: Any) -> EngineConfig:
     d = {f.name: getattr(cfg, f.name) for f in dataclasses.fields(cfg)}
     d.update(kw)
     return _validate(d)
+
+
+def load_cli_config(config_dir: Any, bot: str = "learner", env: str | None = None, *,
+                    overlay_path: Any = None) -> EngineConfig:
+    """DD-8 (E2): komut satiri ve duman betiklerinin TEK yukleyicisi = `load_engine_config(base, bot, overlay)` +
+    `absolutize_paths`. Betikler `load_engine_config`i dogrudan cagirmaz (mutlaklastirma atlanmasin). `overlay_path` (yalniz
+    `smoke_live --live-overlay`) verilirse `engine.<env>.json` yerine o katman kullanilir."""
+    d = Path(config_dir)
+    overlay = overlay_path if overlay_path is not None else (d / f"engine.{env}.json" if env else None)
+    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
+    return absolutize_paths(cfg, d / "engine.base.json")

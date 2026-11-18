@@ -23,7 +23,7 @@ import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
@@ -62,7 +62,8 @@ _REQUIRED_PERMS = (("enableReading", True), ("enableFutures", True), ("enableWit
 _COUNTERS = ("fee_rate_fallback", "unknown_reject_codes", "fee_drift", "fee_asset_unexpected", "rules_missing",
              "rules_refresh_failed", "prepare_failed", "funding_unresolved", "foreign_close", "clock_rejects",
              "working_type_mismatch", "sync_failures", "exchange_bans", "rules_drift", "working_type_unverified",
-             "stop_response_mismatch", "exchange_auth", "close_unresolved", "malformed_trades")
+             "stop_response_mismatch", "exchange_auth", "close_unresolved", "malformed_trades",
+             "account_mode_drift", "account_mode_unverified")
 _BLOCK_PRIORITY = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
 STARTUP_BAN_SLEEP_MAX_S = 300.0
 STARTUP_RULES_TRIES = 2
@@ -207,8 +208,15 @@ class LiveBroker:
         self._reachable = True
         self._naked: list[Any] = []
         self.findings: list[str] = []
+        self._startup_findings: list[str] = []          # DD-8 O4: acilisi durdurmayan bulgular (ornek: wallet_above_expected)
+        self.startup_wallet: float | None = None        # acilista okunan totalWalletBalance (yalniz bildirim notu icin)
         self._blocks: set[str] = set()
         self.last_ban: tuple[int | None, int | None] | None = None
+
+    @property
+    def startup_findings(self) -> tuple[str, ...]:
+        """DD-8 O4: acilis denetiminin acilisi DURDURMAYAN bulgulari (salt okunur). Motor `start()`ta tutusa cevirir."""
+        return tuple(self._startup_findings)
 
     # ------------------------------------------------------------------ giris engelleri (yapiskan kume)
     @property
@@ -430,12 +438,18 @@ class LiveBroker:
         acct = self._startup_call(self._rest.account)
         if not isinstance(acct, dict) or acct.get("canTrade") is not True:
             raise EngineExit(8, "account_cannot_trade")
-        if live:
-            wallet = _strict_float(acct.get("totalWalletBalance"))
-            if wallet is None:
-                raise EngineExit(8, "wallet_unreadable")             # fail-closed: okunamayan bakiye tavan denetimini atlatamaz
-            if wallet > float(self._live.expected_wallet_max):
-                raise EngineExit(8, "wallet_above_expected")
+        # DD-8 O4: cuzdan tavani testnet'te de denetlenir; ASIM acilisi durdurmaz (bulgu: motor girisi tutusla kapatir,
+        # protect_first yine calisir). Okunamayan bakiye (yok/sayi degil/sonlu degil) fail-closed: kod 8.
+        self._startup_findings = []
+        self.startup_wallet = None
+        wallet = _strict_float(acct.get("totalWalletBalance"))
+        if wallet is None:
+            raise EngineExit(8, "wallet_unreadable")
+        self.startup_wallet = wallet
+        if wallet > float(self._live.expected_wallet_max):             # kati '>' (esitlik asim degildir)
+            self._startup_findings.append("wallet_above_expected")
+            log.critical("wallet_above_expected: wallet=%s max=%s (acilis surer, girisler kapatilacak)", wallet,
+                         self._live.expected_wallet_max)
         # 4) coklu varlik
         rows = self._startup_call(self._rest.position_risk) or []
         has_pos = any(_d(r.get("positionAmt")) != 0 for r in rows if isinstance(r, dict))
@@ -509,34 +523,34 @@ class LiveBroker:
         self._rules_at = self._rules_at or self._now()
 
     def _check_permissions(self) -> None:
+        """DD-8 O6: sonuc YALNIZ `apiRestrictions` yanitina baglidir; beyan yolu (LIVE_PERMISSION_ATTESTED) YOK.
+        Okunamayan her durum ya yeniden denenir (kod 5) ya da kalici reddedilir (kod 8); gecis yalniz alti alan dogruysa."""
+        if self._environ.get("LIVE_PERMISSION_ATTESTED"):
+            log.warning("LIVE_PERMISSION_ATTESTED artik gecerli degil: izin denetimini etkilemez (yok sayildi)")
         try:
             r = self._rest.api_restrictions()
+        except EngineExit:
+            raise
         except ExchangeAuth as e:
             raise EngineExit(8, "auth_failed") from e
         except ExchangeBan as e:
-            if getattr(e, "http", None) in (451, 403):
-                raise EngineExit(8, "region_blocked") from e
-            r = None
-        except Exception:  # noqa: BLE001
-            r = None
-        known = isinstance(r, dict)
-        if known:
-            for field, want in _REQUIRED_PERMS:
+            self._startup_ban(e)                 # 451/403 -> region_blocked (8); diger ban -> en cok 300 sn bekle, kod 5
+            raise EngineExit(5, "exchange_unreachable") from e
+        except ExchangeUncertain as e:
+            raise EngineExit(5, "exchange_unreachable") from e
+        except ExchangeReject as e:
+            if e.code == -1021:
+                raise EngineExit(5, "exchange_unreachable") from e
+            raise EngineExit(8, "key_permission_unverifiable") from e
+        except Exception as e:  # noqa: BLE001 - fail-closed
+            raise EngineExit(8, "key_permission_unverifiable") from e
+        if isinstance(r, dict):
+            for field, want in _REQUIRED_PERMS:                    # ihlal onceligi: eksik alan olsa da ihlal once raporlanir
                 if isinstance(r.get(field), bool) and r[field] is not want:
                     raise EngineExit(8, f"key_permission:{field}")
-            known = all(isinstance(r.get(f), bool) for f, _ in _REQUIRED_PERMS)
-        if known:
-            return
-        att = self._environ.get("LIVE_PERMISSION_ATTESTED", "")
-        try:
-            d0 = date.fromisoformat(att)
-            age = (self._now().date() - d0).days
-            ok = 0 <= age <= 30
-        except ValueError:
-            ok = False
-        if not ok:
-            raise EngineExit(8, "key_permission_unverifiable")
-        log.critical("LIVE_PERMISSION_ATTESTED=%s ile izin denetimi beyanla gecildi (dogrulanamadi)", att)
+            if all(isinstance(r.get(f), bool) for f, _ in _REQUIRED_PERMS):
+                return
+        raise EngineExit(8, "key_permission_unverifiable")
 
     # ------------------------------------------------------------------ okumalar
     def account(self) -> BrokerAccount:
@@ -791,6 +805,41 @@ class LiveBroker:
         except ExchangeUncertain as e:
             raise BrokerUncertain(f"emir belirsiz: {cid}") from e
 
+    def _verify_account_mode(self, pair: str, symbol: str) -> bool:
+        """DD-8 D2: giris oncesi TAZE `positionRisk(symbol)`: satir var + marginType isolated + leverage == cfg.leverage.
+        Uyusmazlik -> `account_mode_drift`; okunamayan her sey -> `account_mode_unverified` (ikisinde de emir gitmez, False).
+        `_prepared` ve hesap ayarlari DEGISMEZ (motor kendiliginden set_isolated/set_leverage gondermez)."""
+        try:
+            rows = self._rc("position_risk", symbol)
+        except ExchangeBan as e:
+            self._note_ban(e)
+            return self._unverified(pair, f"ban http={getattr(e, 'http', None)}")
+        except ExchangeAuth:
+            self._ctr["exchange_auth"] += 1
+            self._block("exchange_auth")
+            log.critical("exchange_auth: giris oncesi hesap modu okumasi reddedildi (%s)", pair)
+            return self._unverified(pair, "auth")
+        except Exception as e:  # noqa: BLE001 - fail-closed (her ExchangeError dahil)
+            return self._unverified(pair, type(e).__name__)
+        mine = [r for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict) and r.get("symbol") == symbol]
+        if not mine:
+            return self._unverified(pair, "no_row")
+        for r in mine:
+            margin, lev_raw = r.get("marginType"), _strict_float(r.get("leverage"))
+            if not isinstance(margin, str) or not margin or lev_raw is None:
+                return self._unverified(pair, "missing_field")
+            lev = int(lev_raw) if float(lev_raw).is_integer() else None
+            if margin.lower() != "isolated" or lev != self._lev:
+                self._ctr["account_mode_drift"] += 1
+                log.critical("account_mode_drift:%s margin=%s leverage=%s", pair, margin, r.get("leverage"))
+                return False
+        return True
+
+    def _unverified(self, pair: str, why: str) -> bool:
+        self._ctr["account_mode_unverified"] += 1
+        log.error("account_mode_unverified:%s (%s): giris gonderilmedi", pair, why)
+        return False
+
     def market_order(self, req: OrderRequest) -> OrderResult:
         cid = req.client_id
         why, e = self._common_checks(req, ("entry", "exit"), allow_stale=req.role == "exit")
@@ -810,6 +859,8 @@ class LiveBroker:
             return self._rej(cid, why)
         symbol, side = self._symbol(req.pair), "BUY" if req.order_side == "buy" else "SELL"
         reduce_only = req.role == "exit"
+        if req.role == "entry" and not self._verify_account_mode(req.pair, symbol):     # DD-8 D2: emir POST'undan hemen once
+            return self._rej(cid, "not_prepared")
         out = self._absorb_errors(cid, lambda: self._rest.new_market(symbol, side, self._qty_str(req.qty, e), cid, reduce_only),
                                   protective=reduce_only)
         if isinstance(out, OrderResult):

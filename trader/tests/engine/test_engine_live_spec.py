@@ -236,7 +236,7 @@ def make_live_cfg(tmp: Path, *, mode="testnet", leverage=None, live_over=None, p
             "poll_open_s": 5.0, "poll_flat_s": 30.0, "stop_deadline_s": 10.0, "entry_resolve_window_s": 60.0,
             "max_attempts": 1}
     live.update(live_over or {})
-    raw.update(pairs=list(pairs), wallet_start=100.0, mode=mode, var_dir=str(tmp / "var"),
+    raw.update(pairs=list(pairs), wallet_start=100.0, mode=mode, var_dir=str(tmp / ("var-live" if mode == "live" else "var-testnet")),   # DD-8: testnet/live var_dir son bileseni `var` olamaz
                market_db=str(tmp / "market.sqlite"), history_dir=str(tmp / "hist"),
                veto_config=str(ROOT / "config" / "veto.json"), kill_file=str(tmp / "KILL"),
                pause_file=str(tmp / "PAUSE"), live=live, veto_mode="required", target_trade_risk=0.014)

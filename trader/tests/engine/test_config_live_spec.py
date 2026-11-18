@@ -20,6 +20,8 @@ MIN_LEV, MAX_LEV = LOCKED_CFG.min_leverage, LOCKED_CFG.max_leverage
 
 def _write(tmp_path: Path, over: dict, bot: str = "learner") -> tuple[Path, Path]:
     base = json.loads((CFG_DIR / "engine.base.json").read_text())
+    if over.get("mode") in ("testnet", "live"):          # DD-8 yol kurali: testnet/live kagit var_dir/KILL/PAUSE yollarini kullanamaz
+        base.update(var_dir="var-testnet", kill_file="shared/testnet/KILL", pause_file="shared/testnet/PAUSE")
     base.update(over)
     b = tmp_path / "engine.base.json"
     b.write_text(json.dumps(base))
@@ -326,13 +328,23 @@ def test_testnet_skips_permission_check(tmp_path):
     assert "api_restrictions" not in rest.calls
 
 
-def test_live_wallet_above_expected_exits_8(tmp_path):
+def test_live_wallet_above_expected_is_a_finding_not_an_exit(tmp_path):
+    """DD-8 O4 ile degisti (eski: EngineExit(8, wallet_above_expected)): tavan asimi acilisi DURDURMAZ; bulgu `startup_findings`te,
+    motor `start()`ta giris tutusu ekler. Okunamayan bakiye (alan yok) hala cikis 8 `wallet_unreadable`."""
     from trader_engine.engine import EngineExit
     rest = _FakeRest(GOOD_RESTR)
     rest.account = lambda: {"canTrade": True, "totalWalletBalance": str(LIVE_OK["expected_wallet_max"] + 1)}
+    b = _broker("live", rest, tmp_path)
+    try:
+        b.startup_check()
+    except EngineExit as e:               # ince sahte: sonraki adimlar (kural/kaldirac) tavandan bagimsiz takilabilir
+        assert "wallet_above_expected" not in str(e)
+    assert b.startup_findings == ("wallet_above_expected",)
+    rest2 = _FakeRest(GOOD_RESTR)
+    rest2.account = lambda: {"canTrade": True}
     with pytest.raises(EngineExit) as ei:
-        _broker("live", rest, tmp_path).startup_check()
-    assert ei.value.code == 8 and "wallet_above_expected" in str(ei.value)
+        _broker("live", rest2, tmp_path).startup_check()
+    assert ei.value.code == 8 and "wallet_unreadable" in str(ei.value)
 
 
 def test_cli_run_returns_8_on_exchange_exit(tmp_path, monkeypatch, capsys):

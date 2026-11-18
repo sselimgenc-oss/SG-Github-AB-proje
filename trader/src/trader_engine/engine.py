@@ -3,6 +3,7 @@ enjeksiyonudur. Sira her karar adiminda: parametre yenile -> cikislar -> stop gu
 from __future__ import annotations
 
 import logging
+import math
 import os
 from collections import Counter, OrderedDict
 from contextlib import nullcontext
@@ -107,10 +108,16 @@ class Engine:
         self.strategy = strategy
         self.veto = veto
         self.kill = kill
-        if pause is None and cfg.mode != "backtest":
-            # F10: goreli yol cwd'ye bagli kalmasin (systemd WorkingDirectory'ye guvenilmez): mutlak yola cevrilir
+        self._wallet_lock = False                      # DD-8 O4: tutus dosyaya yazilamadiysa bellek kilidi (surec omru boyunca)
+        if pause is None and cfg.mode == "paper":
+            # F10: goreli yol cwd'ye bagli kalmasin (systemd WorkingDirectory'ye guvenilmez): mutlak yola cevrilir (yalniz paper)
             pause = EntryPause(os.path.abspath(f"{cfg.pause_file}.{cfg.bot}"), clock,
                                audit_path=os.path.abspath(cfg.path("pause_audit.jsonl")), bot=cfg.bot)
+        elif pause is None and cfg.mode in ("testnet", "live"):
+            for fld in ("pause_file", "var_dir"):      # DD-8 E1: canlida goreli yol = acilmaz
+                if not os.path.isabs(getattr(cfg, fld)):
+                    raise ConfigError(f"relative_path:{fld}")
+            pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
         self.pause = pause
         self.status = status
         self.strict = strict
@@ -296,6 +303,8 @@ class Engine:
             return "kill"
         if self.pause is not None and self.pause.active():
             return self.pause.code() or "paused"
+        if getattr(self, "_wallet_lock", False):             # DD-8 O4: tutus dosyaya yazilamadi -> bellek kilidi
+            return "paused"
         if self.ladder is not None:                          # 12 §8.3: duraklatmadan sonra
             gc = self.ladder.gate_code()
             if gc:
@@ -360,10 +369,49 @@ class Engine:
             log.warning("risk_ladder durum blogu uretilemedi: %r", e)
             return None
 
+    def _wallet_cap_hold(self, note: str) -> None:
+        """DD-8 O4: `wallet_above_expected` giris tutusu (`add` idempotent; ilk koken korunur). Tutus dosyaya yazilamazsa
+        (add False doner ve tutus dosyada yok) surec acik kalir ama bellek kilidi tutulur: hicbir giris emri gonderilmez;
+        her denetimde `add` yeniden denenir. Yalniz testnet/live (paper/backtest'te cagrilmaz)."""
+        added = False
+        held = False
+        if self.pause is not None:
+            try:
+                added = bool(self.pause.add("wallet_above_expected", by="engine:wallet_cap", note=note))
+            except Exception as e:  # noqa: BLE001
+                log.error("pause.add basarisiz: %r", e)
+            try:
+                held = any(h.reason == "wallet_above_expected" for h in self.pause.holds())
+            except Exception:  # noqa: BLE001
+                held = False
+        if added:
+            log.critical("wallet_above_expected: girisler kapatildi (%s)", note)
+        if not held and not self._wallet_lock:
+            self._wallet_lock = True
+            self.gate.memory_lock = "paused"
+            log.critical("wallet_above_expected: tutus dosyaya yazilamadi; surec omru boyunca giris kilidi bellekte (%s)", note)
+
+    def _wallet_cap_step(self, wallet: float) -> None:
+        """DD-8 O4 (calisirken): motorun zaten okudugu hesap degeri (ek REST cagrisi YOK) sonlu ve > tavan ise tutus eklenir.
+        Sonlu olmayan deger bu denetimde yok sayilir. Bellek kilidi varken `add` her turda yeniden denenir."""
+        live = self.cfg.live
+        if live is None or self.cfg.mode not in ("testnet", "live"):
+            return
+        over = math.isfinite(wallet) and wallet > float(live.expected_wallet_max)
+        if over or self._wallet_lock:
+            note = f"wallet={wallet} max={live.expected_wallet_max}"
+            if over:
+                self._wallet_cap_hold(note)
+            elif self.pause is not None:
+                try:
+                    self.pause.add("wallet_above_expected", by="engine:wallet_cap", note="mem_lock_retry " + note)
+                except Exception as e:  # noqa: BLE001
+                    log.error("pause.add basarisiz: %r", e)
+
     def _ladder_step(self, now: datetime) -> None:
         """12 §8.2: kademe degerlendirmesi (kisma ladder icinde). Ozsermaye okunamazsa NaN verilir (kapi: equity_unreadable);
-        hicbir istisna disari sizmaz."""
-        if self.ladder is None:
+        hicbir istisna disari sizmaz. DD-8 O4: ayni hesap okumasi cuzdan tavani denetimine de beslenir (testnet/live)."""
+        if self.ladder is None and self.cfg.mode not in ("testnet", "live"):
             return
         try:
             try:
@@ -372,6 +420,12 @@ class Engine:
             except Exception as e:  # noqa: BLE001
                 log.warning("kademe icin hesap okunamadi: %r", e)
                 equity = wallet = float("nan")
+            try:
+                self._wallet_cap_step(wallet)
+            except Exception as e:  # noqa: BLE001
+                log.critical("cuzdan tavani denetimi hatasi: %r", e)
+            if self.ladder is None:
+                return
             try:
                 flat = not self.state.open_positions() and not self.state.unresolved_orders()
             except Exception:  # noqa: BLE001
@@ -616,6 +670,10 @@ class Engine:
         if cfg.mode in ("testnet", "live") and not self.is_paper:
             if not self.state.integrity_check():
                 raise StateError("state integrity_check basarisiz")
+            if "wallet_above_expected" in tuple(getattr(self.broker, "startup_findings", ()) or ()):   # DD-8 O4
+                w = getattr(self.broker, "startup_wallet", None)
+                lim = cfg.live.expected_wallet_max if cfg.live is not None else None
+                self._wallet_cap_hold(f"wallet={w} max={lim}")       # protect_first'ten ONCE; cikis/stop/KILL/mutabakat etkilenmez
             self.protect_first()
         if cfg.mode == "paper" or (live_loop and cfg.mode in ("testnet", "live")):
             self._startup_gate()                                  # 11 §6.2: canlida protect_first'ten SONRA, ayni 10/10 kapisi
@@ -1769,25 +1827,58 @@ def _build_ladder(cfg: EngineConfig, clock: Clock, pause: EntryPause, broker, le
                       transfers_fn=xfer if callable(xfer) else None, trades_fn=trades_fn)
 
 
+def _require_live_paths(cfg: EngineConfig) -> None:
+    """DD-8 (E1/O8, acilis sirasi 1. adim): testnet/live'da `kill_file`, `pause_file`, `var_dir` mutlak olmali (`relative_path:<alan>`)
+    ve paylasimli kagit yollari olamaz (`check_shared_paths`; EngineConfig elle degistirilmis olsa da burada yeniden denetlenir)."""
+    from .config import check_shared_paths
+    for fld in ("kill_file", "pause_file", "var_dir"):
+        if not os.path.isabs(getattr(cfg, fld)):
+            raise ConfigError(f"relative_path:{fld}")
+    check_shared_paths(cfg.mode, cfg.var_dir, cfg.kill_file, cfg.pause_file)
+
+
 def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketView | None = None,
                  broker: Broker | None = None, env: Mapping[str, str] | None = None) -> Engine:
+    """Zorunlu acilis sirasi (testnet/live; DD-8 §0): 1 yapilandirma (yollar) -> 2 LIVE_CONFIRM + anahtarlar -> 3 state kilidi
+    -> 4 damga dogrulamasi -> 5 `startup_check` (ilk HTTP istegi) -> (Engine.start: 6 tavan tutusu, protect_first, kapi).
+    Adim 1-4'te borsaya HIC istek gitmez; enjekte `broker`in hicbir yontemi de 3-4'ten once cagrilmaz."""
     from .brokers.paper import PaperBroker, PaperConfig
     from .clock import SystemClock
     from .marketdata.sources import StoreSource
 
     env = os.environ if env is None else env
+    live_mode = cfg.mode in ("testnet", "live")
+    if live_mode:
+        _require_live_paths(cfg)                     # 1
     if cfg.mode == "live":
         from .config import check_live_confirm
-        check_live_confirm(cfg, env)                 # ag oncesi cift onay (11 §3.1)
-    if cfg.mode in ("testnet", "live") and broker is None:
+        check_live_confirm(cfg, env)                 # 2: ag oncesi cift onay (11 §3.1)
+    if live_mode and broker is None:
         from .config import load_keys
         load_keys(env)                               # ConfigError("keys_missing: ...") aynen (11 §3.2)
-    live_broker_new = False
-    if cfg.mode in ("testnet", "live") and broker is None:
-        broker, live_broker_new = _build_live_broker(cfg, clock, env), True
     strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
     clock = clock or SystemClock()
     view = view or StoreSource(cfg.market_db)
+    if live_mode:
+        for p in (cfg.ledger_path, cfg.state_path, cfg.status_path, cfg.kill_file, f"{cfg.pause_file}.{cfg.bot}"):
+            Path(p).parent.mkdir(parents=True, exist_ok=True)
+        # 3: state kilidi (StateError -> cikis 3). `ledger_path` verilmez: testnet/live'de 0 bayt/eksik state'i DAMGA KARAR TABLOSU
+        # yakalar (4. satir: state_missing, cikis 8); StateStore'un 0 bayt denetimi (StateError -> 3) yalniz paper icindir.
+        state = StateStore(cfg.state_path, bot=cfg.bot)
+        led = None
+        try:
+            led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, clock=clock.now)
+            from .stamp import verify_or_init_stamp
+            verify_or_init_stamp(cfg, state, led)                                         # 4: damga (EngineExit 8)
+            live_broker_new = broker is None
+            if broker is None:
+                broker = _build_live_broker(cfg, clock, env)                              # 5: startup_check (EngineExit 8/5)
+            return _assemble_engine(cfg, clock, view, broker, led, state, strategy, env, live_broker_new)
+        except BaseException:
+            state.close()                                                                 # kilit sizmasin (flock birakilir)
+            if led is not None:
+                led.close()
+            raise
     if broker is None:
         broker = PaperBroker(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate,
                                          wallet_start=cfg.wallet_start),
@@ -1795,7 +1886,20 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     for p in (cfg.ledger_path, cfg.state_path, cfg.status_path, cfg.kill_file, f"{cfg.pause_file}.{cfg.bot}"):
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, clock=(None if cfg.mode == "paper" else clock.now))
-    state = StateStore(cfg.state_path, bot=cfg.bot)
+    state = StateStore(cfg.state_path, bot=cfg.bot, ledger_path=cfg.ledger_path)
+    if cfg.mode == "paper":
+        from .stamp import verify_or_init_stamp     # paper: yalniz OKUR (yabanci damga = kod 8); backtest: hic cagrilmaz
+        try:
+            verify_or_init_stamp(cfg, state, led)
+        except BaseException:
+            state.close()
+            led.close()
+            raise
+    return _assemble_engine(cfg, clock, view, broker, led, state, strategy, env, False)
+
+
+def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: Broker, led: L.Ledger, state: StateStore,
+                     strategy, env: Mapping[str, str], live_broker_new: bool) -> Engine:
     vsrc: VetoSource = FileVeto(veto.load_config(cfg.veto_config), env) if cfg.veto_mode == "required" else NoVeto()
     kill = Killswitch(cfg.kill_file, clock)
     pause = EntryPause(f"{cfg.pause_file}.{cfg.bot}", clock, audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)

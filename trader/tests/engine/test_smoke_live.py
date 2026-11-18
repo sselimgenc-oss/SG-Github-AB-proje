@@ -225,6 +225,7 @@ def test_kill_set_after_start_blocks_first_order(setup):
 
 # ------------------------------------------------------------------------------------------ hesap durumu / tutar
 def test_wallet_above_cap_exit_8(setup):
+    """DD-8 O4 ile: motor artik tavan asiminda acilir (giris tutusu); gercek paralik duman betigi yine hic emir gondermez (8)."""
     rc, ex, out, _ = run(setup, wallet="5000")
     assert rc == 8 and not orders(ex)
 

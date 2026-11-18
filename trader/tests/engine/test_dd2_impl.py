@@ -456,13 +456,14 @@ def test_dd2_d9_zero_byte_state_with_filled_ledger_is_error(tmp_path):
     sp = tmp_path / "state.sqlite"
     sp.write_bytes(b"")
     with pytest.raises(StateError, match="0 bayt"):
-        StateStore(str(sp), bot="learner")
+        StateStore(str(sp), bot="learner", ledger_path=str(tmp_path / "ledger.sqlite"))     # DD-8 E3: defter yolu acikca verilir
+    StateStore(str(sp), bot="learner").close()                  # ledger_path=None: denetim yok (testnet/live'de damga karar tablosu yakalar)
 
 
 def test_dd2_d9_zero_byte_state_with_empty_or_missing_ledger_is_fresh(tmp_path):
     sp = tmp_path / "state.sqlite"
     sp.write_bytes(b"")
-    StateStore(str(sp), bot="learner").close()                  # defter yok: yeni durum
+    StateStore(str(sp), bot="learner", ledger_path=str(tmp_path / "ledger.sqlite")).close()    # defter yok: yeni durum
     sp.unlink()
     for ext in ("", "-wal", "-shm"):
         Path(str(sp) + ext).unlink(missing_ok=True)
@@ -470,7 +471,7 @@ def test_dd2_d9_zero_byte_state_with_empty_or_missing_ledger_is_fresh(tmp_path):
     lg.init_params(PARAMS, reason="x")
     lg.close()
     sp.write_bytes(b"")
-    StateStore(str(sp), bot="learner").close()                  # ilk kurulumda coken bos defter `dolu` sayilmaz
+    StateStore(str(sp), bot="learner", ledger_path=str(tmp_path / "ledger.sqlite")).close()    # ilk kurulumda coken bos defter `dolu` sayilmaz
 
 
 # ============================================================================================ D5 (17) / D4 (18): yerel min_qty

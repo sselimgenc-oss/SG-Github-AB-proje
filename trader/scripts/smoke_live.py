@@ -43,8 +43,7 @@ SMOKE_BOT = "smoke"                    # make_client_id botu: motorun learner/tw
 MAX_NOTIONAL_USDT = 25.0               # mutlak tavan
 MAX_NOTIONAL_FACTOR = 2.0              # min_notional'in en fazla 2 kati
 EXIT_OK, EXIT_FAIL, EXIT_REFUSED, EXIT_PERM = 0, 1, 2, 8
-_REQUIRED_PERMS = (("enableWithdrawals", False), ("ipRestrict", True), ("enableReading", True), ("enableFutures", True),
-                   ("enableInternalTransfer", False), ("permitsUniversalTransfer", False))
+from trader_engine.brokers.binance_futures import _REQUIRED_PERMS  # noqa: E402  DD-8 O6: izin demeti tek kaynak (motor acilis denetimi)
 S_COND_TYPES = ("STOP", "STOP_MARKET", "TAKE_PROFIT", "TAKE_PROFIT_MARKET", "TRAILING_STOP_MARKET")
 
 
@@ -84,7 +83,7 @@ def guard_config(cfg: Any, environ: Any) -> None:
     if cfg.mode != "live" or cfg.live is None:
         raise S.SafetyError(f"yapilandirma kipi live degil: {cfg.mode}")
     for name in ("var_dir", "kill_file", "pause_file"):
-        if "testnet" in str(getattr(cfg, name)):
+        if S.path_has_testnet(getattr(cfg, name), 1 if name == "var_dir" else 2):      # DD-8 E2: yalniz son bilesenler
             raise S.SafetyError(f"{name} testnet yolu: canli katman degil")
     got = environ.get("LIVE_CONFIRM")
     if not isinstance(got, str) or got != cfg.live.account_tag:
@@ -520,7 +519,7 @@ def main(argv: list[str] | None = None, *, environ=None, rest_factory=None, cloc
 def _run(a, environ, rest_factory, clock, input_fn, say) -> int:
     from trader_engine.brokers.binance_futures import LiveBroker
     from trader_engine.clock import SystemClock
-    from trader_engine.config import load_engine_config
+    from trader_engine.config import load_cli_config
     from trader_engine.errors import ConfigError, EngineExit
     from trader_engine.exchange.binance_rest import SignedRestClient
 
@@ -529,7 +528,7 @@ def _run(a, environ, rest_factory, clock, input_fn, say) -> int:
     if not overlay.is_file():
         raise S.SafetyError(f"canli yapilandirma katmani yok: {overlay.name} (--live-overlay)")
     try:
-        cfg = load_engine_config(d / "engine.base.json", d / "engine.learner.json", overlay_path=overlay)
+        cfg = load_cli_config(d, "learner", None, overlay_path=overlay)
     except ConfigError as e:
         raise S.SafetyError(f"yapilandirma hatasi: {e}") from e
     guard_config(cfg, environ)
@@ -566,6 +565,10 @@ def _run(a, environ, rest_factory, clock, input_fn, say) -> int:
             report.meta["startup_exit"] = e.code
             say(f"acilis denetimi reddetti: kod {e.code} {S.mask(e, secrets)}")
             return e.code
+        if broker.startup_findings:                                  # DD-8 O4: motor bu durumda girisi kapatir; duman testi hic emir gondermez
+            report.meta["startup_exit"] = 8
+            say(f"acilis denetimi bulgu verdi: {','.join(broker.startup_findings)} (hesap bakiyesi tavani asti): hicbir emir gonderilmedi")
+            return EXIT_PERM
         ctx = Ctx(rest=rest, broker=broker, clock=clk, pair=pair, cfg=cfg, phrase=phrase_for(cfg.live.account_tag),
                   input_fn=lambda p: input_fn(S.mask(p, secrets)), say=say, recheck=lambda: check_ladder_and_holds(cfg, clk))
         ctx.require_clean()

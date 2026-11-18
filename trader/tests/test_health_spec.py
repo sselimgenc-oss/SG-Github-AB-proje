@@ -73,6 +73,7 @@ def good_ledger(**kw):
         orphan_ids=(),
         schema_ok=True,
         has_active_params=True,
+        spool_corrupt_lines=0,       # DD-8 E4: None = UNKNOWN (spool_corrupt_unreadable); saglikli taban 0
     )
     base.update(kw)
     return h.LedgerProbe(**base)

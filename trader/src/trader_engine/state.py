@@ -191,8 +191,12 @@ def _ledger_has_history(path: str) -> bool:
         return False
 
 
+ledger_has_history = _ledger_has_history      # DD-8: damga denetimi ayni olcutu kullanir (tek islev)
+
+
 class StateStore:
-    def __init__(self, path: str, *, bot: str, durability: str = "full", lock: bool = True) -> None:
+    def __init__(self, path: str, *, bot: str, durability: str = "full", lock: bool = True,
+                 ledger_path: str | None = None) -> None:
         if durability not in ("full", "off"):
             raise ValueError(f"durability full|off olmali: {durability!r}")
         self.path = str(path)
@@ -204,9 +208,10 @@ class StateStore:
         memory = self.path == ":memory:"
         existed = (not memory) and os.path.exists(self.path) and os.path.getsize(self.path) > 0
         if not memory and not existed and os.path.exists(self.path):
-            # DD-2 D9: 0 baytlik state yeni durum sayilmaz, yanindaki defter doluysa (kayip/bozulma belirtisi) sessiz kalinmaz
-            led = os.path.join(os.path.dirname(self.path) or ".", "ledger.sqlite")
-            if _ledger_has_history(led):
+            # DD-2 D9: 0 baytlik state yeni durum sayilmaz, defter (`ledger_path`) doluysa (kayip/bozulma belirtisi) sessiz
+            # kalinmaz. DD-8 (E3): defter yolu cagiran tarafindan verilir (sabit kardes yol yok); None => denetim yapilmaz.
+            led = ledger_path
+            if led is not None and _ledger_has_history(led):
                 raise StateError(f"state dosyasi 0 bayt ama defter dolu ({led}): sessizce yeni durum acilmaz; "
                                  "yedekten donun ya da bilincli olarak 0 baytlik dosyayi silin")
         if lock and not memory:
@@ -457,6 +462,21 @@ class StateStore:
         if r is not None and ms < r[0]:
             raise StateError(f"imec geri gitmez: {pair}/{kind} {ts} < {from_ms(r[0])}")
         self._exec("INSERT OR REPLACE INTO cursors(pair, kind, ts_ms) VALUES(?,?,?)", (pair, kind, ms))
+
+    # --- DD-8 (O8): damga denetimi icin salt okunur sorgular
+    def is_virgin(self) -> bool:
+        """Bakir state: `positions` ve `orders` bos, kv `initialized_at` yok/"unset", kv `broker_snapshot` yok."""
+        if self._exec("SELECT 1 FROM positions LIMIT 1").fetchone() is not None:
+            return False
+        if self._exec("SELECT 1 FROM orders LIMIT 1").fetchone() is not None:
+            return False
+        if self.kv_get("initialized_at") not in (None, "unset"):
+            return False
+        return self.kv_get("broker_snapshot") is None
+
+    def has_paper_trace(self) -> bool:
+        """Kagit izi: kv `broker_snapshot` var (yalniz kagit motoru yazar)."""
+        return self.kv_get("broker_snapshot") is not None
 
     # --- genel
     def kv_get(self, k: str, default: Any = None) -> Any:

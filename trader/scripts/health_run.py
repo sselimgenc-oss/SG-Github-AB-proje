@@ -316,6 +316,14 @@ _TS_TABLES = (("health_probes", "probed_at"), ("decision_events", "recorded_at")
 def probe_ledger(db_path: str, bot: str, open_ids) -> H.LedgerProbe:
     """Salt okunur. Kapi, yazmadan turetilir (spec 3.2)."""
     last = spool = unl = orphan = schema_ok = active = None
+    corrupt = None
+    cp = db_path + ".spool.corrupt.jsonl"          # DD-8 (E4): dosya yok -> 0; okunur -> satir sayisi; baska OSError -> None
+    try:
+        corrupt = _count_lines(cp)
+    except FileNotFoundError:
+        corrupt = 0
+    except OSError:
+        corrupt = None
     try:
         spool = os.path.getsize(db_path + ".spool.jsonl") and _count_lines(db_path + ".spool.jsonl")
     except FileNotFoundError:
@@ -329,7 +337,7 @@ def probe_ledger(db_path: str, bot: str, open_ids) -> H.LedgerProbe:
         name = type(e).__name__
         if name == "LedgerSchemaError":
             schema_ok = False
-        return H.LedgerProbe(None, spool, None, None, schema_ok, None)
+        return H.LedgerProbe(None, spool, None, None, schema_ok, None, corrupt)
     try:
         schema_ok = True
         try:
@@ -364,7 +372,7 @@ def probe_ledger(db_path: str, bot: str, open_ids) -> H.LedgerProbe:
             c.close()
     except Exception:  # noqa: BLE001
         pass
-    return H.LedgerProbe(last, spool, unl, orphan, schema_ok, active)
+    return H.LedgerProbe(last, spool, unl, orphan, schema_ok, active, corrupt)
 
 
 def _count_lines(path) -> int:

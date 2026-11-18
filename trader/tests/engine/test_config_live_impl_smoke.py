@@ -19,6 +19,9 @@ GOOD = "A" * 32
 
 
 def _base(**kw):
+    if kw.get("mode") in ("testnet", "live"):       # DD-8 yol kurali: testnet/live kagit `var`/`shared/KILL|PAUSE` yollarini kullanamaz
+        for k, v in (("var_dir", "var-testnet"), ("kill_file", "shared/testnet/KILL"), ("pause_file", "shared/testnet/PAUSE")):
+            kw.setdefault(k, v)
     return apply_overrides(load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json"), **kw)
 
 
@@ -65,7 +68,8 @@ def test_live_rules():
 
 def _write_live(tmp_path, tag="sub-acct-1"):
     p = tmp_path / "live.json"
-    p.write_text(json.dumps({"mode": "live", "live": {**LIVE, "account_tag": tag}}))
+    p.write_text(json.dumps({"mode": "live", "live": {**LIVE, "account_tag": tag}, "var_dir": "var-live",
+                             "kill_file": "shared/live/KILL", "pause_file": "shared/live/PAUSE"}))
     return p
 
 
@@ -185,7 +189,8 @@ def test_backtest_build_config_under_live_bot_file(tmp_path):
     from trader_engine.backtest import BacktestRunner, BacktestSpec
     d = _live_dir(tmp_path)
     raw = json.loads((d / "engine.learner.json").read_text())
-    raw.update({"mode": "live", "live": LIVE})
+    raw.update({"mode": "live", "live": LIVE, "var_dir": "var-live", "kill_file": "shared/live/KILL",
+                "pause_file": "shared/live/PAUSE"})
     (d / "engine.learner.json").write_text(json.dumps(raw))
     from datetime import datetime, timezone
     spec = BacktestSpec(id="t", start=datetime(2025, 1, 1, tzinfo=timezone.utc),
@@ -200,10 +205,12 @@ def test_build_engine_refuses_testnet_live_without_broker(tmp_path):
     for m in ("testnet", "live"):
         env = {"LIVE_CONFIRM": LIVE["account_tag"]} if m == "live" else {}
         with pytest.raises(ConfigError, match="keys_missing") as ei:
-            build_engine(_base(mode=m, live=LIVE, var_dir=str(tmp_path / "v")), env=env)
+            build_engine(_base(mode=m, live=LIVE, var_dir=str(tmp_path / "v"), kill_file=str(tmp_path / "k"),
+                               pause_file=str(tmp_path / "p")), env=env)
         assert "faz_b" not in str(ei.value)
     with pytest.raises(ConfigError, match="live_confirm"):            # onay anahtarlardan ONCE denetlenir
-        build_engine(_base(mode="live", live=LIVE, var_dir=str(tmp_path / "v")), env={})
+        build_engine(_base(mode="live", live=LIVE, var_dir=str(tmp_path / "v"), kill_file=str(tmp_path / "k"),
+                           pause_file=str(tmp_path / "p")), env={})
 
 
 def test_entry_leverage_wired(tmp_path):

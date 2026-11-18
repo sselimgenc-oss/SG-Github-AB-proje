@@ -691,12 +691,14 @@ def test_foreign_open_orders_includes_our_prefix_with_unknown_role_letter():
     assert b.open_orders(XRP) == []
 
 
-def test_live_permission_attestation_read_from_injected_environ():
+def test_live_permission_attestation_no_longer_bypasses():
+    """DD-8 O6 ile degisti (eski: beyan okunamayan yaniti geciyordu): beyan sonucu HIC etkilemez; okunamayan yanit beyanla da
+    reddedilir (5xx -> ag sorunu, cikis 5)."""
     bad = lambda e: setattr(e, "restrictions_status", 500)           # noqa: E731
-    with pytest.raises(EngineExit):
-        build(env="live", pre=bad, environ={})
-    b, ex, _ = build(env="live", pre=bad, environ={"LIVE_PERMISSION_ATTESTED": "2026-12-20"})
-    assert ex.count("apiRestrictions") >= 1
+    for environ in ({}, {"LIVE_PERMISSION_ATTESTED": "2026-12-20"}):
+        with pytest.raises(EngineExit) as ei:
+            build(env="live", pre=bad, environ=environ)
+        assert ei.value.code == 5
 
 
 def test_entry_fill_position_since_has_margin_when_seen_by_sync_after_restart():

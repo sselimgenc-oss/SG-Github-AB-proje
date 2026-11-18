@@ -323,7 +323,7 @@ def test_t15_counts_positions_account_wide_and_passes_with_two(tmp_path, monkeyp
     assert rc == 0, out
     r = _res(tmp_path)
     assert r["status"] == "GECTI" and r["data"]["pozisyon_oncesi"] == 2 and r["data"]["stop_oncesi"] == 2
-    assert ["kill", "--env", "testnet", "--clear"] in calls
+    assert any(c[0] == "kill" and "--clear" in c and "--env" in c and "--config-dir" in c for c in calls)    # DD-8 E2: --config-dir verilir
 
 
 def test_t15_single_position_is_kismi_not_gecti(tmp_path, monkeypatch):
@@ -435,17 +435,28 @@ def test_live_startup_hard_fails_on_withdrawals_or_no_ip_restriction_even_with_a
     assert not [c for c in rest.calls if c[0] == "account"]                       # hesap/emir yoluna hic gecilmedi
 
 
-def test_live_startup_unverifiable_restrictions_without_attestation_exits_8(monkeypatch):
+@pytest.mark.parametrize("att", [False, True])
+def test_live_startup_unverifiable_restrictions_exits_8_and_unreachable_exits_5(monkeypatch, att):
+    """DD-8 O6: sonuc beyana bagli degil (att=True ayni sonucu verir). Bozuk/eksik govde -> 8; ag/zaman asimi -> 5 (yeniden denenir)."""
     from test_live_broker_spec import FakeRest, make_broker, T0 as BT0
     from trader_engine.errors import EngineExit
     from trader_engine.exchange.binance_rest import ExchangeUncertain
-    monkeypatch.delenv("LIVE_PERMISSION_ATTESTED", raising=False)
+    if att:
+        monkeypatch.setenv("LIVE_PERMISSION_ATTESTED", BT0.date().isoformat())
+    else:
+        monkeypatch.delenv("LIVE_PERMISSION_ATTESTED", raising=False)
+    rest = FakeRest(SimClock(BT0), "live")
+    rest.restr = {"foo": 1}
+    b, _, _ = make_broker("live", startup=False, rest=rest)
+    with pytest.raises(EngineExit) as ei:
+        b.startup_check()
+    assert ei.value.code == 8 and "key_permission_unverifiable" in str(ei.value)
     rest = FakeRest(SimClock(BT0), "live")
     rest.sticky["api_restrictions"] = ExchangeUncertain("down")
     b, _, _ = make_broker("live", startup=False, rest=rest)
     with pytest.raises(EngineExit) as ei:
         b.startup_check()
-    assert ei.value.code == 8 and "key_permission_unverifiable" in str(ei.value)
+    assert ei.value.code == 5 and "exchange_unreachable" in str(ei.value)
 
 
 def test_smoke_testnet_ack_flag_never_applies_to_live(tmp_path):

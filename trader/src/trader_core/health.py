@@ -124,6 +124,7 @@ class LedgerProbe:
     orphan_ids: tuple[int, ...] | None = None
     schema_ok: bool | None = None
     has_active_params: bool | None = None
+    spool_corrupt_lines: int | None = None    # DD-8 (E4): `<defter>.spool.corrupt.jsonl` satir sayisi (None = okunamadi)
 
 
 @dataclass(frozen=True)
@@ -435,6 +436,18 @@ def _c_ledger_age(snap, bot, cfg):
     crit = cfg.ledger_crit_mult * T + cfg.ledger_margin_s
     r = _graded(name, age, warn, crit, "ok", "ledger_write_stale", f"{bot} defter son yazma yasi")
     return _warm(r, _in_warmup(snap, bot, cfg))
+
+
+def _c_spool_corrupt(snap, bot, cfg):
+    """DD-8 (E4): ayri denetim (ledger_gate'in erken donusleri maskeleyemez; isinma yumusatmaz). Dosya bosalana/adi degisene
+    kadar CRIT; motor dosyayi silmez/kisaltmaz."""
+    name = f"spool_corrupt:{bot}"
+    n = snap.ledger[bot].spool_corrupt_lines
+    if n is None:
+        return _unknown(name, "spool_corrupt_unreadable", f"{bot} bozuk spool dosyasi okunamadi")
+    if n > 0:
+        return _res(name, Status.CRIT, "spool_corrupt", f"{bot} deftere yazilamayan {n} bozuk kayit var", n, 0)
+    return _res(name, Status.OK, "ok", f"{bot} bozuk spool kaydi yok", 0, 0)
 
 
 def _c_gate(snap, bot, cfg):
@@ -977,6 +990,7 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
         if bot in snap.ledger:
             results.append(_safe(f"ledger_write_age:{bot}", _c_ledger_age, snap, bot, cfg))
             results.append(_safe(f"ledger_gate:{bot}", _c_gate, snap, bot, cfg))
+            results.append(_safe(f"spool_corrupt:{bot}", _c_spool_corrupt, snap, bot, cfg))
     results.append(_safe("disk_free", _c_disk, snap, cfg))
     results.append(_safe("memory", _c_mem, snap, cfg))
     results.append(_safe("swap", _c_swap, snap, cfg))
@@ -1034,7 +1048,7 @@ def should_send_ok(report: HealthReport) -> bool:
 # ---------------------------------------------------------------------------------------------
 # Uyari yolu
 # ---------------------------------------------------------------------------------------------
-IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "schema", "oom_killed",
+IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "spool_corrupt", "schema", "oom_killed",
                              "rules_missing_increase", "naked_position", "pause_hold_unaudited",
                              "pause_hold_lost", "capital_floor", "drawdown_review", "ladder_missing",
                              "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model"})
@@ -1136,6 +1150,8 @@ _HEALTH_TR: dict[str, tuple[str, str, str]] = {
                          "Kayıtlar gecikmiş olabilir; panoyu kontrol et."),
     "ledger_gate": ("İşlem kayıt sistemi giriş kapısı kapalı", "İşlem kayıt sistemi yeniden açıldı",
                     "Kayıt sistemi hazır olmadığı için yeni işlemler bekletiliyor."),
+    "spool_corrupt": ("Deftere yazılamayan bozuk kayıt var", "Bozuk kayıt dosyası temizlendi",
+                      "Bazı işlem/karar kayıtları okunamadığı için deftere yazılamadı; dosya incelenip taşınmalı."),
     "disk_free": ("Sunucuda boş disk alanı azaldı", "Boş disk alanı yeniden yeterli",
                   "Disk dolarsa kayıtlar yazılamaz ve bot durabilir; yer açılmalı."),
     "memory": ("Sunucuda bellek azaldı", "Bellek durumu yeniden normal",

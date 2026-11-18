@@ -476,10 +476,10 @@ def t15(ctx: Ctx):
     n_pos, n_stops = len(pos0), len(stops0)
     if n_pos == 0:
         return _R("ATLANDI", "motor pozisyonu yok; 2 acik pozisyon kosulu saglanmadi")
-    rc = _cli(["kill", "--env", "testnet", "--by", "smoke", "--reason", "T-15"])
+    rc = _cli(["kill", "--config-dir", str(ctx.args.config_dir), "--env", "testnet", "--by", "smoke", "--reason", "T-15"])
     flat = ctx.wait_until(lambda: not ctx.open_positions() and not _stops_all(ctx), 60.0, 2.0)
     ks = _engine_status(ctx).get("kill_state")
-    rc2 = _cli(["kill", "--env", "testnet", "--clear"])
+    rc2 = _cli(["kill", "--config-dir", str(ctx.args.config_dir), "--env", "testnet", "--clear"])
     ok = rc == 0 and flat is not None and ks in ("flat", None)
     st = ("GECTI" if n_pos >= 2 else "KISMI") if ok else "KALDI"
     notes = [f"kill_oncesi_pozisyon={n_pos}", f"kill_oncesi_stop={n_stops}", f"duzlenme_s={flat}", f"kill_state={ks}"]
@@ -492,10 +492,10 @@ def t15(ctx: Ctx):
 def t16(ctx: Ctx):
     ctx.confirm("T-16 (duraklatma): motor calisiyor ve acik pozisyonu olmali. Betik `pause` CLI ile tutus ekler/kaldirir.")
     q0 = ctx.pos_qty()
-    rc = _cli(["pause", "--bot", "learner", "--env", "testnet", "--reason", "user_cmd", "--by", "smoke"])
+    rc = _cli(["pause", "--config-dir", str(ctx.args.config_dir), "--bot", "learner", "--env", "testnet", "--reason", "user_cmd", "--by", "smoke"])
     ctx.clock.sleep(float(ctx.args.wait_s))
     alive = ctx.pos_qty() == q0 and q0 != 0
-    rc2 = _cli(["pause", "--bot", "learner", "--env", "testnet", "--clear", "--reason", "user_cmd", "--by", "smoke"])
+    rc2 = _cli(["pause", "--config-dir", str(ctx.args.config_dir), "--bot", "learner", "--env", "testnet", "--clear", "--reason", "user_cmd", "--by", "smoke"])
     return _R("GECTI" if rc == 0 and alive and rc2 == 0 else "KALDI", f"pozisyon_yasiyor={alive}", f"pause_rc={rc},{rc2}",
               "gate:paused atlama ve yeniden baslatmada surme gozlemi elle")
 
@@ -742,12 +742,12 @@ def _run(a, steps, environ, rest_factory, clock, input_fn, say, runner, on_wait)
 
     from trader_engine.brokers.binance_futures import LiveBroker
     from trader_engine.clock import SystemClock
-    from trader_engine.config import load_engine_config
+    from trader_engine.config import load_cli_config
     from trader_engine.exchange.binance_rest import SignedRestClient
 
     key, secret = S.read_keys(environ)
     d = Path(a.config_dir)
-    cfg = load_engine_config(d / "engine.base.json", d / "engine.learner.json", overlay_path=d / "engine.testnet.json")
+    cfg = load_cli_config(d, "learner", "testnet")           # DD-8 E2: kill/pause/var_dir mutlak (cwd'den bagimsiz)
     S.guard_config(cfg)
     clk = clock or SystemClock()
     now_ms = lambda: int(clk.now().timestamp() * 1000)  # noqa: E731

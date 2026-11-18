@@ -898,8 +898,8 @@ def write_cfg(tmp: Path, mode: str = "testnet", extra: dict | None = None):
     overlay = None
     if mode == "testnet":
         ov = json.loads((ROOT / "config" / "engine.testnet.json").read_text())
-        ov.update(var_dir=str(tmp / "var"), kill_file=str(tmp / "shared" / "KILL"),
-                  pause_file=str(tmp / "shared" / "PAUSE"))
+        ov.update(var_dir=str(tmp / "var-testnet"), kill_file=str(tmp / "shared" / "testnet" / "KILL"),      # DD-8: testnet yol kurali
+                  pause_file=str(tmp / "shared" / "testnet" / "PAUSE"))
         overlay = cfgd / "engine.testnet.json"
         overlay.write_text(json.dumps(ov))
     cfg = load_engine_config(cfgd / "engine.base.json", cfgd / "engine.learner.json", overlay_path=overlay)

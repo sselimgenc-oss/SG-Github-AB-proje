@@ -5,6 +5,7 @@ Hicbir ag cagrisi yapmaz. Anahtar/gizli yalniz `mask()` ile maskelenmis halde ya
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from decimal import ROUND_CEILING, Decimal
@@ -54,14 +55,21 @@ def guard_rest(rest: Any) -> None:
     guard_base_url(getattr(rest, "_base", ""))
 
 
+def path_has_testnet(path: Any, n: int) -> bool:
+    """DD-8 E2: mutlak yolun TAMAMINDA degil, yalniz son `n` bileseninde 'testnet' alt dizgisi arar (kok dizin adinda
+    'testnet' gecmesi yanlis gecis/ret vermesin)."""
+    parts = [c for c in os.path.normpath(str(path)).split(os.sep) if c]
+    return any("testnet" in c for c in parts[-n:])
+
+
 def guard_config(cfg: Any) -> None:
-    """Testnet kipi + testnet var dizini + paylasimli testnet KILL/PAUSE yollari."""
+    """Testnet kipi + testnet var dizini + paylasimli testnet KILL/PAUSE yollari (yalniz yolun son bilesenlerine bakilir)."""
     if cfg.mode != "testnet":
         raise SafetyError(f"yapilandirma kipi testnet degil: {cfg.mode}")
-    if "testnet" not in str(cfg.var_dir):
+    if not path_has_testnet(cfg.var_dir, 1):
         raise SafetyError("var_dir testnet dizini degil")
     for name in ("kill_file", "pause_file"):
-        if "testnet" not in str(getattr(cfg, name)):
+        if not path_has_testnet(getattr(cfg, name), 2):
             raise SafetyError(f"{name} shared/testnet altinda degil")
 
 

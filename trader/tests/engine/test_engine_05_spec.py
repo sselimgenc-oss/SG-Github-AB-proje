@@ -420,9 +420,12 @@ class CallLogBroker(PaperBroker):
 # =====================================================================================================
 def make_cfg(tmp: Path, bot="learner", mode="paper", pairs=PAIRS, wallet=1000.0, veto_mode=None, **over):
     raw = json.loads((ROOT / "config" / "engine.base.json").read_text())
-    raw.update(pairs=list(pairs), wallet_start=wallet, mode=mode, var_dir=str(tmp / "var"),
+    raw.update(pairs=list(pairs), wallet_start=wallet, mode=mode,
+               var_dir=str(tmp / ("var-live" if mode in ("testnet", "live") else "var")),    # DD-8: testnet/live var_dir son bileseni `var` olamaz
                market_db=str(tmp / "market.sqlite"), history_dir=str(tmp / "hist"),
                veto_config=str(tmp / "veto.json"), kill_file=str(tmp / "KILL"))
+    if mode in ("testnet", "live"):
+        raw["pause_file"] = str(tmp / "PAUSE")           # DD-8: testnet/live'de paylasimli `shared/PAUSE` yasak (yol kurali)
     raw["target_trade_risk"] = 0.014     # testler kilitli varsayilanla (shipped base 0.005); sevk edilen deger ayri test edilir
     raw["veto_mode"] = veto_mode or ("off" if mode == "backtest" else "required")
     raw.update(over)

@@ -27,8 +27,9 @@ ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot %i --config-dir
 ExecStart=/usr/bin/python3 -m trader_engine run --bot %i --config-dir config
 Restart=on-failure
 RestartSec=20
-# 7 = acilis kapisi (kural/veri 10/10 degil): yeniden dene dongusu yerine 'failed' olup OnFailure Telegram alarmi gitsin
-RestartPreventExitStatus=7
+# 7 = acilis kapisi (kural/veri 10/10 degil), 8 = kalici ret (DD-8: yabanci/eksik damga, state_missing...): yeniden dene dongusu
+# yerine 'failed' olup OnFailure Telegram alarmi gitsin
+RestartPreventExitStatus=7 8
 # 2 GB'lik sunucuda baska bir proje de calisiyor: sert tavan + yumusak tavan (ogrenen once, ikiz sonra)
 MemoryHigh=280M
 MemoryMax=350M

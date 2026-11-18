@@ -53,7 +53,7 @@ Runner ölçüp doldurur; `health.py` yalnız değerlendirir. `None` = "ölçül
 | `now` | `datetime` (UTC) | Runner'ın saati; tz-aware değilse `ValueError` |
 | `timeframe_s` | `int \| None` | `show_config.timeframe` saniyeye çevrilmiş (bugün `1h` → 3600) |
 | `api` | `dict[str, ApiProbe]` | Anahtar: bot (`learner`, `twin`). `ApiProbe(ping_ok: bool\|None, last_process_at: datetime\|None, last_candle_open: datetime\|None, open_trade_ids: tuple[int,...]\|None, dry_run: bool\|None)` |
-| `ledger` | `dict[str, LedgerProbe]` | `LedgerProbe(last_write_at: datetime\|None, spool_lines: int\|None, unledgered_ids: tuple[int,...]\|None, orphan_ids: tuple[int,...]\|None, schema_ok: bool\|None, has_active_params: bool\|None)` |
+| `ledger` | `dict[str, LedgerProbe]` | `LedgerProbe(last_write_at: datetime\|None, spool_lines: int\|None, unledgered_ids: tuple[int,...]\|None, orphan_ids: tuple[int,...]\|None, schema_ok: bool\|None, has_active_params: bool\|None, spool_corrupt_lines: int\|None = None)` |
 | `disk_free_bytes`, `disk_total_bytes` | `int \| None` | Ledger/yedek dizinlerini barındıran dosya sistemi (`os.statvfs`; en küçük boş alanlı olan) |
 | `mem_available_bytes`, `swap_total_bytes`, `swap_used_bytes` | `int \| None` | `/proc/meminfo` (`MemAvailable`, `SwapTotal`, `SwapTotal-SwapFree`) |
 | `containers` | `dict[str, ContainerProbe]` | `ContainerProbe(state: str\|None, restart_count: int\|None, started_at: datetime\|None, oom_killed: bool\|None)`; `docker inspect` |
@@ -92,6 +92,10 @@ Her sınırda eşitlik **iyi tarafa** düşer ("≤ eşik" OK; "> eşik" WARN), 
 ### 3.1 `ledger_write_age` ne ölçer
 
 Runner, defteri `open_ledger(path, bot, create=False, read_only=True)` ile açar ve şu dört tablodaki en yeni zamanı alır: `health_probes.probed_at`, `decision_events.recorded_at`, `trade_entries.recorded_at`, `trade_exits.recorded_at` (`last_write_at = max`). Bot her mum kapanışında `entries_allowed()` çağırdığından `health_probes` doğal bir "bot defteri yazabiliyor" nabzıdır (kalp atışı fikri, 1L3A). Hiç satır yoksa (taze defter, yalnız `meta`) `last_write_at = meta` oluşturma zamanı sayılır; o da yoksa `None`. Bot bilerek durdurulmuşsa (`initial_state` ≠ running) bu kontrol UNKNOWN verir ve nabız kesilir; bu **istenen** davranıştır (durdurulmuş bot "sağlıklı" değildir; bakım için `HEALTH_MAINTENANCE` dosyası, Bölüm 9, yalnız uyarıyı bastırır, nabzı değil).
+
+### 3.1b `spool_corrupt:<bot>` (DD-8 E4)
+
+`LedgerProbe.spool_corrupt_lines` (`scripts/health_run.py:probe_ledger`: dosya yok → 0, okunur → satır sayısı, `FileNotFoundError` dışı `OSError` → `None`). `ledger_gate`i yapılan her bot için **ayrı** denetim: `> 0` → CRIT `spool_corrupt` (değer = satır sayısı; anında uyarı, `IMMEDIATE_CODES`), `0` → OK, `None` → UNKNOWN `spool_corrupt_unreadable`. `ledger_gate`in erken dönüşleri (ör. `spool_pending`) bu denetimi maskelemez; ısınma yumuşatmaz. Metin: "Deftere yazılamayan bozuk kayıt var" / "Bozuk kayıt dosyası temizlendi". Alarm dosya boşalana ya da adı değişene kadar sürer; motor dosyayı silmez/kısaltmaz. Temizleme elle: inceleme sonrası dosya `…spool.corrupt.<YYYYMMDD>.jsonl` adına taşınır (`mv`).
 
 ### 3.2 `ledger_gate`: `entries_allowed` durumunun salt okunur türetimi
 
@@ -161,7 +165,7 @@ class Notifier(Protocol):
 Yerel gerçeklemeler (bu iş paketinde): `LogNotifier` (stderr/journal; her zaman çalışır, `False` dönmez) ve `NullNotifier` (testler, `send` çağrılarını listeler). `TelegramNotifier` bu belgenin kapsamı dışıdır (madde 18). Runner `NOTIFIER=log` (varsayılan) ile açılır; bilinmeyen ad → çıkış 1.
 
 **Tekrar bastırma ve onay (debounce)** (`health.py`'deki saf `plan_alerts(report, state, now, cfg) -> (list[Alert], new_state)`):
-1. Aynı `fingerprint` için seviye `CRIT`/`UNKNOWN`: ilk uyarı, bozukluğun **ardışık 2. çalışmasında** (≈ 10 dk) gider; `IMMEDIATE_CODES = {disk_low, unledgered_trades, spool_pending, schema, oom_killed}` 1. çalışmada gider. Sonra her **180 dk**'da bir hatırlatma.
+1. Aynı `fingerprint` için seviye `CRIT`/`UNKNOWN`: ilk uyarı, bozukluğun **ardışık 2. çalışmasında** (≈ 10 dk) gider; `IMMEDIATE_CODES = {disk_low, unledgered_trades, spool_pending, spool_corrupt, schema, oom_killed}` 1. çalışmada gider. Sonra her **180 dk**'da bir hatırlatma.
 2. `WARN`: ilk görüldüğünde (ardışık 2. çalışmada) bir uyarı, sonra her **720 dk**.
 3. Bir `fingerprint` bir çalışmada kaybolursa `state`'te kapanır; daha önce uyarı gönderilmişse **bir** "düzeldi" (`level=OK`) uyarısı.
 4. `Notifier.send` `False` dönerse `last_alert_at` güncellenmez (sonraki turda yeniden denenir); alınamayan uyarı nabzı etkilemez (nabız yalnız sağlığa bağlı).
@@ -183,6 +187,7 @@ Günde bir, 03:10 UTC (`OnCalendar=*-*-* 03:10:00 UTC`, `Persistent=true`: makin
 - Kaynak, salt okunur URI ile açılır: `sqlite3.connect("file:<yol>?mode=ro", uri=True, timeout=5)`; hedef `<dest>.partial` dosyasına `Connection.backup(hedef, pages=-1)` (tek adım, tek okuma işlemi). Defterler WAL modundadır: okuyucu yazarı bloklamaz; boyutlar küçük (MiB düzeyi) olduğundan tek adım milisaniyeler sürer. `pages=-1` seçildi çünkü sayfa sayfa kopyada araya giren yazma kopyayı baştan başlatır.
 - Defter dosyaları için eşdeğer olan `Ledger.backup(dest)` (defter-spec Bölüm 4) kullanılabilir (aynı sqlite yedek API'si); ancak o yöntem şema denetimi ve açılış maliyeti getirdiği için betik ham `sqlite3` ile yapar ve sonuçta aynı doğrulamayı uygular.
 - **freqtrade veritabanı**: freqtrade varsayılanı WAL **değildir** (geri alma günlüğü); okuma anında kısa süre yazara `database is locked` bekletebilir. Veritabanı küçük (trade tablosu) olduğundan kabul edilir; `timeout=5`. `OperationalError: database is locked` olursa 30 sn sonra **bir** yeniden deneme; yine başarısızsa o dosya `failed`, uyarı gider, döngü sürmez.
+- DD-8 (E4) bozuk spool: `<db>.spool.corrupt.jsonl` varsa ve boş değilse `ledger_<bot>.sqlite.spool.corrupt.jsonl` olarak kopyalanır (`fsync`), manifestte ilgili defter girdisine `"spool_corrupt_bytes"` yazılır; yok/0 bayt → kopya ve alan yok.
 - Spool: `<db>.spool.jsonl` varsa aynı dizine olduğu gibi kopyalanır (`shutil.copyfile`, `fsync`); boş/yok ise atlanır. Spool yedeğe girmesi, defter ile spool arasında kurtarma yapılabilmesi içindir.
 
 ### 6.3 Dizin düzeni ve adlandırma

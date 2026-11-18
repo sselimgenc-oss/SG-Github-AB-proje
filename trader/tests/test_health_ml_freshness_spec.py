@@ -59,7 +59,8 @@ def _api(now, **kw):
 
 def _ledger(now):
     return H.LedgerProbe(last_write_at=now.replace(minute=0, second=0, microsecond=0) + timedelta(seconds=2),
-                         spool_lines=0, unledgered_ids=(), orphan_ids=(), schema_ok=True, has_active_params=True)
+                         spool_lines=0, unledgered_ids=(), orphan_ids=(), schema_ok=True, has_active_params=True,
+                         spool_corrupt_lines=0)
 
 
 def mlp(**kw):

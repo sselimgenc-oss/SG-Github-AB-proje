@@ -33,7 +33,7 @@ def t(h, m, s=0):
 
 def snap(**kw):
     api = {b: ApiProbe(True, t(12, 29, 30), t(12, 0), (), True) for b in ("learner", "twin")}
-    led = {b: LedgerProbe(t(12, 0, 2), 0, (), (), True, True) for b in ("learner", "twin")}
+    led = {b: LedgerProbe(t(12, 0, 2), 0, (), (), True, True, 0) for b in ("learner", "twin")}
     cont = {f"trader-{b}": ContainerProbe("running", 4, t(1, 0), False) for b in ("learner", "twin")}
     base = dict(now=NOW, timeframe_s=3600, api=api, ledger=led, disk_free_bytes=20 * GIB,
                 mem_available_bytes=900 * MIB, swap_total_bytes=2048 * MIB, swap_used_bytes=205 * MIB,
@@ -111,13 +111,13 @@ def test_container_and_warmup():
 
 def test_gate():
     led = dict(snap().ledger)
-    led["learner"] = LedgerProbe(t(12, 0, 2), 1, (), (), True, True)
+    led["learner"] = LedgerProbe(t(12, 0, 2), 1, (), (), True, True, 0)
     rep = H.evaluate(snap(ledger=led))
     assert res(rep, "ledger_gate:learner").code == "spool_pending" and rep.overall is Status.CRIT
-    led["learner"] = LedgerProbe(t(12, 0, 2), 0, (), (31,), True, True)
+    led["learner"] = LedgerProbe(t(12, 0, 2), 0, (), (31,), True, True, 0)
     rep = H.evaluate(snap(ledger=led))
     assert res(rep, "ledger_gate:learner").code == "orphan_decisions" and rep.healthy
-    led["learner"] = LedgerProbe(t(12, 0, 2), None, (), (), True, True)
+    led["learner"] = LedgerProbe(t(12, 0, 2), None, (), (), True, True, 0)
     assert res(H.evaluate(snap(ledger=led)), "ledger_gate:learner").status is Status.UNKNOWN
 
 

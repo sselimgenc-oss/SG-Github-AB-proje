@@ -58,7 +58,7 @@ def probe(var, bot="learner", now=NOW):
 
 
 def ledger_ok():
-    return H.LedgerProbe(NOW - timedelta(minutes=5), 0, (), (), True, True)
+    return H.LedgerProbe(NOW - timedelta(minutes=5), 0, (), (), True, True, 0)
 
 
 def evaluate(api, ledger=None, containers=None, tf=3600, **kw):
@@ -218,7 +218,7 @@ def test_unledgered_open_trade_from_status_ids(tmp_path):
     put(tmp_path, "learner", status_doc())
     put(tmp_path, "twin", status_doc("twin"))
     api = api_from(tmp_path)
-    led = {"learner": H.LedgerProbe(NOW, 0, tuple(api["learner"].open_trade_ids), (), True, True),
+    led = {"learner": H.LedgerProbe(NOW, 0, tuple(api["learner"].open_trade_ids), (), True, True, 0),
            "twin": ledger_ok()}
     assert by(evaluate(api, led), "ledger_gate:learner").code == "unledgered_trades"
 

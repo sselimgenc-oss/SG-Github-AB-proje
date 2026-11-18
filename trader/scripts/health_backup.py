@@ -220,6 +220,27 @@ def _copy_spool(src_db, dest_dir, name) -> None:
         os.close(fd)
 
 
+def _copy_corrupt(src_db, dest_dir, name) -> int:
+    """DD-8 (E4): `<defter>.spool.corrupt.jsonl` (okunamayan spool satirlari; sessizce kaybolmus kayit) bos degilse gun dizinine
+    kopyalanir (fsync). Dosya yok / 0 bayt -> 0 (kopya yok). Kopyalanan bayt sayisini dondurur; hata yukselir (cagiran girdiyi
+    ok=false yapar)."""
+    sp = str(src_db) + ".spool.corrupt.jsonl"
+    try:
+        n = os.path.getsize(sp)
+    except OSError:
+        return 0
+    if n <= 0:
+        return 0
+    out = os.path.join(dest_dir, name + ".spool.corrupt.jsonl")
+    shutil.copyfile(sp, out)
+    fd = os.open(out, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    return os.path.getsize(out)
+
+
 def read_manifest(day_dir) -> dict | None:
     try:
         with open(os.path.join(str(day_dir), "MANIFEST.json"), encoding="utf-8") as f:
@@ -334,6 +355,9 @@ def run_backup(backup_dir, var_dir, keep_days=KEEP_DEFAULT, *, now: datetime | N
             files[name] = backup_one(kind, bot, src, day_dir / name, sleep=sleep)
             if files[name]["ok"] and kind == "ledger":
                 _copy_spool(src, day_dir, name)
+                cb = _copy_corrupt(src, day_dir, name)
+                if cb > 0:
+                    files[name]["spool_corrupt_bytes"] = cb
         except Exception:  # noqa: BLE001 - tek dosya digerlerini durdurmaz
             files[name] = _fail(name, "unexpected")
     ok = all(v["ok"] for v in files.values())

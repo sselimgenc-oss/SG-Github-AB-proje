@@ -16,7 +16,7 @@ ALLOWED_MODULES_A = {
     "brokers/__init__.py", "brokers/base.py", "brokers/paper.py", "exchange/__init__.py", "exchange/rules.py"}
 # Faz B (11 §2): dört yeni modül izinli (binance_rest B1, pause B6, binance_futures B3, reconcile_live B5).
 ALLOWED_MODULES_B = ALLOWED_MODULES_A | {"exchange/binance_rest.py", "pause.py", "brokers/binance_futures.py",
-                                         "reconcile_live.py",
+                                         "reconcile_live.py", "stamp.py",     # DD-8: mod/hesap damgasi
                                          "marketdata/oi_collector.py",   # ML-G7: yalniz acik uclar, OI/oran toplayici
                                          "ladder.py",                    # 12 (RK-1): risk kademe calisma zamani sarmalayicisi
                                          "shadow.py", "mtm.py"}          # WP-3: golge karar satirlari ve oz varlik isareti (yalniz kayit)

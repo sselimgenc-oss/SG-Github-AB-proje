@@ -18,13 +18,8 @@ STARTUP_CHECKER = None
 
 
 def _load_cfg(a):
-    from .config import absolutize_kill_file, load_engine_config
-    d = Path(a.config_dir)
-    env = getattr(a, "env", None)
-    overlay = d / f"engine.{env}.json" if env else None
-    bot = getattr(a, "bot", None) or "learner"
-    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
-    return absolutize_kill_file(cfg, d / "engine.base.json")       # DD-2 D7: KILL yolu cwd'den bagimsiz
+    from .config import load_cli_config
+    return load_cli_config(a.config_dir, getattr(a, "bot", None) or "learner", getattr(a, "env", None))   # DD-8 E1: kill/pause/var_dir cwd'den bagimsiz
 
 
 def _live_startup(cfg, checker) -> int | None:
@@ -66,6 +61,7 @@ def _cmd_run(a, *, checker=None) -> int:
         print(f"yapilandirma hatasi: {e}", file=sys.stderr)
         return EXIT_FAZ_B
     logging.getLogger("engine.cli").warning("KILL dosyasi (mutlak yol): %s", cfg.kill_file)    # DD-2 D7
+    logging.getLogger("engine.cli").warning("PAUSE dosyasi (mutlak yol): %s.%s", cfg.pause_file, cfg.bot)    # DD-8 E1
     if cfg.mode in ("testnet", "live"):
         rc = _live_startup(cfg, checker)       # anahtar + LIVE_CONFIRM (+ enjekte denetim); None => gercek kurulum
         if rc is not None:
@@ -125,6 +121,18 @@ def _cmd_init_ledger(a) -> int:
         print(f"defter sema hatasi: {e} (goc motor baslarken yapilir)", file=sys.stderr)
         return EXIT_ENGINE
     try:
+        # DD-8 (O8): yabanci damgali defterde hicbir sey yazilmaz. testnet/live: damga != want; paper: her damga yabancidir.
+        # `init-ledger` damga YAZMAZ (damgayi motor acilisi yazar).
+        try:
+            led_stamp = led.get_meta("account_stamp")
+        except L.LedgerError as e:
+            print(f"defter damgasi okunamadi: {e}", file=sys.stderr)
+            return EXIT_PERMISSION
+        if led_stamp is not None:
+            from .stamp import want_stamp
+            if cfg.mode == "paper" or (cfg.mode in ("testnet", "live") and led_stamp != want_stamp(cfg)):
+                print("defter baska mod/hesap damgali: init-ledger reddedildi (ledger_stamp_mismatch)", file=sys.stderr)
+                return EXIT_PERMISSION
         try:
             led.get_active_params()
             exists = True
@@ -249,7 +257,7 @@ def _cmd_unblock(a) -> int:
         print(f"state yok: {sp}", file=sys.stderr)
         return EXIT_FAZ_B
     try:
-        st = StateStore(str(sp), bot=cfg.bot)
+        st = StateStore(str(sp), bot=cfg.bot, ledger_path=cfg.ledger_path)
     except StateError as e:
         print(f"hata: {e} (motor durdurulmadan engel kaldirilmaz)", file=sys.stderr)
         return EXIT_FAZ_B
@@ -292,7 +300,7 @@ def _cmd_pause(a) -> int:
     p = EntryPause(f"{cfg.pause_file}.{cfg.bot}", SystemClock(), audit_path=cfg.path("pause_audit.jsonl"), bot=cfg.bot)
     try:
         if a.list:
-            print(json.dumps({"bot": cfg.bot, "active": p.active(),
+            print(json.dumps({"bot": cfg.bot, "active": p.active(), "pause_file": p.path,
                               "holds": [dataclasses.asdict(h) for h in p.holds()]}, ensure_ascii=False))
             return EXIT_OK
         if a.clear:
