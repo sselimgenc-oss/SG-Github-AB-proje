@@ -483,6 +483,11 @@ class StateStore:
         r = self._exec("SELECT v FROM kv WHERE k=?", (k,)).fetchone()
         return json.loads(r[0]) if r else default
 
+    def kv_prefix(self, prefix: str) -> dict[str, Any]:
+        """`prefix` ile baslayan tum kv satirlari {anahtar: deger} (anahtar siralidir)."""
+        rows = self._exec("SELECT k, v FROM kv WHERE substr(k, 1, ?) = ? ORDER BY k", (len(prefix), prefix)).fetchall()
+        return {r[0]: json.loads(r[1]) for r in rows}
+
     def kv_set(self, k: str, v: Any) -> None:
         self._w()
         if v is None:

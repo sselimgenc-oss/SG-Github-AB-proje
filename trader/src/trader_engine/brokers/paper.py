@@ -125,6 +125,26 @@ class PaperBroker:
         self._last_step_ts: datetime | None = None
         self._ctr: dict[str, int] = {k: 0 for k in _COUNTER_KEYS}
         self._calls: dict[str, int] = {}
+        self._live: dict[str, _Order] = {}      # status == "new" emirler (ekleme sirasi = _orders sirasi); sorgular O(canli)
+        self._ord_ser: dict[str, dict] = {}     # terminal (status != "new") emirlerin serilestirme onbellegi
+        self._ord_idx: dict[str, int] = {}      # emir -> olusturma sirasi (snapshot bolunmus kayitta sira korunur)
+        self._ord_n = 0
+        self._term_pending: list[str] = []      # terminal olmus ama bolunmus kayda (snapshot_split) yazilmamis emirler
+
+    def _add_order(self, o: _Order) -> None:
+        self._orders[o.client_id] = o
+        self._live[o.client_id] = o
+        self._ord_ser.pop(o.client_id, None)
+        self._ord_idx[o.client_id] = self._ord_n
+        self._ord_n += 1
+
+    def _new_orders(self) -> list[_Order]:
+        """status == "new" emirler, `_orders` ekleme sirasinda (tum emirleri taramadan)."""
+        lv = self._live
+        for c in [c for c, o in lv.items() if o.status != "new"]:
+            del lv[c]
+            self._term_pending.append(c)
+        return list(lv.values())
 
     # ------------------------------------------------------------------ basit okumalar
     def counters(self) -> dict:
@@ -164,8 +184,8 @@ class PaperBroker:
                            created_ts=o.created_ts, updated_ts=o.updated_ts)
 
     def open_orders(self, pair: str | None = None) -> list[BrokerOrder]:
-        return [self._to_broker_order(o) for o in self._orders.values()
-                if o.status == "new" and (pair is None or o.pair == pair)]
+        return [self._to_broker_order(o) for o in self._new_orders()
+                if pair is None or o.pair == pair]
 
     def prepare(self, pair: str, leverage: int) -> None:
         if isinstance(leverage, bool) or not isinstance(leverage, int) or leverage < 1:
@@ -227,11 +247,11 @@ class PaperBroker:
         self._order_seq += 1
         oid = f"P{self._order_seq}"
         now = self._clock.now()
-        self._orders[req.client_id] = _Order(
+        self._add_order(_Order(
             client_id=req.client_id, pair=req.pair, role=req.role, order_side=req.order_side, qty=req.qty,
             trigger_price=req.trigger_price, reduce_only=bool(req.reduce_only), leverage=req.leverage,
             status="new", filled_qty=0.0, avg_price=None, created_ts=req.created_ts or now, updated_ts=now,
-            order_id=oid)
+            order_id=oid))
         return OrderResult(status="accepted", client_id=req.client_id, order_id=oid, ts=now)
 
     def _dup(self, cid: str) -> OrderResult:
@@ -341,7 +361,7 @@ class PaperBroker:
         if phase == "fills":
             if bars:
                 self._last_step_ts = max(b.open_ts for b in bars.values())
-            for pair in sorted(set(self._pos) | {o.pair for o in self._orders.values() if o.status == "new"}):
+            for pair in sorted(set(self._pos) | {o.pair for o in self._new_orders()}):
                 if pair not in bars:
                     self._ctr["minute_gaps"] += 1
             for pair in sorted(bars):
@@ -354,8 +374,8 @@ class PaperBroker:
     def _fills_pair(self, pair: str, bar: MinuteBar) -> None:
         self._funding_step(pair, bar)
         rules = self._rules_fn(pair)
-        for o in [x for x in self._orders.values()
-                  if x.pair == pair and x.status == "new" and x.role in ("entry", "exit")]:
+        for o in [x for x in self._new_orders()
+                  if x.pair == pair and x.role in ("entry", "exit")]:
             if o.role == "entry":
                 self._fill_entry(o, bar, rules)
             else:
@@ -488,7 +508,7 @@ class PaperBroker:
                                                   order_side=o.order_side, qty=qty, price=price, fee=fee,  # type: ignore[arg-type]
                                                   ts=ts, reason=reason, ref_price=ref_price)))  # type: ignore[arg-type]
         if full:
-            for x in self._orders.values():
+            for x in self._new_orders():
                 if x.pair == pair and x.status == "new" and x.reduce_only and x.role in ("stop", "target"):
                     x.status, x.updated_ts = "canceled", ts
                     self._events.append(BrokerEvent(kind="order_canceled", ts=ts, pair=pair,
@@ -499,8 +519,8 @@ class PaperBroker:
         pos = self._pos.get(pair)
         if pos is None:
             return
-        stops = [o for o in self._orders.values() if o.pair == pair and o.status == "new" and o.role == "stop"]
-        targets = [o for o in self._orders.values() if o.pair == pair and o.status == "new" and o.role == "target"]
+        stops = [o for o in self._new_orders() if o.pair == pair and o.role == "stop"]
+        targets = [o for o in self._new_orders() if o.pair == pair and o.role == "target"]
         use_mark = self._cfg.cost.trigger_source == "mark"
         if use_mark and None not in (bar.mark_o, bar.mark_h, bar.mark_l):
             op, hi, lo = bar.mark_o, bar.mark_h, bar.mark_l
@@ -557,7 +577,7 @@ class PaperBroker:
         o = _Order(client_id=cid, pair=pair, role="exit", order_side="sell" if long else "buy", qty=pos.qty,
                    trigger_price=None, reduce_only=True, leverage=pos.leverage, status="new", filled_qty=0.0,
                    avg_price=None, created_ts=ts, updated_ts=ts, order_id="LIQ")
-        self._orders[cid] = o
+        self._add_order(o)
         self._close(o, pos, pos.qty, pos.liq_price, fee, ts, "liquidation", "liquidation", detail)
 
     # ------------------------------------------------------------------ snapshot / restore
@@ -581,7 +601,37 @@ class PaperBroker:
         return BrokerEvent(kind=d["kind"], ts=_dt(d["ts"]), pair=d["pair"], client_id=d["client_id"], fill=fill,
                            funding_paid=d["funding_paid"], rate=d["rate"], mark=d["mark"], detail=d["detail"])
 
-    def snapshot(self) -> dict:
+    def _ser_order(self, c: str, o: _Order) -> dict:
+        # Terminal emir (filled/canceled/rejected) bir daha degismez: serilestirme onbellekli.
+        d = self._ord_ser.get(c) if o.status != "new" else None
+        if d is None:
+            d = {"client_id": o.client_id, "pair": o.pair, "role": o.role, "order_side": o.order_side,
+                 "qty": o.qty, "trigger_price": o.trigger_price, "reduce_only": o.reduce_only,
+                 "leverage": o.leverage, "status": o.status, "filled_qty": o.filled_qty,
+                 "avg_price": o.avg_price, "created_ts": _iso(o.created_ts),
+                 "updated_ts": _iso(o.updated_ts), "order_id": o.order_id}
+            if o.status != "new":
+                self._ord_ser[c] = d
+        return dict(d)
+
+    def snapshot_split(self) -> tuple[dict, dict[str, dict]]:
+        """Bolunmus snapshot: (govde, henuz yazilmamis terminal emirler {cid: {"i": sira, "o": emir}}).
+
+        Govde `snapshot()` ile ayni, ama `orders` yalniz status == "new" emirleri tasir; `order_idx` canli emirlerin
+        olusturma sirasini verir. Terminal emirler degismez: bir kez yazilir (cagiran `mark_persisted` der), her adimda
+        tum emir gecmisi yeniden serilestirilmez (adim maliyeti O(canli), O(tum emir) degil)."""
+        live = self._new_orders()
+        snap = self.snapshot(_orders=False)
+        snap["orders"] = {o.client_id: self._ser_order(o.client_id, o) for o in live}
+        snap["order_idx"] = {o.client_id: self._ord_idx[o.client_id] for o in live}
+        done = {c: {"i": self._ord_idx[c], "o": self._ser_order(c, self._orders[c])} for c in self._term_pending}
+        return snap, done
+
+    def mark_persisted(self, cids) -> None:
+        gone = set(cids)
+        self._term_pending = [c for c in self._term_pending if c not in gone]
+
+    def snapshot(self, _orders: bool = True) -> dict:
         return {
             "version": _SNAP_VERSION,
             "wallet": self._wallet,
@@ -590,12 +640,7 @@ class PaperBroker:
                               "margin": x.margin, "liq_price": x.liq_price, "funding_paid": x.funding_paid,
                               "fee_paid_entry": x.fee_paid_entry, "opened_ts": _iso(x.opened_ts)}
                           for p, x in self._pos.items()},
-            "orders": {c: {"client_id": o.client_id, "pair": o.pair, "role": o.role, "order_side": o.order_side,
-                           "qty": o.qty, "trigger_price": o.trigger_price, "reduce_only": o.reduce_only,
-                           "leverage": o.leverage, "status": o.status, "filled_qty": o.filled_qty,
-                           "avg_price": o.avg_price, "created_ts": _iso(o.created_ts),
-                           "updated_ts": _iso(o.updated_ts), "order_id": o.order_id}
-                       for c, o in self._orders.items()},
+            "orders": {c: self._ser_order(c, o) for c, o in self._orders.items()} if _orders else {},
             "order_seq": self._order_seq,
             "events": [self._ser_event(e) for e in self._events],
             "last_funding_ts": {p: _iso(t) for p, t in self._last_funding.items()},
@@ -605,7 +650,7 @@ class PaperBroker:
             "fault_calls": dict(self._calls),
         }
 
-    def restore(self, snap: dict) -> None:
+    def restore(self, snap: dict, persisted=frozenset()) -> None:
         try:
             if snap["version"] != _SNAP_VERSION:
                 raise BrokerError(f"snapshot surumu desteklenmiyor: {snap['version']!r}")
@@ -623,6 +668,9 @@ class PaperBroker:
                                 updated_ts=_dt(d["updated_ts"]), order_id=d["order_id"])
                       for c, d in snap["orders"].items()}
             seq = int(snap["order_seq"])
+            oi = snap.get("order_idx")
+            if oi is not None:                                   # bolunmus kayit: olusturma sirasini geri kur
+                orders = dict(sorted(orders.items(), key=lambda kv: oi[kv[0]]))
             events = deque(self._de_event(d) for d in snap["events"])
             lf = {p: _dt(t) for p, t in snap["last_funding_ts"].items()}
             lm = {p: float(v) for p, v in snap["last_mark"].items()}
@@ -636,3 +684,8 @@ class PaperBroker:
         self._wallet, self._lev, self._pos, self._orders, self._order_seq = wallet, lev, pos, orders, seq
         self._events, self._last_funding, self._last_mark = events, lf, lm
         self._last_step_ts, self._ctr, self._calls = lst, ctr, calls
+        self._live = {c: o for c, o in orders.items() if o.status == "new"}
+        self._ord_ser = {}
+        self._ord_idx = {c: i for i, c in enumerate(orders)}
+        self._ord_n = len(orders)
+        self._term_pending = [c for c, o in orders.items() if o.status != "new" and c not in persisted]

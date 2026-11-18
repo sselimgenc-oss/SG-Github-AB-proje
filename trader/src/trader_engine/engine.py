@@ -712,10 +712,10 @@ class Engine:
         if self.is_paper:
             snap = self.state.kv_get("broker_snapshot")
             if snap:
-                self.broker.restore(snap)                        # type: ignore[attr-defined]
+                self._restore_broker(snap)
             else:
                 with self.state.tx():
-                    self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+                    self._save_broker()
         lev = entry_leverage(cfg)
         for pair in cfg.pairs:
             try:
@@ -814,6 +814,35 @@ class Engine:
         self._consec[label] = 0
         return True
 
+    _BO = "broker_order:"
+
+    def _save_broker(self) -> None:
+        """Kagit broker snapshot'i kv'ye yaz. Terminal (degismez) emirler emir basina bir kez ayri satira yazilir;
+        ana `broker_snapshot` yalniz canli emirleri tasir (adim maliyeti emir gecmisiyle buyumez)."""
+        if not hasattr(self.broker, "snapshot_split"):                  # test/yedek brokerlari: eski tek-blob yolu
+            self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+            return
+        snap, done = self.broker.snapshot_split()   # type: ignore[attr-defined]
+        for cid, row in done.items():
+            self.state.kv_set(self._BO + cid, row)
+        self.state.kv_set("broker_snapshot", snap)
+        if done:
+            self.broker.mark_persisted(done)   # type: ignore[attr-defined]
+
+    def _restore_broker(self, snap: dict) -> None:
+        """`_save_broker` kaydini (govde + terminal emir satirlari) birlestirip broker'a geri yukle."""
+        if not hasattr(self.broker, "snapshot_split"):
+            self.broker.restore(snap)   # type: ignore[attr-defined]
+            return
+        rows = self.state.kv_prefix(self._BO)
+        if "order_idx" in snap:
+            orders = {r["o"]["client_id"]: r["o"] for r in rows.values()}
+            idx = {r["o"]["client_id"]: r["i"] for r in rows.values()}
+            snap = dict(snap)
+            snap["orders"] = {**orders, **snap["orders"]}
+            snap["order_idx"] = {**idx, **snap["order_idx"]}
+        self.broker.restore(snap, persisted=frozenset(r["o"]["client_id"] for r in rows.values()))   # type: ignore[attr-defined]
+
     def _after_failure(self, label: str, e: Exception) -> None:
         self._c["callback_errors"] += 1
         if self.is_paper:
@@ -827,7 +856,7 @@ class Engine:
             snap = self.state.kv_get("broker_snapshot")
             if snap:
                 try:
-                    self.broker.restore(snap)                      # type: ignore[attr-defined]
+                    self._restore_broker(snap)
                 except Exception as re_:  # noqa: BLE001
                     log.critical("broker geri yuklenemedi: %r", re_)
         if self._consec_errors >= 10:
@@ -883,7 +912,7 @@ class Engine:
                 c = self.state.get_cursor(pair, "minute")
                 if c is None or ts > c:
                     self.state.set_cursor(pair, "minute", ts)
-            self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+            self._save_broker()
         self._last_minute = ts
         self._c["steps"] += 1
 
@@ -1177,7 +1206,7 @@ class Engine:
                     if c is None or D > c:
                         self.state.set_cursor(pair, "decision", D)
                 if self.is_paper:
-                    self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+                    self._save_broker()
         self._shadow_ctx = (D, frames, params)
         self._last_decision = D
         self._c["decisions"] += 1
