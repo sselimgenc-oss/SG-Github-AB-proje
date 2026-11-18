@@ -110,7 +110,7 @@ Ek notlar: Claude kredisi/harcama limiti dolarsa bot yeni işlem açmaz (açık 
 Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare için ayrı maille hesap açamam, aynı maille üye olduğum yerden yapalım; diğerlerine Fable önerisi olur."
 - **D13 Cloudflare:** ayrı hesap **yok**; mevcut hesapta kalınır. Telafi: pano anahtarı yalnız `trader-pano` Worker'ına yetkili dar kapsamlı token ile değiştirilir ve Worker yoluna Cloudflare hız sınırı kuralı eklenir (canlıdan önce).
 - **D16 e-posta:** geçmiş yeniden yazılmaz (depo özel). Bundan sonraki commit'ler kişisel olmayan adresle yazılır (mevcut commit kimliği zaten kişisel değil).
-- **`live.expected_wallet_max`:** canlı başlangıçta **350 USD**; 1000 USD'ye tamamlanırken **1200 USD**. Canlı yapılandırma dosyası oluşturulurken bu değer yazılır.
+- **`live.expected_wallet_max`:** canlı başlangıçta **350 USD**; 1000 USD'ye tamamlanırken **1200 USD**. *(18 Kasım: 1500 USD ile değiştirildi, aşağıya bakın.)* Canlı yapılandırma dosyası oluşturulurken bu değer yazılır.
 
 ### 18 Kasım 2026 — ML r02: koşulmadı (güç yetersiz)
 
@@ -119,3 +119,7 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **Kanıt kirlenmesi yok:** 19b (`ml_cand_v1b_native`, 819 işlem), `1h_IS_f1_s0_native_last` (612), `native_mark`, üç `compat` koşusu, `1h_WF` ve WP-3 K1 defterlerinde `entry_gate_closed` 0, `exit_reason = other` 0. Bu yola hiç girmediler; düzeltme sonuçlarını değiştirmez. Etkilenen tek çıktı `corpus_v2_taken` katmanıdır (dondurulmamıştı).
 - **Katman korumaları:** `build_corpus_v2_overlay.py` manifestine `taken_per_fold` (4 dilim), `taken_per_year`, `first_entry_ts`, `last_entry_ts`, `gate_closed_skips` eklenir; herhangi bir sınav diliminde alınan 0 ise ya da `entry_gate_closed` atlaması > 0 ise kurulum başarısız olur; `corpus_v2.verify_overlay_manifest` aynı şartları koşudan önce doğrular.
 - **Sıra:** DD-6 commit → BT-1 + testler → K1/K2 ve yerel defter-özeti altın testleri (değişmemeli) → katman korumaları → temiz çalışma ağacında katman yeniden kurulur (derlem v2 yeniden kurulmaz) → `--precheck-only` (r02) → §10 dondurma commit'i → r02 tek koşu. Ön kayıt tanımları (§2.2 dahil) ve kapı eşikleri değişmez.
+
+### 18 Kasım 2026 — Kasa tavanı: kullanıcı kararı
+
+- **`live.expected_wallet_max` = 1500 USD** (kullanıcı: "1500 dolar yapalım"). 17 Kasım'daki 350 → 1200 kademesinin yerine geçer; başlangıçta da 1000 USD'ye tamamlamada da 1500. DD-8 O4 ile tavan aşılınca motor durmaz, yalnız yeni girişler kalıcı tutuşla kapanır (`wallet_above_expected`; sunucuda CLI ile kaldırılır). Canlı yapılandırma dosyası (DD-9) oluşturulurken bu değer yazılır.
