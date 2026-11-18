@@ -166,3 +166,5 @@ Doğrulanan: toplamlar (komisyon, kayma, fonlama, brüt, net), modelin birim ve 
 3. Stop mesafesi dar çiftler (TRX, BTC, BNB) maliyetin R karşılığı yüksek; "daha az çift" yapılmaz kuralı (memo) korunsa da S2-1 (4s) en çok bunlara yarayacak.
 
 Ekler (kalıcı olmayan, geçici dizin): `/tmp/claude-0/-home-user-SG-Github-AB-proje/e7a4ca7f-2079-5069-8ada-ea4ed3c50c7b/scratchpad/a1.py`, `a2.py`, `a3.py`, `repro.py`.
+
+**Ek not (18 Kasım 2026, mentor).** §5'teki düzeltme önerisi karara bağlandı: `fee_only` düzeltmesi şimdi, S2 koşularından önce, ayrı commit olarak yapılır; yeni özet anahtarı eklenmez (kayma dahil toplam `research/s2_eval.py` içinde hesaplanır). Tam belirtim, testler ve altın özet karmasının nasıl ele alınacağı: `docs/ml/s2-on-kayit.md` §3. r02 §6'ya düzeltme notu eklendi. S2 hedefi öneri 2'deki gibi yeniden çerçevelendi (`s2-on-kayit.md` §0).

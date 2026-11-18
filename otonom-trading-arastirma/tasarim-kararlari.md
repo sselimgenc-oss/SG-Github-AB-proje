@@ -130,3 +130,11 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 ### 18 Kasım 2026 — Gerçek para takvimi: kullanıcı kararı
 
 - Kullanıcı, `karar-notu-strateji-2026-11-18.md` sorusuna **A: Bekleyelim** dedi. Bir strateji CANLI-K1 ölçütünü (K6) geçene kadar para yatırılmaz, canlı anahtar sunucuya konmaz. Kâğıt botlar ve 14 Aralık testnet gölge koşusu sürer; 31 Aralık durum gözden geçirmesidir. Araştırma turu S2 (K8) başlar: önce maliyet dökümü denetimi.
+
+### 18 Kasım 2026 — S2 ön kaydı ve maliyet denetimi sonrası kararlar (mentor)
+
+- **Maliyet denetimi (S2 adım 0) kapandı:** `trader/docs/ml/s2-maliyet-denetimi.md`. Komisyon 780,1 (tur 10,0 bp), kayma 593,3 (7,6 bp), fonlama 92,8; "komisyon 187" bir özet alanı hatasıydı. Tüm maliyetlerden önce brüt +0,095 R / işlem, maliyet 0,121 R; başa baş tur maliyeti ≤ 11,05 bp.
+- **`metrics.py` `fee_only` düzeltmesi şimdi yapılır**, S2 koşularından önce, ayrı commit: native kipte `fee_only = fee_paid`. Yeni özet anahtarı yok; `trades.csv`, `open_at_end.json`, defter ve `meta.json` değişmez. Altın K1/K2 testi `summary.json`'ı `fee_only` dışında tam eşitlikle karşılaştırır; T-28 karma öneki yenilenir; dondurulmuş koşu dosyaları ve karmaları yeniden üretilmez. Belirtim: `trader/docs/ml/s2-on-kayit.md` §3.
+- **S2 ön kaydı donduruldu:** `trader/docs/ml/s2-on-kayit.md`. Hedef "kayma azaltmak" değil; brüt R'yi artırmak / maliyetin R karşılığını küçültmek (S2-1: 4 saatlik tetik) ve tur maliyetini bp olarak düşürmek (S2-2: limit giriş, tutucu dolum). 6 hakkın ikisi tanımlı; S2-3 … S2-6 koşudan önce tarihli ekle tanımlanır. Birleşim kuralı sabit (bileşen, taban sınav beklentisinden en az +0,03 R iyi olmalı).
+- **CANLI-K1 hesap tanımları sabitlendi, eşikler aynı:** sınav penceresi ve dört dilim r02/r03 sınırlarıyla; alt sınır günlük seride durağan bootstrap %10 yüzdelik; maliyet stresi komisyon ×2 + **taraf başına** 5 bp (sıkı okuma, ML kapısıyla aynı); DSR günlük seride, N = max(10, 1 + S2 denemesi).
+- **Mimari seçim:** S2-1 motorun karar adımını 1 saatte bırakır, 4 saatlik mantık yeni strateji dosyasındadır (statik kayıt defterine girmez; araştırma koşucusu çalışma anında kaydeder). S2-2 yalnız geri testte, yeni bir broker alt sınıfıyla çalışır. `signals.py`, defter şeması, `engine.py`, `order_manager.py`, `brokers/paper.py` değişmez; v1b kâğıt/testnet/canlı yolu aynıdır.

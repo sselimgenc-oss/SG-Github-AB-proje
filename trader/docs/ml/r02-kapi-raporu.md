@@ -85,6 +85,15 @@ Kaynak: `var/backtests/corpus_v2_taken_v1b_native/summary.json` (C = `8632b24`; 
 
 Okuma: strateji maliyet öncesi hafif artıda, maliyet sonrası ekside. Bu, 19b'nin kısa dönem sonucuyla (819 işlem) çelişir ve ML'den ayrı bir karar konusudur: ML yalnız çıkarır, zarar eden bir temeli kâra çevirmesi beklenmez (r02 de çevirmedi). **Kullanıcı / mentor kararı gerekir** (v1b'nin kâğıt/canlı takvimi bu sonuca göre yeniden değerlendirilmeli); bu rapor o kararı vermez.
 
+**Düzeltme notu (18 Kasım 2026, mentor; S2 adım 0 maliyet denetiminden sonra).** Yukarıdaki tablo satırları değiştirilmedi; yalnız "Brüt kâr / maliyet" satırının parantez içi ayrıştırması yanlış etiketlidir. Doğrusu (`docs/ml/s2-maliyet-denetimi.md`, aynı koşu, aynı 4695 işlem):
+
+- **Komisyon 780,1** (tur başına 10,0 bp = taraf başına 5 bp taker), 186,8 değil. 186,8, `summary.json` içindeki `fee_only` alanıdır; bu alan yerel (native) dolum kipinde yanlış hesaplanıyordu (`fee_only = komisyon − kayma`; formül yalnız `legacy_compat` kipinde geçerli). Motor ve defter doğru; hata yalnız bu özet alanında. Düzeltme belirtimi: `docs/ml/s2-on-kayit.md` §3.
+- **Kayma 593,3** (tur başına 7,6 bp) "maliyet 872,9"un içinde **değildir**; dolum fiyatlarına işlenmiştir, yani "brüt +269,2" kaymadan **sonraki** rakamdır.
+- **Maliyet 872,9 = komisyon 780,1 + fonlama 92,8.** Kayma dahil tüm maliyet 1466,2; kayma öncesi brüt +862,4 (+0,095 R / işlem; maliyet 0,121 R / işlem).
+- "Kayma komisyonun üç katı" okuması bu etiket hatasından doğdu; gerçek oran 0,76.
+
+Etkilenmeyenler: işlem sayısı, beklenti (−0,0256 R), kâr faktörü, net sonuç, düşüş, rejim ve sınav dilimi satırları; §3 kapı sonucu (kapı `fee_only` alanını okumaz). "Maliyet öncesi hafif artıda, maliyet sonrası ekside" okuması geçerlidir.
+
 ## 7. Önceki girişim (aynı gün, sonuç değil)
 
 İlk `--precheck-only` güç vetosu vermişti (IC gün sayısı 0): o zamanki katmanda (sha256 `a03f2847…e6536f`, commit `7399343`) 660 alınan işlemin tamamı 2021'deydi; geri testte 2021-11-03'te `stop_failed` giriş kilidi kalıcı kalmıştı. O katman dondurulmadı, hiçbir OOF üretilmedi, tek koşu hakkı kullanılmadı. Düzeltme: BT-1 (`would_trigger` giriş kilidi yazmaz; `tasarim-kararlari.md` 18 Kasım) + katman korumaları (`taken_per_fold`, `gate_closed_skips`), sonra katman C = `8632b24` ile yeniden kuruldu. Ayrıntı bu dosyanın `8db6344` öncesi sürümünde.
