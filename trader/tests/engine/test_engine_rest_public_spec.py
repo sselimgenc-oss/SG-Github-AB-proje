@@ -1,4 +1,5 @@
 """07 §4.1 test senaryoları (sahte oturum; gerçek saat/uyku/ağ yok)."""
+import sys
 import time
 
 import pytest
@@ -51,10 +52,18 @@ def row(open_ms, tf_ms=T, c=100.0):
 
 @pytest.fixture(autouse=True)
 def no_real_time(monkeypatch):
-    def forbid(*a, **k):
-        raise AssertionError("gerçek saat/uyku çağrıldı")
-    monkeypatch.setattr(time, "sleep", forbid)
-    monkeypatch.setattr(time, "time", forbid)
+    # Python 3.12'de logging kayit olustururken time.time() cagirir; bu yuzden yalniz rest_public
+    # modulunden (dogrudan cagiranin dosya adi) gelen cagrilar yasaklanir, digerleri gercek islevi kullanir.
+    mod_file = P.__file__
+
+    def guard(real):
+        def wrapped(*a, **k):
+            if sys._getframe(1).f_code.co_filename == mod_file:  # dogrudan cagiran = rest_public
+                raise AssertionError("gerçek saat/uyku çağrıldı")
+            return real(*a, **k)
+        return wrapped
+    monkeypatch.setattr(time, "sleep", guard(time.sleep))
+    monkeypatch.setattr(time, "time", guard(time.time))
 
 
 def test_5xx_retried_then_ok():
