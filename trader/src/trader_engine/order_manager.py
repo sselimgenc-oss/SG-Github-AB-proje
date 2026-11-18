@@ -458,16 +458,20 @@ class OrderManager:
             return out
         if t_fill is not None:
             return self._stop_deadline_path(pos, price, out, t_fill)
-        log.warning("ilk stop kurulamadi (%s), bir kez daha deneniyor", out.note)
-        out = self._stop_attempt(pos, price, 1)
-        if out.ok:
-            return out
-        log.critical("stop kurulamadi: trade %s kapatiliyor", pos.trade_id)
+        would = out.note == "would_trigger"
+        if not would:
+            log.warning("ilk stop kurulamadi (%s), bir kez daha deneniyor", out.note)
+            out = self._stop_attempt(pos, price, 1)
+            if out.ok:
+                return out
+            would = out.note == "would_trigger"
+        log.critical("stop kurulamadi (%s): trade %s kapatiliyor", out.note, pos.trade_id)
         cur = self.state.get_position(pos.trade_id) or pos
         self.market_exit(cur, "other", self.clock.now())
-        self._block("stop_failed")
-        self.note_stop_failed(pos.trade_id)
-        return SubmitOutcome(False, out.status, out.order, out.result, "stop_failed_closed")
+        if not would:      # BT-1: would_trigger piyasa olayi, kilit yazmaz
+            self._block("stop_failed")
+            self.note_stop_failed(pos.trade_id)
+        return SubmitOutcome(False, out.status, out.order, out.result, "would_trigger_closed" if would else "stop_failed_closed")
 
     def _stop_deadline_path(self, pos: Position, price: float, out: SubmitOutcome, t_fill: datetime) -> SubmitOutcome:
         would = out.note == "would_trigger"

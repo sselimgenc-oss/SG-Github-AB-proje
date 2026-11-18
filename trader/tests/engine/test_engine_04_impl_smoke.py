@@ -43,6 +43,8 @@ class FakeBroker:
             return OrderResult("rejected", req.client_id, reason="duplicate_client_id")
         if f == "rejected":
             return OrderResult("rejected", req.client_id, reason="would_trigger")
+        if f == "rejected_other":
+            return OrderResult("rejected", req.client_id, reason="exchange_error")
         if f != "unknown_not_executed":
             self.orders[req.client_id] = BrokerOrder(req.client_id, req.pair, req.role, req.order_side, req.qty,
                                                      req.trigger_price, req.reduce_only,
@@ -268,7 +270,7 @@ def test_replace_stop_would_trigger(env):
 
 def test_two_stop_rejections_close_position(env):
     st, clock, make = env
-    b, om = make({("place_stop", 1): "rejected", ("place_stop", 2): "rejected"})
+    b, om = make({("place_stop", 1): "rejected_other", ("place_stop", 2): "rejected_other"})
     pos = mkpos()
     with st.tx():
         st.insert_position(pos)
