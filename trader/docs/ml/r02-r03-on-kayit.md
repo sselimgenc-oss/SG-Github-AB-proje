@@ -198,7 +198,7 @@ Katmanın hızlandırılmış kodla (`8632b24`) kurulmasının sonucu değiştir
 | Koşu commit'i (kod) | bu dondurma commit'i (yalnız bu belge değişir; kod `ec757f7` ile aynı, `code_sha256` 13/13 tutuyor). Kesin karma `gate_result.json` ve r02 raporuna yazılır |
 | lightgbm sürümü | 4.6.0 |
 | `--precheck-only` r02: özellik sağlığı; gereken t (DSR), gereken rho (IC), IC gün sayısı | TEMİZ (boş/sabit/kopya yok); t = 3,22 (günlük SR ≥ 0,0812; 1576 gün); rho = **0,0558** ≤ 0,08 → veto yok; IC gün sayısı 1284. Çıkış kodu 0 (`ec757f7`, temiz çalışma ağacı) |
-| `--precheck-only` r03 (r02 raporundan sonra doldurulur) | — |
+| `--precheck-only` r03 (r02 raporundan sonra doldurulur) | r02 RED (rapor commit'i `a17c708`). r03 ön hesabı `a17c708`'de, temiz çalışma ağacında, `--prior-result research/ml/r02/gate_result.json` ile: TEMİZ (8 özellik; boş/sabit/kopya yok); t = 3,22; rho = **0,0558** ≤ 0,08 → veto yok; IC gün sayısı 1284; çıkış 0. Aynı sha256'lar. r03 koşu commit'i: bu satırı ekleyen commit |
 | Koşu anındaki n_trials | 10 (defter 5 satır × 2; değişmedi) |
 
 ## 11. Değişmeyenler
