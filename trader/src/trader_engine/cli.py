@@ -408,7 +408,7 @@ def _cmd_outbox_quarantine(a) -> int:
                 sc.execute("VACUUM INTO ?", (tl,))
             finally:
                 sc.close()
-            led = L.open_ledger(tl, cfg.bot, create=False)
+            led = L.open_ledger(tl, cfg.bot, create=False, migrate=False)
             try:
                 for row in rows:
                     try:
