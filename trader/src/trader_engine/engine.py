@@ -318,7 +318,15 @@ class Engine:
 
     def status_fields(self) -> dict:
         now = self.clock.now()
-        acct = self.broker.account()
+        acct, stale = None, False
+        try:
+            acct = self.broker.account()
+            self._last_acct = acct
+        except Exception as e:  # noqa: BLE001  DD-7: yasak/ag hatasinda status.json yine yazilir; bayat bakiye taze gibi YAYINLANMAZ
+            if self.is_paper:
+                raise
+            stale = True
+            log.warning("status: hesap okunamadi (%s); wallet/equity None, account_stale", type(e).__name__)
         ds = self.state.kv_get("day_start:" + now.strftime("%Y-%m-%d"))
         blocked = self.state.kv_get("entries_blocked_reason")
         killed = self.kill.active()
@@ -335,8 +343,10 @@ class Engine:
             "strategy_version": self.strategy.info.version, "entries_blocked_reason": blocked, "gate_code": code,
             "entries_blocked_reasons": self.state.block_reasons(),          # DD-2: eklemeli; eski alan degismedi
             "entries_open": code == "ok",
-            "kill": killed, "kill_state": self.kill_state(), "wallet": acct.wallet, "equity": acct.equity,
-            "day_start_equity": ds if ds is not None else acct.equity, "open_positions": self.state.open_positions(),
+            "kill": killed, "kill_state": self.kill_state(), "wallet": acct.wallet if acct else None,
+            "equity": acct.equity if acct else None, "account_stale": stale,
+            **self._stale_extra(stale),
+            "day_start_equity": ds if ds is not None else (acct.equity if acct else None), "open_positions": self.state.open_positions(),
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
@@ -345,6 +355,12 @@ class Engine:
             "risk_ladder": self._ladder_status(),
             **({} if self.is_paper else {"exchange": self._exchange_status()}),
         }
+
+    def _stale_extra(self, stale: bool) -> dict:
+        last = getattr(self, "_last_acct", None)
+        if not stale or last is None:
+            return {}
+        return {"equity_last": last.equity, "account_at": last.ts}
 
     def _exchange_status(self) -> dict:
         h = {}
@@ -1785,9 +1801,14 @@ def _build_live_broker(cfg: EngineConfig, clock: Clock | None, env: Mapping[str,
     check_live_confirm(cfg, env)                     # kanonik sira: once onay, sonra anahtarlar (11 §3)
     key, secret = load_keys(env)                     # ConfigError("keys_missing: ...") aynen
     clk = clock or SystemClock()
+    from trader_core.ban_store import BanGuard, ban_dir_for, ban_path
+    from .exchange.binance_rest import BASES
+    now_ms = lambda: int(clk.now().timestamp() * 1000)    # noqa: E731  (istemciyle aynı saat)
+    guard = BanGuard(ban_path(ban_dir_for(cfg.market_db), BASES[cfg.mode]), source=f"engine:{cfg.bot}", now_ms=now_ms)   # DD-7 §2
     rest = SignedRestClient(env=cfg.mode, api_key=key, api_secret=secret,
-                            now_ms=lambda: int(clk.now().timestamp() * 1000), sleep=clk.sleep,
-                            recv_window_ms=cfg.live.recv_window_ms, conditional_mode=cfg.live.conditional_mode)
+                            now_ms=now_ms, sleep=clk.sleep,
+                            recv_window_ms=cfg.live.recv_window_ms, conditional_mode=cfg.live.conditional_mode,
+                            ban_guard=guard)
     broker = LiveBroker(cfg.live, cfg.mode, cfg.leverage, cfg.pairs, rest, clk, cfg.cost.taker_fee, environ=env)
     broker.startup_check()
     return broker

@@ -38,6 +38,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from urllib.parse import urlencode
 
+from trader_core.ban_store import BanGuard
 from trader_engine.marketdata.rest_public import ExchangeBan, ExchangeError
 
 log = logging.getLogger("engine.binance_rest")
@@ -143,7 +144,8 @@ class SignedRestClient:
                  now_ms: Callable[[], int], sleep: Callable[[float], None], recv_window_ms: int = 5000,
                  read_timeout_s: float = 10.0, order_timeout_s: tuple[float, float] = (2.0, 3.0),
                  max_attempts: int = 4, weight_soft: int = 1200, weight_hard: int = 1800,
-                 order_cap_10s: int = 20, order_cap_1m: int = 100, conditional_mode: str = "algo"):
+                 order_cap_10s: int = 20, order_cap_1m: int = 100, conditional_mode: str = "algo",
+                 ban_guard: BanGuard | None = None):
         if env not in BASES:
             raise ValueError("env testnet|live olmalı")
         if conditional_mode not in ("algo", "classic"):
@@ -175,6 +177,12 @@ class SignedRestClient:
         self._ban_403_s = 0
         self._testnet_warn_ms: int | None = None      # testnet ağırlık uyarısı hız sınırı
         self._last_ok_ms: int | None = None
+        self.ban_guard = ban_guard                    # DD-7: kalıcı ban dosyası (None = bugünkü davranış)
+        if ban_guard is not None:
+            rec = ban_guard.active()
+            if rec is not None:
+                self._ban_until_ms, self._ban_http = rec.until_ms, rec.http
+                self._bump("ban_file_seeded")
 
     def __repr__(self) -> str:                      # anahtar/gizli asla gösterilmez
         return f"SignedRestClient(env={self.env!r})"
@@ -193,6 +201,23 @@ class SignedRestClient:
 
     def _fmt(self, method: str, path: str, http: Any, code: Any, msg: Any) -> str:
         return f"{method} {path} http={http} code={code} msg={self._scrub(msg)}"
+
+    def _adopt_ban(self) -> None:
+        """DD-7: başka sürecin yazdığı daha uzun pencereyi benimser (bellekteki pencere asla kısalmaz)."""
+        g = self.ban_guard
+        if g is None:
+            return
+        rec = g.active()
+        if rec is not None and rec.until_ms > self._ban_until_ms:
+            self._ban_until_ms, self._ban_http = rec.until_ms, rec.http
+
+    def _persist_ban(self, http: int) -> None:
+        g = self.ban_guard
+        if g is None:
+            return
+        if not g.note(self._ban_until_ms, http):
+            self._bump("ban_persist_failed")
+            log.log(logging.ERROR, "ban penceresi diske yazılamadı (http=%d); bellekteki pencere ile devam", http)
 
     def _order_counts(self, now: int) -> tuple[int, int]:
         self._order_sent_ms = [t for t in self._order_sent_ms if now - t < 60_000]
@@ -213,6 +238,7 @@ class SignedRestClient:
         return self._used_weight
 
     def health(self) -> dict:
+        self._adopt_ban()
         now = self.now_ms()
         c10, c1m = self._order_counts(now)
         return {"used_weight": self._cur_weight(now), "order_count_10s": c10, "order_count_1m": c1m,
@@ -256,6 +282,7 @@ class SignedRestClient:
         if kind not in ("read", "cancel", "setup", "order"):
             raise ValueError(f"kind: {kind!r}")
         is_order = kind == "order"
+        self._adopt_ban()
         now = self.now_ms()
         max_attempts = self.max_attempts if attempts is None else max(1, int(attempts))
         # 1) sessizlik penceresi (429/418/403): koruyucular dahil hiçbir istek gitmez
@@ -360,6 +387,7 @@ class SignedRestClient:
             if status == 429:
                 ra = _retry_after(h)
                 self._ban_until_ms, self._ban_http = self.now_ms() + ra * 1000, 429
+                self._persist_ban(429)
                 self._bump("http_429")
                 log.log(logging.WARNING, "%s", text)
                 if is_order:
@@ -372,6 +400,7 @@ class SignedRestClient:
             if status == 418:
                 ra = _retry_after(h)
                 self._ban_until_ms, self._ban_http = self.now_ms() + ra * 1000, 418
+                self._persist_ban(418)
                 self._bump("http_418")
                 raise ExchangeBan(text, http=418, retry_after_s=ra)
             if status == 451:
@@ -380,6 +409,7 @@ class SignedRestClient:
             if status == 403:
                 self._ban_403_s = 300 if self._ban_403_s == 0 else min(self._ban_403_s * 2, 1800)
                 self._ban_until_ms, self._ban_http = self.now_ms() + self._ban_403_s * 1000, 403
+                self._persist_ban(403)
                 self._bump("http_403")
                 raise ExchangeBan(text, http=403, retry_after_s=self._ban_403_s)
             if code == -1021 and not resynced and status < 500:

@@ -751,9 +751,12 @@ def _run(a, steps, environ, rest_factory, clock, input_fn, say, runner, on_wait)
     S.guard_config(cfg)
     clk = clock or SystemClock()
     now_ms = lambda: int(clk.now().timestamp() * 1000)  # noqa: E731
+    from trader_core.ban_store import BanGuard, ban_dir_for, ban_path
+    from trader_engine.exchange.binance_rest import BASES
     rest = (rest_factory or (lambda **kw: SignedRestClient(**kw)))(
         env="testnet", api_key=key, api_secret=secret, now_ms=now_ms, sleep=clk.sleep,
-        recv_window_ms=cfg.live.recv_window_ms, conditional_mode=cfg.live.conditional_mode)
+        recv_window_ms=cfg.live.recv_window_ms, conditional_mode=cfg.live.conditional_mode,
+        ban_guard=BanGuard(ban_path(ban_dir_for(cfg.market_db), BASES["testnet"]), source="smoke_testnet", now_ms=now_ms))   # DD-7 §2
     S.guard_rest(rest)
     restr = None
     try:

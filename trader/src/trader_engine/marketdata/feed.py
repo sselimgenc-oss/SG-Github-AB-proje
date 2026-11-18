@@ -242,12 +242,31 @@ class Feed:
                 os.close(fd)
                 raise FailClosed(f"locked: baska bir feed sureci calisiyor ({self.cfg.lock_path})") from None
             self._lock_fd = fd
+        self._startup_ban_persisted()
         self._startup_call(self._measure_offset, "saat farki olcumu")
         self.store.meta_set("started_ms", str(to_ms(self.clock.now())))
         self._fetch_rules_at_start()
         self._started = True
         if not self._clock_fatal:
             self.backfill()
+
+    def _startup_ban_persisted(self) -> None:
+        """DD-7 §3: kalici/benimsenen ban kaydi varsa ilk istekten ONCE bekle (kalan > BAN_MAX_WAIT_S ise cikis 3)."""
+        guard = getattr(self.rest, "ban_guard", None)
+        if guard is None:
+            return
+        rec = guard.active()
+        until = getattr(rec, "until_ms", None)
+        if rec is None or not isinstance(until, int):
+            return
+        left = max(1, -(-(until - int(guard.now_ms())) // 1000))
+        if left > BAN_MAX_WAIT_S:
+            log.critical("ban_persisted: kalan %d sn > ust sinir %d sn; cikiliyor (kod %d)", left, BAN_MAX_WAIT_S, EXIT_BAN)
+            raise SystemExit(EXIT_BAN)
+        log.critical("ban_persisted: kalici yasak kaydi (http=%s kaynak=%s) kalan %d sn; bekleniyor", getattr(rec, "http", None),
+                     getattr(rec, "source", None), left)
+        self._c["bans"] += 1
+        self.clock.sleep(left + BAN_MARGIN_S)
 
     def _startup_delay_s(self, n: int) -> float:
         """Acilis geri cekilmesi: base*2**n (tavanli) x [0.5, 1.0) jitter (cok istemcili ayni anda yeniden denemeyi dagitir)."""
@@ -799,6 +818,15 @@ def _make_rest(clock: Clock) -> PublicRestClient:
     return PublicRestClient(now_s=lambda: clock.now().timestamp(), sleep=clock.sleep, jitter=random.random)
 
 
+def _make_guarded_rest(clock: Clock, db_path: str) -> PublicRestClient:
+    """DD-7 §3: feed'in kendi kurdugu istemciye ban dosyasi guard'i takilir (`ban_dir_for(db_path)`, istemcinin base_url'i, source="feed")."""
+    from trader_core.ban_store import BanGuard, ban_dir_for, ban_path
+    rest = _make_rest(clock)
+    rest.ban_guard = BanGuard(ban_path(ban_dir_for(db_path), rest.base_url), source="feed",
+                              now_ms=lambda: int(clock.now().timestamp() * 1000))
+    return rest
+
+
 def _parse(argv: Sequence[str] | None, prog: str, extra=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(prog=prog)
     ap.add_argument("--config-dir", default="config")
@@ -827,7 +855,7 @@ def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = N
         return EXIT_STORE
     if a.startup_retry == "forever":
         cfg = dataclasses.replace(cfg, startup_retry_forever=True)
-    rest = rest or _make_rest(clock)
+    rest = rest or _make_guarded_rest(clock, cfg.db_path)
     try:
         store = MarketStore(cfg.db_path)
     except DataError as e:
@@ -881,7 +909,7 @@ def rules_snapshot_main(argv: Sequence[str] | None = None, *, rest: PublicRestCl
         return EXIT_STORE
     out = a.out or os.path.join(raw["history_dir"], "rules.json")
     pairs = [canon_pair(p) for p in raw["pairs"]]
-    rest = rest or _make_rest(clock)
+    rest = rest or _make_guarded_rest(clock, raw["market_db"])
     try:
         res = snapshot_rules(rest, pairs, clock, out_json_path=out)
     except ExchangeBan as e:

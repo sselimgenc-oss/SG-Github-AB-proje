@@ -63,7 +63,7 @@ _COUNTERS = ("fee_rate_fallback", "unknown_reject_codes", "fee_drift", "fee_asse
              "rules_refresh_failed", "prepare_failed", "funding_unresolved", "foreign_close", "clock_rejects",
              "working_type_mismatch", "sync_failures", "exchange_bans", "rules_drift", "working_type_unverified",
              "stop_response_mismatch", "exchange_auth", "close_unresolved", "malformed_trades",
-             "account_mode_drift", "account_mode_unverified")
+             "account_mode_drift", "account_mode_unverified", "entry_weight_rejects")
 _BLOCK_PRIORITY = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
 STARTUP_BAN_SLEEP_MAX_S = 300.0
 STARTUP_RULES_TRIES = 2
@@ -410,8 +410,25 @@ class LiveBroker:
                 return _Rejected(e.code)
             raise EngineExit(8, f"startup_reject:{e.code}") from e
 
+    def _startup_ban_persisted(self) -> None:
+        """DD-7 §2: kalıcı/benimsenen ban penceresi sürerken HİÇ istek atılmaz; bekle ve çıkış 5 (kayıttaki http ne olursa olsun)."""
+        try:                                           # gercek istemci hep tamsayi doner; sahte istemcide okunamayan deger = pencere yok
+            until = int(self._rest.health().get("ban_until_ms") or 0)
+            now_ms = int(self._rest.now_ms())
+        except (TypeError, ValueError, AttributeError, KeyError):
+            return
+        if until <= now_ms:
+            return
+        left = (until - now_ms) / 1000.0
+        wait = min(left + 2.0, STARTUP_BAN_SLEEP_MAX_S)
+        log.critical("exchange_ban_persisted: host=%s kalan=%.0f sn; %.0f sn beklenip cikilacak (kod 5)",
+                     getattr(self._rest, "_base", self._env), left, wait)
+        self._clock.sleep(wait)
+        raise EngineExit(5, "exchange_ban_persisted")
+
     def startup_check(self) -> None:
         live = self._env == "live"
+        self._startup_ban_persisted()                  # DD-7: saat eşitlemesinden ÖNCE; istek 0
         # 1) saat
         for i in range(3):
             try:
@@ -805,6 +822,20 @@ class LiveBroker:
         except ExchangeUncertain as e:
             raise BrokerUncertain(f"emir belirsiz: {cid}") from e
 
+    def _weight_high(self) -> bool:
+        """DD-7 §5: kullanılan IP ağırlığı `weight_soft` ve üstü mü. Yasak penceresi etkinse False (ban yolu önce gelir).
+        Fail-closed: health() istisna verir ya da used_weight sayı değilse True."""
+        try:
+            h = self._rest.health()
+            if int(h.get("ban_until_ms") or 0) > int(self._rest.now_ms()):
+                return False
+            w = h.get("used_weight")
+            if isinstance(w, bool) or not isinstance(w, (int, float)) or w != w:
+                return True
+            return float(w) >= float(getattr(self._rest, "weight_soft", 1200))
+        except Exception:  # noqa: BLE001
+            return True
+
     def _verify_account_mode(self, pair: str, symbol: str) -> bool:
         """DD-8 D2: giris oncesi TAZE `positionRisk(symbol)`: satir var + marginType isolated + leverage == cfg.leverage.
         Uyusmazlik -> `account_mode_drift`; okunamayan her sey -> `account_mode_unverified` (ikisinde de emir gitmez, False).
@@ -859,6 +890,10 @@ class LiveBroker:
             return self._rej(cid, why)
         symbol, side = self._symbol(req.pair), "BUY" if req.order_side == "buy" else "SELL"
         reduce_only = req.role == "exit"
+        if req.role == "entry" and self._env != "testnet" and self._weight_high():       # DD-7 §5: D2 okumasından ÖNCE, istek 0
+            self._ctr["entry_weight_rejects"] += 1
+            log.warning("weight_high:%s: kullanilan agirlik esikte; giris gonderilmedi", req.pair)
+            return self._rej(cid, "weight_high")
         if req.role == "entry" and not self._verify_account_mode(req.pair, symbol):     # DD-8 D2: emir POST'undan hemen once
             return self._rej(cid, "not_prepared")
         out = self._absorb_errors(cid, lambda: self._rest.new_market(symbol, side, self._qty_str(req.qty, e), cid, reduce_only),

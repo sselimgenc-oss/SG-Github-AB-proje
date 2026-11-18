@@ -48,6 +48,7 @@ def _exchange_block(engine, f: dict, mode: str) -> dict | None:
     return {"env": mode, "reachable": reach if isinstance(reach, bool) else None,
             "last_sync": ex.get("last_sync_ts"), "clock_offset_ms": ex.get("clock_offset_ms"),
             "used_weight": ex.get("used_weight"), "ban_until": _ms_to_z(ex.get("ban_until_ms")),
+            "ban_until_ms": ex.get("ban_until_ms") if isinstance(ex.get("ban_until_ms"), int) and not isinstance(ex.get("ban_until_ms"), bool) else None,
             "last_ban": last_ban, "naked": naked}
 
 
@@ -82,7 +83,9 @@ class StatusWriter:
             "entries_open": bool(f["entries_open"]) and not ml_blocked, "gate": {"ok": gate_code == "ok", "code": gate_code},
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
             "entries_blocked_reasons": list(f.get("entries_blocked_reasons") or ([blocked] if blocked else [])),   # DD-2: eklemeli
-            "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
+            "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "account_stale": bool(f.get("account_stale", False)),
+            **({"equity_last": f["equity_last"], "account_at": _z(f["account_at"])} if f.get("equity_last") is not None else {}),
+            "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"records": f["records"]} if f.get("records") is not None else {}),   # WP-3 9.3: yalniz kayit sayaclari
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),

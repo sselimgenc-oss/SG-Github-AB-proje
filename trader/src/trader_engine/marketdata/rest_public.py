@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from trader_core.ban_store import BanGuard
 from trader_engine.bars import tf_delta
 from trader_engine.types import Bar, Kind
 
@@ -55,7 +56,7 @@ class PublicRestClient:
     def __init__(self, *, base_url: str = FAPI_BASE, session=None, now_s: Callable[[], float],
                  sleep: Callable[[float], None], max_attempts: int = 5, weight_threshold: int = WEIGHT_THRESHOLD,
                  timeout_s: float = 20.0, max_total_wait_s: float = 300.0,
-                 jitter: Callable[[], float] | None = None):
+                 jitter: Callable[[], float] | None = None, ban_guard: BanGuard | None = None):
         if session is None:
             import requests  # tembel: içe aktarma anında yüklenmez
             session = requests.Session()
@@ -67,8 +68,21 @@ class PublicRestClient:
         self.timeout_s = timeout_s
         self.max_total_wait_s = max_total_wait_s
         self.jitter = jitter      # None: jitter yok (deterministik); aksi halde [0,1) donen kaynak (D3)
+        self.ban_guard = ban_guard   # DD-7: kalıcı ban dosyası (None = bugünkü davranış)
         self._used_weight = 0
         self._weight_ts = 0.0
+
+    def _note_ban(self, wait_s: int | float, http: int) -> None:
+        """DD-7: pencereyi diske yazar; yazma hatası yalnız ERROR günlüğüdür."""
+        g = self.ban_guard
+        if g is None:
+            return
+        try:
+            ok = g.note(int(self.now_s() * 1000) + int(wait_s * 1000), http)
+        except Exception:  # noqa: BLE001
+            ok = False
+        if not ok:
+            log.error("ban penceresi diske yazılamadı (http=%d)", http)
 
     def _backoff(self, attempt: int) -> float:
         """Ag/5xx geri cekilmesi: min(2**deneme, 60) sn; jitter varsa en fazla %25 EKLENIR (asla kisalmaz)."""
@@ -98,6 +112,14 @@ class PublicRestClient:
         last_err: Exception | None = None
         waited_429 = 0.0
         for attempt in range(1, self.max_attempts + 1):
+            g = self.ban_guard
+            if g is not None:                      # DD-7: yasak penceresinde istek atılmaz (ağırlık beklemesinden de önce)
+                rec = g.active()
+                if rec is not None:
+                    left = max(1, -(-(rec.until_ms - int(self.now_s() * 1000)) // 1000))
+                    http = rec.http if rec.http is not None else 418
+                    raise ExchangeBan(f"{http} kalıcı yasak penceresi ({path}); kalan {left} sn. İstek gönderilmedi.",
+                                      http=http, retry_after_s=left)
             self._wait_for_weight()
             try:
                 r = self.session.get(self.base_url + path, params=params, timeout=self.timeout_s)
@@ -124,6 +146,7 @@ class PublicRestClient:
                     continue
             if r.status_code == 429:
                 wait = _retry_after(r.headers)
+                self._note_ban(wait, 429)
                 if waited_429 + wait > self.max_total_wait_s:
                     raise ExchangeBan(f"429 {path}: toplam bekleme tavanı ({self.max_total_wait_s:.0f} sn) aşıldı",
                                       http=429, retry_after_s=wait)
@@ -134,6 +157,7 @@ class PublicRestClient:
                 continue
             if r.status_code == 418:
                 ra = _retry_after(r.headers, default=120)     # 418: okunamazsa en az 120 sn
+                self._note_ban(ra, 418)
                 raise ExchangeBan(f"418 IP yasağı ({path}); Retry-After={ra} sn. Otomatik tekrar yok.", http=418, retry_after_s=ra)
             if r.status_code == 451:
                 raise ExchangeBan(f"451 konum kısıtı ({path}): bu makineden Binance vadeli erişimi engelli. {r.text[:200]}", http=451)

@@ -18,6 +18,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from trader_core.ban_store import BanGuard, ban_dir_for, ban_path  # noqa: E402
 from trader_engine.marketdata import oi_collector as C  # noqa: E402
 
 log = logging.getLogger("trader.oi.run")
@@ -38,6 +39,7 @@ def main(argv=None, *, client=None, now_ms: int | None = None) -> int:
     ap.add_argument("--db", default=None)
     ap.add_argument("--pairs", default=None, help="virgullu; varsayilan: engine.base.json pairs")
     ap.add_argument("--max-requests", type=int, default=900)
+    ap.add_argument("--ban-dir", default=None, help="ban dosyasi dizini (varsayilan: market veritabaninin dizini)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     try:
@@ -47,9 +49,18 @@ def main(argv=None, *, client=None, now_ms: int | None = None) -> int:
         if a.db:
             db_path = a.db
         now = int(time.time() * 1000) if now_ms is None else now_ms
+        clock = (lambda: now) if now_ms is not None else (lambda: int(time.time() * 1000))
+        guard = BanGuard(ban_path(a.ban_dir or ban_dir_for(db_path), C.BASE_URL), source="oi", now_ms=clock)   # DD-7 §4
+        rec = guard.active()
+        if rec is not None:                      # yasak suruyor: istek YOK; alarmi saglik uretir (OnFailure gurultusu istenmez)
+            left = max(1, -(-(rec.until_ms - clock()) // 1000))
+            log.warning("event=ban_skip host=%s left_s=%d", rec.host, left)
+            return EXIT_OK
+        if client is None:
+            client = C.HttpClient(ban_guard=guard, now_ms=clock)
         db = C.open_db(db_path)
         try:
-            st = C.collect(db, client or C.HttpClient(), pairs, now, max_requests=a.max_requests)
+            st = C.collect(db, client, pairs, now, max_requests=a.max_requests)
         finally:
             db.close()
     except C.GeoBlockError as e:
@@ -61,8 +72,8 @@ def main(argv=None, *, client=None, now_ms: int | None = None) -> int:
     except Exception:  # noqa: BLE001
         log.exception("event=crash")
         return EXIT_CRASH
-    log.info("event=done pairs=%d rows=%d requests=%d errors=%d budget_hit=%s", len(pairs), st.rows, st.requests,
-             st.errors, st.budget_hit)
+    log.info("event=done pairs=%d rows=%d requests=%d errors=%d budget_hit=%s used_weight=%s weight_stop=%s", len(pairs),
+             st.rows, st.requests, st.errors, st.budget_hit, getattr(client, "last_used_weight", None), st.weight_stop)
     return EXIT_PARTIAL if st.errors else EXIT_OK
 
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
 import time
 import urllib.error
@@ -30,6 +31,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from trader_core.ban_store import BanGuard
 from trader_engine.holdout import HOLDOUT
 from trader_engine.types import pair_symbol
 
@@ -44,6 +46,8 @@ LOOKBACK_MARGIN_MS = 2 * 3_600_000          # "30 gun" siniri tam degil; 2 saat 
 HOLDOUT_START_MS = int(HOLDOUT[0].timestamp() * 1000)
 HOLDOUT_END_MS = int(HOLDOUT[1].timestamp() * 1000)
 USER_AGENT = "trader-oi-collector/1"
+OI_WEIGHT_CEILING = 1200                    # DD-7 T: dakikalik IP siniri 2400'un %50'si; kullanilan agirlik buna ulasinca kosu durur
+BAN_418_DEFAULT_S = 120.0
 
 # endpoint adi -> (yol, {tablo kolonu: yanit alani}); ilk kolon "anahtar kolon" (son satir ve bosluk tespiti)
 ENDPOINTS: dict[str, tuple[str, dict[str, str]]] = {
@@ -74,6 +78,10 @@ class CollectorError(Exception):
 
 class BanError(CollectorError):
     """418 / 429 (bekleme tavani asildi): bu kosuyu durdur."""
+
+
+class WeightStop(Exception):
+    """DD-7: kullanilan agirlik tavana ulasti; kosu hatasiz durur (CollectorError DEGIL: hata sayilmaz)."""
 
 
 class GeoBlockError(CollectorError):
@@ -168,6 +176,22 @@ def last_ts(db: sqlite3.Connection, pair: str, endpoint: str) -> int | None:
 
 
 # ------------------------------------------------------------------ HTTP
+_wall = time.time      # varsayilan saat kaynagi (sleep=time.sleep varsayilani gibi referans; enjekte edilebilir)
+
+
+def _sys_now_ms() -> int:
+    return int(_wall() * 1000)
+
+
+def _retry_after_s(headers, default: float) -> float:
+    """Retry-After saniye; yok / sayi degil / sonlu degil / negatif ise `default`."""
+    try:
+        v = float(headers.get("Retry-After")) if headers else default
+    except (TypeError, ValueError):
+        return default
+    return v if math.isfinite(v) and v >= 0 else default
+
+
 @dataclass
 class HttpClient:
     base_url: str = BASE_URL
@@ -180,11 +204,31 @@ class HttpClient:
     mono: Callable[[], float] = time.monotonic
     requests_made: int = 0
     _last: float = field(default=-1e9, repr=False)
+    ban_guard: BanGuard | None = None          # DD-7: kalici ban dosyasi
+    now_ms: Callable[[], int] = _sys_now_ms
+    last_used_weight: int | None = None        # son basarili yanitin X-MBX-USED-WEIGHT-1M basligi
+
+    def _note_ban(self, wait_s: float, http: int) -> None:
+        g = self.ban_guard
+        if g is None:
+            return
+        try:
+            ok = g.note(int(self.now_ms()) + int(wait_s * 1000), http)
+        except Exception:  # noqa: BLE001
+            ok = False
+        if not ok:
+            log.error("event=ban_persist_failed http=%d", http)
 
     def get_json(self, path: str, params: dict):
         url = f"{self.base_url}{path}?{urllib.parse.urlencode(params)}"
         last_err: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):
+            g = self.ban_guard
+            if g is not None:                                  # DD-7: yasak penceresinde istek atilmaz
+                rec = g.active()
+                if rec is not None:
+                    left = max(1, -(-(rec.until_ms - int(self.now_ms())) // 1000))
+                    raise BanError(f"kalici yasak penceresi (http={rec.http}, kalan {left} sn); istek gonderilmedi")
             wait = self.min_interval_s - (self.mono() - self._last)
             if wait > 0:
                 self.sleep(wait)
@@ -193,18 +237,21 @@ class HttpClient:
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+                    self._read_weight(getattr(resp, "headers", None))
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
                 code = e.code
                 if code == 451:
                     raise GeoBlockError("HTTP 451 (konum kisiti)") from e
                 if code == 418:
+                    self._note_ban(_retry_after_s(e.headers, BAN_418_DEFAULT_S), 418)
                     raise BanError("HTTP 418 (IP yasagi)") from e
                 if code == 429:
                     try:
                         ra = float(e.headers.get("Retry-After", 60)) if e.headers else 60.0
                     except (TypeError, ValueError):
                         ra = 60.0
+                    self._note_ban(ra if ra > 0 else 60.0, 429)
                     if attempt >= self.max_attempts or ra > self.max_retry_after_s:
                         raise BanError(f"HTTP 429 (Retry-After={ra:g}s)") from e
                     log.warning("event=rate_limited path=%s retry_after_s=%g", path, ra)
@@ -223,23 +270,45 @@ class HttpClient:
         raise CollectorError(f"{path}: {self.max_attempts} denemede basarisiz ({type(last_err).__name__})")
 
 
+    def _read_weight(self, headers) -> None:
+        """Basarili yanitta X-MBX-USED-WEIGHT-1M tam sayiya cevrilebiliyorsa saklanir; yok/bozuksa deger degismez."""
+        if not headers:
+            return
+        try:
+            v = headers.get("X-MBX-USED-WEIGHT-1M")
+            if v is None:
+                return
+            self.last_used_weight = int(str(v).strip())
+        except (TypeError, ValueError, AttributeError):
+            return
+
+
 # ------------------------------------------------------------------ toplama
+def _weight_hit(client, ceiling: int | None) -> bool:
+    w = getattr(client, "last_used_weight", None)
+    return ceiling is not None and isinstance(w, int) and not isinstance(w, bool) and w >= ceiling
+
+
 @dataclass
 class Stats:
     rows: int = 0
     requests: int = 0
     errors: int = 0
     budget_hit: bool = False
+    weight_stop: bool = False
     per_pair: dict = field(default_factory=dict)
 
 
-def fetch_window(client: HttpClient, endpoint: str, symbol: str, start_ms: int, end_ms: int) -> list[dict]:
+def fetch_window(client: HttpClient, endpoint: str, symbol: str, start_ms: int, end_ms: int, *,
+                 weight_ceiling: int | None = None) -> list[dict]:
     """[start,end] araligini limit*5dk'lik dilimlerle ceker (dilim <= limit satir: yanit kirpilmaz, sayfalama varsayimi gerekmez)."""
     path = ENDPOINTS[endpoint][0]
     span = PAGE_LIMIT * PERIOD_MS
     out: list[dict] = []
     cur = start_ms
     while cur <= end_ms:
+        if _weight_hit(client, weight_ceiling):            # DD-7: yarim pencere yazilmaz (cagirana WeightStop yukselir)
+            raise WeightStop()
         hi = min(end_ms, cur + span - 1)
         payload = client.get_json(path, {"symbol": symbol, "period": PERIOD, "limit": PAGE_LIMIT,
                                          "startTime": cur, "endTime": hi})
@@ -257,7 +326,8 @@ def plan_window(last: int | None, now_ms: int) -> tuple[int, int]:
 
 
 def collect(db: sqlite3.Connection, client: HttpClient, pairs: Sequence[str], now_ms: int, *,
-            endpoints: Sequence[str] = tuple(ENDPOINTS), max_requests: int = 900) -> Stats:
+            endpoints: Sequence[str] = tuple(ENDPOINTS), max_requests: int = 900,
+            weight_ceiling: int = OI_WEIGHT_CEILING) -> Stats:
     st = Stats()
     for pair in pairs:
         symbol = pair_symbol(pair)
@@ -266,13 +336,20 @@ def collect(db: sqlite3.Connection, client: HttpClient, pairs: Sequence[str], no
             if client.requests_made >= max_requests:
                 st.budget_hit = True
                 break
+            if _weight_hit(client, weight_ceiling):
+                st.budget_hit = st.weight_stop = True
+                break
             start, end = plan_window(last_ts(db, pair, ep), now_ms)
             try:
                 for lo, hi in clip_windows(start, end):
-                    rows = fetch_window(client, ep, symbol, lo, hi)
+                    rows = fetch_window(client, ep, symbol, lo, hi, weight_ceiling=weight_ceiling)
                     n = upsert(db, pair, rows, now_ms)
                     st.rows += n
                     pstat += n
+            except WeightStop:
+                st.budget_hit = st.weight_stop = True
+                log.warning("event=weight_stop pair=%s endpoint=%s used_weight=%s", pair, ep, getattr(client, "last_used_weight", None))
+                break
             except (BanError, GeoBlockError):
                 st.requests = client.requests_made
                 raise

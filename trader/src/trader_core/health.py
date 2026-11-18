@@ -28,7 +28,7 @@ __all__ = [
     "LogNotifier", "NullNotifier", "plan_alerts", "revert_failed_alerts", "empty_state",
     "PauseProbe", "quiet_http_loggers", "IMMEDIATE_CODES", "HeartbeatSender", "HttpsHeartbeat", "parse_env_text",
     "parse_maintenance", "heartbeat_message", "should_send_ok", "REQUIRED_CHECKS", "MarketProbe",
-    "MlProbe", "DriftProbe",
+    "MlProbe", "DriftProbe", "BanProbe",
 ]
 
 log = logging.getLogger("trader.health")
@@ -105,6 +105,17 @@ class ApiProbe:
     naked: tuple[tuple[int, str, float], ...] | None = None   # (trade_id, cift, stopsuz sure sn); None = okunamadi
     # 12 §11: status.json `risk_ladder` blogu (+ opsiyonel "pause_holds": [{reason, at}] = status.pause.holds); None = blok yok.
     ladder: Mapping | None = None
+
+
+@dataclass(frozen=True)
+class BanProbe:
+    """DD-7 §6: bir ban dosyasi (`ban.<host>.json`). until None = bozuk/okunamayan dosya (corrupt=True). Suresi dolmus kayit da
+    gelir; karar cekirdekte (`until > snap.now`)."""
+    host: str
+    until: datetime | None
+    http: int | None
+    source: str | None
+    corrupt: bool = False
 
 
 @dataclass(frozen=True)
@@ -211,6 +222,8 @@ class HealthSnapshot:
     prev_ml_score_errors: Mapping[str, int] = field(default_factory=dict)
     # Bolum 16.6 (WP-2 yer tutucusu): bot -> DriftProbe; None = yok.
     drift: Mapping[str, DriftProbe] | None = None
+    # DD-7 §6: ban dosyasi yoklamasi; None = yoklanmadi (exchange_ban denetimi uretilmez), () = dosya yok.
+    bans: tuple[BanProbe, ...] | None = None
 
     def __post_init__(self):
         if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
@@ -848,6 +861,28 @@ def _c_exchange(snap, bot, cfg):
                 f"{bot} borsaya ulasilamiyor ({age:.0f} sn)", age, cfg.exchange_unreachable_s)
 
 
+def _c_exchange_ban(snap, cfg):
+    """DD-7 §6: borsa yasak penceresi. Acik pozisyon = herhangi bir `has_exchange` yoklamasinda open_trade_ids bos degil ya da
+    None (bilinmiyor = var say). Oncelik: CRIT exchange_ban_open_positions > WARN exchange_ban > WARN exchange_ban_file_corrupt > OK."""
+    name = "exchange_ban"
+    bans = snap.bans or ()
+    active = [b for b in bans if b.until is not None and b.until > snap.now]
+    if active:
+        top = max(active, key=lambda b: b.until)
+        left = (top.until - snap.now).total_seconds()
+        mins = max(1, int(-(-left // 60)))
+        info = f"host={top.host} kalan_dk={mins} http={top.http} kaynak={top.source}"
+        open_pos = any(p.has_exchange and (p.open_trade_ids is None or len(p.open_trade_ids) > 0) for p in snap.api.values())
+        if open_pos:
+            return _res(name, Status.CRIT, "exchange_ban_open_positions", f"borsa engeli suruyor, acik pozisyon var: {info}", left)
+        return _res(name, Status.WARN, "exchange_ban", f"borsa engeli suruyor: {info}", left)
+    bad = [b for b in bans if b.corrupt]
+    if bad:
+        return _res(name, Status.WARN, "exchange_ban_file_corrupt",
+                    f"ban dosyasi bozuk/okunamiyor: host={bad[0].host}")
+    return _res(name, Status.OK, "ok", "borsa engeli yok")
+
+
 def _c_pause_audit(snap, bot, cfg):
     """11 §9.2: (a) tutus var ama gunlukte o neden icin SON islem "add" degil -> kimse eklemedi (CRIT);
     (b) onceki turda vardi, simdi yok ve gunlukte "remove" yok -> dosya elle silindi/kayboldu (CRIT, bir tur)."""
@@ -991,6 +1026,8 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
             results.append(_safe(f"ledger_write_age:{bot}", _c_ledger_age, snap, bot, cfg))
             results.append(_safe(f"ledger_gate:{bot}", _c_gate, snap, bot, cfg))
             results.append(_safe(f"spool_corrupt:{bot}", _c_spool_corrupt, snap, bot, cfg))
+    if snap.bans is not None:
+        results.append(_safe("exchange_ban", _c_exchange_ban, snap, cfg))
     results.append(_safe("disk_free", _c_disk, snap, cfg))
     results.append(_safe("memory", _c_mem, snap, cfg))
     results.append(_safe("swap", _c_swap, snap, cfg))
@@ -1051,11 +1088,12 @@ def should_send_ok(report: HealthReport) -> bool:
 IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "spool_corrupt", "schema", "oom_killed",
                              "rules_missing_increase", "naked_position", "pause_hold_unaudited",
                              "pause_hold_lost", "capital_floor", "drawdown_review", "ladder_missing",
-                             "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model"})
+                             "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model",
+                             "exchange_ban_open_positions"})
 
 
 # WARN olup ilk turda uyaran kodlar (taban her tur guncellendigi icin uyari tek tur gorunur; confirm_runs bekleyemez).
-IMMEDIATE_WARN_CODES = frozenset({"ml_score_errors"})
+IMMEDIATE_WARN_CODES = frozenset({"ml_score_errors", "exchange_ban", "exchange_ban_file_corrupt"})
 
 
 @dataclass(frozen=True)
@@ -1181,6 +1219,8 @@ _HEALTH_TR: dict[str, tuple[str, str, str]] = {
                        "Pozisyon korumasız; hemen kontrol et ya da /kapat kullan."),
     "exchange_reachable": ("Borsaya ulaşılamıyor", "Borsa bağlantısı yeniden sağlandı",
                            "Emir gönderilemeyebilir; açık pozisyonları borsadan kontrol et."),
+    "exchange_ban": ("Borsa geçici engel koydu", "Borsa engeli kalktı",
+                     "Bot engel bitene kadar emir göndermez; engel kendiliğinden kalkar."),
     "pause_audit": ("Duraklatma kaydı tutarsız", "Duraklatma kaydı yeniden tutarlı",
                     "Yeni işlemler güvenlik için kapalı tutulur; kayıtlar incelenmeli."),
     "risk_ladder": ("Risk kademesi sorunlu", "Risk kademesi yeniden normal",
@@ -1223,6 +1263,16 @@ _HEALTH_TR_CODE: dict[str, tuple[str, str, str]] = {
     "api_unreachable": ("Motor yanıt vermiyor", "Motor yeniden yanıt veriyor",
                         "Bot çalışmıyor olabilir; yeni işlem açılmaz, açık pozisyonları kontrol et."),
 }
+_BAN_CRIT_SENTENCE = ("Bot engel bitene kadar emir gönderemez. Borsadaki zarar-kes emirleri yerinde durur. "
+                      "Gerekirse pozisyonu Binance uygulamasından elle kapatın.")
+_HEALTH_TR_CODE.update({
+    "exchange_ban_open_positions": ("Borsa geçici engel koydu, açık pozisyon var", "Borsa engeli kalktı", _BAN_CRIT_SENTENCE),
+    "exchange_ban": ("Borsa geçici engel koydu", "Borsa engeli kalktı",
+                     "Bot engel bitene kadar emir göndermez; açık pozisyon yok. Engel kendiliğinden kalkar."),
+    "exchange_ban_file_corrupt": ("Borsa engel kaydı bozuk", "Borsa engel kaydı yeniden okunuyor",
+                                  "Engel dosyası okunamıyor; bot güvenlik için bir süre emir göndermeyebilir."),
+})
+_BAN_DETAIL = re.compile(r"host=(\S+) kalan_dk=(\d+)")
 _HEALTH_TR_GENERIC = ("Bir sistem kontrolü sorunlu", "Sistem kontrolü yeniden normal",
                       "Ayrıntı için panoya ya da kayıtlara bak.")
 
@@ -1232,6 +1282,10 @@ def _health_tr(name: str, code: str, detail: str = "") -> tuple[str, str, str]:
     `detail` yalnız gölge kipteki süre uyarısının anlam cümlesini ayırmak için okunur."""
     base, _, suffix = name.partition(":")
     sorun, duzeldi, anlam = _HEALTH_TR_CODE.get(code) or _HEALTH_TR.get(base) or _HEALTH_TR_GENERIC
+    if base == "exchange_ban" and code in ("exchange_ban_open_positions", "exchange_ban"):
+        m = _BAN_DETAIL.search(detail or "")
+        if m:
+            anlam = f"Borsa: {m.group(1)}, kalan yaklaşık {m.group(2)} dk. {anlam}"
     if base == "ml_package" and code.startswith("ml_expiring_") and "kip=shadow" in detail:
         anlam = "Yenilenmezse gölge izleme durur; işlemler etkilenmez."
     if suffix == "twin":

@@ -416,6 +416,53 @@ def collect_market(env: dict, var_dir: str):
         return H.MarketProbe(feed_status_state="unreadable", db_state="unreadable")
 
 
+def probe_bans(ban_dir: str) -> tuple:
+    """DD-7 §6: dizindeki her `ban.*.json` icin bir `H.BanProbe` (suresi dolmus olanlar dahil; karar cekirdekte).
+    Gecersiz/okunamayan dosya -> corrupt=True, until=None. Dizin yok -> (). `.lock` ve gecici dosyalar satir uretmez."""
+    from trader_core.ban_store import probe_ban_file
+    try:
+        names = sorted(n for n in os.listdir(ban_dir) if n.startswith("ban.") and n.endswith(".json") and len(n) > len("ban..json"))
+    except FileNotFoundError:
+        return ()
+    except NotADirectoryError:
+        return ()
+    except OSError:
+        return (H.BanProbe(host="?", until=None, http=None, source=None, corrupt=True),)
+    now_ms = int(time.time() * 1000)
+    rows = []
+    for n in names:
+        path = os.path.join(ban_dir, n)
+        if not os.path.isfile(path):
+            continue
+        host = n[len("ban."):-len(".json")]
+        try:
+            rec = probe_ban_file(path, now_ms)
+        except Exception:  # noqa: BLE001
+            rec = None
+            rows.append(H.BanProbe(host=host, until=None, http=None, source=None, corrupt=True))
+        if rec is None:
+            continue
+        if rec.corrupt:
+            rows.append(H.BanProbe(host=host, until=None, http=None, source=None, corrupt=True))
+        else:
+            rows.append(H.BanProbe(host=rec.host, until=datetime.fromtimestamp(rec.until_ms / 1000, tz=timezone.utc),
+                                   http=rec.http, source=rec.source, corrupt=False))
+    return tuple(rows)
+
+
+def collect_bans(env: dict, var_dir: str):
+    """DD-7 D2: HEALTH_BAN_DIR, yoksa MARKET_DB'nin dizini, yoksa var_dir (ENGINE_VAR_DIR). Asla None donmez; dizin yoksa ()
+    (OK). Hata -> bozuk satir (fail-closed)."""
+    d = (env.get("HEALTH_BAN_DIR") or "").strip()
+    if not d:
+        db = (env.get("MARKET_DB") or "").strip()
+        d = os.path.dirname(os.path.abspath(db)) if db else var_dir
+    try:
+        return probe_bans(d)
+    except Exception:  # noqa: BLE001
+        return (H.BanProbe(host="?", until=None, http=None, source=None, corrupt=True),)
+
+
 def probe_disk(paths) -> int | None:
     best = None
     for p in paths:
@@ -716,7 +763,7 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     prev_scores = state.get("ml_score_errors") if isinstance(state.get("ml_score_errors"), dict) else {}
     return H.HealthSnapshot(
         drift=collect_drift(env, var_dir), ml=ml, prev_ml_score_errors={b: v for b, v in prev_scores.items() if _int_or_none(v) is not None},
-        market=market, prev_rules_missing=dict(state.get("rules_missing", {})),
+        market=market, bans=collect_bans(env, var_dir), prev_rules_missing=dict(state.get("rules_missing", {})),
         now=now, timeframe_s=tf_s, api=api, ledger=ledger, disk_free_bytes=free, mem_available_bytes=mem,
         swap_total_bytes=swap_t, swap_used_bytes=swap_u, containers=containers,
         prev_restart_counts=dict(state.get("restart_counts", {})),
