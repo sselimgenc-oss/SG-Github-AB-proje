@@ -153,3 +153,4 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **Kullanıcı:** "Fable'ın kararına uymuyorum, ekleyin şimdi." Karar kullanıcınındır; uygulanır.
 - Liste (11): AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, XAU (altın), XAG (gümüş), BZ (Brent petrol), COPPER (bakır) — Binance USDⓈ-M USDT perp.
 - Uygulama sınırları (mentor belirtimi ile): yalnız kâğıt; S2 ön kaydı ve kilitli dönem kuralları değişmez; learner/ikiz kıyası korunur; gerçek para kuralı (CANLI-K1) aynen.
+- **Çalışma tutumu (kullanıcı, 18 Kasım):** "Ne söylesem kesin/garanti değil, biliyoruz. 2 günlük proje kâr edecek değil; bazı şeyleri deneyerek öğreneceğiz. Gerçek para koymuyoruz." → Kâğıtta deneyerek öğrenme önceliklidir; istatistiksel kesinlik beklemek kâğıt denemelerini engellemez (deney etiketiyle). Gerçek para kapısı (CANLI-K1) ve araştırma dürüstlüğü kuralları (S2 ön kaydı, kilitli dönem) aynen kalır.
