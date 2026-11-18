@@ -162,7 +162,8 @@ def make_manifest(corpus_path, **over) -> dict:
 def make_overlay_manifest(overlay_path, corpus_path, **over) -> dict:
     man = {"overlay_version": "corpus_v2_taken", "sha256": corpus_v2.sha256_path(overlay_path), "corpus_sha256": corpus_v2.sha256_path(corpus_path),
            "unmatched_entered": 0, "taken_missing_r": 0, "period": PERIOD_COMPACT, "backtest_period": ["2021-01-01", END_ISO],
-           "holdout_read": False, "git": {"commit": "abc123def456", "tree_clean": True}, "config_hash": "h"}
+           "holdout_read": False, "git": {"commit": "abc123def456", "tree_clean": True}, "config_hash": "h",
+           "taken_per_fold": [{"fold": k, "test_start": "x", "test_end": "y", "taken": 10} for k in range(4)], "gate_closed_skips": {}}
     man.update(over)
     return man
 

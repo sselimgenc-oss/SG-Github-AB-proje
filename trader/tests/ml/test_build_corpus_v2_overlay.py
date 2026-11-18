@@ -38,6 +38,9 @@ ROWS = [  # (pair ledger adi, ts, side, final_action, exit_ts, r)
     ("SOL/USDT", T0 + pd.Timedelta(hours=1), "long", "entered", None, None),                  # donem sonunda acik
     ("BTC/USDT", T0 + pd.Timedelta(hours=2), "long", "skipped", None, None),
     ("ETH/USDT", T0 + pd.Timedelta(hours=3), "long", "skipped", None, None),
+    ("BTC/USDT", pd.Timestamp("2023-06-01 10:00", tz="UTC"), "long", "entered", pd.Timestamp("2023-06-01 14:00", tz="UTC"), 0.5),   # dilim 1
+    ("BTC/USDT", pd.Timestamp("2024-06-01 10:00", tz="UTC"), "short", "entered", pd.Timestamp("2024-06-01 14:00", tz="UTC"), -1.0),  # dilim 2
+    ("BTC/USDT", pd.Timestamp("2025-06-01 10:00", tz="UTC"), "long", "entered", pd.Timestamp("2025-06-01 14:00", tz="UTC"), 2.0),   # dilim 3
 ]
 
 
@@ -46,11 +49,11 @@ def make_run(tmp_path, rows=ROWS, *, period=("2021-01-01", END_ISO), argv=None):
     rd.mkdir()
     con = sqlite3.connect(rd / "ledger.sqlite")
     con.execute("CREATE TABLE v_decisions (id INTEGER, bar_close_ts TEXT, pair TEXT, side TEXT, setup TEXT, planned_entry REAL, "
-                "planned_stop REAL, planned_target REAL, final_action TEXT, skip_reason TEXT)")
+                "planned_stop REAL, planned_target REAL, final_action TEXT, skip_reason TEXT, veto_reason TEXT)")
     con.execute("CREATE TABLE v_trades (decision_id INTEGER, exit_ts TEXT, r_multiple REAL, exit_reason TEXT)")
     for i, (pair, ts, side, act, ex, r) in enumerate(rows, 1):
-        con.execute("INSERT INTO v_decisions VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (i, ts.isoformat(), pair, side, "T1", 100.0, 98.0, None, act, None if act == "entered" else "risk"))
+        con.execute("INSERT INTO v_decisions VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (i, ts.isoformat(), pair, side, "T1", 100.0, 98.0, None, act, None if act == "entered" else "risk", None))
         if act == "entered" and ex is not None:
             con.execute("INSERT INTO v_trades VALUES (?,?,?,?)", (i, ex.isoformat(), r, "tp"))
     con.commit()
@@ -95,12 +98,12 @@ def test_overlay_built_from_ledger(mod, clean, tmp_path):
     assert mod.run(["--run-dir", str(rd), "--corpus", str(corpus), "--out-dir", str(out)]) == 0
     ov = pd.read_parquet(out / "corpus_v2_taken.parquet")
     man = json.loads((out / "corpus_v2_taken.manifest.json").read_text())
-    assert len(ov) == 3 and set(ov["pair"]) == {"BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"}      # ledger pair -> derlem pair
+    assert len(ov) == 6 and set(ov["pair"]) == {"BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"}      # ledger pair -> derlem pair
     r = ov[ov["pair"] == "BTC/USDT:USDT"].iloc[0]
     assert r["r_multiple"] == 1.25 and r["exit_ts"] == T0 + pd.Timedelta(hours=5) and r["side"] == "long"
     assert ov["exit_ts"].isna().sum() == 1
     assert man["sha256"] == mod.sha256_file(out / "corpus_v2_taken.parquet") and man["git"] == {"commit": COMMIT, "tree_clean": True}
-    assert (man["corpus_rows"], man["entered_total"], man["taken_matched"], man["skipped"]) == (5, 3, 3, 2)
+    assert (man["corpus_rows"], man["entered_total"], man["taken_matched"], man["skipped"]) == (8, 6, 6, 2)
     assert man["unmatched_entered"] == 0 and man["taken_open_at_end"] == 1 and man["holdout_read"] is False
     assert man["config_hash"] and man["period"] == PERIOD_COMPACT and man["corpus_sha256"] == mod.sha256_file(corpus)
     assert man["backtest_period"] == ["2021-01-01", END_ISO] and man["overlay_version"] == "corpus_v2_taken" and man["taken_missing_r"] == 0

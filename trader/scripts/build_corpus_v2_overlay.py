@@ -8,6 +8,11 @@ Motor backtest'i 19b ile AYNI ayarlarla kosulur (`--tf 1h --fill-model native --
 Cikti (`--out-dir`, varsayilan research/ml): `corpus_v2_taken.parquet` (alinmis kararlar: pair, ts, side, setup, exit_ts, r_multiple, ...)
 ve `corpus_v2_taken.manifest.json` (sha256, config_hash, commit, alinan/alinmayan sayilari, ESLESMEYEN ALINMIS sayisi, donem sonu acik).
 Butunluk sarti: defterde alinmis olup derlemde karsiligi olmayan islem = 0; degilse dosyalar yazilir ama cikis kodu 3 (kosu baslamaz).
+Koruma (mentor karari 18 Kasim 2026, BT-1): manifeste `taken_per_fold` (r02 penceresi `recipes._WF_V2`, 4 dilim; fold, test_start,
+test_end, taken), `taken_per_year`, `first_entry_ts`, `last_entry_ts` ve `gate_closed_skips` (defter kararlarinda
+skip_reason == 'entry_gate_closed' sayisi, veto_reason'a gore) yazilir. Herhangi bir sinav diliminde alinan 0 ise ya da
+gate_closed_skips bos degilse dosyalar yine yazilir ama cikis kodu 4 (GUARD_EXIT); ikisi birden olursa 3 oncelikli.
+Cikis kodlari: 0 tamam; 3 eslesmeyen alinmis islem; 4 bos sinav dilimi / entry_gate_closed atlamasi.
 Temiz agac zorunlu (19b git_stamp). Kullanim: PYTHONPATH=src .venv/bin/python scripts/build_corpus_v2_overlay.py [--run-dir DIR]
 """
 from __future__ import annotations
@@ -29,6 +34,8 @@ from trader_engine.holdout import BacktestArgError, check_holdout  # noqa: E402
 from trader_ml import corpus_v2  # noqa: E402
 from trader_ml.config import HOLDOUT_START  # noqa: E402
 from trader_ml.guards import HoldoutViolation, assert_pre_holdout  # noqa: E402
+from trader_ml.recipes import _WF_V2  # noqa: E402
+from trader_ml.walkforward import make_folds  # noqa: E402
 
 
 def _load_19b():
@@ -51,6 +58,8 @@ TARGET_TRADE_RISK = _B19.TARGET_TRADE_RISK
 KEY = ["pair", "ts", "side"]
 OUT_NAME = "corpus_v2_taken"
 UNMATCHED_EXIT = 3
+GUARD_EXIT = 4
+GATE_CLOSED = "entry_gate_closed"
 
 
 def bt_args(period: str = PERIOD) -> list[str]:
@@ -124,6 +133,48 @@ def match_counts(entered: pd.DataFrame, corpus_keys: pd.DataFrame) -> dict:
             "taken_open_at_end": int(open_end.sum()), "taken_missing_r": int((entered["exit_ts"].notna() & entered["r_multiple"].isna()).sum())}
 
 
+def read_gate_closed(run_dir: Path) -> dict[str, int]:
+    """Defter kararlarinda skip_reason == 'entry_gate_closed' sayisi, veto_reason'a gore (bos/NULL -> 'none')."""
+    import sqlite3
+    con = sqlite3.connect(f"file:{run_dir / 'ledger.sqlite'}?mode=ro", uri=True)
+    try:
+        try:
+            rows = con.execute("SELECT veto_reason, COUNT(*) FROM v_decisions WHERE skip_reason = ? GROUP BY veto_reason",
+                               (GATE_CLOSED,)).fetchall()
+        except sqlite3.OperationalError as ex:
+            raise SystemExit(f"defter v_decisions.veto_reason okunamadi: {ex}") from ex
+    finally:
+        con.close()
+    out: dict[str, int] = {}
+    for vr, n in rows:
+        k = str(vr) if vr else "none"
+        out[k] = out.get(k, 0) + int(n)
+    return dict(sorted(out.items()))
+
+
+def taken_stats(ent: pd.DataFrame) -> dict:
+    """Yalniz ts ve alinan sayisindan: r02 penceresinde dilim basina, yil basina alinan; ilk/son giris ts."""
+    w = _WF_V2
+    empty = pd.DataFrame({"ts": pd.to_datetime([], utc=True), "label_end_ts": pd.to_datetime([], utc=True)})
+    folds = make_folds(empty, train_bars=w["train_bars"], test_bars=w["test_bars"], step_bars=w["step_bars"],
+                       min_test_bars=w["min_test_bars"], start=w["start"], end=w["end"])
+    ts = pd.to_datetime(ent["ts"], utc=True)
+    per_fold = [{"fold": int(f["fold"]), "test_start": f["test_start"].isoformat(), "test_end": f["test_end"].isoformat(),
+                 "taken": int(((ts >= f["test_start"]) & (ts < f["test_end"])).sum())} for f in folds]
+    per_year = {str(k): int(v) for k, v in ts.dt.year.value_counts().sort_index().items()}
+    return {"taken_per_fold": per_fold, "taken_per_year": per_year,
+            "first_entry_ts": ts.min().isoformat() if len(ts) else None, "last_entry_ts": ts.max().isoformat() if len(ts) else None}
+
+
+def guard_failures(stats: dict, gate_closed: dict) -> list[str]:
+    msgs = [f"sinav dilimi {f['fold']} ({f['test_start'][:10]}..{f['test_end'][:10]}) alinan islem 0" for f in stats["taken_per_fold"] if f["taken"] <= 0]
+    if len(stats["taken_per_fold"]) != 4:
+        msgs.append(f"sinav dilimi sayisi 4 degil: {len(stats['taken_per_fold'])}")
+    if gate_closed:
+        msgs.append(f"entry_gate_closed atlamasi var (bos olmali): {gate_closed}")
+    return msgs
+
+
 def run(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--period", default=PERIOD)
@@ -161,6 +212,8 @@ def run(argv=None) -> int:
     ent = entered_table(dec, tr)
     assert_pre_holdout(ent["ts"], "katman ts")
     assert_pre_holdout(ent["exit_ts"].dropna(), "katman exit_ts")
+    stats = taken_stats(ent)
+    gate_closed = read_gate_closed(run_dir)
     ckeys = pd.read_parquet(corpus, columns=KEY)
     ckeys["ts"] = pd.to_datetime(ckeys["ts"], utc=True)
     cnt = match_counts(ent, ckeys)
@@ -176,7 +229,7 @@ def run(argv=None) -> int:
            "strategy": meta["strategy_label"], "config_hash": chash,
            "config": {k: payload[k] for k in ("cost", "tf", "fill_model", "granularity", "rules_source", "bt_args")},
            "rules_source": _B19.RULES_SOURCE, "rules_exception": _B19.RULES_EXCEPTION, "target_trade_risk": TARGET_TRADE_RISK,
-           "backtest_period": meta["period"], "holdout_read": False, **cnt,
+           "backtest_period": meta["period"], "holdout_read": False, **cnt, **stats, "gate_closed_skips": gate_closed,
            "exit_reasons": {str(k): int(v) for k, v in ent["exit_reason"].value_counts().items()},
            "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024)}
@@ -185,6 +238,10 @@ def run(argv=None) -> int:
     if cnt["unmatched_entered"] > 0:
         print(f"REDDEDILDI: derlemde karsiligi olmayan alinmis islem {cnt['unmatched_entered']} (0 olmali); mentor inceler", file=sys.stderr)
         return UNMATCHED_EXIT
+    gf = guard_failures(stats, gate_closed)
+    if gf:
+        print("REDDEDILDI (koruma): " + "; ".join(gf) + "; mentor inceler", file=sys.stderr)
+        return GUARD_EXIT
     return 0
 
 

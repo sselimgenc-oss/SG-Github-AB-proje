@@ -189,7 +189,7 @@ def verify_corpus_manifest(man: dict, corpus_path: str | Path, *, root: Path = R
 
 def verify_overlay_manifest(man: dict, overlay_path: str | Path, corpus_path: str | Path) -> list[str]:
     """Katman manifesti: dosya sha256'si tutmali, katman bu diskteki derlemden uretilmis olmali (corpus_sha256), eslesmeyen
-    alinmis islem ve r'siz cikisli islem 0, donem tam kayitli donem, kilitli donem okunmamis, temiz agac."""
+    alinmis islem ve r'siz cikisli islem 0, 4 sinav diliminin her birinde alinan > 0, gate_closed_skips bos, donem tam kayitli donem, kilitli donem okunmamis, temiz agac."""
     errs = []
     _eq(errs, "overlay.sha256 (diskteki dosya)", man.get("sha256"), sha256_path(overlay_path))
     _eq(errs, "overlay.corpus_sha256 (diskteki derlem)", man.get("corpus_sha256"), sha256_path(corpus_path))
@@ -202,6 +202,17 @@ def verify_overlay_manifest(man: dict, overlay_path: str | Path, corpus_path: st
     _eq(errs, "overlay.git.tree_clean", (man.get("git") or {}).get("tree_clean"), True)
     if not man.get("config_hash"):
         errs.append("overlay.config_hash yok")
+    tpf = man.get("taken_per_fold")
+    if not isinstance(tpf, list) or len(tpf) != 4:
+        errs.append(f"overlay.taken_per_fold 4 girdi olmali: {None if not isinstance(tpf, list) else len(tpf)}")
+    else:
+        for e in tpf:
+            n = e.get("taken") if isinstance(e, dict) else None
+            if not isinstance(n, int) or isinstance(n, bool) or n <= 0:
+                errs.append(f"overlay.taken_per_fold: dilim {e.get('fold') if isinstance(e, dict) else e!r} alinan > 0 olmali: {n!r}")
+    gcs = man.get("gate_closed_skips")
+    if not isinstance(gcs, dict) or gcs:
+        errs.append(f"overlay.gate_closed_skips bos olmali (alan zorunlu): {gcs!r}")
     return errs
 
 
