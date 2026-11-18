@@ -147,3 +147,9 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **ML: learner'da gölge kip, deney etiketiyle.** Model r03 (`ml1-r03-long-regime8`), "DENEY — kapıdan geçmedi" etiketi; `ml_experimental` yalnız `mode=paper` ve `ml_mode=shadow` iken geçerli (testnet/canlıda yapılandırma hatası). Gölge hiçbir adayı elemez; "ML açık olsaydı" sanal kolu günlük raporlanır. 14 günde bir aynı tarifle sunucu dışında yeniden eğitim (kilitli dönem eğitime girmez; aynı tarifin yenilenmesi deneme hakkı harcamaz).
 - **Aktif ML learner'da açılmaz** (ders servisinin learner–ikiz kıyasını bozar); aktif için üçüncü paper bot `ml-deney`, sunucu belleği ölçülünce. Kapılar gevşemez: aktif kip için "kapı geçti + kullanıcı onayı"; canlı güven için ≥ 6 hafta ve ≥ 100 puanlı işlemde ML'li − ML'siz ≥ +0,10 R, alt sınır > 0, Telegram onayı.
 - Testnet ve canlı etkilenmez: ML ayarı yalnız `config/engine.learner.json`'a yazılır.
+
+## 18 Kasım 2026 — Mag7 + emtia şimdi ekleniyor (kullanıcı kararı, mentor önerisinin aksine)
+- Mentor önerisi: geçmiş kısa (Aralık 2025 – Nisan 2026), şimdi ekleme; kripto kapısından sonra ayrı ön kayıt.
+- **Kullanıcı:** "Fable'ın kararına uymuyorum, ekleyin şimdi." Karar kullanıcınındır; uygulanır.
+- Liste (11): AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, XAU (altın), XAG (gümüş), BZ (Brent petrol), COPPER (bakır) — Binance USDⓈ-M USDT perp.
+- Uygulama sınırları (mentor belirtimi ile): yalnız kâğıt; S2 ön kaydı ve kilitli dönem kuralları değişmez; learner/ikiz kıyası korunur; gerçek para kuralı (CANLI-K1) aynen.
