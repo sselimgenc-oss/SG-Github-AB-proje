@@ -12,7 +12,7 @@ ALLOWED_MODULES_A = {
     "state.py", "order_manager.py", "position_manager.py", "funding.py", "strategy_runner.py", "gates.py", "engine.py",
     "reconcile.py", "killswitch.py", "status.py", "backtest.py", "precomputed.py", "metrics.py", "cli.py",
     "marketdata/__init__.py", "marketdata/rest_public.py", "marketdata/store.py", "marketdata/feed.py", "marketdata/sources.py",
-    "strategies/__init__.py", "strategies/base.py", "strategies/registry.py", "strategies/price_action_v1.py", "strategies/price_action_v1_ml.py",
+    "strategies/__init__.py", "strategies/base.py", "strategies/registry.py", "strategies/price_action_v1.py", "strategies/price_action_v1_ml.py", "strategies/price_action_v1_4h.py",
     "brokers/__init__.py", "brokers/base.py", "brokers/paper.py", "exchange/__init__.py", "exchange/rules.py"}
 # Faz B (11 §2): dört yeni modül izinli (binance_rest B1, pause B6, binance_futures B3, reconcile_live B5).
 ALLOWED_MODULES_B = ALLOWED_MODULES_A | {"exchange/binance_rest.py", "pause.py", "brokers/binance_futures.py",

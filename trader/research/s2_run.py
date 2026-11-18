@@ -23,7 +23,7 @@ REGISTRY_PATH = REPO_ROOT / "research" / "trial_registry.csv"
 OUT_ROOT = REPO_ROOT / "var" / "backtests"
 
 TRIALS = ("BASE", "S2-1", "S2-2")
-RUN_IDS = {"BASE": "s2_base_v1b", "S2-1": "s2_1_v1_4h", "S2-2": "s2_2_limit"}
+RUN_IDS = {"BASE": "s2_base_v1b", "S2-1": "s2_1_4h", "S2-2": "s2_2_limit"}
 STRATEGY = {"BASE": "price_action_v1", "S2-1": "price_action_v1_4h", "S2-2": "price_action_v1"}
 FULL_PERIOD = "20210101-20260501"
 EXPLORE_LO, EXPLORE_HI = "20210101", "20240101"
