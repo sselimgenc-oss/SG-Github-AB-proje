@@ -372,3 +372,7 @@ Hedef tarihler (tahmin, kayarsa kullanıcıya bildirilir; sıra korunur): Yayın
 **`config/panel.json`:** `max_concurrent` 16; `twin_status_path`, `twin_ledger_path` kaldırılır.
 
 **`config/engine.base.json`, `engine.learner.json`, `engine.testnet.json`, `engine.live.json`:** değişmez. `engine.paper-ml.json`, `engine.twin.json`: silinir.
+
+## Ek (18 Kasım 2026, kullanıcı kararı) — LLM rolü daraldı
+- İşlem notu (WP-09) **kodla** yazılır: sabit şablon + sayısal alanlar (`trade_notes.model = "code"`, `cost_usd = 0`); LLM çağrısı yok.
+- LLM yalnız **haftalık özet** yazar (sahibin okuması için), mevcut 10 USD kredi bitene kadar; bütçe: aylık tavan bugünkü 10 USD, yeni kredi yok. `L1` (LLM aday önerisi) ve **WP-15 iptal**; WP-06b bütçe paylaşımı: yalnız "haftalık özet" payı (veto payı kalkar). WP-17'deki LLM harcama satırı haftalık özet harcamasını gösterir.
