@@ -18,6 +18,8 @@
 | Tepe bellek | 480 MB (tarif tavanı 1200 MB) |
 | Ham çıktılar | `research/ml/r02/` (`gate_result.json`, `gate_report.md`, `oof_predictions.parquet`, `model_candidate.json`) |
 
+Not: `8db6344`'ün atası DD-9 commit'i `a6f0bb2`'dir (ön hesap `ec757f7`'de yapıldı). Aradaki fark `src/trader_ml/`, `research/`, `docs/ml/` altında hiçbir dosyaya dokunmuyor; `code_sha256` 13/13 gerçek koşuda da doğrulandı; koşu tablosu ve güç satırı ön hesapla aynı.
+
 ## 2. Koşudan önce
 
 | Adım | Sonuç |

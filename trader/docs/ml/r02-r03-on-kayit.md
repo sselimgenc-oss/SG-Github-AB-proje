@@ -201,6 +201,8 @@ Katmanın hızlandırılmış kodla (`8632b24`) kurulmasının sonucu değiştir
 | `--precheck-only` r03 (r02 raporundan sonra doldurulur) | r02 RED (rapor commit'i `a17c708`). r03 ön hesabı `a17c708`'de, temiz çalışma ağacında, `--prior-result research/ml/r02/gate_result.json` ile: TEMİZ (8 özellik; boş/sabit/kopya yok); t = 3,22; rho = **0,0558** ≤ 0,08 → veto yok; IC gün sayısı 1284; çıkış 0. Aynı sha256'lar. r03 koşu commit'i: bu satırı ekleyen commit |
 | Koşu anındaki n_trials | 10 (defter 5 satır × 2; değişmedi) |
 
+**Düzeltme notu (koşulardan sonra, 18 Kasım 2026):** §10'daki "kod `ec757f7` ile aynı" ifadesi eksik. Dondurma commit'i `8db6344`'ün atası `ec757f7` değil, araya giren DD-9 commit'i `a6f0bb2`'dir (canlı paket/kurulum; 60 dosya). `git diff ec757f7 a6f0bb2` `src/trader_ml/`, `research/`, `docs/ml/` ve `scripts/ml_gate.py` altında **hiçbir dosyaya dokunmuyor**; derlemin 13 `code_sha256` dosyası her iki gerçek koşuda da doğrulandı (çıkış 6 yok); `--precheck-only` çıktısı `ec757f7` ile gerçek koşularda aynı. Sonuçlar etkilenmez; tablo satırları değiştirilmedi.
+
 ## 11. Değişmeyenler
 
 Kilitli dönem 2026-05-01 → 2026-11-01 okunmaz. Kapı eşikleri değişmez. ML yalnız çıkarır. Deneme sayısı sıfırlanmaz. r01 kaydı ve `config.RECIPE_ID` / `WEIGHT_SCHEME` / `PLATT_NONNEG_SLOPE` varsayılanları (r01 davranışı) yerinde kalır; r02/r03 ayarları tarif seçimiyle açılır.
