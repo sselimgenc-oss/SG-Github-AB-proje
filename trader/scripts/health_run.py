@@ -7,6 +7,7 @@ Cikis kodlari: 0 saglikli+nabiz gitti; 10 CRIT/UNKNOWN (nabiz yok); 11 saglikli 
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -21,6 +22,7 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 sys.path.insert(0, str(_HERE))
 
 from trader_core import health as H  # noqa: E402
+from trader_core import live_paths as LP  # noqa: E402
 
 log = logging.getLogger("trader.health.run")
 
@@ -34,6 +36,13 @@ BOTS = DEFAULT_BOTS   # geriye uyum; calisma zamani listesi: bots_from_env(env)
 DEFAULT_VETO_MAX_AGE_S = 5400
 _ROOT = _HERE.parent
 _TF_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
+
+
+def data_root(env) -> Path:
+    """DD-9 §4.1: TRADER_DATA_ROOT tanimli ve mutlaksa veri koku; aksi halde kod koku (bugunku davranis).
+    Root birimleri kodu /usr/local/lib/trader-root/current altindan, veriyi /opt/trader altindan okur."""
+    v = (env.get("TRADER_DATA_ROOT") or "").strip()
+    return Path(v) if v and os.path.isabs(v) else _ROOT
 
 
 def bots_from_env(env) -> tuple[str, ...]:
@@ -56,7 +65,7 @@ def veto_file_from_env(env) -> str:
             rel = p
     except (OSError, ValueError, AttributeError):
         pass
-    return rel if os.path.isabs(rel) else str(_ROOT / rel)
+    return rel if os.path.isabs(rel) else str(data_root(env) / rel)
 
 
 def veto_max_age_from_env(env) -> int:
@@ -151,6 +160,14 @@ def save_state(path, state) -> None:
 
 
 # --------------------------------------------------------------------------- olcumler
+def _bot_var(env, bot: str, default_var: str) -> str:
+    """Bot basina var dizini (DD-9 §6.3); canli env gecersizse varsayilan (gecersizligi `live_path_issues` CRIT'ler)."""
+    try:
+        return LP.bot_var_dir(env, bot, default_var)
+    except LP.LivePathError:
+        return default_var
+
+
 def status_path(var_dir: str, bot: str) -> str:
     return os.path.join(var_dir, bot, "status.json")
 
@@ -213,8 +230,15 @@ def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | 
     reach = ex.get("reachable") if has_ex and isinstance(ex.get("reachable"), bool) else None
     last_sync = _parse_dt(ex.get("last_sync")) if has_ex else None
     naked = _naked_rows(ex.get("naked")) if has_ex else None
+    acct_d = acct_u = None
+    am = ex.get("account_mode") if has_ex else None
+    if isinstance(am, dict):                     # DD-9 §8.1: dogrulanamama sayacindan yasak kaynaklilar dusulur
+        dr, un, ub = (_int_or_none(am.get(k)) for k in ("drift", "unverified", "unverified_ban"))
+        acct_d = dr
+        acct_u = None if un is None or ub is None else max(un - ub, 0)
     probe = H.ApiProbe(ping, loop_at, _parse_dt(d.get("last_candle_open")), _ids(d.get("open_trade_ids")), dry,
-                       gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked, _ladder_block(d))
+                       gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked, _ladder_block(d),
+                       acct_drift=acct_d, acct_unverified=acct_u)
     return probe, timeframe_to_s(d.get("trigger_tf"))
 
 
@@ -250,9 +274,9 @@ def _naked_rows(v):
 # --------------------------------------------------------------------------- PAUSE / denetim gunlugu (11 §9.2)
 def pause_base(env) -> str:
     """PAUSE_FILE (varsayilan shared/PAUSE; goreli -> repo koku) + `.<bot>` = motorun/telegram'in yazdigi dosya.
-    Canliya cikista motor `shared/live/PAUSE` kullanirsa PAUSE_FILE o yola cevrilir (docs/sunucu-kurulum.md)."""
+    Canli bot icin LIVE_PAUSE_FILE (live_paths.bot_pause_base) kullanilir; bu islev kagit tabanidir (DD-9)."""
     v = (env.get("PAUSE_FILE") or "").strip() or "shared/PAUSE"
-    return v if os.path.isabs(v) else str(_ROOT / v)
+    return v if os.path.isabs(v) else str(data_root(env) / v)
 
 
 def probe_pause(base: str, audit_path: str, bot: str) -> H.PauseProbe:
@@ -411,7 +435,7 @@ def collect_market(env: dict, var_dir: str):
     fs = env.get("MARKET_FEED_STATUS") or os.path.join(var_dir, "feed-status.json")
     try:
         return probe_market(db_path=db, feed_status_path=fs, pairs=market_pairs(env),
-                            engine_status_paths={b: status_path(var_dir, b) for b in bots_from_env(env)})
+                            engine_status_paths={b: status_path(_bot_var(env, b, var_dir), b) for b in bots_from_env(env)})
     except Exception:  # noqa: BLE001
         return H.MarketProbe(feed_status_state="unreadable", db_state="unreadable")
 
@@ -654,7 +678,7 @@ def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
         if ml_model_path(env, b):
             return True
         # yol yok ama motor ML'i acik bildiriyor (active + ml_model_path=null -> no_model): fail-open olmasin
-        st = probe_ml_status(status_path(env["ENGINE_VAR_DIR"], b), b, now)
+        st = probe_ml_status(status_path(_bot_var(env, b, env["ENGINE_VAR_DIR"]), b), b, now)
         return st["present"] is True and st["mode"] != "off"
     if not any(_ml_on(b) for b in api_bots):
         return None
@@ -662,7 +686,7 @@ def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
     probes = {}
     for bot in api_bots:
         try:
-            st = probe_ml_status(status_path(var_dir, bot), bot, now)
+            st = probe_ml_status(status_path(_bot_var(env, bot, var_dir), bot), bot, now)
             f = read_package_meta(ml_model_path(env, bot))
             fs = False
             if f.get("file_state") == "ok":
@@ -721,16 +745,29 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     var_dir = env["ENGINE_VAR_DIR"]
     api, ledger, containers = {}, {}, {}
     tf_s = None
+    live = LP.live_bots(env)
+    live_err = None                               # DD-9 §6.3: gecersiz canli env -> canli botlar icin bos yoklamalar + CRIT
+    try:
+        LP.validate_live_env(env)
+    except LP.LivePathError as e:
+        live_err = e
     for bot in bots_from_env(env):
-        sp = status_path(var_dir, bot)
+        is_live = bot in live
+        if is_live and live_err is not None:
+            api[bot], ledger[bot], containers[f"trader-{bot}"] = H.ApiProbe(expect_exchange=True), H.LedgerProbe(), H.ContainerProbe()
+            continue
+        bvar = _bot_var(env, bot, var_dir)
+        sp = status_path(bvar, bot)
         try:
             probe, t = probe_status(sp, bot, now)
         except Exception:  # noqa: BLE001
             probe, t = H.ApiProbe(), None
+        if is_live:                               # canli kip yapilandirmadan turetilir (durum dosyasi okunamasa da)
+            probe = dataclasses.replace(probe, expect_exchange=True)
         api[bot] = probe
         tf_s = tf_s or t
         try:
-            ledger[bot] = probe_ledger(ledger_path(var_dir, bot), bot, probe.open_trade_ids)
+            ledger[bot] = probe_ledger(ledger_path(bvar, bot), bot, probe.open_trade_ids)
         except Exception:  # noqa: BLE001
             ledger[bot] = H.LedgerProbe()
         try:
@@ -740,17 +777,34 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     pause = {}
     pbase = pause_base(env)
     for bot in bots_from_env(env):
+        if bot in live and live_err is not None:
+            pause[bot] = H.PauseProbe()
+            continue
         try:
-            pause[bot] = probe_pause(pbase, os.path.join(var_dir, bot, "pause_audit.jsonl"), bot)
+            bvar = _bot_var(env, bot, var_dir)
+            pause[bot] = probe_pause(LP.bot_pause_base(env, bot, pbase), os.path.join(bvar, bot, "pause_audit.jsonl"), bot)
         except Exception:  # noqa: BLE001
             pause[bot] = H.PauseProbe()
     shadow = (env.get("HEALTH_SHADOW_VAR_DIR") or "").strip()
     if shadow:   # testnet golge motoru (var-testnet): yalniz status.json tabanli kontroller (dongu/mum/stopsuz/borsa)
         try:
-            api["learner@testnet"], _ = probe_status(status_path(shadow, "learner"), "learner", now)
+            sprobe, _ = probe_status(status_path(shadow, "learner"), "learner", now)
         except Exception:  # noqa: BLE001
-            api["learner@testnet"] = H.ApiProbe()
-    free = probe_disk([var_dir, env["BACKUP_DIR"]])
+            sprobe = H.ApiProbe()
+        api["learner@testnet"] = dataclasses.replace(sprobe, expect_exchange=True)
+    live_path_issues = None
+    if live:
+        cdir = (env.get("ENGINE_CONFIG_DIR") or "").strip() or str(_ROOT / "config")
+        issues = list(LP.check_against_config(env, cdir))
+        for bot in live:                          # durum dosyasi okunabildigi halde kip canli degil -> yanlis dizin
+            p = api.get(bot)
+            if p is not None and p.mode is not None and p.mode != "live":
+                issues.append(f"status_mode_mismatch:{bot}")
+        live_path_issues = tuple(issues)
+    disk_paths = [var_dir, env["BACKUP_DIR"]]
+    if (env.get("LIVE_VAR_DIR") or "").strip():
+        disk_paths.append(env["LIVE_VAR_DIR"].strip())
+    free = probe_disk(disk_paths)
     mem, swap_t, swap_u = probe_mem()
     last_backup = None
     try:
@@ -761,7 +815,12 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
     market = collect_market(env, var_dir)
     ml = collect_ml(env, state, now, var_dir, bots_from_env(env))
     prev_scores = state.get("ml_score_errors") if isinstance(state.get("ml_score_errors"), dict) else {}
+    prev_am = {}
+    for b, v in (state.get("account_mode") if isinstance(state.get("account_mode"), dict) else {}).items():
+        if isinstance(v, (list, tuple)) and len(v) == 2 and all(_int_or_none(x) is not None for x in v):
+            prev_am[b] = (v[0], v[1])
     return H.HealthSnapshot(
+        prev_account_mode=prev_am, live_path_issues=live_path_issues,
         drift=collect_drift(env, var_dir), ml=ml, prev_ml_score_errors={b: v for b, v in prev_scores.items() if _int_or_none(v) is not None},
         market=market, bans=collect_bans(env, var_dir), prev_rules_missing=dict(state.get("rules_missing", {})),
         now=now, timeframe_s=tf_s, api=api, ledger=ledger, disk_free_bytes=free, mem_available_bytes=mem,
@@ -830,6 +889,13 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
             if mp.score_errors is not None:
                 scores[b] = mp.score_errors
         new_state["ml_seen"], new_state["ml_score_errors"] = seen, scores
+
+    am_state = dict(state.get("account_mode") if isinstance(state.get("account_mode"), dict) else {})
+    for b, ap in snap.api.items():               # DD-9 §8.1: onceki tur sayaclari (None saklanmaz)
+        if ap.acct_drift is not None and ap.acct_unverified is not None:
+            am_state[b] = [ap.acct_drift, ap.acct_unverified]
+    if am_state:
+        new_state["account_mode"] = am_state
 
     failed = []
     for a in alerts:

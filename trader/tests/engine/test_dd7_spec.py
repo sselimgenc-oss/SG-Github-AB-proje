@@ -1186,7 +1186,10 @@ def test_s_08_existing_healthsnapshot_constructors_unchanged():
     s2 = H.HealthSnapshot(NOWH, 3600, {"learner": good_api()}, {"learner": good_ledger()})   # konumsal kurucu
     assert s2.timeframe_s == 3600 and s2.bans is None
     f = dataclasses.fields(H.HealthSnapshot)
-    assert f[-1].name == "bans" and f[-1].default is None, "bans sona eklenmeli, varsayilan None"
+    names = [x.name for x in f]
+    b = f[names.index("bans")]
+    assert b.default is None, "bans varsayilan None"
+    assert names[names.index("bans") + 1:] == ["prev_account_mode", "live_path_issues"], "DD-9: yalniz bu iki alan bans'tan sonra eklenir"
     rep = H.evaluate(hsnap())
     assert all(r.name != "exchange_ban" for r in rep.results)
     bp = H.BanProbe("h", None, None, None)

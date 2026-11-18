@@ -7,7 +7,9 @@ OnFailure=trader-health-fail@%n.service
 Slice=trader.slice
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 -I /opt/trader/scripts/health_backup.py
+# DD-9 §4.1: root birimi kodu YALNIZ root sahipli kopyadan calistirir; veri /opt/trader altindadir
+ExecStart=/usr/local/lib/trader-root/venv/bin/python -I /usr/local/lib/trader-root/current/scripts/health_backup.py
+Environment=TRADER_DATA_ROOT=/opt/trader
 EnvironmentFile=/etc/trader-health.env
 Nice=19
 IOSchedulingClass=idle
@@ -17,6 +19,6 @@ SuccessExitStatus=20
 ProtectSystem=strict
 ProtectHome=read-only
 # var YAZILABILIR: motor durmusken WAL defteri -shm dosyasi olmadan okunamaz (yedek yine mode=ro URI kullanir; OPEN-10)
-ReadWritePaths=/var/backups/trader /opt/trader/var
+ReadWritePaths=/var/backups/trader /opt/trader/var -/opt/trader/var-live
 NoNewPrivileges=true
 PrivateTmp=true

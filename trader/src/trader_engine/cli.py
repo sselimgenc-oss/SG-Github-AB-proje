@@ -63,8 +63,18 @@ def _cmd_run(a, *, checker=None) -> int:
     logging.getLogger("engine.cli").warning("KILL dosyasi (mutlak yol): %s", cfg.kill_file)    # DD-2 D7
     logging.getLogger("engine.cli").warning("PAUSE dosyasi (mutlak yol): %s.%s", cfg.pause_file, cfg.bot)    # DD-8 E1
     if cfg.mode in ("testnet", "live"):
+        from trader_core import proc_guard      # DD-9 §4.3: anahtar okunmadan once ortam okunamaz hale gelir (paper/backtest: cagrilmaz)
+        if not proc_guard.set_nondumpable():
+            if cfg.mode == "live":
+                print(f"yapilandirma hatasi: {ConfigError('proc_guard_failed')}", file=sys.stderr)
+                return EXIT_FAZ_B
+            logging.getLogger("engine.cli").warning("proc_guard: surec dokulemez yapilamadi (testnet; devam)")
         rc = _live_startup(cfg, checker)       # anahtar + LIVE_CONFIRM (+ enjekte denetim); None => gercek kurulum
         if rc is not None:
+            return rc
+    if getattr(a, "ensure_ledger", False):     # DD-9 §2.1: ExecStartPre=init-ledger yerine ayni surecte (cikis 8 birimi dongüye sokmaz)
+        rc = _ensure_ledger_step(cfg, getattr(a, "ledger_reason", "paper_start"))
+        if rc != EXIT_OK:
             return rc
     try:
         eng = build_engine(cfg)
@@ -96,18 +106,62 @@ def _cmd_run(a, *, checker=None) -> int:
 
 
 def _cmd_init_ledger(a) -> int:
-    from trader_core import ledger as L
-    from trader_core.signals import DEFAULT_SIGNAL_PARAMS
-
-    from .strategies.registry import StrategyError, get_strategy, make_label
     from .errors import ConfigError
     try:
         cfg = _load_cfg(a)
     except ConfigError as e:
         print(f"yapilandirma hatasi: {e}", file=sys.stderr)
         return EXIT_FAZ_B
+    return _init_ledger_work(cfg, a.reason, a.strategy)
+
+
+def _ledger_user_version(path: str) -> int | None:
+    """Salt okunur PRAGMA user_version; dosya yok/0 bayt -> None."""
+    import sqlite3
+    p = Path(path)
+    if not p.exists() or p.stat().st_size == 0:
+        return None
+    c = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
     try:
-        strat = get_strategy(a.strategy or cfg.strategy)
+        return int(c.execute("PRAGMA user_version").fetchone()[0])
+    finally:
+        c.close()
+
+
+def _ensure_ledger_step(cfg, reason: str) -> int:
+    """`run --ensure-ledger` (DD-9 §2.1). testnet/live'de eski semali defter `init-ledger` isine (migrate=False -> cikis 4, birimi
+    dongüye sokar) HIC girmez: once salt okunur damga bakilir. Yabanci damga / okunamayan dosya / damgasiz eski sema -> 8 (dosyaya
+    dokunulmaz); damga == want ve eski sema -> init isi atlanir, goc build_engine'de (premigrate yedegiyle) yapilir."""
+    if cfg.mode in ("testnet", "live"):
+        from trader_core import ledger as L
+
+        from .stamp import want_stamp
+        try:
+            lp = L.peek_meta(cfg.ledger_path, "account_stamp")
+            uv = _ledger_user_version(cfg.ledger_path)
+        except Exception as e:  # noqa: BLE001 - okunamayan defter: fail-closed, dosyaya dokunulmaz
+            print(f"defter damgasi okunamadi: {type(e).__name__} (ledger_stamp_mismatch)", file=sys.stderr)
+            return EXIT_PERMISSION
+        old_schema = uv is not None and 0 < uv < L.SCHEMA_VERSION
+        if lp is not None and lp != want_stamp(cfg):
+            print("defter baska mod/hesap damgali: reddedildi (ledger_stamp_mismatch)", file=sys.stderr)
+            return EXIT_PERMISSION
+        if old_schema and lp is None:
+            print("eski semali damgasiz defter: goc yapilmadi (ledger_stamp_missing)", file=sys.stderr)
+            return EXIT_PERMISSION
+        if old_schema:
+            return EXIT_OK
+    return _init_ledger_work(cfg, reason, None)
+
+
+def _init_ledger_work(cfg, reason: str, strategy: str | None) -> int:
+    """`init-ledger` alt komutunun isi (DD-9 §2.1: `run --ensure-ledger` ayni isi ayni surecte yapar)."""
+    from trader_core import ledger as L
+    from trader_core.signals import DEFAULT_SIGNAL_PARAMS
+
+    from .strategies.registry import StrategyError, get_strategy, make_label
+    try:
+        strat = get_strategy(strategy or cfg.strategy)
     except StrategyError as e:
         print(f"strateji hatasi: {e.code}: {e}", file=sys.stderr)
         return EXIT_ENGINE
@@ -138,13 +192,13 @@ def _cmd_init_ledger(a) -> int:
             exists = True
         except L.LedgerError:
             exists = False
-        if exists and a.reason != "strategy_update":
+        if exists and reason != "strategy_update":
             print("etkin parametre var: dokunulmadi")
         elif not exists:
-            led.init_params(params, reason=f"{label} {a.reason}")
+            led.init_params(params, reason=f"{label} {reason}")
         else:
-            vid = led.create_user_version(params, reason=f"{label} {a.reason}")
-            led.activate_version(vid, actor="user", reason=f"{label} {a.reason}")
+            vid = led.create_user_version(params, reason=f"{label} {reason}")
+            led.activate_version(vid, actor="user", reason=f"{label} {reason}")
         if cfg.bot == "twin":
             lp = Path(cfg.var_dir) / "learner" / "ledger.sqlite"
             if lp.exists():
@@ -642,6 +696,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run")
     bot_args(p)
     env_arg(p)
+    p.add_argument("--ensure-ledger", action="store_true",
+                   help="DD-9: acilista init-ledger isini ayni surecte yap (ret kodu run'in cikis kodudur)")
+    p.add_argument("--ledger-reason", default="paper_start")
     p.set_defaults(fn=_cmd_run)
     p = sub.add_parser("init-ledger")
     bot_args(p)

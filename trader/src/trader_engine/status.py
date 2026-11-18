@@ -45,11 +45,17 @@ def _exchange_block(engine, f: dict, mode: str) -> dict | None:
     if isinstance(lb, (tuple, list)) and len(lb) == 2:
         last_ban = {"http": lb[0], "retry_after_s": lb[1]}
     reach = ex.get("reachable")
+
+    def _cnt(k):
+        v = ex.get(k)
+        return v if isinstance(v, int) and not isinstance(v, bool) else None
+    am = {"drift": _cnt("account_mode_drift"), "unverified": _cnt("account_mode_unverified"),
+          "unverified_ban": _cnt("account_mode_unverified_ban")}      # DD-9 §8.1
     return {"env": mode, "reachable": reach if isinstance(reach, bool) else None,
             "last_sync": ex.get("last_sync_ts"), "clock_offset_ms": ex.get("clock_offset_ms"),
             "used_weight": ex.get("used_weight"), "ban_until": _ms_to_z(ex.get("ban_until_ms")),
             "ban_until_ms": ex.get("ban_until_ms") if isinstance(ex.get("ban_until_ms"), int) and not isinstance(ex.get("ban_until_ms"), bool) else None,
-            "last_ban": last_ban, "naked": naked}
+            "last_ban": last_ban, "naked": naked, "account_mode": am}
 
 
 class StatusWriter:

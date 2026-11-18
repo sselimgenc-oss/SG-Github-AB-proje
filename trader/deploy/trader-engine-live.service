@@ -1,0 +1,58 @@
+[Unit]
+Description=Trader motoru (learner) - CANLI (gercek para; yalniz install.sh --live kurar, kendiliginden baslamaz)
+Documentation=file:///opt/trader/docs/motor/11-canli-broker.md
+After=network-online.target trader-feed.service
+Wants=network-online.target trader-feed.service
+OnFailure=trader-health-fail@%n.service
+# DD-9 §2.2: baslatma siniri YOK (kisa bir ag kesintisinde kalici 'failed' ve yonetimsiz acik pozisyon olmasin); aralik Restart* ile buyur
+StartLimitIntervalSec=0
+# Yalniz `install.sh --live` kurar ve `enable` eder (--now YOK: baslatma elle, canliya gecis gunu listesiyle). Canli birimde Conflicts= YOKTUR.
+# Bu birim testnet birimiyle AYNI sertlestirme ve yeniden baslatma ayarlarini tasir.
+ConditionPathExists=/etc/trader-live.env
+
+[Service]
+Slice=trader.slice
+Type=simple
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+# Canli anahtarlar: AYRI dosya (root:root 0600; systemd root olarak okur). Testnet anahtar dosyasi BURADA ASLA kullanilmaz.
+# config/engine.live.json: var_dir=var-live, kill=shared/live/KILL, pause=shared/live/PAUSE; LIVE_CONFIRM = live.account_tag
+EnvironmentFile=/etc/trader-live.env
+# Veto belgesini dogrulayan HMAC anahtari (kagit motoruyla ayni; Anthropic anahtari degil)
+EnvironmentFile=/etc/trader-veto-hmac.env
+Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONUNBUFFERED=1
+# Feed market.sqlite'i olusturana kadar (en fazla 60 sn) bekler; defter/damga isi --ensure-ledger ile motor surecinde yapilir
+# (defter islemi ExecStartPre'de OLMAZ: orada cikis 8, RestartPreventExitStatus'a takilmaz ve yeniden baslatma dongusu olurdu)
+ExecStartPre=/bin/sh -c 'i=0; while [ ! -e var/market.sqlite ] && [ $i -lt 60 ]; do i=$((i+1)); sleep 1; done; [ -e var/market.sqlite ]'
+ExecStart=/usr/bin/python3 -m trader_engine run --bot learner --env live --config-dir config --ensure-ledger
+Restart=on-failure
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=120
+# 2 = anahtar/ayar eksik, 7 = acilis kapisi, 8 = borsa yetki/izin/bolge reddi ya da yabanci damga: 'failed' + OnFailure alarmi.
+# Diger her cikis (3, 4, 5, sinyal, OOM) 5 sn'den 120 sn'ye buyuyen aralikla SURESIZ yeniden denenir; her acilista protect_first calisir.
+RestartPreventExitStatus=2 7 8
+MemoryHigh=280M
+MemoryMax=350M
+OOMScoreAdjust=-300
+Nice=5
+CPUQuota=60%
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/opt/trader/var /opt/trader/var-live /opt/trader/shared /opt/trader/user_data
+
+[Install]
+WantedBy=multi-user.target

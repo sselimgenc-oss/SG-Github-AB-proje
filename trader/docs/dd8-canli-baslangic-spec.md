@@ -108,7 +108,7 @@ Yazım sırası (5. satır) zorunludur: **önce state, sonra defter** (ters sır
 **`init-ledger` CLI:** defter açıldıktan sonra, yazmadan önce: `L` var ve (`mode ∈ {testnet, live}` iken `L ≠ want`; `paper` iken her `L`) → çıkış 8, hiçbir şey yazılmaz. `init-ledger` damga yazmaz.
 
 ### 2.3 E3 — kardeş yol denetiminin kaldırılması
-`StateStore.__init__`e `ledger_path: str | None = None` eklenir; sabit `os.path.join(dirname, "ledger.sqlite")` kaldırılır. `ledger_path` verilmişse ve state dosyası var ama 0 bayt ise ve o defter dolu ise bugünkü `StateError` aynen atılır (kâğıt davranışı değişmez); `None` ise denetim yapılmaz. `build_engine` ve `cli._cmd_unblock` `cfg.ledger_path` geçirir. `testnet`/`live`de asıl koruma karar tablosudur (4. satır eksik dosyayı da yakalar).
+`StateStore.__init__`e `ledger_path: str | None = None` eklenir; sabit `os.path.join(dirname, "ledger.sqlite")` kaldırılır. `ledger_path` verilmişse ve state dosyası var ama 0 bayt ise ve o defter dolu ise bugünkü `StateError` aynen atılır (kâğıt davranışı değişmez); `None` ise denetim yapılmaz. `ledger_path` yalnız **paper** kipinde geçirilir; `testnet`/`live`de `StateStore` `ledger_path` almaz, eksik/0 bayt state'i karar tablosu (4. satır) yakalar (DD-9 §9.5). `testnet`/`live`de asıl koruma karar tablosudur (4. satır eksik dosyayı da yakalar).
 
 **Fail-closed.** Damga okunamazsa (sqlite hatası) → çıkış 8, kod ilgili `*_stamp_mismatch`. Damga yazılamazsa → çıkış 8 `state_stamp_missing` / `ledger_stamp_missing`. Hiçbir ret yolunda borsaya istek gitmez.
 

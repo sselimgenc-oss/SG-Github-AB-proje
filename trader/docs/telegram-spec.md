@@ -121,6 +121,8 @@ Komut adı = ilk sözcük (küçük harf, `@botadı` eki atılır); bilinmeyen k
 
 ### 5.2 `/devam` iki adımlı (karar 2, 9)
 
+> **DD-9 notu (O7):** `kill_state == "flat"` şartı **her kipte** aranır (`paper` dahil; eksik/yanlış tipte değer = flat değil → ret). `TelegramDaemon(expect_status_mode=...)` verilmişse (`LIVE_BOTS` doluyken `"live"`) durum dosyasının `mode`u eşit değilse ret ("beklenen kipte değil"). Canlıdan sonra `KILL_FILE` canlı motorun dosyasıdır; kâğıt ikizin `shared/KILL`ine Telegram dokunmaz.
+
 1. `/devam` → ön koşullar denetlenir (aşağı); geçerse `kill`'e benzer biçimde 4 haneli kod üretilir (`action="devam"`, TTL 120 sn).
 2. Çıplak kod yanıtı → ön koşullar **yeniden** denetlenir; geçerse `Killswitch.clear()`.
 

@@ -543,8 +543,8 @@ def test_dd2_d11_health_env_comment_matches_install_mode():
     first = (ROOT / "deploy" / "trader-health.env.example").read_text(encoding="utf-8").splitlines()[0]
     inst = (ROOT / "deploy" / "install.sh").read_text(encoding="utf-8").splitlines()
     line = [ln for ln in inst if "copy_env" in ln and "/etc/trader-health.env" in ln][0]
-    assert line.rstrip().endswith("0640")                        # kurulum bilincli olarak 0640 (grup okur)
-    assert "0640" in first and "0600" not in first
+    assert line.rstrip().endswith("0600")                        # DD-9 (O13): kurulum root:root 0600 (grup okuyamaz)
+    assert "0600" in first and "0640" not in first
 
 
 # ============================================================================================ D5 (18): periyodik saat esitleme

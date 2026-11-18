@@ -4,9 +4,10 @@ Documentation=file:///opt/trader/docs/motor/11-canli-broker.md
 After=network-online.target trader-feed.service
 Wants=network-online.target trader-feed.service
 OnFailure=trader-health-fail@%n.service
-StartLimitIntervalSec=600
-StartLimitBurst=5
+# DD-9 §2.2: baslatma siniri YOK (kisa bir ag kesintisinde kalici 'failed' ve yonetimsiz acik pozisyon olmasin); aralik Restart* ile buyur
+StartLimitIntervalSec=0
 # Anahtarlar bos iken birim ACILMAZ (install.sh denetler); elle baslatilirsa da dosya yoksa/bossa baslamaz
+# Bu birim canli birimle (trader-engine-live.service) AYNI sertlestirme ve yeniden baslatma ayarlarini tasir: 14 gunluk golge kosu bunlarin provasidir.
 ConditionPathExists=/etc/trader-testnet.env
 
 [Service]
@@ -16,28 +17,40 @@ User=trader
 Group=trader
 WorkingDirectory=/opt/trader
 # Testnet anahtarlari: AYRI dosya (root:root 0600; systemd root olarak okur). Canli anahtar dosyasi BURADA ASLA kullanilmaz.
+# config/engine.testnet.json: var_dir=var-testnet, kill=shared/testnet/KILL, pause=shared/testnet/PAUSE
 EnvironmentFile=/etc/trader-testnet.env
 # Veto belgesini dogrulayan HMAC anahtari (kagit motoruyla ayni; Anthropic anahtari degil)
 EnvironmentFile=/etc/trader-veto-hmac.env
 Environment=PYTHONPATH=/opt/trader/src
 Environment=PYTHONUNBUFFERED=1
-# config/engine.testnet.json: var_dir=var-testnet, kill=shared/testnet/KILL, pause=shared/testnet/PAUSE
+# Feed market.sqlite'i olusturana kadar (en fazla 60 sn) bekler; defter/damga isi --ensure-ledger ile motor surecinde yapilir
+# (defter islemi ExecStartPre'de OLMAZ: orada cikis 8, RestartPreventExitStatus'a takilmaz ve yeniden baslatma dongusu olurdu)
 ExecStartPre=/bin/sh -c 'i=0; while [ ! -e var/market.sqlite ] && [ $i -lt 60 ]; do i=$((i+1)); sleep 1; done; [ -e var/market.sqlite ]'
-ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot learner --env testnet --config-dir config
-ExecStart=/usr/bin/python3 -m trader_engine run --bot learner --env testnet --config-dir config
+ExecStart=/usr/bin/python3 -m trader_engine run --bot learner --env testnet --config-dir config --ensure-ledger
 Restart=on-failure
-RestartSec=20
-# 2 = anahtar/ayar eksik, 7 = acilis kapisi, 8 = borsa yetki/izin/bolge reddi: yeniden deneme dongusu yok, OnFailure alarmi gider
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=120
+# 2 = anahtar/ayar eksik, 7 = acilis kapisi, 8 = borsa yetki/izin/bolge reddi ya da yabanci damga: 'failed' + OnFailure alarmi.
+# Diger her cikis (3, 4, 5, sinyal, OOM) 5 sn'den 120 sn'ye buyuyen aralikla SURESIZ yeniden denenir; her acilista protect_first calisir.
 RestartPreventExitStatus=2 7 8
-# Dedicated 2 GB sunucu: kagit motorundan kucuk tavan (golge; ikiz yok, tek bot). Olcum: docs/sunucu-kurulum.md "Bellek ölçümü"
 MemoryHigh=250M
 MemoryMax=320M
-CPUQuota=60%
 Nice=10
+CPUQuota=60%
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 ReadWritePaths=/opt/trader/var /opt/trader/var-testnet /opt/trader/shared /opt/trader/user_data
 
 [Install]

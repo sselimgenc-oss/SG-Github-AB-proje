@@ -173,6 +173,14 @@ def write_ban(path: str, *, until_ms: int, http: int | None, source: str, now_ms
             finally:
                 os.close(fd)
             os.replace(tmp, path)
+            try:                                   # DD-9 §9.1: dizin kaydi da kalici olsun; hata yutulur (dosya yerinde)
+                dfd = os.open(os.path.dirname(os.path.abspath(path)), os.O_RDONLY)
+                try:
+                    os.fsync(dfd)
+                finally:
+                    os.close(dfd)
+            except OSError as e:
+                log.warning("ban dizini fsync edilemedi (%s): %s", path, type(e).__name__)
             return True
         finally:
             try:

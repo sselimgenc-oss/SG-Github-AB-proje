@@ -18,6 +18,8 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from trader_core import live_paths as LP  # noqa: E402
+from trader_core import proc_guard  # noqa: E402
 from trader_core import risk_ladder as RL  # noqa: E402
 from trader_core import telegram as T  # noqa: E402
 from trader_engine.killswitch import Killswitch  # noqa: E402
@@ -59,7 +61,12 @@ def build_pauses(env, now_fn, root: Path | None = None) -> dict:
     var = _abs(root, (env.get("ENGINE_VAR_DIR") or "var")).rstrip("/")
     bots = [b.strip() for b in (env.get("PAUSE_BOTS") or "learner,twin").split(",") if b.strip()]
     clk = _Clk(now_fn)
-    return {b: EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b) for b in bots}
+    out = {}
+    for b in bots:                      # DD-9 §6.2: canli bot LIVE_VAR_DIR / LIVE_PAUSE_FILE; kagit bot tabaninda (LIVE_BOTS bos -> ayni)
+        bvar = LP.bot_var_dir(env, b, var).rstrip("/")
+        bbase = LP.bot_pause_base(env, b, base)
+        out[b] = EntryPause(f"{bbase}.{b}", clk, audit_path=f"{bvar}/{b}/pause_audit.jsonl", bot=b)
+    return out
 
 
 def build_ladders(env, now_fn, root: Path | None = None) -> dict:
@@ -71,9 +78,13 @@ def build_ladders(env, now_fn, root: Path | None = None) -> dict:
     var = _abs(root, (env.get("ENGINE_VAR_DIR") or "var")).rstrip("/")
     bots = [b.strip() for b in (env.get("LADDER_BOTS") or "").split(",") if b.strip()]
     clk = _Clk(now_fn)
-    return {b: T.LadderFiles(log=RL.LadderLog(f"{var}/{b}/risk_ladder.jsonl"), status_path=f"{var}/{b}/status.json",
-                             pause=EntryPause(f"{base}.{b}", clk, audit_path=f"{var}/{b}/pause_audit.jsonl", bot=b))
-            for b in bots}
+    out = {}
+    for b in bots:
+        bvar = LP.bot_var_dir(env, b, var).rstrip("/")
+        bbase = LP.bot_pause_base(env, b, base)
+        out[b] = T.LadderFiles(log=RL.LadderLog(f"{bvar}/{b}/risk_ladder.jsonl"), status_path=f"{bvar}/{b}/status.json",
+                               pause=EntryPause(f"{bbase}.{b}", clk, audit_path=f"{bvar}/{b}/pause_audit.jsonl", bot=b))
+    return out
 
 
 def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, stop=None, runner=None) -> int:
@@ -92,10 +103,18 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
     env = os.environ if env is None else env
     logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logging.getLogger("urllib3").setLevel(logging.INFO)    # DEBUG istek satirlari (sorgu dizgisi) yazilmasin
+    if not proc_guard.set_nondumpable():                   # DD-9 §4.3: ortam (token) ayni kimlikli sureclerce okunamasin
+        logging.getLogger("telegram_run").warning("proc_guard: surec dokulemez yapilamadi; devam")
     cfg = T.TelegramConfig.from_env(env)
     if cfg is None:
         print("telegram yapilandirilmamis (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)", file=sys.stderr)
         return EXIT_CONFIG
+    if args.cmd in ("daemon", "report"):
+        cdir = (env.get("ENGINE_CONFIG_DIR") or "").strip() or str(_HERE.parent / "config")
+        issues = LP.check_against_config(env, cdir)         # DD-9 §6.2: yanlis dosyaya KILL/duraklatma yazan daemon calismaz
+        if issues:
+            print("telegram_run: canli yol tutarsizligi: " + ", ".join(issues), file=sys.stderr)
+            return EXIT_CONFIG
     now_fn = now_fn or (lambda: datetime.now(timezone.utc))
     client = T.TelegramClient(cfg.token, http_post, sleep)
     try:
@@ -112,7 +131,7 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
         pauses = build_pauses(env, now_fn)
         ladders = build_ladders(env, now_fn)
         d = T.TelegramDaemon(cfg, client, now_fn=now_fn, sleep=sleep, runner=runner or default_runner, killswitch=ks, pauses=pauses,
-                             ladders=ladders,
+                             ladders=ladders, expect_status_mode="live" if LP.live_bots(env) else None,
                              report_fn=lambda: T.build_report(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(),
                                                        T.default_sections(cfg, now_fn(), now_fn().astimezone(T.TR).date().isoformat(), pauses,
                                                                           ladders)))

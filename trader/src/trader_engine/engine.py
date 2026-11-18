@@ -1917,7 +1917,27 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
         state = StateStore(cfg.state_path, bot=cfg.bot)
         led = None
         try:
-            led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, clock=clock.now)
+            # DD-9 §9.4: damga, sema gocunden ONCE (yabanci eski-sema defter goc ettirilip yedeklenmesin; dosyaya dokunulmaz)
+            from .stamp import want_stamp
+            want = want_stamp(cfg)
+            from .stamp import _read_state
+            ss = _read_state(state)                     # DD-8 karar tablosu 1. satir (state damgasi) defterden ONCE
+            if ss is not None and ss != want:
+                raise EngineExit(8, "state_stamp_mismatch")
+            try:
+                lp = L.peek_meta(cfg.ledger_path, "account_stamp")
+            except L.LedgerError as e:
+                log.critical("defter damgasi okunamadi: %r", e)
+                raise EngineExit(8, "ledger_stamp_mismatch") from e
+            if lp is not None and lp != want:
+                raise EngineExit(8, "ledger_stamp_mismatch")
+            try:
+                led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, migrate=(lp == want), clock=clock.now)
+            except L.LedgerSchemaError as e:
+                if lp == want:
+                    raise
+                log.critical("eski sema damgasiz defter: goc yapilmadi: %r", e)
+                raise EngineExit(8, "ledger_stamp_missing") from e
             from .stamp import verify_or_init_stamp
             verify_or_init_stamp(cfg, state, led)                                         # 4: damga (EngineExit 8)
             live_broker_new = broker is None

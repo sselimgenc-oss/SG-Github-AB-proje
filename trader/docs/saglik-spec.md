@@ -604,3 +604,12 @@ Sapma kancası:
 - `meta.data_snapshot_at` alanı (§16.4) r04+ şablonuna kadar yoktur; o zamana dek soy kontrolü `data_hash` + `train_window.end` ile sınırlıdır.
 - Veto dosyası ve rejim girdileri için aynı soy kontrolü (B-25'in kalanı) ve "her açık pozisyonun güncel veto/rejim girdisi var mı" kontrolü bu ekte yoktur; ayrı iş.
 - Strateji parametre sürümünün yaşı (D-06'nın ikinci yarısı) için eşik konmadı: ders servisi değişikliği zorunlu değildir, yaş tek başına sorun göstermez.
+
+
+## 17. DD-9 ekleri: hesap modu alarmı, canlı kip, yol tutarlılığı
+
+- **`account_mode:<bot>`** (yalnız `_live_mode`: `has_exchange` ya da `mode ∈ {testnet, live}` ya da `expect_exchange`): `status.exchange.account_mode = {drift, unverified, unverified_ban}` sayaçlarının tur başına **artışı** değerlendirilir (süreç yeniden başlamışsa şimdiki değer artış sayılır). `drift` artışı ≥ 1 → CRIT `account_mode_drift` (anında); `unverified − unverified_ban` artışı ≥ 1 → WARN `account_mode_unverified` (anında; yasak kaynaklı doğrulanamama sayılmaz); sayaçlar okunamıyorsa UNKNOWN `account_mode_unknown`. Önceki tur değerleri durum dosyasında `account_mode` anahtarıyla saklanır. `ApiProbe`: `acct_drift`, `acct_unverified`, `expect_exchange`; `HealthSnapshot`: `prev_account_mode`, `live_path_issues`.
+- **Canlı kip yapılandırmadan türetilir:** `LIVE_BOTS` içindeki botlar ve `learner@testnet` gölge yoklaması `expect_exchange=True` ile kurulur (durum dosyası okunamasa da `naked_position`, `exchange_reachable`, `account_mode` üretilir; `exchange_ban` açık pozisyonu bilinmiyorsa var sayar → CRIT `exchange_ban_open_positions`).
+- **`live_paths`** (yalnız `LIVE_BOTS` doluyken): `check_against_config(env, ENGINE_CONFIG_DIR)` + `status_mode_mismatch:<bot>`; boş → OK; aksi CRIT `live_paths_mismatch` (anında).
+- **Sapma izleyicisi:** `LIVE_BOTS` içindeki bot için `drift_monitor:<bot>` üretilmez (canlı yol desteği ayrı paket); kâğıt botlar değişmez.
+- Canlı bot `LIVE_VAR_DIR` altından izlenir; disk yoklamasına `LIVE_VAR_DIR` eklenir; yedek `ledger_<bot>@live.sqlite` ve `state_<bot>@live.sqlite` dosyalarını da alır (`health_backup`).

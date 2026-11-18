@@ -105,6 +105,11 @@ class ApiProbe:
     naked: tuple[tuple[int, str, float], ...] | None = None   # (trade_id, cift, stopsuz sure sn); None = okunamadi
     # 12 §11: status.json `risk_ladder` blogu (+ opsiyonel "pause_holds": [{reason, at}] = status.pause.holds); None = blok yok.
     ladder: Mapping | None = None
+    # DD-9 §8.1/§8.2: hesap modu sayaclari (status.exchange.account_mode; None = okunamadi) ve "borsa kipi beklenir"
+    # (LIVE_BOTS/golge yoklamasi: durum dosyasi okunamasa da canli denetimler uretilir).
+    acct_drift: int | None = None
+    acct_unverified: int | None = None
+    expect_exchange: bool = False
 
 
 @dataclass(frozen=True)
@@ -224,6 +229,10 @@ class HealthSnapshot:
     drift: Mapping[str, DriftProbe] | None = None
     # DD-7 §6: ban dosyasi yoklamasi; None = yoklanmadi (exchange_ban denetimi uretilmez), () = dosya yok.
     bans: tuple[BanProbe, ...] | None = None
+    # DD-9 §8.1: bot -> onceki kosudaki (acct_drift, acct_unverified); None = onceki yok.
+    prev_account_mode: Mapping[str, tuple[int, int]] | None = None
+    # DD-9 §8.3: canli yol tutarliligi; None = LIVE_BOTS bos (denetim uretilmez), () = tutarli, aksi uyusmazlik kodlari.
+    live_path_issues: tuple[str, ...] | None = None
 
     def __post_init__(self):
         if not isinstance(self.now, datetime) or self.now.tzinfo is None or self.now.utcoffset() is None:
@@ -813,7 +822,48 @@ def _c_drift(snap, bot, cfg):
 
 
 def _live_mode(a: ApiProbe) -> bool:
-    return a.has_exchange or a.mode in ("testnet", "live")
+    return a.has_exchange or a.mode in ("testnet", "live") or a.expect_exchange
+
+
+def _acct_increase(cur: int, prev) -> int:
+    """DD-9 §8.1: onceki yok -> 0; surec yeniden baslamis (simdiki < onceki) -> simdiki; aksi fark."""
+    if not isinstance(prev, int) or isinstance(prev, bool):
+        return 0
+    if cur < prev:
+        return cur
+    return cur - prev
+
+
+def _c_account_mode(snap, bot, cfg):
+    """account_mode:<bot> (DD-9 §8.1): drift artisi CRIT, dogrulanamama artisi (yasak kaynaklilar haric) WARN, bilinmeyen UNKNOWN."""
+    name = f"account_mode:{bot}"
+    a = snap.api[bot]
+    if a.acct_drift is None or a.acct_unverified is None:
+        return _unknown(name, "account_mode_unknown", f"{bot} hesap modu sayaclari (exchange.account_mode) okunamadi")
+    prev = (snap.prev_account_mode or {}).get(bot)
+    pd = pu = None
+    if isinstance(prev, (tuple, list)) and len(prev) == 2:
+        pd, pu = prev
+    d_inc = _acct_increase(a.acct_drift, pd)
+    u_inc = _acct_increase(a.acct_unverified, pu)
+    if d_inc >= 1:
+        return _res(name, Status.CRIT, "account_mode_drift",
+                    f"{bot} hesap ayari (kaldirac/marjin tipi) botun ayarindan farkli: +{d_inc}", d_inc, 0)
+    if u_inc >= 1:
+        return _res(name, Status.WARN, "account_mode_unverified",
+                    f"{bot} hesap ayari dogrulanamadi, giris atlandi: +{u_inc}", u_inc, 0)
+    return _res(name, Status.OK, "ok", f"{bot} hesap ayari tutarli")
+
+
+def _c_live_paths(snap, cfg):
+    """live_paths (DD-9 §8.3): canli bot yollari yapilandirmayla tutarli mi."""
+    issues = snap.live_path_issues
+    if issues is None:
+        return None
+    if not issues:
+        return _res("live_paths", Status.OK, "ok", "canli bot yollari tutarli")
+    return _res("live_paths", Status.CRIT, "live_paths_mismatch", "canli bot yollari tutarsiz: " + ", ".join(issues[:8]),
+                len(issues), 0)
 
 
 def _c_naked(snap, bot, cfg):
@@ -872,7 +922,8 @@ def _c_exchange_ban(snap, cfg):
         left = (top.until - snap.now).total_seconds()
         mins = max(1, int(-(-left // 60)))
         info = f"host={top.host} kalan_dk={mins} http={top.http} kaynak={top.source}"
-        open_pos = any(p.has_exchange and (p.open_trade_ids is None or len(p.open_trade_ids) > 0) for p in snap.api.values())
+        open_pos = any((p.has_exchange or p.expect_exchange) and (p.open_trade_ids is None or len(p.open_trade_ids) > 0)
+                       for p in snap.api.values())       # DD-9 §8.2: durum dosyasi okunamasa da canli beklenen bot'ta bilinmeyen = var
         if open_pos:
             return _res(name, Status.CRIT, "exchange_ban_open_positions", f"borsa engeli suruyor, acik pozisyon var: {info}", left)
         return _res(name, Status.WARN, "exchange_ban", f"borsa engeli suruyor: {info}", left)
@@ -1018,6 +1069,8 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
             if _live_mode(snap.api[bot]):
                 results.append(_safe(f"naked_position:{bot}", _c_naked, snap, bot, cfg))
                 results.append(_safe(f"exchange_reachable:{bot}", _c_exchange, snap, bot, cfg))
+            if _live_mode(snap.api[bot]):
+                results.append(_safe(f"account_mode:{bot}", _c_account_mode, snap, bot, cfg))
             if snap.api[bot].ladder is not None or snap.api[bot].mode in ("live", "testnet"):
                 results.append(_safe(f"risk_ladder:{bot}", _c_ladder, snap, bot, cfg))
         if bot in snap.pause:
@@ -1028,6 +1081,8 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
             results.append(_safe(f"spool_corrupt:{bot}", _c_spool_corrupt, snap, bot, cfg))
     if snap.bans is not None:
         results.append(_safe("exchange_ban", _c_exchange_ban, snap, cfg))
+    if snap.live_path_issues is not None:
+        results.append(_safe("live_paths", _c_live_paths, snap, cfg))
     results.append(_safe("disk_free", _c_disk, snap, cfg))
     results.append(_safe("memory", _c_mem, snap, cfg))
     results.append(_safe("swap", _c_swap, snap, cfg))
@@ -1058,6 +1113,9 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
         for bot in snap.ml:
             results.append(_safe(f"ml_package:{bot}", _c_ml, snap, bot, cfg))
     for bot in dict.fromkeys(list(cfg.require_bots) + list(snap.drift or {})):
+        ap = snap.api.get(bot)
+        if ap is not None and (ap.expect_exchange or ap.mode == "live"):
+            continue                        # DD-9 §8.4: canli bot icin sapma izleyicisi denetimi uretilmez (canli yol destegi ayri paket)
         results.append(_c_drift(snap, bot, cfg))
 
     have = {r.name for r in results}
@@ -1085,7 +1143,7 @@ def should_send_ok(report: HealthReport) -> bool:
 # ---------------------------------------------------------------------------------------------
 # Uyari yolu
 # ---------------------------------------------------------------------------------------------
-IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "spool_corrupt", "schema", "oom_killed",
+IMMEDIATE_CODES = frozenset({"account_mode_drift", "live_paths_mismatch", "disk_low", "unledgered_trades", "spool_pending", "spool_corrupt", "schema", "oom_killed",
                              "rules_missing_increase", "naked_position", "pause_hold_unaudited",
                              "pause_hold_lost", "capital_floor", "drawdown_review", "ladder_missing",
                              "capital_missing", "ladder_invalid", "equity_unreadable", "ml_expired", "ml_no_model",
@@ -1093,7 +1151,7 @@ IMMEDIATE_CODES = frozenset({"disk_low", "unledgered_trades", "spool_pending", "
 
 
 # WARN olup ilk turda uyaran kodlar (taban her tur guncellendigi icin uyari tek tur gorunur; confirm_runs bekleyemez).
-IMMEDIATE_WARN_CODES = frozenset({"ml_score_errors", "exchange_ban", "exchange_ban_file_corrupt"})
+IMMEDIATE_WARN_CODES = frozenset({"account_mode_unverified", "ml_score_errors", "exchange_ban", "exchange_ban_file_corrupt"})
 
 
 @dataclass(frozen=True)
@@ -1271,6 +1329,20 @@ _HEALTH_TR_CODE.update({
                      "Bot engel bitene kadar emir göndermez; açık pozisyon yok. Engel kendiliğinden kalkar."),
     "exchange_ban_file_corrupt": ("Borsa engel kaydı bozuk", "Borsa engel kaydı yeniden okunuyor",
                                   "Engel dosyası okunamıyor; bot güvenlik için bir süre emir göndermeyebilir."),
+})
+_HEALTH_TR_CODE.update({
+    "account_mode_drift": ("Hesap ayarı değişmiş, yeni işlem açılmadı", "Hesap ayarı yeniden doğru",
+                           "Kaldıraç ya da marjin tipi botun ayarından farklı; Binance'te elle değiştirildiyse eski haline getirin."),
+    "account_mode_unverified": ("Hesap ayarı doğrulanamadı, bir giriş atlandı", "Hesap ayarı yeniden doğrulanıyor",
+                                "Bot giriş öncesi hesap ayarını borsadan okuyamadı; güvenlik için o giriş gönderilmedi."),
+    "account_mode_unknown": ("Hesap ayarı bilgisi okunamıyor", "Hesap ayarı bilgisi yeniden okunuyor",
+                             "Botun durum dosyasında hesap ayarı sayaçları yok; motor ve sağlık sürümleri kontrol edilmeli."),
+    "live_paths_mismatch": ("Canlı bot ayar yolları tutarsız", "Canlı bot ayar yolları düzeldi",
+                            "Telegram ya da sağlık yanlış dosyaya bakıyor olabilir; sunucuda kurulum yeniden çalıştırılmalı."),
+})
+_HEALTH_TR.update({
+    "account_mode": _HEALTH_TR_CODE["account_mode_unknown"],
+    "live_paths": _HEALTH_TR_CODE["live_paths_mismatch"],
 })
 _BAN_DETAIL = re.compile(r"host=(\S+) kalan_dk=(\d+)")
 _HEALTH_TR_GENERIC = ("Bir sistem kontrolü sorunlu", "Sistem kontrolü yeniden normal",

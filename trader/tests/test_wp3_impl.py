@@ -847,7 +847,7 @@ def test_install_script_restarts_running_engines_after_code_change():
     from pathlib import Path
     t = (Path(__file__).resolve().parents[1] / "deploy" / "install.sh").read_text(encoding="utf-8")
     assert "trader-engine@*.service" in t and "trader-engine-testnet.service" in t
-    assert t.index("export TRADER_OLD_HEAD") < t.index('exec bash "$NEW_SELF"')          # exec HEAD'i kaybettirmez
+    assert t.index('PREV_COMMIT="$(sed') < t.index('exec bash "$ROOT_DIR/releases/$COMMIT/deploy/install.sh"')   # DD-9: onceki surum /etc/trader-release'ten, exec'ten once okunur
     assert t.index("CODE_CHANGED=1") < t.index("ACTIVE_ENGINES=")
     assert 'systemctl restart "$u"' in t
     assert t.index("ACTIVE_ENGINES=") < t.index("enable_now trader-engine@learner.service") < t.index('systemctl restart "$u"')

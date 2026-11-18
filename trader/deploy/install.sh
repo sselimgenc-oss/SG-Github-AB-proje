@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Trader sunucu kurulumu (Ubuntu 22.04+/24.04, root olarak, etkilesimsiz, tekrar calistirilabilir).
-# Kullanim: bash install.sh [--no-twin]   (ikiz (twin) VARSAYILAN ACIK; --with-twin geriye uyumluluk icin kabul edilir, etkisizdir)
+# Kullanim: COMMIT=<40 karakterlik surum kodu> bash install.sh [--no-twin] [--live | --no-live]
+#   COMMIT zorunludur (ortam degiskeni; yoksa /etc/trader-release icindeki COMMIT=). Kisa kod, dal ya da etiket adi KABUL EDILMEZ.
+#   Ikiz (twin) VARSAYILAN ACIK; --with-twin geriye uyumluluk icin kabul edilir, etkisizdir.
+#   --live: CANLI motor birimini kurar (varsayilan KURULMAZ; kurulsa da KENDILIGINDEN BASLAMAZ). --no-live: canli birimi kaldirir.
 # Yalniz "trader" kullanicisina ve trader-* systemd birimlerine dokunur; baska projeye, guvenlik duvarina, acik porta dokunmaz.
+# Root'un calistirdigi her sey (bu betik, birim sablonlari, env ornekleri, root birimlerinin betikleri) root sahipli
+# /usr/local/lib/trader-root/releases/<COMMIT>/ altindan gelir; trader'in yazabildigi depodan hicbir sey calistirilmaz.
 set -euo pipefail
-SELF_SUM_AT_START="$(sha256sum "$0" 2>/dev/null | cut -d" " -f1 || true)"   # depo guncellenince yeni betikle yeniden baslamak icin
+SELF_SUM_AT_START="$(sha256sum "$0" 2>/dev/null | cut -d" " -f1 || true)"   # surum kopyasindaki betikle yeniden baslamak icin
 
 # ---- ayarlar (gerekirse degistirin) ---------------------------------------
 REPO_URL="${REPO_URL:-https://github.com/sselimgenc-oss/SG-Github-AB-proje.git}"
@@ -18,20 +23,94 @@ DEPLOY_KEY="${HOME_DIR}/.ssh/deploy_key"
 SWAP_FILE="/swapfile"
 SWAP_SIZE="4G"
 UNIT_DIR="/etc/systemd/system"
+ROOT_DIR="/usr/local/lib/trader-root"      # root sahipli kod/venv/klon agaci (/opt/trader-root KULLANILMAZ: render() sed'i onu bozar)
+RELEASE_FILE="/etc/trader-release"
 WITH_TWIN=1
+LIVE_FLAG=0
+NO_LIVE=0
 
 for arg in "$@"; do
   case "$arg" in
     --with-twin) WITH_TWIN=1 ;;   # geriye uyumluluk: varsayilan zaten acik
     --no-twin) WITH_TWIN=0 ;;
-    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--no-twin])" >&2; exit 2 ;;
+    --live) LIVE_FLAG=1 ;;
+    --no-live) NO_LIVE=1 ;;
+    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--no-twin] [--live | --no-live])" >&2; exit 2 ;;
   esac
 done
+if [ "$LIVE_FLAG" -eq 1 ] && [ "$NO_LIVE" -eq 1 ]; then
+  echo "Kullanim hatasi: --live ve --no-live birlikte verilemez." >&2
+  exit 2
+fi
+# Canli kipi: --live verildi YA DA canli birim zaten kurulu (yapiskan); --no-live her ikisini de kapatir.
+if [ "$NO_LIVE" -eq 1 ]; then
+  LIVE=0
+elif [ "$LIVE_FLAG" -eq 1 ] || [ -f "${UNIT_DIR}/trader-engine-live.service" ]; then
+  LIVE=1
+else
+  LIVE=0
+fi
 
 say()  { printf '\n==> %s\n' "$*"; }
 fail() { printf '\nHATA: %s\n' "$*" >&2; exit 1; }
 
+valid_commit() { # 40 kucuk onaltilik karakter (kisa sha, dal adi, etiket adi, buyuk harf RET)
+  local v="${1-}"
+  [[ "$v" =~ ^[0123456789abcdef]{40}$ ]]
+}
+
+resolve_commit() { # stdout'a COMMIT'i yazar; yoksa/gecersizse 1 doner. Sira: ortam > RELEASE_FILE (ortamdaki gecersiz deger dosyaya dusmez)
+  local v f
+  if [ -n "${COMMIT:-}" ]; then
+    valid_commit "$COMMIT" || return 1
+    printf '%s\n' "$COMMIT"
+    return 0
+  fi
+  f="${RELEASE_FILE:-/etc/trader-release}"
+  if [ -f "$f" ]; then
+    v="$(sed -n 's/^COMMIT=//p' "$f" | head -n 1 | tr -d '[:space:]')"
+    if valid_commit "$v"; then
+      printf '%s\n' "$v"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+is_live_tag() { # canli-YYYYAAGG[-N]
+  local v="${1-}"
+  [[ "$v" =~ ^canli-[0-9]{8}(-[0-9]+)?$ ]]
+}
+
+set_kv() { # dosya AD deger: satir varsa degistirir, yoksa ekler; dosya sonu satir sonu korunur (idempotent)
+  local f="$1" k="$2" v="$3" esc
+  if grep -q "^${k}=" "$f" 2>/dev/null; then
+    esc="$(printf '%s' "$v" | sed -e 's/[\\&|]/\\&/g')"
+    sed -i "s|^${k}=.*|${k}=${esc}|" "$f"
+  else
+    if [ -s "$f" ] && [ -n "$(tail -c1 "$f")" ]; then echo >> "$f"; fi
+    printf '%s=%s\n' "$k" "$v" >> "$f"
+  fi
+}
+
+safe_tree_path() { # F2: root owner/mod islemi oncesi, yolun HICBIR bileseni sembolik baglanti olamaz (trader yazabilir)
+  local p
+  for p in "$@"; do
+    if [ "$(realpath -m "$p")" != "$p" ]; then
+      fail "Guvenlik: $p yolunda sembolik baglanti var (kurulum durdu; root trader'in koydugu baglantiyi izlemez)"
+      return 1
+    fi
+  done
+}
+
 [ "$(id -u)" -eq 0 ] || fail "Bu betik root olarak calistirilmali (DigitalOcean konsolunda zaten rootsunuz)."
+
+# COMMIT zorunlu: hicbir sey degistirilmeden once cozulur (ortam, yoksa /etc/trader-release).
+COMMIT="$(resolve_commit)" || fail "COMMIT gerekli: 40 karakterlik kucuk harfli surum kodu (ornek: COMMIT=<kod> bash install.sh). Kisa kod, dal ya da etiket adi kabul edilmez. Hicbir sey degistirilmedi."
+export COMMIT
+REL_DIR="${ROOT_DIR}/releases/${COMMIT}"
+PREV_COMMIT="$(sed -n 's/^COMMIT=//p' "$RELEASE_FILE" 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
+echo "Surum (COMMIT): ${COMMIT}   canli kip: ${LIVE}"
 
 # ---- 0. Ubuntu / python kontrolu -------------------------------------------
 say "Sistem kontrolu"
@@ -73,7 +152,13 @@ getent group "$TG_GROUP" >/dev/null || groupadd --system "$TG_GROUP"
 if ! id "$TRADER_USER" >/dev/null 2>&1; then
   useradd --create-home --home-dir "$HOME_DIR" --shell /usr/sbin/nologin "$TRADER_USER"
 fi
-usermod -aG "$TG_GROUP" "$TRADER_USER"
+# DD-9 (O13): trader kullanicisi trader-tg uyesi OLMAZ (env dosyalari root:root 0600). Grup silinmez: outbox dizini (2770 trader:trader-tg)
+# ve birimlerdeki SupplementaryGroups=trader-tg root yazan saglik birimi ile trader okuyan daemon arasindaki tek koprudur.
+if id -nG "$TRADER_USER" 2>/dev/null | tr ' ' '\n' | grep -qx "$TG_GROUP"; then
+  gpasswd -d "$TRADER_USER" "$TG_GROUP" >/dev/null   # gpasswd -d trader trader-tg (uye degilse bu satira girilmez)
+  echo "trader kullanicisi trader-tg grubundan cikarildi."
+fi
+safe_tree_path "$HOME_DIR"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$HOME_DIR"
 
 # ---- 3. paketler -----------------------------------------------------------------
@@ -82,55 +167,123 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq python3-venv git sqlite3 ca-certificates openssl
 
-# ---- 4. depo ------------------------------------------------------------------
-say "Kod deposu"
+# ---- 4. depo, root kopyasi ve surum ----------------------------------------------
+say "Kod deposu ve root kopyasi"
 as_trader() { runuser -u "$TRADER_USER" -- "$@"; }
+install -d -m 0755 -o root -g root "$ROOT_DIR" "$ROOT_DIR/releases"
+ROOT_GIT_SSH=""
 if [ -f "$DEPLOY_KEY" ]; then
-  chown "$TRADER_USER:$TRADER_USER" "$DEPLOY_KEY"; chmod 600 "$DEPLOY_KEY"
+  [ ! -L "$DEPLOY_KEY" ] || fail "Deploy anahtari sembolik baglanti: $DEPLOY_KEY (kurulum durdu)"
+  safe_tree_path "$DEPLOY_KEY"
+  chown -h "$TRADER_USER:$TRADER_USER" "$DEPLOY_KEY"; chmod 600 "$DEPLOY_KEY"
+  # root'un kendi anahtar kopyasi ve sabit known_hosts'u (root trader'in dizinindeki hicbir dosyaya guvenmez)
+  install -d -m 0700 -o root -g root "$ROOT_DIR/ssh"
+  install -m 0600 -o root -g root "$DEPLOY_KEY" "$ROOT_DIR/ssh/deploy_key"
   # github.com ana makine anahtarlari sabit (TOFU/accept-new yok). Kaynak: GitHub "SSH key fingerprints" belgesi ve
   # https://api.github.com/meta (ssh_keys); parmak izleri: ed25519 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU,
   # ecdsa SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM, rsa SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s
-  GH_KNOWN_HOSTS="${HOME_DIR}/.ssh/github_known_hosts"
-  cat > "$GH_KNOWN_HOSTS" <<'KEYS'
+  cat > "$ROOT_DIR/ssh/known_hosts" <<'KEYS'
 github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
 github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
 github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
 KEYS
-  chown "$TRADER_USER:$TRADER_USER" "$GH_KNOWN_HOSTS"; chmod 644 "$GH_KNOWN_HOSTS"
+  chmod 0600 "$ROOT_DIR/ssh/known_hosts"
+  GH_KNOWN_HOSTS="${HOME_DIR}/.ssh/github_known_hosts"
+  safe_tree_path "$GH_KNOWN_HOSTS" "${HOME_DIR}/.ssh"
+  install -m 0644 -o "$TRADER_USER" -g "$TRADER_USER" "$ROOT_DIR/ssh/known_hosts" "$GH_KNOWN_HOSTS"
+  # trader'in (kod deposu icin) ve root'un (kendi klonu icin) AYRI ssh komutlari; root yalniz kendi kopyasini kullanir
   export GIT_SSH_COMMAND="ssh -i ${DEPLOY_KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${GH_KNOWN_HOSTS}"
+  ROOT_GIT_SSH="ssh -i ${ROOT_DIR}/ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${ROOT_DIR}/ssh/known_hosts"
   CLONE_URL="$REPO_SSH_URL"
   echo "Deploy anahtari bulundu; SSH ile cekiliyor."
 else
   CLONE_URL="$REPO_URL"
 fi
-# WP-3 (defter sema 4): sema goci YALNIZ motor sureciyle (yazar, premigrate yedegi) yapilir; okuyucular (saglik, ders, sapma,
-# karsi-olgu, telegram, pano) salt okunur acar ve gocu calistirmaz. Bu yuzden kod degistiyse calisan motorlar sonda yeniden
-# baslatilir. Eski kodun HEAD'i yeniden-calistirmada (exec) kaybolmasin diye ortamda tasinir.
-CODE_CHANGED=0
-if [ -d "$REPO_DIR/.git" ]; then
-  OLD_HEAD="${TRADER_OLD_HEAD:-$(as_trader git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)}"
-  export TRADER_OLD_HEAD="$OLD_HEAD"
-else
-  OLD_HEAD=""
+
+# -- 4a. root'un KENDI ciplak klonu: yalniz $BRANCH ve canli-* etiketleri (trader deposuna root hicbir git komutu calistirmaz)
+ROOT_REPO="$ROOT_DIR/repo.git"
+root_git() {
+  if [ -n "$ROOT_GIT_SSH" ]; then
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="$ROOT_GIT_SSH" git -C "$ROOT_REPO" "$@"
+  else
+    GIT_TERMINAL_PROMPT=0 env -u GIT_SSH_COMMAND git -C "$ROOT_REPO" "$@"
+  fi
+}
+[ -d "$ROOT_REPO" ] || git init --bare --quiet "$ROOT_REPO"
+if root_git remote get-url origin >/dev/null 2>&1; then root_git remote set-url origin "$CLONE_URL"; else root_git remote add origin "$CLONE_URL"; fi
+root_git fetch --quiet origin "+refs/heads/${BRANCH}:refs/remotes/origin/${BRANCH}" "+refs/tags/canli-*:refs/tags/canli-*" \
+  || fail "Root klonu guncellenemedi (ag/anahtar?). Hicbir sey degistirilmedi."
+root_git cat-file -e "${COMMIT}^{commit}" 2>/dev/null || fail "COMMIT root klonunda yok: ${COMMIT} (dal: ${BRANCH}). Hicbir sey degistirilmedi."
+root_git merge-base --is-ancestor "$COMMIT" "refs/remotes/origin/${BRANCH}" \
+  || fail "COMMIT yayın dalında değil: ${COMMIT} (dal: ${BRANCH}). Hicbir sey degistirilmedi."
+
+# -- 4b. surum dizini: git archive (trader/ oneki atilir); yarim kalirsa current DEGISMEZ
+if [ ! -f "${REL_DIR}/.complete" ]; then
+  REL_TMP="$(mktemp -d "${ROOT_DIR}/releases/.tmp-XXXXXX")"
+  if ! root_git archive --format=tar "$COMMIT" trader/src trader/scripts trader/deploy trader/config trader/requirements.lock \
+        | tar -x -C "$REL_TMP" --strip-components=1 --no-same-owner --no-same-permissions; then
+    rm -rf "$REL_TMP"
+    fail "Surum arsivi cikarilamadi; current degismedi (eski surum calismaya devam eder)."
+  fi
+  chown -R root:root "$REL_TMP"
+  chmod -R go-w "$REL_TMP"
+  chmod 0755 "$REL_TMP"
+  if [ ! -f "$REL_TMP/deploy/install.sh" ] || [ ! -f "$REL_TMP/deploy/requirements-root.lock" ]; then
+    rm -rf "$REL_TMP"
+    fail "Surum eksik (deploy/install.sh ya da requirements-root.lock yok); current degismedi."
+  fi
+  : > "$REL_TMP/.complete"
+  rm -rf "$REL_DIR"
+  mv -T "$REL_TMP" "$REL_DIR"
 fi
-if [ -d "$REPO_DIR/.git" ]; then
-  as_trader git -C "$REPO_DIR" fetch --quiet origin "$BRANCH"
-  as_trader git -C "$REPO_DIR" checkout --quiet "$BRANCH" 2>/dev/null || as_trader git -C "$REPO_DIR" checkout --quiet -b "$BRANCH" "origin/$BRANCH"
-  as_trader git -C "$REPO_DIR" merge --ff-only --quiet "origin/$BRANCH" || fail "Depo guncellenemedi (yerel degisiklik var?). $REPO_DIR icinde elle bakilmali."
+[ -d "$REL_DIR/deploy" ] || fail "$REL_DIR/deploy yok; surum hazirlanamadi."
+
+# -- 4c. root'un sanal ortami: yalniz requests ve 4 bagimliligi, hash sabit (requirements-root.lock)
+say "Root python ortami"
+[ -x "$ROOT_DIR/venv/bin/python" ] || "$PY_BIN" -m venv "$ROOT_DIR/venv"
+"$ROOT_DIR/venv/bin/python" -m pip install --quiet --disable-pip-version-check --require-hashes --no-deps \
+  -r "$REL_DIR/deploy/requirements-root.lock"
+
+# -- 4d. current: atomik gecis (yeni baglanti + mv -T); eski surumler: current + onceki en cok iki
+ln -sfn "$REL_DIR" "$ROOT_DIR/current.new"
+mv -T "$ROOT_DIR/current.new" "$ROOT_DIR/current"
+KEEP=0
+while IFS= read -r old; do
+  [ -n "$old" ] || continue
+  [ "$old" = "$COMMIT" ] && continue
+  KEEP=$((KEEP + 1))
+  if [ "$KEEP" -gt 2 ]; then rm -rf "${ROOT_DIR:?}/releases/${old}"; fi
+done < <(find "$ROOT_DIR/releases" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9a-f]{40}' -printf '%T@ %f\n' 2>/dev/null | sort -rn | awk '{print $2}')
+
+# Bash calisan betigi bellekte eski haliyle surdurur; surum kopyasindaki betik farkliysa ONUNLA bastan calistir (bir kez).
+if [ "${TRADER_INSTALL_REEXEC:-}" != "root" ] && [ "$(sha256sum "$ROOT_DIR/releases/$COMMIT/deploy/install.sh" | cut -d" " -f1)" != "$SELF_SUM_AT_START" ]; then
+  say "install.sh surum kopyasindan yeniden baslatiliyor"
+  export TRADER_INSTALL_REEXEC=root      # eski betigin "1" bayragi bu gecisi atlatamaz: yalniz kok kopyadan baslayan surec "root" yazar
+  exec bash "$ROOT_DIR/releases/$COMMIT/deploy/install.sh" "$@"
+fi
+
+# -- 4e. trader deposu: COMMIT'e sabitlenir (dal ucu DEGIL); git islemleri trader olarak
+# WP-3 (defter sema 4): sema goci YALNIZ motor sureciyle (yazar, premigrate yedegi) yapilir; okuyucular salt okunur acar.
+# Bu yuzden kod degistiyse (onceki /etc/trader-release != COMMIT) calisan motorlar sonda yeniden baslatilir.
+CODE_CHANGED=0
+if [ "$PREV_COMMIT" != "$COMMIT" ]; then CODE_CHANGED=1; fi
+HAVE_REPO=0
+as_trader test -d "$REPO_DIR/.git" && HAVE_REPO=1 || true
+if [ "$HAVE_REPO" -eq 1 ]; then
+  as_trader git -C "$REPO_DIR" fetch --quiet origin "$BRANCH" || fail "Depo guncellenemedi (ag/anahtar?)."
 else
   as_trader git clone --quiet --branch "$BRANCH" "$CLONE_URL" "$REPO_DIR" \
     || fail "Depo indirilemedi. Depo ozelse deploy anahtari gerekir: bkz. trader/docs/sunucu-kurulum.md"
 fi
+as_trader git -C "$REPO_DIR" checkout --quiet --detach "$COMMIT" \
+  || fail "COMMIT trader deposuna alinamadi (yerel degisiklik var mi?). $REPO_DIR icinde elle bakilmali."
+trader_git() {
+  as_trader git -C "$REPO_DIR" "$@"
+}
+[ "$(trader_git rev-parse HEAD)" = "$COMMIT" ] || fail "Trader deposu COMMIT'te degil."
+[ -z "$(trader_git status --porcelain --untracked-files=no)" ] \
+  || fail "Trader deposunda izlenen dosyalarda yerel degisiklik var; kurulum durdu ($REPO_DIR icinde elle bakilmali)."
 [ -d "$TRADER_DIR/deploy" ] || fail "$TRADER_DIR/deploy yok; dal/depo adi yanlis olabilir."
-NEW_HEAD="$(as_trader git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
-if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" != "$NEW_HEAD" ]; then CODE_CHANGED=1; fi
-# Bash calisan betigi bellekte eski haliyle surdurur; depo guncellemesi install.sh'i degistirdiyse yeni surumle bastan calistir (bir kez).
-NEW_SELF="$TRADER_DIR/deploy/install.sh"
-if [ -z "${TRADER_INSTALL_REEXEC:-}" ] && [ -f "$NEW_SELF" ] && [ "$(sha256sum "$NEW_SELF" | cut -d" " -f1)" != "$SELF_SUM_AT_START" ]; then
-  say "install.sh guncellendi; yeni surumle yeniden baslatiliyor"
-  export TRADER_INSTALL_REEXEC=1
-  exec bash "$NEW_SELF" "$@"
-fi
 
 # ---- 5. python ortami (yalniz calisma bagimliliklari) -----------------------------
 say "Python ortami (birkac dakika surebilir)"
@@ -142,6 +295,34 @@ as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-ve
 as_trader "$TRADER_DIR/.venv/bin/python" -m pip install --quiet --disable-pip-version-check \
   --require-hashes -r "$TRADER_DIR/requirements.lock"
 
+# ---- 5a. canli on kosullari (LIVE=1): herhangi bir birim/env degismeden once ------------
+has_value() { # dosyada ANAHTAR= bos degilse 0
+  grep -Eq "^$2=[^[:space:]]+" "$1" 2>/dev/null
+}
+MISSING=()
+if [ "$LIVE" -eq 1 ]; then
+  say "Canli on kosullari"
+  [ -f "$RELEASE_FILE" ] || fail "önce --live'sız kurulum gerekli ($RELEASE_FILE yok)"
+  LIVE_ENV="/etc/trader-live.env"
+  { [ -f "$LIVE_ENV" ] && [ ! -L "$LIVE_ENV" ]; } || fail "Canli on kosul: $LIVE_ENV yok. Once COMMIT ile --live'siz kurun, sonra dosyayi nano ile doldurun."
+  [ "$(stat -c '%a' "$LIVE_ENV")" = "600" ] || fail "Canli on kosul: $LIVE_ENV kipi 0600 degil."
+  if [ "$(id -u)" -eq 0 ] && [ "$(stat -c '%U:%G' "$LIVE_ENV")" != "root:root" ]; then fail "Canli on kosul: $LIVE_ENV sahibi root:root degil."; fi
+  for k in BINANCE_API_KEY BINANCE_API_SECRET LIVE_CONFIRM; do
+    has_value "$LIVE_ENV" "$k" || fail "Canli on kosul: $LIVE_ENV icinde $k bos. Dosyayi nano ile doldurun (degeri sohbete yazmayin)."
+  done
+  LIVE_TAG_OK=0
+  LIVE_TAGS="$(root_git tag --points-at "$COMMIT" 2>/dev/null || true)"
+  for t in $LIVE_TAGS; do
+    if is_live_tag "$t"; then LIVE_TAG_OK=1; fi
+  done
+  [ "$LIVE_TAG_OK" -eq 1 ] || fail "Canli on kosul: COMMIT canli-YYYYAAGG[-N] etiketi tasimiyor; etiketsiz commit canliya kurulamaz."
+  # canli katman motorun KENDI dogrulayicisiyla yuklenir (LIVE_CONFIRM gerekmez; hicbir sey yazilmaz)
+  PYTHONPATH="$TRADER_DIR/src" as_trader "$TRADER_DIR/.venv/bin/python" -m trader_engine pause --bot learner --env live \
+    --config-dir "$TRADER_DIR/config" --list >/dev/null \
+    || fail "Canli on kosul: config/engine.live.json motorun dogrulayicisindan gecmedi."
+  echo "Canli on kosullar tamam."
+fi
+
 # ---- 5b. Node + wrangler (yalniz panel yayini icin; yalniz eksikse kurulur, global degil) ------------------
 say "Node/npm ve wrangler (Cloudflare yayini)"
 WRANGLER_VERSION="3.114.0"      # sabit surum (kayan 'latest' yok)
@@ -149,6 +330,7 @@ WRANGLER_DIR="$TRADER_DIR/var/wrangler"
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
   apt-get install -y -qq nodejs npm
 fi
+safe_tree_path "$TRADER_DIR/var" "$WRANGLER_DIR"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$WRANGLER_DIR"
 if [ "$(as_trader cat "$WRANGLER_DIR/node_modules/wrangler/package.json" 2>/dev/null | grep -o '"version": *"[^"]*"' | head -1 | grep -o '[0-9][0-9.]*')" != "$WRANGLER_VERSION" ]; then
   ( cd "$WRANGLER_DIR" && as_trader env HOME="$HOME_DIR" npm install --no-audit --no-fund --silent --prefix "$WRANGLER_DIR" "wrangler@${WRANGLER_VERSION}" ) \
@@ -159,14 +341,21 @@ fi
 
 # ---- 6. dizinler -------------------------------------------------------------------
 say "Dizinler"
+safe_tree_path "$TRADER_DIR/var" "$TRADER_DIR/shared" "$TRADER_DIR/shared/veto" "$TRADER_DIR/user_data" "$TRADER_DIR/var/history" \
+  "$TRADER_DIR/var/telegram" "$TRADER_DIR/var-testnet" "$TRADER_DIR/shared/testnet" "$TRADER_DIR/var-live" "$TRADER_DIR/shared/live" \
+  "$TRADER_DIR/var/telegram/outbox" "$TRADER_DIR/user_data/budget.sqlite"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADER_DIR/shared" "$TRADER_DIR/shared/veto" \
   "$TRADER_DIR/user_data" "$TRADER_DIR/var/history" \
-  "$TRADER_DIR/var/telegram" "$TRADER_DIR/var-testnet" "$TRADER_DIR/shared/testnet"
+  "$TRADER_DIR/var/telegram" "$TRADER_DIR/var-testnet" "$TRADER_DIR/shared/testnet" \
+  "$TRADER_DIR/var-live" "$TRADER_DIR/shared/live"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
 install -d -m 0750 -o root -g root /var/backups/trader
+# veto birimi artik trader olarak calisir (DD-9 §4.2): onceden root'un yazdigi dosyalar trader'a gecer
+chown -hR "$TRADER_USER:$TRADER_USER" "$TRADER_DIR/shared/veto" "$TRADER_DIR/user_data"
 # budget.sqlite'i trader sahipli onceden olustur (yoksa): ilk olusturan veto (root) olursa dosya root:root 0600 kalir ve ders/telegram acamaz (OPEN-8).
 # Sifir bayt dosya gecerlidir: budget.py bos dosyayi 'ilk olusturma' sayip semayi kendisi kurar.
 if [ ! -e "$TRADER_DIR/user_data/budget.sqlite" ]; then
+  safe_tree_path "$TRADER_DIR/user_data/budget.sqlite"
   install -m 0600 -o "$TRADER_USER" -g "$TRADER_USER" /dev/null "$TRADER_DIR/user_data/budget.sqlite"
 fi
 
@@ -178,15 +367,27 @@ copy_env() { # kaynak ornek, hedef, sahip:grup, mod
   install -m "$4" -o "${3%%:*}" -g "${3##*:}" "$1" "$dst"
   echo "Olusturuldu: $dst"
 }
-copy_env "$TRADER_DIR/deploy/trader-health.env.example"   /etc/trader-health.env   "root:${TG_GROUP}"    0640
-copy_env "$TRADER_DIR/deploy/trader-lesson.env.example"   /etc/trader-lesson.env   "root:${TRADER_USER}" 0640
-copy_env "$TRADER_DIR/deploy/trader-telegram.env.example" /etc/trader-telegram.env "root:${TG_GROUP}"    0640
-copy_env "$TRADER_DIR/deploy/trader-veto.env.example"     /etc/trader-veto.env     "root:root"           0600
-copy_env "$TRADER_DIR/deploy/trader-veto-hmac.env.example" /etc/trader-veto-hmac.env "root:root"          0600
-copy_env "$TRADER_DIR/deploy/trader-panel-cf.env.example" /etc/trader-panel-cf.env "root:root"           0600
+harden_env_file() { # /etc/trader-*.env: root:root 0600; sembolik baglantiya DOKUNMAZ ve kurulumu durdurur
+  local f="$1"
+  if [ -L "$f" ]; then
+    fail "Ayar dosyasi sembolik baglanti: $f (kurulum durdu; dosyayi elle inceleyin)"
+    return 1
+  fi
+  [ -e "$f" ] || return 0
+  if [ "$(id -u)" -eq 0 ]; then chown root:root "$f"; fi
+  chmod 0600 "$f"
+}
+REL_DIR="${REL_DIR:-${ROOT_DIR:-/usr/local/lib/trader-root}/releases/${COMMIT:-unset}}"   # env ornekleri root sahipli surum dizininden
+copy_env "$REL_DIR/deploy/trader-health.env.example"    /etc/trader-health.env    "root:root" 0600
+copy_env "$REL_DIR/deploy/trader-lesson.env.example"    /etc/trader-lesson.env    "root:root" 0600
+copy_env "$REL_DIR/deploy/trader-telegram.env.example"  /etc/trader-telegram.env  "root:root" 0600
+copy_env "$REL_DIR/deploy/trader-veto.env.example"      /etc/trader-veto.env      "root:root" 0600
+copy_env "$REL_DIR/deploy/trader-veto-hmac.env.example" /etc/trader-veto-hmac.env "root:root" 0600
+copy_env "$REL_DIR/deploy/trader-panel-cf.env.example"  /etc/trader-panel-cf.env  "root:root" 0600
 # testnet golge motoru anahtarlari: AYRI dosya (canli anahtar dosyasi degil); anahtarlar bos kalirsa birim acilmaz (WP-B8)
-copy_env "$TRADER_DIR/deploy/trader-testnet.env.example"  /etc/trader-testnet.env  "root:root"           0600
-chmod 0600 /etc/trader-testnet.env; chown root:root /etc/trader-testnet.env
+copy_env "$REL_DIR/deploy/trader-testnet.env.example"   /etc/trader-testnet.env   "root:root" 0600
+# CANLI anahtar dosyasi (DD-9): bos ornekten her kurulumda olusturulur (var olan ezilmez); degerleri kullanici nano ile yazar
+copy_env "$REL_DIR/deploy/trader-live.env.example"      /etc/trader-live.env      "root:root" 0600
 # veto HMAC anahtari: bos ise otomatik uret (ekrana YAZILMAZ); veto birimi imzalar, motor dogrular
 if ! grep -Eq '^TRADER_VETO_HMAC_KEY=[^[:space:]]+' /etc/trader-veto-hmac.env; then
   HMAC_NEW="$(openssl rand -hex 32)"
@@ -225,6 +426,27 @@ else
   echo "PAUSE_BOTS=${HEALTH_BOTS_VAL}" >> /etc/trader-telegram.env
 fi
 
+# her calistirmada: /etc/trader-*.env kalibindaki VAR OLAN her dosya root:root 0600 (DD-9 O13; sembolik baglanti = kurulum durur)
+for f in /etc/trader-*.env; do
+  { [ -e "$f" ] || [ -L "$f" ]; } || continue
+  harden_env_file "$f"
+done
+# canli yol alanlari (sir DEGIL; yalniz --live): Telegram ve saglik canli botu config/engine.live.json ile ayni yollardan izler (DD-9 §6.4)
+if [ "${LIVE:-0}" -eq 1 ]; then
+  set_kv /etc/trader-telegram.env KILL_FILE "${TRADER_DIR}/shared/live/KILL"
+  set_kv /etc/trader-telegram.env ENGINE_STATUS_PATH "${TRADER_DIR}/var-live/learner/status.json"
+  set_kv /etc/trader-telegram.env LEDGER_PATH "${TRADER_DIR}/var-live/learner/ledger.sqlite"
+  set_kv /etc/trader-telegram.env LIVE_BOTS "learner"
+  set_kv /etc/trader-telegram.env LIVE_VAR_DIR "${TRADER_DIR}/var-live"
+  set_kv /etc/trader-telegram.env LIVE_PAUSE_FILE "${TRADER_DIR}/shared/live/PAUSE"
+  set_kv /etc/trader-telegram.env LADDER_BOTS "learner"
+  set_kv /etc/trader-telegram.env ENGINE_CONFIG_DIR "${TRADER_DIR}/config"
+  set_kv /etc/trader-health.env LIVE_BOTS "learner"
+  set_kv /etc/trader-health.env LIVE_VAR_DIR "${TRADER_DIR}/var-live"
+  set_kv /etc/trader-health.env LIVE_PAUSE_FILE "${TRADER_DIR}/shared/live/PAUSE"
+  set_kv /etc/trader-lesson.env LEDGER_PATH "${TRADER_DIR}/var-live/learner/ledger.sqlite"
+fi
+
 # ---- 8. systemd birimleri ---------------------------------------------------------
 say "systemd birimleri"
 render() { # ornek birim yollarini bu sunucuya uyarla
@@ -233,11 +455,20 @@ render() { # ornek birim yollarini bu sunucuya uyarla
       -e "s#/usr/bin/python3#${TRADER_DIR}/.venv/bin/python#g" "$1" > "$2"
   chmod 0644 "$2"
 }
-for f in "$TRADER_DIR"/deploy/trader-*.service "$TRADER_DIR"/deploy/trader-*.timer; do
+for f in "$REL_DIR"/deploy/trader-*.service "$REL_DIR"/deploy/trader-*.timer; do
+  # canli birim YALNIZ LIVE=1 iken kurulur (varsayilan kapali)
+  if [ "$(basename "$f")" = "trader-engine-live.service" ] && [ "$LIVE" -ne 1 ]; then continue; fi
   render "$f" "${UNIT_DIR}/$(basename "$f")"
 done
+if [ "$NO_LIVE" -eq 1 ]; then
+  say "Canli kip kapatiliyor (--no-live)"
+  systemctl disable --now trader-engine-env-retry@live.timer >/dev/null 2>&1 || true
+  systemctl disable --now trader-engine-live.service >/dev/null 2>&1 || true
+  rm -f "${UNIT_DIR}/trader-engine-live.service"
+  echo "UYARI: /etc/trader-telegram.env, /etc/trader-health.env icindeki canli alanlar (LIVE_BOTS, LIVE_VAR_DIR, LIVE_PAUSE_FILE, KILL_FILE, ...) ve /etc/trader-lesson.env LEDGER_PATH elle kagit degerlerine alinmali."
+fi
 # trader.slice: tum birimlerin ortak bellek tavani (GECICI sayilar; soak'te 48 saatlik olcumle kesinlesir). 'trader-*' glob'una girmez, ayrica kurulur.
-render "$TRADER_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"
+render "$REL_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"
 systemctl daemon-reload
 
 # ---- 9. veri ---------------------------------------------------------------------
@@ -254,26 +485,32 @@ fi
 
 # ---- 10. servisleri baslat --------------------------------------------------------
 say "Servisler"
-has_value() { # dosyada ANAHTAR= bos degilse 0
-  grep -Eq "^$2=[^[:space:]]+" "$1" 2>/dev/null
-}
-MISSING=()
+LIVE_WARN=""
 # kod degistiyse yeniden baslatilacak, su an CALISAN motor birimleri (enable_now'dan once alinir; yeni acilanlar zaten yeni kodla baslar)
 ACTIVE_ENGINES=""
 if [ "$CODE_CHANGED" -eq 1 ]; then
-  ACTIVE_ENGINES="$(systemctl list-units 'trader-engine@*.service' 'trader-engine-testnet.service' --state=active --no-legend --plain 2>/dev/null | awk '{print $1}' || true)"
+  ACTIVE_ENGINES="$(systemctl list-units 'trader-engine@*.service' 'trader-engine-testnet.service' 'trader-engine-live.service' --state=active --no-legend --plain 2>/dev/null | awk '{print $1}' || true)"
 fi
 enable_now() { systemctl enable --now "$1" >/dev/null 2>&1 && echo "Etkin: $1" || echo "UYARI: $1 baslatilamadi (systemctl status $1)"; }
 
 enable_now trader-feed.service     # veri akisi once: motor kural + taze veri gormeden baslamaz (acilis kapisi)
-enable_now trader-engine@learner.service
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali (--no-twin): acmak icin 'bash $TRADER_DIR/deploy/install.sh' (varsayilan acik)."; fi
+if [ "$LIVE" -eq 1 ]; then
+  # canli kip: kagit learner ETKINLESTIRILMEZ; hala etkinse DURDURULMAZ (canliya gecis listesine gore elle durdurulur)
+  if systemctl is-active --quiet trader-engine@learner.service 2>/dev/null; then
+    LIVE_WARN="kagit learner calisiyor; canliya gecis listesine gore durdurun (KILL ile duzlayip: systemctl disable --now trader-engine@learner trader-engine-retry@learner.timer)"
+  fi
+  echo "Canli kip: kagit learner (trader-engine@learner) etkinlestirilmedi."
+else
+  enable_now trader-engine@learner.service
+fi
+if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali (--no-twin): acmak icin 'COMMIT=<KOD> bash $ROOT_DIR/current/deploy/install.sh' (varsayilan acik)."; fi
 enable_now trader-health.timer
-enable_now trader-engine-retry@learner.timer   # acilis kapisi (cikis 7) yeniden deneme: besleme saglikliyse, saatte en fazla 6
+if [ "$LIVE" -eq 0 ]; then enable_now trader-engine-retry@learner.timer; fi   # acilis kapisi (cikis 7) yeniden deneme: besleme saglikliyse, saatte en fazla 6
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine-retry@twin.timer; fi
 enable_now trader-backup.timer
 enable_now trader-oi.timer   # ML-G7: OI/long-short orani toplayici (5 dk; salt okunur Binance uclari, anahtar yok); var/market.sqlite positioning_5m
 drift_first_run() { # var/<bot> dizinini hazirla ve ilk olcumu hemen al (yoksa saglik 20:20'ye kadar yanlis drift_missing der)
+  safe_tree_path "$TRADER_DIR/var/$1"
   install -d -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/$1"
   systemctl start "trader-drift@$1.service" || true
 }
@@ -294,6 +531,9 @@ TG_OK=0
 if has_value /etc/trader-telegram.env TELEGRAM_BOT_TOKEN && has_value /etc/trader-telegram.env TELEGRAM_CHAT_ID; then
   TG_OK=1
   enable_now trader-telegram.service
+  if [ "$CODE_CHANGED" -eq 1 ] && systemctl is-active --quiet trader-telegram.service 2>/dev/null; then   # yeni kod (ornegin /devam duzeltmesi) devreye girsin
+    systemctl restart trader-telegram.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-telegram.service (kod degisti)" || echo "UYARI: trader-telegram.service yeniden baslatilamadi."
+  fi
   enable_now trader-telegram-report.timer
   # saglik uyarilari Telegram'a: anahtarlar tamam oldugunda NOTIFIER=auto zaten telegram'i secer (ornek dosyada auto); log kalmissa auto yap
   sed -i 's#^NOTIFIER=log$#NOTIFIER=auto#' /etc/trader-health.env
@@ -322,12 +562,27 @@ else
   CF_TODO+=("Yayini acin: systemctl enable --now trader-panel-publish.timer (ya da install.sh'i yeniden calistirin); workers.dev adresini yer imine ekleyin")
 fi
 
+# ---- canli birim (LIVE=1): on denetim -> enable (--now YOK: motor BASLATILMAZ) ---------------------------------------------
+if [ "$LIVE" -eq 1 ]; then
+  say "Canli birim: on denetim"
+  if ! "$ROOT_DIR/venv/bin/python" -I "$ROOT_DIR/current/scripts/live_preflight.py" --config-dir "$TRADER_DIR/config"; then
+    fail "Canli on denetim basarisiz (yukaridaki FAIL satirlari); canli birim ETKINLESTIRILMEDI."
+  fi
+  systemctl enable trader-engine-live.service >/dev/null 2>&1 || fail "trader-engine-live.service etkinlestirilemedi (systemctl status trader-engine-live)."
+  echo "Canli birim etkinlestirildi (BASLATILMADI): baslatma canliya gecis gunu listesiyle, elle."
+  systemctl enable --now trader-engine-env-retry@live.timer >/dev/null 2>&1 || echo "UYARI: canli yeniden deneme zamanlayicisi etkinlestirilemedi."
+  if [ "$TG_OK" -eq 1 ]; then   # Telegram env'i degisti: daemon yeni yollarla yeniden baslar
+    systemctl restart trader-telegram.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-telegram.service" || echo "UYARI: trader-telegram.service yeniden baslatilamadi."
+  fi
+fi
+
 # Testnet golge motoru (WP-B8): BINANCE_API_KEY ve BINANCE_API_SECRET ikisi de doluysa acilir (gercek para yok; yalniz testnet.binancefuture.com)
 if has_value /etc/trader-testnet.env BINANCE_API_KEY && has_value /etc/trader-testnet.env BINANCE_API_SECRET; then
   # saglik denetcisi golge motoru da izler (stopsuz pozisyon / borsa erisimi); kullanici degeri korunur
   grep -q '^HEALTH_SHADOW_VAR_DIR=' /etc/trader-health.env || echo "HEALTH_SHADOW_VAR_DIR=" >> /etc/trader-health.env
   sed -i "s#^HEALTH_SHADOW_VAR_DIR=\$#HEALTH_SHADOW_VAR_DIR=${TRADER_DIR}/var-testnet#" /etc/trader-health.env
   enable_now trader-engine-testnet.service
+  enable_now trader-engine-env-retry@testnet.timer   # acilis kapisi (cikis 7) yeniden deneme: testnet birimi icin (DD-9 §2.3)
 else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRET (Binance Futures TESTNET anahtari; testnet golge motoru, ikisi de dolu olmadan acilmaz)"); fi
 
 # ---- 11. ozet ---------------------------------------------------------------------
@@ -338,17 +593,25 @@ echo
 echo "Bellek:"
 free -m | awk 'NR==1 || /Mem:|Swap:/ {print "  " $0}'
 echo
+# Kurulum basariyla bitti: surum sabitlemesi yazilir (sir degil; sonraki kurulumlar ve on denetim okur)
+printf 'COMMIT=%s\n' "$COMMIT" > "${RELEASE_FILE}.tmp"
+chmod 0644 "${RELEASE_FILE}.tmp"
+mv -f "${RELEASE_FILE}.tmp" "$RELEASE_FILE"
+echo "Surum: ${COMMIT} (${RELEASE_FILE})"
+if [ -n "$LIVE_WARN" ]; then echo "UYARI: $LIVE_WARN"; fi
+if [ "$NO_LIVE" -eq 1 ]; then echo "UYARI (--no-live): /etc/trader-telegram.env, /etc/trader-health.env (LIVE_BOTS, LIVE_VAR_DIR, LIVE_PAUSE_FILE, KILL_FILE, ENGINE_STATUS_PATH, LEDGER_PATH, LADDER_BOTS) ve /etc/trader-lesson.env (LEDGER_PATH) hala CANLI yollari tasiyor olabilir; elle kagit degerlerine alin."; fi
+if [ "$LIVE" -eq 1 ]; then echo "CANLI birim kuruldu ve etkin ama BASLATILMADI (systemctl start trader-engine-live yalniz canliya gecis gunu listesiyle)."; fi
 if [ "${#MISSING[@]}" -gt 0 ]; then
   echo "YAPILACAKLAR (anahtarlar doldurulmadan bu zamanlayicilar KAPALI birakildi):"
   for m in "${MISSING[@]}"; do echo "  - $m"; done
-  echo "  Doldurduktan sonra bu komutu tekrar calistirin: bash $TRADER_DIR/deploy/install.sh"
+  echo "  Doldurduktan sonra bu komutu tekrar calistirin: COMMIT=<KOD> bash $ROOT_DIR/current/deploy/install.sh"
   echo "  (Anahtarlari sohbete yazmayin; dosyayi nano ile acip degeri yapistirin.)"
 fi
 if [ "${#CF_TODO[@]}" -gt 0 ]; then
   echo
   echo "PANO YAYINI (Cloudflare) icin siradaki adimlar (zamanlayici bunlar bitene kadar KAPALI):"
   for m in "${CF_TODO[@]}"; do echo "  - $m"; done
-  echo "  Sonra: bash $TRADER_DIR/deploy/install.sh   (zamanlayiciyi kendisi acar)"
+  echo "  Sonra: COMMIT=<KOD> bash $ROOT_DIR/current/deploy/install.sh   (zamanlayiciyi kendisi acar)"
 fi
 echo
 echo "Pano (telefon/bilgisayar): ssh -L 8787:127.0.0.1:8787 <kullanici>@<sunucu>  sonra tarayicida http://127.0.0.1:8787"

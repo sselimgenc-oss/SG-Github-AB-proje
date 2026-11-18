@@ -32,7 +32,12 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 sys.path.insert(0, str(_HERE))
 
+import logging  # noqa: E402
+
 import smoke_testnet_lib as S  # noqa: E402
+from trader_core import proc_guard  # noqa: E402
+
+_log = logging.getLogger("smoke_live")
 
 UTC = timezone.utc
 # Sabit izin listesi: yalniz Binance vadeli URETIM. Yapilandirmadan/komut satirindan eklenemez.
@@ -82,9 +87,12 @@ def guard_config(cfg: Any, environ: Any) -> None:
     """Canli kip + testnet olmayan yollar + LIVE_CONFIRM == live.account_tag (deger iletiye yazilmaz)."""
     if cfg.mode != "live" or cfg.live is None:
         raise S.SafetyError(f"yapilandirma kipi live degil: {cfg.mode}")
-    for name in ("var_dir", "kill_file", "pause_file"):
-        if S.path_has_testnet(getattr(cfg, name), 1 if name == "var_dir" else 2):      # DD-8 E2: yalniz son bilesenler
-            raise S.SafetyError(f"{name} testnet yolu: canli katman degil")
+    # DD-9 §9.3: OLUMLU eslesme (testnet olmamak yetmez; kagit yolu ya da rastgele dizin de reddedilir). Yalniz son bilesenler.
+    want = {"var_dir": ("var-live",), "kill_file": ("shared", "live", "KILL"), "pause_file": ("shared", "live", "PAUSE")}
+    for name, tail in want.items():
+        parts = tuple(c for c in os.path.normpath(str(getattr(cfg, name))).split(os.sep) if c)
+        if parts[-len(tail):] != tail:
+            raise S.SafetyError(f"{name} canli yol degil (beklenen ...{'/'.join(tail)})")
     got = environ.get("LIVE_CONFIRM")
     if not isinstance(got, str) or got != cfg.live.account_tag:
         raise S.SafetyError("LIVE_CONFIRM eksik ya da live.account_tag ile ayni degil")
@@ -495,6 +503,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None, *, environ=None, rest_factory=None, clock=None, input_fn=input, say=print) -> int:
     a = build_parser().parse_args(argv)
+    if not proc_guard.set_nondumpable():                  # DD-9 §4.3: anahtar okunmadan once
+        _log.warning("proc_guard: surec dokulemez yapilamadi; devam")
     environ = os.environ if environ is None else environ
     if a.list:
         for s in STEPS:

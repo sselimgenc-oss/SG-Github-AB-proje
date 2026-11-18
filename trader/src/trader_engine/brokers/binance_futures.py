@@ -63,7 +63,7 @@ _COUNTERS = ("fee_rate_fallback", "unknown_reject_codes", "fee_drift", "fee_asse
              "rules_refresh_failed", "prepare_failed", "funding_unresolved", "foreign_close", "clock_rejects",
              "working_type_mismatch", "sync_failures", "exchange_bans", "rules_drift", "working_type_unverified",
              "stop_response_mismatch", "exchange_auth", "close_unresolved", "malformed_trades",
-             "account_mode_drift", "account_mode_unverified", "entry_weight_rejects")
+             "account_mode_drift", "account_mode_unverified", "entry_weight_rejects", "account_mode_unverified_ban")
 _BLOCK_PRIORITY = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
 STARTUP_BAN_SLEEP_MAX_S = 300.0
 STARTUP_RULES_TRIES = 2
@@ -844,6 +844,7 @@ class LiveBroker:
             rows = self._rc("position_risk", symbol)
         except ExchangeBan as e:
             self._note_ban(e)
+            self._ctr["account_mode_unverified_ban"] += 1     # DD-9 §8.1: yasak kaynakli dogrulanamama (saglik alarmindan dusulur)
             return self._unverified(pair, f"ban http={getattr(e, 'http', None)}")
         except ExchangeAuth:
             self._ctr["exchange_auth"] += 1

@@ -8,7 +8,9 @@ OnFailure=trader-health-fail@%n.service
 Slice=trader.slice
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 -I /opt/trader/scripts/health_run.py
+# DD-9 §4.1: root birimi kodu YALNIZ root sahipli kopyadan calistirir (trader'in yazabildigi depodan degil); veri /opt/trader altindadir
+ExecStart=/usr/local/lib/trader-root/venv/bin/python -I /usr/local/lib/trader-root/current/scripts/health_run.py
+Environment=TRADER_DATA_ROOT=/opt/trader
 EnvironmentFile=/etc/trader-health.env
 # NOTIFIER=auto: Telegram anahtarlari varsa outbox'a yazar (yoksa gunluge); anahtarlar bu dosyadan gelir
 EnvironmentFile=-/etc/trader-telegram.env

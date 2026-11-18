@@ -26,6 +26,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import lesson as LS  # noqa: E402
+from trader_core import proc_guard  # noqa: E402
 from trader_core import telegram as _TG  # noqa: E402,F401  (NOTIFIER_FACTORIES["telegram"] kaydi)
 
 EXIT_OK, EXIT_CONFIG, EXIT_FAILED, EXIT_DEGRADED = LS.EXIT_OK, LS.EXIT_CONFIG, LS.EXIT_FAILED, LS.EXIT_DEGRADED
@@ -93,6 +94,8 @@ def _resolve_request(args, cfg, clock, env, sleep_fn) -> int:
 
 
 def main(argv=None, *, client=None, budget=None, notifier=None, now_fn=None, env=None, sleep_fn=None) -> int:
+    if not proc_guard.set_nondumpable():                  # DD-9 §4.3: ortam (API anahtari) ayni kimlikli sureclerce okunamasin
+        logging.getLogger("lesson_run").warning("proc_guard: surec dokulemez yapilamadi; devam")
     ap = argparse.ArgumentParser(prog="lesson_run.py", add_help=True)
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--once", action="store_true")

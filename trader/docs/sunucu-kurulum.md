@@ -7,8 +7,12 @@ Hedef: mevcut droplet (FRA1, 1 vCPU, 2 GB RAM). Sunucuda calisan **baska proje b
 DigitalOcean paneli > droplet > **Access > Launch Droplet Console** ile konsolu acin, su satirlari yapistirip Enter'a basin:
 
 ```
-apt-get install -y -qq git && git clone --branch claude/charming-hawking-ab5w5q https://github.com/sselimgenc-oss/SG-Github-AB-proje.git /root/trader-kurulum && bash /root/trader-kurulum/trader/deploy/install.sh
+apt-get install -y -qq git && git clone --branch claude/charming-hawking-ab5w5q https://github.com/sselimgenc-oss/SG-Github-AB-proje.git /root/trader-kurulum && COMMIT=<KOD> bash /root/trader-kurulum/trader/deploy/install.sh
 ```
+
+**DD-9: kurulum her zaman tek bir surume sabitlenir.** `<KOD>` mentorun verdigi 40 karakterlik (kucuk harfli) commit kodudur; kisa kod, dal ya da etiket adi kabul edilmez, kod verilmeden kurulum yapilmaz (`/etc/trader-release` varsa onun `COMMIT=` satiri kullanilir). Kod yayin dalinda (`BRANCH` ucunun atasi) degilse kurulum hicbir sey degistirmeden durur. `install.sh` kodu root'un KENDI klonundan (`/usr/local/lib/trader-root/repo.git`) `git archive` ile `/usr/local/lib/trader-root/releases/<COMMIT>/` altina cikarir (root sahipli; `current` atomik baglanti); root birimleri (saglik, yedek, motor yeniden deneme) betikleri ve root'un kendi sanal ortamindan (`venv`, yalniz `requests` ve bagimliliklari, hash sabit) calistirir; `trader`in yazabildigi depodan root hicbir sey calistirmaz. Sonraki kurulumlarin olagan komutu: `COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh` (ilk gecista bir kez eski yol).
+
+**Env dosyalari (O13):** `/etc/trader-*.env` hepsi `root:root 0600`; `trader` kullanicisi `trader-tg` grubunda DEGILDIR (grup outbox dizini icin kalir); systemd birimleri dosyalari root olarak okur. Motor/Telegram/veto/ders surecleri baslarken `prctl(PR_SET_DUMPABLE, 0)` ile ortamlarini ayni kimlikli sureclere kapatir (`proc_guard`). `install.sh --live` verilmedikce canli birim KURULMAZ; `--live` de motoru BASLATMAZ. Canli anahtar dosyasi `/etc/trader-live.env` (uc alan: `BINANCE_API_KEY`, `BINANCE_API_SECRET`, `LIVE_CONFIRM=canli-alt1`) kullanici tarafindan `nano` ile yazilir.
 
 Depo **ozel** (private) olursa bu komut sifre sorar ve olmaz. O durumda bir "deploy anahtari" eklenir; bunu birlikte, adim adim yapariz (anahtar sunucuda uretilir, GitHub'da depoya yalniz okuma izniyle eklenir, sunucudaki yeri `/home/trader/.ssh/deploy_key`). Sonra ayni komutun ssh surumu calisir.
 
@@ -22,7 +26,7 @@ Depo **ozel** (private) olursa bu komut sifre sorar ve olmaz. O durumda bir "dep
 6. Dizinleri ve ayar dosyalarini (`/etc/trader-*.env`, yoksa) olusturur; var olan ayar dosyasini asla ezmez.
 7. systemd birimlerini kurar. **Veri akisi** (`trader-feed.service`, en fazla 350 MB; Binance herkese acik REST -> `var/market.sqlite`) motordan once acilir. **Ogrenen motor** (`trader-engine@learner`, en fazla 350 MB), saglik kontrolu ve gunluk yedek acilir. **Ikiz motor** (`trader-engine@twin`, en fazla 350 MB) VARSAYILAN ACIKTIR (saglik ve yedek ikiz defterini bekler); kapatmak icin `--no-twin` (`--with-twin` geriye uyumluluk icin kabul edilir, etkisizdir). Kurulum baslarken `free -m` basar. `/etc/trader-health.env` icindeki `HEALTH_BOTS` her calistirmada ikiz durumuna gore (`learner,twin` / `learner`) guncellenir. Veto HMAC anahtari `/etc/trader-veto-hmac.env` (root:root 0600) dosyasina OTOMATIK uretilir (`openssl rand -hex 32`, ekrana yazilmaz); veto ve motor birimleri okur, Anthropic anahtari motora gecmez. `user_data/budget.sqlite` trader sahipli 0600 onceden olusturulur.
 8. Gecmis fiyat verisi yoksa Binance'in acik arsivinden indirir.
-9. Veto, ders ve Telegram **anahtarlar doldurulana kadar kapali** kalir; sonda Turkce bir "yapilacaklar" listesi basar. Anahtarlari sohbete yazmayin: `nano /etc/trader-telegram.env` ile dosyayi acip degeri yapistirin, sonra `bash /home/trader/SG-Github-AB-proje/trader/deploy/install.sh` komutunu yeniden calistirin.
+9. Veto, ders ve Telegram **anahtarlar doldurulana kadar kapali** kalir; sonda Turkce bir "yapilacaklar" listesi basar. Anahtarlari sohbete yazmayin: `nano /etc/trader-telegram.env` ile dosyayi acip degeri yapistirin, sonra `COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh` komutunu yeniden calistirin.
 
 ## Ilk baslatma sirasi (feed -> kurallar 10/10 -> motor)
 
@@ -90,13 +94,13 @@ Bana su bilgileri bildirin: (1) her olcumde `free -m` ciktisinin "available" ve 
 
 ## Testnet golge servisi (WP-B8)
 
-`trader-engine-testnet.service` = `python -m trader_engine run --bot learner --env testnet` (kendi `var-testnet/`, `shared/testnet/KILL|PAUSE`; `config/engine.testnet.json`). Anahtarlar **yalniz** `/etc/trader-testnet.env` (root:root 0600; `install.sh` `deploy/trader-testnet.env.example`'dan bos olusturur; mevcut dosyaya dokunmaz). `BINANCE_API_KEY` ve `BINANCE_API_SECRET` ikisi de dolmadan birim **acilmaz/baslatilmaz** (`install.sh` OZET'te "YAPILACAKLAR"a yazar); canli anahtar dosyasi bu birimde asla kullanilmaz. Anahtarlari `nano /etc/trader-testnet.env` ile yazin (sohbete yazmayin), sonra `bash deploy/install.sh`. Duzeltme turu bitene kadar duman/tatbikat betigi (yukaridaki bolum) ayni dosyayi kaynak alir. Cikis kodlari 2/7/8 yeniden denenmez (`RestartPreventExitStatus`). Kapatma: `systemctl disable --now trader-engine-testnet`; acil durdurma: `python -m trader_engine kill --env testnet --by <ad>`.
+`trader-engine-testnet.service` = `python -m trader_engine run --bot learner --env testnet` (kendi `var-testnet/`, `shared/testnet/KILL|PAUSE`; `config/engine.testnet.json`). Anahtarlar **yalniz** `/etc/trader-testnet.env` (root:root 0600; `install.sh` `deploy/trader-testnet.env.example`'dan bos olusturur; mevcut dosyaya dokunmaz). `BINANCE_API_KEY` ve `BINANCE_API_SECRET` ikisi de dolmadan birim **acilmaz/baslatilmaz** (`install.sh` OZET'te "YAPILACAKLAR"a yazar); canli anahtar dosyasi bu birimde asla kullanilmaz. Anahtarlari `nano /etc/trader-testnet.env` ile yazin (sohbete yazmayin), sonra `COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh`. Duzeltme turu bitene kadar duman/tatbikat betigi (yukaridaki bolum) ayni dosyayi kaynak alir. Cikis kodlari 2/7/8 yeniden denenmez (`RestartPreventExitStatus`). Kapatma: `systemctl disable --now trader-engine-testnet`; acil durdurma: `python -m trader_engine kill --env testnet --by <ad>`.
 
 **DD-8 gecis adimi (gölge kosudan ONCE, bir kez).** Testnet/canli motor artik state ve deftere mod/hesap damgasi (`testnet:<account_tag>`) yazar; damgasiz eski dizin `state_stamp_missing` / `state_missing` ile (cikis 8, yeniden denenmez) acilmaz. DD-8 dagitiminda: `systemctl stop trader-engine-testnet`; `mv var-testnet/learner var-testnet/learner.pre-dd8-$(date +%Y%m%d)` (**tasinir, silinmez**); `systemctl start trader-engine-testnet`. `install.sh` bunu kendiliginden yapmaz. Ayni calisma cozumu 6. ve 8. retler icin de gecerlidir: motor durdurulur, ilgili `var-*/<bot>` dizini arsive tasinir, motor temiz dizinle acilir. Canli/testnet `var_dir` son bileseni `var` olamaz; `kill_file`/`pause_file` `shared/<env>/` altinda olmali (aksi `ConfigError`, cikis 2). Tavan tutusu (`wallet_above_expected`) yalniz sunucuda `python -m trader_engine pause --bot learner --env <env> --clear --reason wallet_above_expected --by <ad>` ile kalkar. Bozuk spool dosyasi (`<defter>.spool.corrupt.jsonl`) saglik alarmi verir; incelemeden sonra `mv ledger.sqlite.spool.corrupt.jsonl ledger.sqlite.spool.corrupt.$(date +%Y%m%d).jsonl` ile temizlenir.
 
 Saglik denetcisi (5 dk) bu motoru `HEALTH_SHADOW_VAR_DIR` ile izler (anahtarlar doluysa `install.sh` doldurur). Yeni alarmlar: `naked_position` (acik testnet/canli pozisyon stopsuz: `status.exchange.naked` bos degil; CRIT, aninda), `exchange_unreachable` (`exchange.reachable=false`; `last_sync` > `EXCHANGE_UNREACH_S` (60 sn) ise CRIT, once WARN), `pause_hold_unaudited` (PAUSE tutusu var ama `pause_audit.jsonl`'de o neden icin son islem `add` degil) ve `pause_hold_lost` (onceki turda olan tutus, gunlukte `remove` olmadan kayboldu; bir tur). Esikler: `NAKED_ALARM_S` (varsayilan 0 = hemen), `EXCHANGE_UNREACH_S`. Not: zamanlayici 5 dk'dadir, yani `naked` alarm gecikmesi <= 5 dk + onay; motorun kendi 10 sn'lik kapatmasi asil korumadir (11 O-4 acik).
 
-**Canliya cikista izleme dizini.** Saglik ve Telegram `ENGINE_VAR_DIR`'i **kendi env dosyalarindan** okur (`/etc/trader-health.env` ve `/etc/trader-telegram.env`); motorun `var_dir`'i canli dizine (or. `var-live`) cevrilince iki dosyada da `ENGINE_VAR_DIR`'i AYNI dizine cevirin ve `PAUSE_FILE`'i (saglik + telegram) canli motorun `pause_file`'ina esitleyin; aksi halde kagit dizini izlenir (canli pozisyon gorunmez). `install.sh` bu degerlere yalniz bos ise dokunur; elle verilen deger korunur. Degisiklikten sonra `systemctl restart trader-telegram`; saglik zamanlayicisi bir sonraki turda okur.
+**Canliya cikista izleme dizini (DD-9: ELLE CEVIRME TALIMATI KALDIRILDI).** `install.sh --live` Telegram, saglik ve ders env dosyalarina canli yollari kendisi yazar (`LIVE_BOTS=learner`, `LIVE_VAR_DIR`, `LIVE_PAUSE_FILE`, `KILL_FILE`, `ENGINE_STATUS_PATH`, `LEDGER_PATH`, `LADDER_BOTS`, `ENGINE_CONFIG_DIR`); yollar `config/engine.live.json` ile tutarsizsa Telegram daemon'u acilmaz, saglik `live_paths_mismatch` CRIT verir ve `scripts/live_preflight.py` canli birimi etkinlestirmez. Eski (artik gecersiz) aciklama: Saglik ve Telegram `ENGINE_VAR_DIR`'i **kendi env dosyalarindan** okur (`/etc/trader-health.env` ve `/etc/trader-telegram.env`); motorun `var_dir`'i canli dizine (or. `var-live`) cevrilince iki dosyada da `ENGINE_VAR_DIR`'i AYNI dizine cevirin ve `PAUSE_FILE`'i (saglik + telegram) canli motorun `pause_file`'ina esitleyin; aksi halde kagit dizini izlenir (canli pozisyon gorunmez). `install.sh` bu degerlere yalniz bos ise dokunur; elle verilen deger korunur. Degisiklikten sonra `systemctl restart trader-telegram`; saglik zamanlayicisi bir sonraki turda okur.
 
 ## Acilis kapisi yeniden deneme
 Motor acilis kapisinda (kural 10/10 degil ya da veri bayat) cikis 7 ile `failed` olursa `trader-engine-retry@<bot>.timer` (5 dk) besleme saglikliyken motoru yeniden baslatir; saatte en fazla 6 deneme, sonra tek CRIT Telegram uyarisi. Cikis 6 (451) ve yapilandirma hatalari yeniden denenmez (tek sert alarm). Izleme: `journalctl -u 'trader-engine-retry@*' -n 30`.
@@ -104,10 +108,23 @@ Motor acilis kapisinda (kural 10/10 degil ya da veri bayat) cikis 7 ile `failed`
 ## Giris duraklatma (CLI)
 Telegram `/durdur` / `/devam` disinda tek yol CLI'dir: `sudo -u trader <repo>/.venv/bin/python -m trader_engine pause --bot learner --reason manual --by ad` ; kaldirmak icin `--clear --reason <neden> --by <ad>` (ikisi de zorunlu). CLI'yi **mutlaka `sudo -u trader`** ile calistirin: root olarak calisinca `PAUSE.<bot>.lock` ve `pause_audit.jsonl` root sahipli olusur ve `trader` kullanicisi (motor, Telegram) artik yazamaz. Gerekirse: `chown trader:trader shared/PAUSE.* var/*/pause_audit.jsonl`.
 
+## Canliya gecis gunu (DD-9; mentor eslikliginde; bu liste otomatik calismaz)
+
+1. Kagit learner KILL ile duzlenir; `systemctl disable --now trader-engine@learner trader-engine-retry@learner.timer`.
+2. Kullanici `nano /etc/trader-live.env` ile uc alani yazar (cekim/transfer yetkisi KAPALI, yalniz sunucu IP'si).
+3. `COMMIT=<etiketli sha> bash /usr/local/lib/trader-root/current/deploy/install.sh --live` (commit `canli-YYYYAAGG[-N]` etiketi tasimali; on denetim `live_preflight.py` gecmeden canli birim etkinlesmez; motor BASLATILMAZ).
+4. `capital init` (12 §14).
+5. `bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh` ile duman testi (ayri gun).
+6. `python -m trader_engine pause --bot learner --env live --reason manual --by <ad>` ile ilk acilis tutusu.
+7. `systemctl start trader-engine-live`.
+8. Mutabakat temizse tutus kaldirilir.
+
+Canli birimi kaldirmak icin `install.sh --no-live` (Telegram/saglik env'lerindeki canli alanlar elle kagit degerlerine alinmalidir). Not: ders servisinin `LEDGER_PATH`i canli deftere cevrilir; bu, dersin canli islemlerden ogrenmesi demektir (mentor canliya gecis kararinda ayrica gozden gecirir).
+
 ## Kaldirma
 
 ```
-bash /home/trader/SG-Github-AB-proje/trader/deploy/uninstall.sh
+bash /usr/local/lib/trader-root/current/deploy/uninstall.sh
 ```
 
 Yalniz `trader-*` birimlerini durdurur ve siler; veri, ayar dosyalari ve kullanici kalir. Her seyi silmek icin `uninstall.sh --purge` (veri, `/etc/trader-*.env`, `trader` kullanicisi gider; `/swapfile` kalir).
@@ -136,12 +153,12 @@ Ikiz motor varsayilan ACIK (saglik/yedek icin gerekli; denetim OPEN-4); kapatmak
 
 **1. Kurulum**
 ```
-bash /root/trader-kurulum/trader/deploy/install.sh
-nano /etc/trader-telegram.env ; bash $T/deploy/install.sh      # 1) Telegram
-nano /etc/trader-health.env   ; bash $T/deploy/install.sh      # 2) HEARTBEAT_URL
-nano /etc/trader-veto.env     ; bash $T/deploy/install.sh      # 3) veto anahtari (HMAC otomatik)
-nano /etc/trader-lesson.env   ; bash $T/deploy/install.sh      # 4) ders anahtari
-nano /etc/trader-panel-cf.env ; bash $T/deploy/install.sh      # 5) Cloudflare (son)
+COMMIT=<KOD> bash /root/trader-kurulum/trader/deploy/install.sh      # YALNIZ ilk kurulum (bir kez); sonrakiler root kopyadan
+nano /etc/trader-telegram.env ; COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh      # 1) Telegram
+nano /etc/trader-health.env   ; COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh      # 2) HEARTBEAT_URL
+nano /etc/trader-veto.env     ; COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh      # 3) veto anahtari (HMAC otomatik)
+nano /etc/trader-lesson.env   ; COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh      # 4) ders anahtari
+nano /etc/trader-panel-cf.env ; COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh      # 5) Cloudflare (son)
 systemctl list-units 'trader-*' --no-pager ; systemctl list-timers 'trader-*' --no-pager ; free -m
 ```
 Beklenen: ozetin sonundaki "YAPILACAKLAR" listesi bos (ya da yalniz bilerek ertelediklerin); `trader-feed`, `trader-engine@learner`, `trader-engine@twin`, `trader-panel` active.
@@ -384,9 +401,10 @@ cd /home/trader/SG-Github-AB-proje/trader
 # canli katman: config/engine.live.json (mode=live, live bloku, canli var_dir; kaldirac KONMAZ) go-live oncesi hazir olmali (11 §12, O-2)
 # kademe gunlugu: capital init (12 §14) duman testinden ONCE, motor acilmadan once
 .venv/bin/python -m trader_engine capital init --bot learner --env live --by <ad> --amount <alt hesaptaki tutar>
-set -a; . /etc/trader-live.env; set +a         # BINANCE_API_KEY, BINANCE_API_SECRET, LIVE_CONFIRM (chmod 600; komut satirina/gecmise YAZMAYIN)
-.venv/bin/python scripts/smoke_live.py --env live --dry-run          # once plan
-.venv/bin/python scripts/smoke_live.py --env live                    # gercek kosu; istemleri okuyarak ilerleyin
+# DD-9: anahtar dosyasi root:root 0600; trader onu OKUYAMAZ. "set -a; source" yolu KALDIRILDI. Root olarak sarmalayici (systemd-run, anahtarlar
+# systemd tarafindan yuklenir; betik anahtarlari okumaz/yazdirmaz):
+bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh --dry-run          # once plan
+bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh                    # gercek kosu; istemleri okuyarak ilerleyin
 ```
 - Adimlar: S-0 acilis denetimi, S-1 kurallar/asgari miktar, S-2 izole marjin + kaldirac, (yazili onay), S-3 long giris, S-4 stop (%1, MARK_PRICE, reduceOnly), S-6 stop sikilastirma (yeni kabul, sonra eski iptal), S-9 hedef kur/iptal, S-C kendi pozisyonunu kapat, S-12 komisyon/kayit denetimi, S-13 cuzdan denetimi. Tek cift kurali nedeniyle S-5 (2. cift), S-7 (`kill -9`), S-8 (stop tetik bekleme), S-10/S-11 (duraklatma/KILL) betikte YOKTUR; elle/motorla `11-canli-broker.md` §12'ye gore yapilir.
 - Cikti: `var-live/smoke/<zaman>/result.json` ve `result.md`. Sonuc `11-duman-testi-sonuc.md`'ye elle yazilir; mentor onayi olmadan canliya gecilmez.

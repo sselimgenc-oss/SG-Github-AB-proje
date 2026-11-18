@@ -1093,6 +1093,32 @@ def _health_code(e: LedgerError) -> str:
 # ---------------------------------------------------------------------------
 
 
+def peek_meta(path, key: str) -> str | None:
+    """DD-9 §9.4: `meta` tablosundan tek anahtarin SALT OKUNUR gozlemi. Goc, sema kurulumu, yazma YOK.
+    Dosya yok ya da 0 bayt -> None; `meta` tablosu ya da satir yok -> None; okunamayan/bozuk dosya -> LedgerError."""
+    p = os.fspath(path)
+    try:
+        if not os.path.exists(p) or os.path.getsize(p) == 0:
+            return None
+    except OSError as e:
+        raise LedgerError(f"defter okunamadi: {e}") from e
+    try:
+        conn = sqlite3.connect("file:" + quote(os.path.abspath(p)) + "?mode=ro", uri=True, timeout=5.0,
+                               isolation_level=None)
+    except sqlite3.Error as e:
+        raise LedgerError(f"defter acilamadi: {e}") from e
+    try:
+        has = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
+        if has is None:
+            return None
+        r = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return None if r is None else r[0]
+    except sqlite3.Error as e:
+        raise LedgerError(f"defter meta okunamadi: {e}") from e
+    finally:
+        conn.close()
+
+
 def open_ledger(path, bot: str, *, create: bool = True, read_only: bool = False,
                 migrate: bool | None = None, clock: Callable[[], datetime] | None = None,
                 min_evidence_trades: int = 20) -> "Ledger":

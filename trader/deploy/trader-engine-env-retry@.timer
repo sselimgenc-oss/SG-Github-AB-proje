@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader motor acilis-kapisi yeniden deneme (trader-engine-%i birimi, 5 dakikada bir)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

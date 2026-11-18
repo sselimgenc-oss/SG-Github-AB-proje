@@ -50,7 +50,7 @@ def test_testnet_unit_hardening_matches_paper_engine():
               "CPUQuota", "Nice", "Restart"):
         assert t[k] == p[k], k
     assert "run --bot learner --env testnet" in t["ExecStart"]
-    assert "init-ledger --bot learner --env testnet" in UNIT.read_text(encoding="utf-8")
+    assert "run --bot learner --env testnet" in t["ExecStart"] and t["ExecStart"].endswith("--ensure-ledger")   # DD-9: init-ledger ExecStartPre'den run --ensure-ledger'a
     assert "var-testnet" in t["ReadWritePaths"] and "/opt/trader/shared" in t["ReadWritePaths"]
     assert int(t["MemoryHigh"][:-1]) < int(t["MemoryMax"][:-1])
 
@@ -84,7 +84,7 @@ def test_testnet_env_example_stub_empty_keys_and_install_perms(tmp_path):
     assert out["trader-testnet.env"] == {"BINANCE_API_KEY": "", "BINANCE_API_SECRET": ""}
     assert stat.S_IMODE((tmp_path / "trader-testnet.env").stat().st_mode) == 0o600
     inst = (DEPLOY / "install.sh").read_text(encoding="utf-8")
-    assert re.search(r'copy_env "\$TRADER_DIR/deploy/trader-testnet\.env\.example"\s+/etc/trader-testnet\.env\s+"root:root"\s+0600', inst)
+    assert re.search(r'copy_env "\$REL_DIR/deploy/trader-testnet\.env\.example"\s+/etc/trader-testnet\.env\s+"root:root"\s+0600', inst)
 
 
 def test_install_gates_testnet_unit_on_both_keys_and_creates_dirs():
@@ -135,7 +135,8 @@ def test_docs_have_memory_note_and_testnet_env_path():
     assert "/etc/trader-testnet.env" in doc and "trader-engine-testnet" in doc
     assert "systemd-cgtop" in doc and "MemoryPeak" in doc and "ENGINE_VAR_DIR" in doc and "PAUSE_FILE" in doc
     env = (DEPLOY / "trader-health.env.example").read_text(encoding="utf-8")
-    assert "CANLIYA CIKISTA" in env and "HEALTH_SHADOW_VAR_DIR=" in env
+    assert "CANLIYA CIKISTA" not in env and "HEALTH_SHADOW_VAR_DIR=" in env      # DD-9: elle cevirme talimati silindi (install.sh --live yazar)
+    assert "LIVE_VAR_DIR=" in env
 
 
 # ============================================================ status.py

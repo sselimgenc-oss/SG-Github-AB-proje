@@ -27,7 +27,12 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 sys.path.insert(0, str(_HERE))
 
+import logging  # noqa: E402
+
 import smoke_testnet_lib as S  # noqa: E402
+from trader_core import proc_guard  # noqa: E402
+
+_log = logging.getLogger("smoke_testnet")
 
 UTC = timezone.utc
 DEFAULT_PAIR = "XRP/USDT"
@@ -714,6 +719,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None, *, environ=None, rest_factory=None, clock=None, input_fn=input, say=print,
          runner=subprocess.run, on_wait=None) -> int:
     a = build_parser().parse_args(argv)
+    if not proc_guard.set_nondumpable():                  # DD-9 §4.3: anahtar okunmadan once
+        _log.warning("proc_guard: surec dokulemez yapilamadi; devam")
     environ = os.environ if environ is None else environ
     if a.list:
         for s in STEPS.values():

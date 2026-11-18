@@ -22,6 +22,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))  # trader_engine de buradan (yalniz marketdata okuma)
 
+from trader_core import proc_guard  # noqa: E402
 from trader_core import veto as V  # noqa: E402
 from trader_core.budget import Usage as _BudgetUsage  # noqa: E402
 
@@ -189,6 +190,8 @@ def _setup_logging():
 
 def main(argv=None, *, client=None, market=None, budget=None, now_fn=None, sleep_fn=None,
          env=None, root=None) -> int:
+    if not proc_guard.set_nondumpable():                  # DD-9 §4.3: ortam (API anahtari) ayni kimlikli sureclerce okunamasin
+        log.warning("proc_guard: surec dokulemez yapilamadi; devam")
     try:
         return _main(argv, client, market, budget, now_fn, sleep_fn, env, root)
     except Exception as e:  # noqa: BLE001

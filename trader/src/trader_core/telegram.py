@@ -224,6 +224,9 @@ class TelegramConfig:
         except ValueError:
             return None
         here = Path(__file__).resolve().parent.parent.parent
+        dr = (env.get("TRADER_DATA_ROOT") or "").strip()      # DD-9 §4.1: root birimleri kodu root kopyadan, veriyi buradan okur
+        if dr and Path(dr).is_absolute():
+            here = Path(dr)
         return cls(tok, chat, env.get("TELEGRAM_VAR_DIR") or str(here / "var" / "telegram"),
                    env.get("KILL_FILE", ""), env.get("ENGINE_STATUS_PATH", ""),
                    env.get("LESSON_RUN_PATH") or str(here / "scripts" / "lesson_run.py"),
@@ -616,8 +619,10 @@ class TelegramDaemon:
     def __init__(self, cfg: TelegramConfig, client: TelegramClient, *, now_fn: Callable[[], datetime] | None = None,
                  runner: Callable | None = None, killswitch=None, report_fn: Callable[[], str] | None = None,
                  sleep: Callable[[float], None] = time.sleep, random_code: Callable[[], str] | None = None,
-                 pauses: Mapping[str, Any] | None = None, ladders: Mapping[str, LadderFiles] | None = None):
+                 pauses: Mapping[str, Any] | None = None, ladders: Mapping[str, LadderFiles] | None = None,
+                 expect_status_mode: str | None = None):
         self.cfg, self.client = cfg, client
+        self.expect_status_mode = expect_status_mode     # DD-9 §7: canli bot varken durum dosyasi `live` olmali (kagit dosyada KILL kalkmaz)
         self.now = now_fn or (lambda: datetime.now(UTC))
         if runner is None:
             raise ValueError("runner zorunlu (alt surec cagrisi scripts/telegram_run.py'de)")
@@ -1049,6 +1054,8 @@ class TelegramDaemon:
         st = self._read_status()
         if st is None:
             return "durum okunamadı, reddedildi"
+        if self.expect_status_mode is not None and st.get("mode") != self.expect_status_mode:
+            return "durum dosyası beklenen kipte değil, reddedildi"
         ks = st.get("kill_state")
         if ks == "exiting":
             return "kapanis suruyor, bekleyin"
@@ -1056,8 +1063,8 @@ class TelegramDaemon:
             info = self.killswitch.info() or {}
             if not (str(info.get("by", "")).startswith("telegram:") and info.get("reason") == "user_cmd"):
                 return "Bu KILL Telegram'dan kurulmadi; yalniz sunucuda kaldirilir"
-            if ks != "flat":
-                return "pozisyonlar kapanmadi (durum flat degil), reddedildi"
+        if ks != "flat":                                      # DD-9 §7 (O7): HER kipte (paper dahil); eksik/yanlis tip = flat degil
+            return "pozisyonlar kapanmadi (durum flat degil), reddedildi"
         return None
 
     def _cmd_devam_start(self) -> str:

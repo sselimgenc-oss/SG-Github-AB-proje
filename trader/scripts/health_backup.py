@@ -15,8 +15,13 @@ import socket
 import sqlite3
 import sys
 import time
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE.parent / "src") not in sys.path:
+    sys.path.insert(0, str(_HERE.parent / "src"))       # DD-9: trader_core.live_paths (yalniz stdlib); -I altinda da calisir
 
 GIB = 1024 ** 3
 MIN_FREE_BYTES = 1 * GIB
@@ -209,7 +214,7 @@ def _copy_spool(src_db, dest_dir, name) -> None:
     try:
         if os.path.getsize(sp) <= 0:
             return
-    except OSError:
+    except FileNotFoundError:        # DD-9 D2: yalniz "dosya yok" sessizdir; baska OSError yukselir (girdi ok=false)
         return
     out = os.path.join(dest_dir, name + ".spool.jsonl")
     shutil.copyfile(sp, out)
@@ -227,7 +232,7 @@ def _copy_corrupt(src_db, dest_dir, name) -> int:
     sp = str(src_db) + ".spool.corrupt.jsonl"
     try:
         n = os.path.getsize(sp)
-    except OSError:
+    except FileNotFoundError:        # DD-9 D2: yalniz "dosya yok" -> 0; baska OSError yukselir
         return 0
     if n <= 0:
         return 0
@@ -312,7 +317,9 @@ def rotate_backups(backup_dir, keep_days: int, today: str) -> list[str]:
 
 
 def run_backup(backup_dir, var_dir, keep_days=KEEP_DEFAULT, *, now: datetime | None = None,
-               free_bytes=None, sleep=time.sleep, bots=BOTS) -> tuple[int, dict]:
+               free_bytes=None, sleep=time.sleep, bots=BOTS,
+               bot_dirs: Mapping[str, str | None] | None = None) -> tuple[int, dict]:
+    """`bot_dirs` (DD-9 §6.3): canli botlarin var dizini (None degeri = canli env gecersiz -> canli isler `live_env_invalid`)."""
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("now tz-aware olmali")
@@ -332,11 +339,19 @@ def run_backup(backup_dir, var_dir, keep_days=KEEP_DEFAULT, *, now: datetime | N
         os.rename(day_dir, target)
     os.makedirs(day_dir, mode=0o700)
 
+    live = dict(bot_dirs or {})
     jobs = []
-    for b in bots:
+    # Canli botun kagit isi: kaynak ledger.sqlite iskele kurulurken yoksa listeye alinmaz (arsivlenmis kagit dizini yedegi
+    # basarisiz saymaz); varsa yedeklenmeye devam eder (kagit gecmisi 14 gunluk donuste kaybolmasin).
+    paper_bots = [b for b in bots if not (b in live and not (Path(var_dir) / b / "ledger.sqlite").exists())]
+    for b in paper_bots:
         jobs.append(("ledger", b, Path(var_dir) / b / "ledger.sqlite", f"ledger_{b}.sqlite"))
-    for b in bots:
+    for b in paper_bots:
         jobs.append(("state", b, Path(var_dir) / b / "state.sqlite", f"state_{b}.sqlite"))
+    for b, d in live.items():
+        jobs.append(("ledger", b, None if d is None else Path(d) / b / "ledger.sqlite", f"ledger_{b}@live.sqlite"))
+    for b, d in live.items():
+        jobs.append(("state", b, None if d is None else Path(d) / b / "state.sqlite", f"state_{b}@live.sqlite"))
 
     if free_bytes is None:
         def free_bytes():
@@ -350,6 +365,9 @@ def run_backup(backup_dir, var_dir, keep_days=KEEP_DEFAULT, *, now: datetime | N
     for kind, bot, src, name in jobs:
         if low:
             files[name] = _fail(name, "disk_low")
+            continue
+        if src is None:
+            files[name] = _fail(name, "live_env_invalid")
             continue
         try:
             files[name] = backup_one(kind, bot, src, day_dir / name, sleep=sleep)
@@ -378,7 +396,16 @@ def main(argv=None) -> int:
             print("health_backup: BACKUP_DIR, ENGINE_VAR_DIR gerekli", file=sys.stderr)
             return EXIT_CRASH
         keep = parse_keep_days(env.get("BACKUP_KEEP_DAYS"))
-        code, m = run_backup(backup_dir, var_dir, keep, bots=bots_from_env(env))
+        bot_dirs = None
+        from trader_core import live_paths as LP
+        live = LP.live_bots(env)
+        if live:                      # DD-9 §6.3: canli botlarin yedegi LIVE_VAR_DIR'den; gecersiz env -> canli isler basarisiz
+            try:
+                LP.validate_live_env(env)
+                bot_dirs = {b: LP.bot_var_dir(env, b, var_dir) for b in live}
+            except LP.LivePathError:
+                bot_dirs = {b: None for b in live}
+        code, m = run_backup(backup_dir, var_dir, keep, bots=bots_from_env(env), bot_dirs=bot_dirs)
         bad = [k for k, v in m["files"].items() if not v["ok"]]
         print(json.dumps({"backup_ok": m["ok"], "failed": bad, "created_at": m["created_at"]}))
         if bad:

@@ -6,7 +6,9 @@ Documentation=file:///opt/trader/docs/hazirlik-denetimi.md
 Slice=trader.slice
 Type=oneshot
 User=root
-ExecStart=/usr/bin/python3 -I /opt/trader/scripts/engine_retry.py --bot %i
+# DD-9 §4.1: root birimi kodu YALNIZ root sahipli kopyadan calistirir; veri /opt/trader altindadir
+ExecStart=/usr/local/lib/trader-root/venv/bin/python -I /usr/local/lib/trader-root/current/scripts/engine_retry.py --bot %i
+Environment=TRADER_DATA_ROOT=/opt/trader
 EnvironmentFile=/etc/trader-health.env
 # NOTIFIER=auto: Telegram anahtarlari varsa outbox'a yazar (yoksa gunluge)
 EnvironmentFile=-/etc/trader-telegram.env

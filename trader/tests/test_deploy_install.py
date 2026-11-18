@@ -129,7 +129,8 @@ def test_every_unit_handled_by_install():
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
                         "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service",
-                        "trader-oi.service", "trader-drift@.service"}  # tetikleyici/sablon birimler
+                        "trader-oi.service", "trader-drift@.service",
+                        "trader-engine-live.service", "trader-engine-env-retry@.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil)
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled
@@ -137,6 +138,8 @@ def test_every_unit_handled_by_install():
             continue
         elif u.name == "trader-engine-retry@.timer":
             assert "trader-engine-retry@learner.timer" in enabled and "trader-engine-retry@twin.timer" in enabled
+        elif u.name == "trader-engine-env-retry@.timer":      # DD-9: testnet ornegi etkin; live ornegi yalniz --live (systemctl enable --now)
+            assert "enable_now trader-engine-env-retry@testnet.timer" in t and "enable --now trader-engine-env-retry@live.timer" in t
         elif u.name == "trader-drift@.timer":
             assert "trader-drift@learner.timer" in enabled and "trader-drift@twin.timer" in enabled
         elif u.name == "trader-counterfactual@.timer":
@@ -330,7 +333,7 @@ def test_trader_slice_installed_and_removed():
     i = (DEPLOY / "install.sh").read_text(encoding="utf-8")
     u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
     assert (DEPLOY / "trader.slice").exists()
-    assert 'render "$TRADER_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"' in i
+    assert 'render "$REL_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"' in i      # DD-9: sablonlar root sahipli surum dizininden
     assert i.index("trader.slice\"") < i.index("systemctl daemon-reload")
     assert 'rm -f "$UNIT_DIR/trader.slice"' in u
     assert "Slice=trader.slice" in i          # trader-fetch (systemd-run) de ayni slice'ta

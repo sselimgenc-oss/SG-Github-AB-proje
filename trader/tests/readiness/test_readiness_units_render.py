@@ -12,6 +12,8 @@ from readiness_support import (DEPLOY, ROOT, SERVER_TRADER_DIR as T, created_dir
                                with_ancestors)
 
 VENV_PY = f"{T}/.venv/bin/python"
+ROOT_LIB = "/usr/local/lib/trader-root"          # DD-9 §4.1: root birimleri kodu root sahipli kopyadan calistirir
+ROOT_PY = f"{ROOT_LIB}/venv/bin/python"
 
 
 @pytest.fixture(scope="module")
@@ -45,8 +47,12 @@ def test_exec_lines_resolve_to_real_module_script_subcommand(rendered):
                 continue
             toks = shlex.split(v.lstrip("-"))
             exe = toks[0]
-            assert exe in ("/bin/sh", "/bin/bash", VENV_PY), f"{name}: beklenmeyen calistirilabilir {exe}"
-            if exe == VENV_PY:
+            assert exe in ("/bin/sh", "/bin/bash", VENV_PY, ROOT_PY), f"{name}: beklenmeyen calistirilabilir {exe}"
+            if exe == ROOT_PY:
+                script = next(t for t in toks[1:] if t.startswith(f"{ROOT_LIB}/current/"))
+                assert (ROOT / script[len(f"{ROOT_LIB}/current/"):]).is_file(), f"{name}: betik yok {script}"
+                seen["script"] += 1
+            elif exe == VENV_PY:
                 if "-m" in toks:
                     mod = toks[toks.index("-m") + 1]
                     assert (ROOT / "src" / mod).is_dir(), f"{name}: modul yok {mod}"
@@ -91,7 +97,8 @@ def test_module_units_have_workingdirectory_and_pythonpath(rendered):
 def test_environment_files_are_created_by_install(rendered):
     t = install_text()
     created = set(re.findall(r'copy_env "[^"]+"\s+(/etc/trader-[\w-]+\.env)', t))
-    assert len(created) == 7, created            # WP-B8: + /etc/trader-testnet.env
+    assert len(created) == 8, created            # WP-B8: + /etc/trader-testnet.env; DD-9: + /etc/trader-live.env
+    assert "/etc/trader-live.env" in created
     assert "/etc/trader-testnet.env" in created
     assert "/etc/trader-veto-hmac.env" in created
     for name, txt in rendered.items():
@@ -144,7 +151,7 @@ def test_restart_semantics_match_exit_codes():
 def test_slice_rendered_and_every_service_references_it(rendered):
     # trader.slice 'trader-*' glob'una girmez: install.sh onu ayrica render() ile kurar
     assert "trader.slice" not in rendered
-    assert "render \"$TRADER_DIR/deploy/trader.slice\"" in install_text()
+    assert "render \"$REL_DIR/deploy/trader.slice\"" in install_text()
     for name, txt in rendered.items():
         if name.endswith(".service"):
             assert ("Slice", "trader.slice") in unit_kv(txt), name

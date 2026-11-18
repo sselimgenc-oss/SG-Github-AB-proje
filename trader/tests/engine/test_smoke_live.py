@@ -43,7 +43,7 @@ def setup(tmp_path):
     var = tmp_path / "var-live"
     overlay = tmp_path / "engine.live.json"
     overlay.write_text(json.dumps({
-        "mode": "live", "var_dir": str(var), "kill_file": str(tmp_path / "KILL"), "pause_file": str(tmp_path / "PAUSE"),
+        "mode": "live", "var_dir": str(var), "kill_file": str(tmp_path / "shared" / "live" / "KILL"), "pause_file": str(tmp_path / "shared" / "live" / "PAUSE"),   # DD-9 §9.3: olumlu yol eslesmesi
         "live": {"account_tag": TAG, "expected_wallet_max": 1000.0, "conditional_mode": "algo", "recv_window_ms": 5000,
                  "poll_open_s": 5.0, "poll_flat_s": 30.0, "stop_deadline_s": 10.0, "entry_resolve_window_s": 60.0,
                  "max_attempts": 1}}))
@@ -200,14 +200,15 @@ def test_ladder_review_or_floor_state_refused(setup):
 
 
 def test_kill_active_refused(setup):
-    (setup["tmp"] / "KILL").write_text("{}")
+    (setup["tmp"] / "shared" / "live" / "KILL").parent.mkdir(parents=True, exist_ok=True)
+    (setup["tmp"] / "shared" / "live" / "KILL").write_text("{}")
     rc, ex, out, _ = run(setup)
     assert rc == 2 and not ex.requests and "KILL" in out[0]
 
 
 def test_ladder_hold_refused(setup):
     from trader_engine.pause import EntryPause
-    EntryPause(f"{setup['tmp'] / 'PAUSE'}.learner", SimClock(T0)).add("drawdown_review", "engine:rk1", "x")
+    EntryPause(f"{setup['tmp'] / 'shared' / 'live' / 'PAUSE'}.learner", SimClock(T0)).add("drawdown_review", "engine:rk1", "x")
     rc, ex, out, _ = run(setup)
     assert rc == 2 and not ex.requests and "drawdown_review" in out[0]
 
@@ -216,7 +217,8 @@ def test_kill_set_after_start_blocks_first_order(setup):
     """Ilk emirden hemen once yeniden denetlenir: onay sirasinda KILL konursa emir gitmez."""
     def inp(prompt):
         if prompt.startswith("ONAY"):
-            (setup["tmp"] / "KILL").write_text("{}")
+            (setup["tmp"] / "shared" / "live" / "KILL").parent.mkdir(parents=True, exist_ok=True)
+            (setup["tmp"] / "shared" / "live" / "KILL").write_text("{}")
             return PHRASE
         return "evet"
     rc, ex, out, _ = run(setup, input_fn=inp)

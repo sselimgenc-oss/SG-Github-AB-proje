@@ -45,6 +45,20 @@ def test_memory_budget_sums():
     assert 'SWAP_SIZE="4G"' in t and "vm.swappiness=10" in t
 
 
+def test_dd9_budget_with_live_and_testnet_units():
+    """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + ikiz + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
+    Toplam sert tavanlar trader.slice MemoryMax (1300M) ile sinirlanir; RAM+takas icinde kalir."""
+    live, paper, testnet = _mem("trader-engine-live.service"), _mem("trader-engine@.service"), _mem("trader-engine-testnet.service")
+    assert (live, testnet) == (350, 320)
+    budget = (_mem("trader-feed.service") + max(paper, live) + paper + testnet + _mem("trader-panel.service")
+              + _mem("trader-telegram.service"))
+    assert budget == 350 + 350 + 350 + 320 + 64 + 96 == 1530
+    assert budget < RAM_MB + SWAP_MB
+    slice_max = int(dict(unit_kv((DEPLOY / "trader.slice").read_text(encoding="utf-8")))["MemoryMax"][:-1])
+    assert slice_max < budget            # slice tavani toplam sert tavanlardan kucuk: birlikte asilamaz
+    assert _mem("trader-engine-env-retry@.service") == 64
+
+
 def test_soft_cap_below_hard_cap_and_swap_not_unbounded():
     for n in ("trader-feed.service", "trader-engine@.service"):
         kv = dict(unit_kv((DEPLOY / n).read_text(encoding="utf-8")))
@@ -95,7 +109,8 @@ def test_oom_score_adjust_policy():
         assert int(_kv(n)["OOMScoreAdjust"]) < 0, n
     # baska hicbir birim pozitif/negatif ayar almaz
     others = {p.name for p in DEPLOY.glob("trader-*.service") if "OOMScoreAdjust" in _kv(p.name)}
-    assert others == {"trader-panel-publish.service", "trader-engine@.service", "trader-feed.service"}
+    assert others == {"trader-panel-publish.service", "trader-engine@.service", "trader-feed.service",
+                      "trader-engine-live.service"}      # DD-9: canli birim (-300)
 
 
 def test_install_uninstall_handle_slice_and_publish_stays_gated():

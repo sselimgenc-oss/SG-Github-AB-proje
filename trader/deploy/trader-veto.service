@@ -8,7 +8,9 @@ OnFailure=trader-health-fail@%n.service
 [Service]
 Slice=trader.slice
 Type=oneshot
-User=root
+# DD-9 §4.2: root DEGIL (kod trader'in yazabildigi depodan calisir; root olsaydi trader kimligi root'a yukselirdi)
+User=trader
+Group=trader
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/veto_run.py
 EnvironmentFile=/etc/trader-veto.env
 EnvironmentFile=/etc/trader-veto-hmac.env
