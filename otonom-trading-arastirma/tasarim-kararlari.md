@@ -111,3 +111,7 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **D13 Cloudflare:** ayrı hesap **yok**; mevcut hesapta kalınır. Telafi: pano anahtarı yalnız `trader-pano` Worker'ına yetkili dar kapsamlı token ile değiştirilir ve Worker yoluna Cloudflare hız sınırı kuralı eklenir (canlıdan önce).
 - **D16 e-posta:** geçmiş yeniden yazılmaz (depo özel). Bundan sonraki commit'ler kişisel olmayan adresle yazılır (mevcut commit kimliği zaten kişisel değil).
 - **`live.expected_wallet_max`:** canlı başlangıçta **350 USD**; 1000 USD'ye tamamlanırken **1200 USD**. Canlı yapılandırma dosyası oluşturulurken bu değer yazılır.
+
+### 18 Kasım 2026 — ML r02: koşulmadı (güç yetersiz)
+
+- `ml1-r02-long-ctx-1r` ön kayıttaki güç vetosuna takıldı (`--precheck-only`: IC gün sayısı 0, gereken rho > 0,08). Kapı sonucu değildir; ML `off`. Neden: alınan-işlem katmanı kusurlu — geri testte 2021-11-03'te `stop_failed` giriş kilidi kalıcı kaldı, 2022–2026'da alınan işlem yok. §10 dondurulmadı; r03 koşulmadı; n_trials 10 (değişmedi). Rapor: `trader/docs/ml/r02-kapi-raporu.md`. **Açık karar:** geri testte `stop_failed` kilidinin ele alınışı ve katmanın yeniden kurulması.

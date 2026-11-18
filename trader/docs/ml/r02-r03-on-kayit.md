@@ -173,6 +173,8 @@ Kural değişmedi: n_trials = defterdeki satır sayısı × 2 model (`trader_ml.
 
 Bu tabloyu doldurmak tanım değişikliği değildir. Tablo commit'lenmeden koşu başlamaz.
 
+**Durum notu (18 Kasım 2026 — mentor):** tablo **doldurulmadı, dondurma yapılmadı.** `--precheck-only` (r02) güç vetosu verdi (IC gün sayısı 0 → gereken rho sonsuz > 0,08): alınan-işlem katmanındaki 660 işlemin tamamı 2021'de, sınav dilimlerinde alınan işlem yok (geri testte 2021-11-03'te `stop_failed` giriş kilidi kalıcı kaldı). r02 koşulmadı; ayrıntı `docs/ml/r02-kapi-raporu.md`. Derlem v2 sha256 `4d7c76b0…2f7bc6` doğrulandı; kusurlu katman (sha256 `a03f2847…e6536f`, `config_hash` `ca6e1433…d3d40b`, commit `7399343` = yeniden yazım sonrası `3c084d4`) dondurulmaz, yeniden kurulmalıdır.
+
 | Alan | Değer |
 |---|---|
 | `corpus_v2.parquet` sha256 (`corpus.sha256`) | — (kurulumda yazılır) |
