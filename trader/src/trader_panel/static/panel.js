@@ -474,6 +474,28 @@
 
   var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, saglik: tabSaglik};
 
+  /* ---------- sekme rozetleri (2026-11-18): acik pozisyon, kapanan islem, bekleyen ders, acik uyari ---------- */
+  function badge(t, n, kotu) {
+    var b = document.querySelector('.tabs button[data-t="' + t + '"]');
+    if (!b) return;
+    var e = b.querySelector('em');
+    if (!num(n)) { if (e) b.removeChild(e); return; }
+    if (!e) { e = el('em'); b.appendChild(e); }
+    e.textContent = String(n);
+    e.className = kotu && n > 0 ? 'k' : '';
+  }
+  function refreshBadges() {
+    var cur = statusCur();
+    badge('pozisyonlar', cur && cur.state === 'live' ? (cur.data.open_positions || []).length : null);
+    get('/api/ledger?bot=' + S.bot).then(function (r) {
+      if (!r.ok) { badge('islemler', null); return; }
+      if (!(cur && cur.state === 'live')) badge('pozisyonlar', r.open.length);
+      badge('islemler', r.closed.length);
+    });
+    get('/api/lesson').then(function (r) { badge('ders', r.ok ? r.open_count || 0 : null); });
+    get('/api/health').then(function (h) { badge('saglik', h.ok ? h.alerts.length : null, true); });
+  }
+
   /* ---------- dongu ---------- */
   function setGen(st) {
     if (st && st.ok) { S.gen = st.generated_at; $('uretim').textContent = 'sunucu: ' + tsi(st.generated_at) + ' TSİ'; }
@@ -495,7 +517,7 @@
   function setBot(b) {
     S.bot = b;
     $('bot-learner').classList.toggle('on', b === 'learner'); $('bot-twin').classList.toggle('on', b === 'twin');
-    renderTop(S.status); refreshTab();
+    renderTop(S.status); refreshTab(); refreshBadges();
   }
 
   function init() {
@@ -507,7 +529,7 @@
     });
     $('bot-learner').addEventListener('click', function () { setBot('learner'); });
     $('bot-twin').addEventListener('click', function () { setBot('twin'); });
-    $('yenile').addEventListener('click', function () { if (SNAP) { location.reload(); return; } refreshTop(); refreshTab(); });
+    $('yenile').addEventListener('click', function () { if (SNAP) { location.reload(); return; } refreshTop(); refreshTab(); refreshBadges(); });
     snapBanner(); setInterval(snapBanner, 30000);
     // pano.py JS: tema dugmesi (uyarlandi)
     (function () {
@@ -521,10 +543,10 @@
     })();
     var first = 'ozet';
     try { var s = localStorage.getItem('trader-sekme'); if (s && RENDER[s]) first = s; } catch (e) { /* yok say */ }
-    refreshTop().then(function () { showTab(first); });
+    refreshTop().then(function () { showTab(first); refreshBadges(); });
     setInterval(function () { if (!document.hidden) refreshTop(); }, TOP_MS);
-    setInterval(function () { if (!document.hidden) refreshTab(); }, TAB_MS);
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) { refreshTop(); refreshTab(); } });
+    setInterval(function () { if (!document.hidden) { refreshTab(); refreshBadges(); } }, TAB_MS);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) { refreshTop(); refreshTab(); refreshBadges(); } });
   }
   init();
 })();
