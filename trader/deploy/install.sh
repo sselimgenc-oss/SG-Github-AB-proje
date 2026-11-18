@@ -460,8 +460,12 @@ for f in "$REL_DIR"/deploy/trader-*.service "$REL_DIR"/deploy/trader-*.timer; do
   if [ "$(basename "$f")" = "trader-engine-live.service" ] && [ "$LIVE" -ne 1 ]; then continue; fi
   render "$f" "${UNIT_DIR}/$(basename "$f")"
 done
-# ML golge deneyi: yalniz ogrenen kagit birimine drop-in (twin/testnet/live degismez)
-if [ -d "$REL_DIR/deploy/trader-engine@learner.service.d" ]; then
+# ML golge deneyi: yalniz ogrenen kagit birimine drop-in (twin/testnet/live degismez).
+# ISTEGE BAGLI (TRADER_ML_SHADOW=1): ogrenen defteri strateji etiketi price_action_v1 iken drop-in motoru
+# strategy_mismatch ile durdurur; etiket gocu hazir olana kadar varsayilan KAPALI ve eski drop-in kaldirilir.
+if [ "${TRADER_ML_SHADOW:-0}" != "1" ]; then
+  rm -f "${UNIT_DIR}/trader-engine@learner.service.d/ml-shadow.conf"
+elif [ -d "$REL_DIR/deploy/trader-engine@learner.service.d" ]; then
   mkdir -p "${UNIT_DIR}/trader-engine@learner.service.d"
   for f in "$REL_DIR"/deploy/trader-engine@learner.service.d/*.conf; do
     render "$f" "${UNIT_DIR}/trader-engine@learner.service.d/$(basename "$f")"
