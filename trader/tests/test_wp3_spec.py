@@ -267,8 +267,8 @@ def quick_busy(led):
 def test_D1_fresh_file_is_v4(tmp_path):
     led, path = new_ledger(tmp_path)
     led.close()
-    assert L.SCHEMA_VERSION == 4
-    assert raw(path, "PRAGMA user_version")[0][0] == 4
+    assert L.SCHEMA_VERSION == 5
+    assert raw(path, "PRAGMA user_version")[0][0] == 5
     pairs = [(r[0], r[1]) for r in raw(path, "SELECT from_version, to_version FROM schema_migrations")]
     assert (3, 4) in pairs
     names = {r[0] for r in raw(path, "SELECT name FROM sqlite_master")}
@@ -284,7 +284,7 @@ def test_D2_v3_file_migrates_losslessly(tmp_path):
     led = open_ledger(path, "learner", migrate=True, clock=lambda: NOW)
     led.close()
     assert os.path.exists(str(path) + ".premigrate-v3")
-    assert raw(path, "PRAGMA user_version")[0][0] == 4
+    assert raw(path, "PRAGMA user_version")[0][0] == 5
     after = snapshot(path)
     for t, rows in before.items():
         assert len(after[t]) == len(rows), t
@@ -292,8 +292,10 @@ def test_D2_v3_file_migrates_losslessly(tmp_path):
             for c, v in a.items():
                 assert b[c] == v, (t, c)
             for c in set(b) - set(a):
+                if c in ("arm_id", "source"):          # DD-12 WP-02 (sema 5): eski satirda arm_id dolu, source='arm'
+                    continue
                 assert b[c] is None, (t, c)
-    assert set(after["trade_entries"][0]) - set(old_cols["trade_entries"]) == set(NEW_ENTRY_COLS)
+    assert set(after["trade_entries"][0]) - set(old_cols["trade_entries"]) == set(NEW_ENTRY_COLS) | {"arm_id", "session_tag"}
     assert set(after["trade_exits"][0]) - set(old_cols["trade_exits"]) == set(NEW_EXIT_COLS)
     assert raw(path, "PRAGMA foreign_key_check") == []
 
@@ -315,9 +317,9 @@ def test_D4_view_columns_append_only(tmp_path):
     for view in ("v_trades", "v_closed_trades"):
         old, new = table_cols(v3, view), table_cols(p4, view)
         assert new[:len(old)] == old, view
-        assert new[len(old):] == VIEW_NEW_COLS, view
+        assert new[len(old):] == VIEW_NEW_COLS + ["arm_id", "session_tag"], view   # DD-12 WP-02 (sema 5)
         assert old[-1] == "excursion_tf"
-    assert table_cols(p4, "v_decisions") == table_cols(v3, "v_decisions")
+    assert table_cols(p4, "v_decisions") == table_cols(v3, "v_decisions") + ["arm_id", "session_tag", "lesson_ids", "source"]
     assert table_cols(p4, "v_proposals") == table_cols(v3, "v_proposals")
 
 
@@ -337,7 +339,8 @@ def test_D5_new_tables_append_only(tmp_path):
 
 def _core_rows(path):
     out = {}
-    for t, drop in (("trade_entries", NEW_ENTRY_COLS), ("trade_exits", NEW_EXIT_COLS)):
+    for t, drop in (("trade_entries", NEW_ENTRY_COLS + ["arm_id", "session_tag"]),   # DD-12 WP-02: sema 5 sutunlari
+                    ("trade_exits", NEW_EXIT_COLS)):
         out[t] = [{k: v for k, v in r.items() if k not in drop} for r in snapshot(path)[t]]
     return out
 
@@ -2070,7 +2073,7 @@ def test_P3_migration_speed(tmp_path):
     led = open_ledger(path, "learner", migrate=True, clock=lambda: NOW)
     total = time.perf_counter() - t0
     led.close()
-    assert raw(path, "PRAGMA user_version")[0][0] == 4
+    assert raw(path, "PRAGMA user_version")[0][0] == 5
     assert total - t_backup <= 5.0, (total, t_backup)
 
 

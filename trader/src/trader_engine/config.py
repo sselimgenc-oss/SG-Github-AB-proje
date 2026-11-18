@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, Mapping
 
 from trader_core.config_loader import deep_merge
-from trader_core.risk import LOCKED_CFG, RiskConfig, tightened
+from trader_core.risk import LOCKED_CFG, PAPER_KEYS, RiskConfig, paper_config, tightened
 
 from .errors import ConfigError
 from .types import canon_pair
@@ -53,12 +53,25 @@ class LiveSettings:
 
 SHADOW_BLOCK_KEYS = ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
 
+# DD-12 WP-01: YALNIZ mode="paper" ile verilebilen yeni anahtarlar (testnet/live/backtest'te varsayilan disi deger => ConfigError).
+CONTRACT_TYPES = ("PERPETUAL", "TRADIFI_PERPETUAL")
+SESSION_TAGS = ("open", "closed", "weekend")
+_SLIP_KEYS = ("slip_entry_bps", "slip_exit_bps", "slip_stop_bps")
+_CLUSTER_KEYS = {"pairs", "max_positions"}
+
+
+@dataclass(frozen=True)
+class ClusterSpec:
+    """Kume (04 §4.1): uyeler `pairs` icinde olmali; `max_positions` acik + acilmakta pozisyon tavani."""
+    pairs: tuple[str, ...]
+    max_positions: int
+
 
 @dataclass(frozen=True)
 class EngineConfig:
     schema: str
     mode: Literal["paper", "backtest", "testnet", "live"]
-    bot: Literal["learner", "twin"]
+    bot: Literal["learner"]
     pairs: tuple[str, ...]
     wallet_start: float
     cost: CostModel
@@ -90,11 +103,22 @@ class EngineConfig:
     ladder_follow: str | None = None                          # 12 §8.4: baska botun kademe gunlugunun yolu; yalniz paper
     shadow_blocks: tuple[str, ...] = ()                       # WP-3 5.1: golge karar satiri bloklari; bos = kapali
     mtm_marks: bool = True                                    # WP-3 6.2: oz varlik isaretleri (yalniz kayit)
+    # --- DD-12 WP-01 (yalniz mode="paper"; varsayilanlar = onceki davranis) ---
+    optional_pairs: tuple[str, ...] = ()                      # hisse/emtia: kural/veri gelmezse yalniz o cift bekler (pairs icinde)
+    ml_pairs: tuple[str, ...] = ()                            # ML suzgecinin puanladigi evren (pairs icinde); bos = kisit yok
+    max_positions: int | None = None                          # hesap geneli eszamanli pozisyon tavani (None = tavan yok)
+    risk: Mapping[str, float] = dataclasses.field(default_factory=dict)          # 4.1 paper: target_trade_risk/max_open_risk/max_same_dir_risk/daily_max_loss
+    clusters: Mapping[str, ClusterSpec] = dataclasses.field(default_factory=dict)  # 4.1 kume tavanlari (seanssiz), pairs sirasi korunur
+    flat_bar_guard: bool = False                              # 4.2: son kapanmis tetik bari volume==0 / high==low => giris yok
+    contract_types: tuple[str, ...] | None = None             # exchangeInfo contractType kabul listesi (03); None = PERPETUAL (yalniz paper verebilir)
+    cost_overrides: Mapping[str, Mapping[str, Mapping[str, float]]] = dataclasses.field(default_factory=dict)  # cift -> seans -> kayma bps (4.3)
 
     @functools.cached_property
     def risk_config(self) -> RiskConfig:
         """Boyutlama/kapi icin tek RiskConfig (twin ve learner ayni degeri okur). Nesne tek kez kurulur (12 §8.3:
         K0'da `step_config` ayni nesneyi dondurur)."""
+        if self.mode == "paper" and self.risk:
+            return build_paper_risk_config(self.target_trade_risk, self.risk)
         return build_risk_config(self.target_trade_risk)
 
     def _bot_path(self, name: str) -> str:
@@ -122,7 +146,11 @@ _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wa
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
-                  "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks"}
+                  "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks",
+                  "optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
+                  "cost_overrides"}
+_PAPER_ONLY_KEYS = ("optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
+                    "cost_overrides")
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -145,6 +173,23 @@ def build_risk_config(target_trade_risk: Any) -> RiskConfig:
         return tightened(LOCKED_CFG, target_trade_risk=v)
     except ValueError as e:
         raise ConfigError(f"target_trade_risk: {e}") from e
+
+
+def build_paper_risk_config(target_trade_risk: Any, risk: Mapping[str, Any]) -> RiskConfig:
+    """DD-12 §4.1 (yalniz mode="paper"): `risk` blogundaki anahtarlar PAPER_LIMITS icinde uygulanir. Ust sinirlari asan,
+    bilinmeyen, sayi olmayan ya da `target_trade_risk` ile celisen deger => ConfigError (fail-closed)."""
+    unknown = set(risk) - set(PAPER_KEYS)
+    if unknown:
+        raise ConfigError(f"risk bilinmeyen anahtar: {sorted(unknown)} (izinli: {PAPER_KEYS})")
+    kw = {k: _num(f"risk.{k}", v) for k, v in risk.items()}
+    ttr = _num("target_trade_risk", target_trade_risk)
+    if "target_trade_risk" in kw and kw["target_trade_risk"] != ttr:
+        raise ConfigError(f"risk.target_trade_risk ({kw['target_trade_risk']}) ile target_trade_risk ({ttr}) celisiyor")
+    kw["target_trade_risk"] = ttr
+    try:
+        return paper_config(**kw)
+    except ValueError as e:
+        raise ConfigError(f"risk: {e}") from e
 
 
 def _choice(name: str, v: Any, allowed: tuple[str, ...]) -> str:
@@ -202,6 +247,65 @@ def _build_shadow_blocks(v: Any) -> tuple[str, ...]:
     if len(set(v)) != len(v):
         raise ConfigError("shadow_blocks yinelenen oge iceriyor")
     return tuple(v)
+
+
+def _pair_subset(name: str, v: Any, pairs: tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(v, (str, bytes)) or not isinstance(v, (list, tuple)):
+        raise ConfigError(f"{name} liste olmali: {v!r}")
+    try:
+        out = tuple(canon_pair(p) for p in v)
+    except (ValueError, TypeError, AttributeError) as e:
+        raise ConfigError(f"{name}: {e}") from e
+    if len(set(out)) != len(out):
+        raise ConfigError(f"{name} yinelenen oge iceriyor")
+    outside = [p for p in out if p not in pairs]
+    if outside:
+        raise ConfigError(f"{name} pairs disinda cift iceriyor: {outside}")
+    return out
+
+
+def _build_clusters(v: Any, pairs: tuple[str, ...]) -> dict[str, ClusterSpec]:
+    if not isinstance(v, Mapping):
+        raise ConfigError("clusters sozluk olmali")
+    out: dict[str, ClusterSpec] = {}
+    for name, spec in v.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,31}", name):
+            raise ConfigError(f"clusters kume adi gecersiz: {name!r}")
+        if isinstance(spec, ClusterSpec):
+            spec = {"pairs": list(spec.pairs), "max_positions": spec.max_positions}
+        if not isinstance(spec, Mapping) or set(spec) != _CLUSTER_KEYS:
+            raise ConfigError(f"clusters.{name} tam olarak {sorted(_CLUSTER_KEYS)} icermeli")
+        members = _pair_subset(f"clusters.{name}.pairs", spec["pairs"], pairs)
+        if not members:
+            raise ConfigError(f"clusters.{name}.pairs bos olamaz")
+        out[name] = ClusterSpec(pairs=members, max_positions=_int(f"clusters.{name}.max_positions", spec["max_positions"], 1, 1000))
+    return out
+
+
+def _build_cost_overrides(v: Any, pairs: tuple[str, ...]) -> dict[str, dict[str, dict[str, float]]]:
+    if not isinstance(v, Mapping):
+        raise ConfigError("cost_overrides sozluk olmali")
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for pair, sess in v.items():
+        try:
+            cp = canon_pair(pair)
+        except (ValueError, TypeError, AttributeError) as e:
+            raise ConfigError(f"cost_overrides: {e}") from e
+        if cp not in pairs:
+            raise ConfigError(f"cost_overrides pairs disinda cift: {cp}")
+        if cp in out:
+            raise ConfigError(f"cost_overrides yinelenen cift: {cp}")
+        if not isinstance(sess, Mapping):
+            raise ConfigError(f"cost_overrides.{cp} sozluk olmali")
+        d: dict[str, dict[str, float]] = {}
+        for tag, slips in sess.items():
+            if tag not in SESSION_TAGS:
+                raise ConfigError(f"cost_overrides.{cp} seans gecersiz: {tag!r} (izinli: {SESSION_TAGS})")
+            if not isinstance(slips, Mapping) or not slips or set(slips) - set(_SLIP_KEYS):
+                raise ConfigError(f"cost_overrides.{cp}.{tag} anahtarlari {_SLIP_KEYS} alt kumesi olmali")
+            d[tag] = {k: _num(f"cost_overrides.{cp}.{tag}.{k}", x, 0, 100) for k, x in slips.items()}
+        out[cp] = d
+    return out
 
 
 def _build_live(raw: Any) -> LiveSettings:
@@ -288,7 +392,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         raise ConfigError(f"schema {SCHEMA!r} olmali: {raw['schema']!r}")
     mode = raw["mode"]
     _choice("mode", mode, ("paper", "backtest", "testnet", "live"))
-    bot = _choice("bot", raw["bot"], ("learner", "twin"))
+    bot = _choice("bot", raw["bot"], ("learner",))      # DD-12: ikiz kaldirildi; "twin" => ConfigError
     pairs_raw = raw["pairs"]
     if isinstance(pairs_raw, (str, bytes)) or not isinstance(pairs_raw, (list, tuple)) or not pairs_raw:
         raise ConfigError("pairs bos olmayan liste olmali")
@@ -322,7 +426,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     ml_mode = _choice("ml_mode", raw.get("ml_mode", "off"), ("off", "shadow", "active"))
     ml_features = _choice("ml_features", raw.get("ml_features", "v1"), ("v1", "r02", "r03"))
     ml_experimental = _bool("ml_experimental", raw.get("ml_experimental", False))
-    if ml_experimental and not (mode == "paper" and ml_mode == "shadow"):
+    # DD-12: kagit ML etkin (active) yalniz `ml_pairs` verilmis (paper katmani) yapilandirmada deneysel paketi yukleyebilir
+    if ml_experimental and not (mode == "paper" and (ml_mode == "shadow" or (ml_mode == "active" and raw.get("ml_pairs")))):
         raise ConfigError(f"ml_experimental yalniz paper+shadow (mode={mode!r}, ml_mode={ml_mode!r})")
     ml_path = raw.get("ml_model_path")
     if ml_path is not None and (not isinstance(ml_path, str) or not ml_path):
@@ -341,6 +446,38 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
             raise ConfigError(f"ladder_follow yalniz mode='paper' ile verilebilir (mode={mode!r})")
     shadow_blocks = _build_shadow_blocks(raw.get("shadow_blocks", ()))
     mtm_marks = _bool("mtm_marks", raw.get("mtm_marks", True))
+    # --- DD-12 WP-01 yeni anahtarlar: yalniz paper ---
+    pairs_set = pairs
+    optional_pairs = _pair_subset("optional_pairs", raw.get("optional_pairs", ()), pairs_set)
+    ml_pairs = _pair_subset("ml_pairs", raw.get("ml_pairs", ()), pairs_set)
+    max_positions = raw.get("max_positions")
+    if max_positions is not None:
+        max_positions = _int("max_positions", max_positions, 1, 1000)
+    risk_raw = raw.get("risk", {})
+    if not isinstance(risk_raw, Mapping):
+        raise ConfigError("risk sozluk olmali")
+    risk_raw = dict(risk_raw)
+    flat_bar_guard = _bool("flat_bar_guard", raw.get("flat_bar_guard", False))
+    ct_raw = raw.get("contract_types")
+    contract_types = None
+    if ct_raw is not None:
+        if isinstance(ct_raw, (str, bytes)) or not isinstance(ct_raw, (list, tuple)) or not ct_raw:
+            raise ConfigError(f"contract_types bos olmayan liste olmali: {ct_raw!r}")
+        for c in ct_raw:
+            if not isinstance(c, str) or c not in CONTRACT_TYPES:
+                raise ConfigError(f"contract_types gecersiz oge {c!r} (izinli: {CONTRACT_TYPES})")
+        if len(set(ct_raw)) != len(ct_raw):
+            raise ConfigError("contract_types yinelenen oge iceriyor")
+        contract_types = tuple(ct_raw)
+    clusters = _build_clusters(raw.get("clusters", {}), pairs_set)
+    cost_overrides = _build_cost_overrides(raw.get("cost_overrides", {}), pairs_set)
+    if mode != "paper":
+        given = {"optional_pairs": optional_pairs, "ml_pairs": ml_pairs, "max_positions": max_positions, "risk": risk_raw,
+                 "clusters": clusters, "flat_bar_guard": flat_bar_guard, "cost_overrides": cost_overrides,
+                 "contract_types": contract_types}
+        bad = sorted(k for k, x in given.items() if x not in ((), {}, None, False))
+        if bad:
+            raise ConfigError(f"{bad} yalniz mode='paper' ile verilebilir (mode={mode!r})")
     live_raw = raw.get("live")
     if mode in ("testnet", "live"):
         if live_raw is None:
@@ -350,13 +487,16 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         if live_raw is not None:
             raise ConfigError(f"live blogu mode={mode} ile verilemez")
         live = None
-    ttr = raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk)
-    build_risk_config(ttr)
+    ttr = raw.get("target_trade_risk", risk_raw.get("target_trade_risk", LOCKED_CFG.target_trade_risk))
+    if risk_raw:
+        build_paper_risk_config(ttr, risk_raw)               # mode == 'paper' (digerleri yukarida reddedildi)
+    else:
+        build_risk_config(ttr)
     cost = raw["cost"] if isinstance(raw["cost"], CostModel) else None
     cost = _build_cost(dataclasses.asdict(cost) if cost else raw["cost"])
     if mode in ("testnet", "live"):
         if bot != "learner":
-            raise ConfigError(f"mode={mode!r} yalniz bot='learner' ile gecerli (ikiz kagitta kalir)")
+            raise ConfigError(f"mode={mode!r} yalniz bot='learner' ile gecerli")
         if cost.trigger_source != "mark":
             raise ConfigError(f"mode={mode!r}: cost.trigger_source='mark' zorunlu")
     if mode == "live" and veto_mode != "required":
@@ -376,6 +516,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         ml_experimental=ml_experimental,
         startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live, ladder_follow=ladder_follow,
         shadow_blocks=shadow_blocks, mtm_marks=mtm_marks,
+        optional_pairs=optional_pairs, ml_pairs=ml_pairs, max_positions=max_positions, risk=risk_raw, clusters=clusters,
+        flat_bar_guard=flat_bar_guard, contract_types=contract_types, cost_overrides=cost_overrides,
         **{n: raw[n] for n in _STR},
     )
 

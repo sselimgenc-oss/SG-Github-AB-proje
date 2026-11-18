@@ -113,7 +113,7 @@ def user_version(conn) -> int:
 
 def check_ledger_schema(conn) -> int:
     uv = user_version(conn)
-    if uv not in (2, 3, 4):
+    if uv not in (2, 3, 4, 5):
         raise ReportError("ledger_schema", f"defter sema surumu {uv}; 2, 3 ya da 4 bekleniyor")
     return uv
 

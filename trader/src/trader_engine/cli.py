@@ -212,20 +212,10 @@ def _init_ledger_work(cfg, reason: str, strategy: str | None) -> int:
             if parse_label(cur_reason) == parse_label(label):
                 print(f"etkin surum zaten {label}: dokunulmadi")
                 return EXIT_OK
-            # strateji etiketi degisimi: params ayni kalir (ikiz params_hash eslesmesi bozulmaz), yalniz etiket tasinir
+            # strateji etiketi degisimi: params ayni kalir, yalniz etiket tasinir
             vid = led.create_user_version(params, reason=f"{label} {reason}", allow_same_params=True)
             led.activate_version(vid, actor="user", reason=f"{label} {reason}")
             print(f"strateji etiketi guncellendi: {'@'.join(x for x in parse_label(cur_reason) if x)} -> {label} (surum {vid})")
-        if cfg.bot == "twin":
-            lp = Path(cfg.var_dir) / "learner" / "ledger.sqlite"
-            if lp.exists():
-                ref = L.open_ledger(str(lp), "learner", create=False, read_only=True)
-                try:
-                    if ref.get_active_params().params_hash != led.get_active_params().params_hash:
-                        print("twin params_hash ogrenen defterle uyusmuyor", file=sys.stderr)
-                        return EXIT_ENGINE
-                finally:
-                    ref.close()
     finally:
         led.close()
     return EXIT_OK
@@ -786,11 +776,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def env_arg(p):
-        p.add_argument("--env", default=None, choices=("testnet", "live", "paper-ml"),
+        p.add_argument("--env", default=None, choices=("testnet", "live", "paper"),
                        help="config/engine.<env>.json katmani (kip + live blogu + env'e ozgu kill/pause yolu)")
 
     def bot_args(p, need_bot=True):
-        p.add_argument("--bot", required=need_bot, choices=("learner", "twin"))
+        p.add_argument("--bot", required=need_bot, choices=("learner",))
         p.add_argument("--config-dir", default="config")
 
     p = sub.add_parser("run")

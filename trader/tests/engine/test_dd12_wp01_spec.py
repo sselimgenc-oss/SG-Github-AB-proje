@@ -1,0 +1,440 @@
+"""DD-12 WP-01 bagimsiz sartname testleri: docs/motor/dd12-capraz-varlik-spec.md (v4) §2, §4.1, §9 (WP-01), §12, §15.
+
+Kapsam: D-T1, D-T2, D-T13 (WP-01 kismi: tarafsizlik), D-T30. Yalniz sartnameden ve onceden var olan koddan (config yukleyici,
+risk kilidi, cli) yazildi; gerceklemenin farklarina BAKILMADI.
+
+Taban (onceki davranis): HEAD 0fc8b5c'nin `src/` agaci `git archive` ile gecici dizine acilir ve alt surecte calistirilir;
+"onceki EngineConfig ile esit" ve "risk sabitleri bit bit ayni" bununla olculur.
+
+SPEC-AMBIGUOUS notlari (sartnamenin adlandirmadigi yerler):
+  * `clusters` JSON bicimi: kume adi -> liste | {pairs/members/symbols: [...], max/cap/limit: n}. Normalize edilir.
+  * `risk` blogu anahtar adlari: RiskConfig alan adlari varsayilir (max_open_risk, max_same_dir_risk, daily_max_loss,
+    target_trade_risk); degerler EngineConfig.risk_config uzerinden okunur.
+  * Cift adlari: taban varlik kodu ("NVDA", "1000SHIB") ile eslesir; tam sembol bicimi (NVDA/USDT) sartnamede yok.
+"""
+from __future__ import annotations
+
+import copy
+import dataclasses
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+
+from trader_core import risk
+from trader_core.risk import (HARD_LIMITS, LOCKED_CFG, AccountState, Candidate, OpenPosition, check_entry)
+from trader_engine import cli
+from trader_engine.config import load_cli_config, load_engine_config
+from trader_engine.errors import ConfigError
+
+ROOT = Path(__file__).resolve().parents[2]          # .../trader
+CONFIG = ROOT / "config"
+BASELINE_COMMIT = "0fc8b5c"
+
+BASE10 = ["BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "TRX", "LINK", "AVAX"]
+BUYUK = {"BTC", "ETH", "XRP", "BNB", "SOL"}
+TEKNOLOJI = {"NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "ORCL", "NFLX", "PLTR", "AMD"}
+METAL = {"XAU", "XAG"}
+ENERJI = {"BZ", "COPPER"}
+STOCKS20 = {"NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "BRKB", "JPM", "LLY", "WMT", "V", "ORCL",
+            "XOM", "NFLX", "PLTR", "COST", "AMD", "HD"}
+COMMODITY4 = METAL | ENERJI
+CAPS = {"kripto_buyuk": 4, "kripto_diger": 6, "hisse": 5, "hisse_teknoloji": 3, "metal": 2, "enerji_sanayi": 2}
+
+PINNED_SHA = {
+    "engine.base.json": "e619743a540b53bd539c4141506026095e5a27de15380abac35dc569295edf88",
+    "engine.learner.json": "30ca2842c40cacafbf6cdd90c9e6f1f54fc62b9a9ec913476d1399ac5352cb12",
+    "engine.testnet.json": "4411ff38fcbe987ef6445c6f9b5c0c614aa36eb2604bb060a110cfc73ffef926",
+    "engine.live.json": "feb22c1c4db3b705d44d793836139d588d999fb44095c0bed1812e90c037b47e",
+}
+UNIT_SHA = {
+    "trader-engine-testnet.service": "c753d965c4b8e4a239f6ca44fa83a17e3824ed501583aadc8c7a21c27c5ac07d",
+    "trader-engine-live.service": "56e17d0466b0e32223ee8fa58a0d8f8c82f62356e1b6f21a2abc651865ae0fa9",
+}
+
+
+# --------------------------------------------------------------------------- yardimcilar
+def _base(pair: str) -> str:
+    return pair.split("/")[0].split(":")[0].upper()
+
+
+def _sha(p: Path) -> str:
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def _git_show(path: str) -> bytes:
+    return subprocess.run(["git", "-C", str(ROOT), "show", f"{BASELINE_COMMIT}:./{path}"],
+                          check=True, capture_output=True).stdout
+
+
+def _paper():
+    return load_cli_config(CONFIG, "learner", "paper")
+
+
+def _paper_raw() -> dict:
+    return json.loads((CONFIG / "engine.paper.json").read_text(encoding="utf-8"))
+
+
+def _norm_clusters(obj) -> dict[str, tuple[set[str], int | None]]:
+    """-> {ad: ({taban varlik kodlari}, tavan)}"""
+    def one(v):
+        if isinstance(v, dict):
+            members = next((v[k] for k in ("pairs", "members", "symbols", "instruments") if k in v), None)
+            cap = next((v[k] for k in ("max", "cap", "limit", "max_positions", "max_open") if k in v), None)
+            return {_base(p) for p in (members or [])}, cap
+        if hasattr(v, "__dataclass_fields__"):
+            return one(dataclasses.asdict(v))
+        return {_base(p) for p in v}, None
+    if isinstance(obj, dict):
+        return {k: one(v) for k, v in obj.items()}
+    out = {}
+    for item in obj:                                  # liste bicimi: ad iceren nesneler
+        d = dataclasses.asdict(item) if hasattr(item, "__dataclass_fields__") else item
+        out[d.get("name")] = one(d)
+    return out
+
+
+def _clusters_of(cfg):
+    obj = getattr(cfg, "clusters", None)
+    if obj is None:
+        obj = _paper_raw()["clusters"]
+    return _norm_clusters(obj)
+
+
+@pytest.fixture(scope="module")
+def baseline(tmp_path_factory):
+    """HEAD 0fc8b5c kaynak agaci + onun yukledigi configlerin dokumu."""
+    d = tmp_path_factory.mktemp("baseline")
+    tar = subprocess.run(["git", "-C", str(ROOT), "archive", BASELINE_COMMIT, "src"], check=True, capture_output=True).stdout
+    subprocess.run(["tar", "-x", "-C", str(d)], input=tar, check=True)
+    script = textwrap.dedent("""
+        import dataclasses, json, sys
+        from trader_engine.config import load_cli_config
+        from trader_core.risk import LOCKED_CFG, HARD_LIMITS
+        out = {"locked": dataclasses.asdict(LOCKED_CFG), "hard": HARD_LIMITS, "cfg": {}}
+        for env in (None, "testnet", "live"):
+            c = load_cli_config(sys.argv[1], "learner", env)
+            out["cfg"][str(env)] = {"cfg": dataclasses.asdict(c), "risk": dataclasses.asdict(c.risk_config)}
+        print(json.dumps(out, default=str, sort_keys=True))
+    """)
+    env = dict(os.environ, PYTHONPATH=str(d / "src"))
+    r = subprocess.run([sys.executable, "-c", script, str(CONFIG)], check=True, capture_output=True, text=True, env=env)
+    return json.loads(r.stdout)
+
+
+def _cur_dump(envname):
+    c = load_cli_config(CONFIG, "learner", envname)
+    return json.loads(json.dumps({"cfg": dataclasses.asdict(c), "risk": dataclasses.asdict(c.risk_config)},
+                                 default=str, sort_keys=True))
+
+
+# --------------------------------------------------------------------------- D-T1
+@pytest.mark.parametrize("envname", [None, "testnet", "live"])
+def test_dt1_katmansiz_yukleme_onceki_engineconfig_ile_esit(baseline, envname):
+    """D-T1: katmansiz (learner), testnet, live: onceki alanlar bit bit ayni; yeni alanlar bu yollarda onceki
+    davranisi degistirmez (risk_config dahil)."""
+    cur = _cur_dump(envname)
+    old = baseline["cfg"][str(envname)]
+    for k, v in old["cfg"].items():
+        assert cur["cfg"][k] == v, f"{envname}: alan {k} degisti"
+    assert cur["risk"] == old["risk"]
+
+
+def test_dt1_katmansiz_yukleme_hala_10_cift_ve_paper_degil_katman():
+    cfg = load_cli_config(CONFIG, "learner", None)
+    assert len(cfg.pairs) == 10 and cfg.bot == "learner" and cfg.mode == "paper"
+    assert cfg.ml_mode == "off"
+    assert cfg.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_SHA))
+def test_dt1_dt13_config_dosyalari_degismedi(name):
+    """engine.base/learner/testnet/live: sabit karma ve HEAD ile ayni bayt."""
+    p = CONFIG / name
+    assert _sha(p) == PINNED_SHA[name]
+    assert p.read_bytes() == _git_show(f"config/{name}")
+
+
+@pytest.mark.parametrize("name", sorted(UNIT_SHA))
+def test_dt13_testnet_canli_birim_dosyalari_degismedi(name):
+    assert _sha(ROOT / "deploy" / name) == UNIT_SHA[name]
+
+
+def test_dt1_bot_twin_reddedilir(tmp_path):
+    bot = tmp_path / "twin.json"
+    bot.write_text('{"bot": "twin"}')
+    with pytest.raises(ConfigError):
+        load_engine_config(CONFIG / "engine.base.json", bot)
+    with pytest.raises(ConfigError):
+        load_engine_config(CONFIG / "engine.base.json", CONFIG / "engine.learner.json", overlay_path=bot)
+    # paper katmaniyla da
+    with pytest.raises(ConfigError):
+        load_engine_config(CONFIG / "engine.base.json", CONFIG / "engine.learner.json",
+                           overlay_path=_write(tmp_path, "tw2.json", {**_paper_raw(), "bot": "twin"}))
+
+
+def test_dt1_cli_bot_twin_kalkti():
+    ap = cli.build_parser()
+    with pytest.raises(SystemExit):
+        ap.parse_args(["run", "--bot", "twin", "--env", "paper"])
+    with pytest.raises(SystemExit):
+        ap.parse_args(["run", "--bot", "twin"])
+
+
+def test_dt1_eski_katman_dosyalari_silindi():
+    assert not (CONFIG / "engine.twin.json").exists()
+    assert not (CONFIG / "engine.paper-ml.json").exists()
+
+
+# --------------------------------------------------------------------------- D-T2 (paper)
+def test_dt2_paper_44_cift_taban_10_ust_kumesi():
+    cfg = _paper()
+    assert cfg.mode == "paper" and cfg.bot == "learner"
+    assert len(cfg.pairs) == 44 and len(set(cfg.pairs)) == 44
+    bases = [_base(p) for p in cfg.pairs]
+    base10 = load_cli_config(CONFIG, "learner", None).pairs
+    assert set(base10) <= set(cfg.pairs)
+    assert set(BASE10) <= set(bases)
+    assert STOCKS20 <= set(bases) and COMMODITY4 <= set(bases)
+    assert len(set(bases) - STOCKS20 - COMMODITY4) == 20          # 20 kripto
+
+
+def test_dt2_paper_ml_etkin_golgesiz_16_pozisyon():
+    cfg = _paper()
+    assert cfg.ml_mode == "active"
+    assert cfg.ml_features == "r03"
+    assert cfg.ml_experimental is True
+    assert cfg.shadow_blocks == ()
+    assert cfg.ml_model_path
+    assert cfg.max_positions == 16
+    assert cfg.target_trade_risk == 0.01                           # islem basi %1
+
+
+def test_dt2_paper_ml_pairs_sabit_taban_10():
+    cfg = _paper()
+    assert {_base(p) for p in cfg.ml_pairs} == set(BASE10)
+    assert set(cfg.ml_pairs) <= set(cfg.pairs)
+
+
+def test_dt2_paper_optional_pairs_hisse_emtia_24():
+    cfg = _paper()
+    assert len(cfg.optional_pairs) == 24
+    assert {_base(p) for p in cfg.optional_pairs} == STOCKS20 | COMMODITY4
+    assert set(cfg.optional_pairs) <= set(cfg.pairs)
+
+
+def test_dt2_paper_kumeler_ve_tavanlar_4_6_5_3_2_2():
+    cfg = _paper()
+    cl = _clusters_of(cfg)
+    assert set(cl) == set(CAPS)
+    for name, cap in CAPS.items():
+        assert cl[name][1] == cap, name
+    assert cl["kripto_buyuk"][0] == BUYUK
+    assert cl["hisse_teknoloji"][0] == TEKNOLOJI
+    assert cl["metal"][0] == METAL and cl["enerji_sanayi"][0] == ENERJI
+    assert cl["hisse"][0] == STOCKS20 and len(cl["hisse"][0]) == 20
+    assert len(cl["kripto_diger"][0]) == 15 and not (cl["kripto_diger"][0] & BUYUK)
+    assert not (cl["kripto_diger"][0] & (STOCKS20 | COMMODITY4))
+    assert TEKNOLOJI <= cl["hisse"][0]                              # cok uyelik: teknoloji ayni zamanda hisse
+    pair_bases = {_base(p) for p in cfg.pairs}
+    for name, (members, _) in cl.items():
+        assert members <= pair_bases, name
+
+
+def test_dt2_paper_kume_seans_sutunu_yok_ve_veto_kavrami_yok():
+    raw = _paper_raw()
+    assert "veto_exempt_pairs" not in raw and "veto_path" not in raw
+    assert "session" not in json.dumps(raw["clusters"]).lower()
+
+
+def test_dt2_paper_flat_bar_ve_contract_types():
+    cfg = _paper()
+    assert getattr(cfg, "flat_bar_guard") in (True, {"enabled": True}) or bool(cfg.flat_bar_guard)
+    ct = tuple(cfg.contract_types)
+    assert "PERPETUAL" in ct and "TRADIFI_PERPETUAL" in ct
+    assert hasattr(cfg, "cost_overrides")
+
+
+def test_dt2_paper_yeni_anahtar_ham_json_listesi():
+    raw = _paper_raw()
+    for k in ("pairs", "optional_pairs", "strategy", "ml_mode", "ml_pairs", "ml_features", "ml_model_path",
+              "ml_experimental", "shadow_blocks", "max_positions", "risk", "clusters", "flat_bar_guard",
+              "contract_types", "cost_overrides"):
+        assert k in raw, k
+    assert raw["shadow_blocks"] == [] and raw["max_positions"] == 16 and raw["ml_mode"] == "active"
+
+
+# --------------------------------------------------------------------------- D-T2 (yalniz --env paper)
+def test_dt2_paper_katmani_yalniz_env_paper_ile_uygulanir():
+    plain = load_cli_config(CONFIG, "learner", None)
+    paper = load_cli_config(CONFIG, "learner", "paper")
+    assert len(plain.pairs) == 10 and len(paper.pairs) == 44
+    assert plain.ml_mode == "off" and paper.ml_mode == "active"
+    assert plain.shadow_blocks != () and paper.shadow_blocks == ()
+    for env in ("testnet", "live"):
+        c = load_cli_config(CONFIG, "learner", env)
+        assert c.mode == env and len(c.pairs) == 10 and c.ml_mode == "off"
+        assert getattr(c, "max_positions", None) in (None, 0, 1)   # yeni alan varsayilan (kapali) kalir
+
+
+def test_dt2_cli_env_paper_kabul_ve_yukler():
+    ap = cli.build_parser()
+    a = ap.parse_args(["run", "--bot", "learner", "--env", "paper", "--config-dir", str(CONFIG)])
+    assert a.env == "paper"
+    cfg = cli._load_cfg(a)
+    assert cfg.mode == "paper" and len(cfg.pairs) == 44
+    b = ap.parse_args(["run", "--bot", "learner", "--config-dir", str(CONFIG)])
+    assert b.env is None and len(cli._load_cfg(b).pairs) == 10
+
+
+def test_dt2_env_paper_diger_alt_komutlarda_da_kabul():
+    ap = cli.build_parser()
+    for argv in (["kill", "--env", "paper"], ["pause", "--bot", "learner", "--env", "paper"],
+                 ["init-ledger", "--bot", "learner", "--env", "paper"]):
+        assert ap.parse_args(argv).env == "paper"
+
+
+# --------------------------------------------------------------------------- D-T2 (hata dallari)
+def _write(tmp: Path, name: str, obj) -> Path:
+    p = tmp / name
+    p.write_text(json.dumps(obj))
+    return p
+
+
+def _load_overlay(overlay: Path):
+    return load_engine_config(CONFIG / "engine.base.json", CONFIG / "engine.learner.json", overlay_path=overlay)
+
+
+def _inject_cluster_pair(raw: dict, pair: str):
+    cl = raw["clusters"]
+    first = next(iter(cl.values())) if isinstance(cl, dict) else cl[0]
+    if isinstance(first, list):
+        first.append(pair)
+        return
+    for k in ("pairs", "members", "symbols", "instruments"):
+        if k in first:
+            first[k].append(pair)
+            return
+    raise AssertionError("kume bicimi taninmadi")
+
+
+def test_dt2_paper_kopyasi_kontrol_yuklenir(tmp_path):
+    cfg = _load_overlay(_write(tmp_path, "ok.json", _paper_raw()))
+    assert len(cfg.pairs) == 44
+
+
+@pytest.mark.parametrize("which", ["cluster", "ml_pairs", "optional_pairs"])
+def test_dt2_pairs_disi_cift_hata(tmp_path, which):
+    raw = copy.deepcopy(_paper_raw())
+    ghost = "ZZZZ/USDT"
+    if which == "cluster":
+        _inject_cluster_pair(raw, ghost)
+    else:
+        raw[which] = list(raw[which]) + [ghost]
+    with pytest.raises(ConfigError):
+        _load_overlay(_write(tmp_path, "bad.json", raw))
+
+
+NEW_KEYS = {
+    "max_positions": 16,
+    "ml_pairs": ["BTC/USDT"],
+    "optional_pairs": ["ETH/USDT"],
+    "clusters": {"k": {"pairs": ["BTC/USDT"], "max": 1}},
+    "risk": {"max_open_risk": 0.12, "max_same_dir_risk": 0.08, "daily_max_loss": 0.08},
+    "contract_types": ["PERPETUAL"],
+    "flat_bar_guard": True,
+}
+
+
+@pytest.mark.parametrize("env", ["testnet", "live", "backtest"])
+@pytest.mark.parametrize("key", sorted(NEW_KEYS))
+def test_dt2_dt30_yeni_anahtarlar_testnet_canli_geri_testte_configerror(tmp_path, env, key):
+    if env == "backtest":
+        layer = {"mode": "backtest", "veto_mode": "off"}
+    else:
+        layer = json.loads((CONFIG / f"engine.{env}.json").read_text())
+    _load_overlay(_write(tmp_path, "ctl.json", layer))              # kontrol: anahtarsiz yuklenir
+    with pytest.raises(ConfigError):
+        _load_overlay(_write(tmp_path, "bad.json", {**layer, key: NEW_KEYS[key]}))
+
+
+@pytest.mark.parametrize("env", ["testnet", "live", "backtest"])
+def test_dt30_risk_anahtarlari_tek_tek_testnet_canli_geri_testte_configerror(tmp_path, env):
+    layer = ({"mode": "backtest", "veto_mode": "off"} if env == "backtest"
+             else json.loads((CONFIG / f"engine.{env}.json").read_text()))
+    for k, v in (("max_open_risk", 0.12), ("max_same_dir_risk", 0.08), ("daily_max_loss", 0.08)):
+        with pytest.raises(ConfigError):
+            _load_overlay(_write(tmp_path, f"b_{k}.json", {**layer, "risk": {k: v}}))
+
+
+# --------------------------------------------------------------------------- D-T30 / D-T13 risk
+def test_dt30_paper_risk_yuzdeleri():
+    cfg = _paper()
+    rc = cfg.risk_config
+    assert rc.target_trade_risk == pytest.approx(0.01)
+    assert rc.max_open_risk == pytest.approx(0.12)
+    assert rc.max_same_dir_risk == pytest.approx(0.08)
+    assert rc.daily_max_loss == pytest.approx(0.08)
+    assert rc.max_trade_risk >= rc.target_trade_risk
+
+
+def _state(equity=1000.0, day_start=1000.0, opens=()):
+    return AccountState(equity=equity, day_start_equity=day_start, open_positions=list(opens))
+
+
+def _cand(pair="ETH/USDT:USDT", side="long"):
+    stop = 98.0 if side == "long" else 102.0
+    return Candidate(pair=pair, side=side, entry=100.0, stop=stop, leverage=3)
+
+
+def test_dt30_paper_davranis_toplam_ve_ayni_yon_ve_gunluk():
+    rc = _paper().risk_config
+    pos = lambda p, s, r: OpenPosition(pair=p, side=s, risk_amount=r, margin=0.0)
+    # toplam acik 60 (30 long + 30 short) + yeni ~10: paper izinli, kilitli (%5 gunluk/%6 toplam) reddeder
+    st = _state(opens=[pos("BTC/USDT:USDT", "long", 30.0), pos("SOL/USDT:USDT", "short", 30.0)])
+    assert check_entry(st, _cand(), rc).allowed
+    assert not check_entry(st, _cand(), LOCKED_CFG).allowed
+    # ayni yon: long 75 + yeni ~10 > %8 (80) -> ret
+    st2 = _state(opens=[pos("BTC/USDT:USDT", "long", 75.0)])
+    assert not check_entry(st2, _cand(), rc).allowed
+    # gunluk zarar %6: paper'da kural 4 tetiklenmez (limit %8); 60+10... yalniz gunluk butce: 60 + 0 + 10 <= 80 izinli
+    st3 = _state(equity=940.0, day_start=1000.0)
+    assert check_entry(st3, _cand(), rc).allowed
+    assert not check_entry(st3, _cand(), LOCKED_CFG).allowed
+    # gunluk zarar %8.1 -> paper'da da reddedilir
+    assert not check_entry(_state(equity=919.0, day_start=1000.0), _cand(), rc).allowed
+
+
+def test_dt13_risk_varsayilan_sabitleri_bit_bit_ayni(baseline):
+    assert json.loads(json.dumps(dataclasses.asdict(LOCKED_CFG))) == baseline["locked"]
+    assert HARD_LIMITS == baseline["hard"]
+    d = dataclasses.asdict(risk.RiskConfig())
+    assert d["max_open_risk"] == 0.06 and d["max_same_dir_risk"] == 0.04 and d["daily_max_loss"] == 0.05
+    assert d["max_trade_risk"] == 0.02 and d["target_trade_risk"] == 0.014
+
+
+@pytest.mark.parametrize("env", ["testnet", "live"])
+def test_dt13_testnet_canli_risk_limitleri_degismedi(env):
+    rc = load_cli_config(CONFIG, "learner", env).risk_config
+    assert (rc.max_open_risk, rc.max_same_dir_risk, rc.daily_max_loss) == (0.06, 0.04, 0.05)
+    assert rc.target_trade_risk == 0.005                           # taban config degeri
+
+
+def test_dt13_katmansiz_risk_config_degismedi(baseline):
+    rc = load_cli_config(CONFIG, "learner", None).risk_config
+    assert dataclasses.asdict(rc) == baseline["cfg"]["None"]["risk"]
+    assert (rc.max_open_risk, rc.max_same_dir_risk, rc.daily_max_loss) == (0.06, 0.04, 0.05)
+
+
+def test_dt13_paper_layer_diger_ortamlari_kirletmez():
+    """paper'dan sonra yuklenen testnet/live/katmansiz risk ve cift sayilari ayni (modul-duzeyi durum sizmaz)."""
+    _paper()
+    assert len(load_cli_config(CONFIG, "learner", None).pairs) == 10
+    assert load_cli_config(CONFIG, "learner", "testnet").risk_config.max_open_risk == 0.06
+    assert load_cli_config(CONFIG, "learner", "live").risk_config.max_open_risk == 0.06
+    assert LOCKED_CFG.max_open_risk == 0.06

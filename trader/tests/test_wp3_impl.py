@@ -76,13 +76,13 @@ def mk_shadow(**kw):
 # =========================================================================== sema 4 / goc
 def test_fresh_file_is_v4_with_new_objects(led):
     p = led.path
-    assert raw(p, "PRAGMA user_version")[0][0] == 4 and L.SCHEMA_VERSION == 4
+    assert raw(p, "PRAGMA user_version")[0][0] == 5 and L.SCHEMA_VERSION == 5
     assert (3, 4) in raw(p, "SELECT from_version, to_version FROM schema_migrations")
     names = {r[0] for r in raw(p, "SELECT name FROM sqlite_master")}
     assert {"shadow_decisions", "equity_marks", "v_shadow_decisions", "ix_shadow_ts"} <= names
     assert {"trg_shadow_decisions_no_update", "trg_equity_marks_no_delete"} <= names
     cols = [r[1] for r in raw(p, "PRAGMA table_info(v_trades)")]
-    assert cols[-15:] == ["entry_order_ts", "entry_order_ack_ts", "entry_ref_price", "entry_ref_spread", "entry_ref_src",
+    assert cols[-17:-2] == ["entry_order_ts", "entry_order_ack_ts", "entry_ref_price", "entry_ref_spread", "entry_ref_src",
                           "slip_exec_entry", "exit_order_ts", "exit_order_ack_ts", "exit_ref_price", "exit_ref_spread",
                           "exit_ref_src", "slip_exec_exit", "exit_decision_price", "slip_decision_exit", "exit_regime"]
     assert cols[35] == "excursion_tf"
@@ -118,9 +118,9 @@ def test_migration_3_to_4_is_additive_and_readable(tmp_path, clock):
     assert raw(p, "PRAGMA user_version")[0][0] == 3
     L.open_ledger(p, "learner", clock=clock).close()
     assert os.path.exists(str(p) + ".premigrate-v3")
-    assert raw(p, "PRAGMA user_version")[0][0] == 4
+    assert raw(p, "PRAGMA user_version")[0][0] == 5     # DD-12 WP-02: baslik surumu 5 (3 -> 4 -> 5 zinciri)
     assert [r[1] for r in raw(p, "PRAGMA table_info(v_trades)")][:len(cols_v3)] == cols_v3
-    assert [r[1] for r in raw(p, "PRAGMA table_info(v_decisions)")] == dec_cols_v3
+    assert [r[1] for r in raw(p, "PRAGMA table_info(v_decisions)")][:len(dec_cols_v3)] == dec_cols_v3
     for t, rows in before_tables.items():
         assert raw(p, f"SELECT * FROM {t}")[:len(rows)] == rows
     assert raw(p, "PRAGMA foreign_key_check") == []
@@ -711,9 +711,9 @@ def test_counterfactual_script_reports_shadow_keys_and_reads_v3(tmp_path, monkey
 
 
 # =========================================================================== rapor paketi
-def test_reports_schema_accepts_4_and_rejects_5(tmp_path):
+def test_reports_schema_accepts_5_and_rejects_6(tmp_path):
     from trader_reports import inputs as I
-    for uv, ok in ((2, True), (3, True), (4, True), (1, False), (5, False)):
+    for uv, ok in ((2, True), (3, True), (4, True), (5, True), (1, False), (6, False)):
         c = sqlite3.connect(":memory:")
         c.execute(f"PRAGMA user_version={uv}")
         if ok:
@@ -764,7 +764,7 @@ def test_reports_load_shadow_and_lock(tmp_path, led):
     led.record_shadow(mk_shadow(bar_close_ts=datetime(2026, 6, 1, 9, 0, tzinfo=UTC), pair="ETH/USDT"))
     c = I.open_ro(led.path, "ledger_missing")
     try:
-        assert I.check_ledger_schema(c) == 4
+        assert I.check_ledger_schema(c) == 5
         rows = I.load_shadow(c, None, None)
         assert [r["pair"] for r in rows] == ["BTC/USDT"]                # kilitli donem satiri okunmaz
     finally:

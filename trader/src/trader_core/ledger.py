@@ -12,6 +12,7 @@ import logging
 import math
 import numbers
 import os
+import re
 import sqlite3
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -23,7 +24,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("trader_core.ledger")
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 BOTS = ("learner", "twin")
 MIN_FREE_BYTES = 50 * 1024 * 1024
 MAX_REASON = 500
@@ -88,13 +89,25 @@ LESSON_BOUNDS_DEFAULT: Mapping[str, tuple[float, float]] = MappingProxyType(
 LESSON_STEP: Mapping[str, float] = MappingProxyType({k: PARAM_SPECS[k]["step"] for k in LESSON_PARAMS})
 LESSON_SCOPE: Mapping[str, tuple[str, ...]] = MappingProxyType({k: PARAM_SPECS[k]["scope"] for k in LESSON_PARAMS})
 
-_TRIGGER_TFS = ("1h", "15m")
-_SETUPS = ("T1", "R1")
+_TRIGGER_TFS = ("15m", "1h", "4h", "1d")     # sema 5 (DD-12 WP-02): karar/islem zaman dilimleri
+_SHADOW_TFS = ("1h", "15m")                  # golge satirlari (sema 4 tablosu) eski kalir
+_SETUPS = ("T1", "R1")                       # golge satirlari ve v1 kurulumlari
+_SESSION_TAGS = ("open", "closed", "weekend")
+_SOURCES = ("arm", "m1", "l1")
+_SETUP_RE = re.compile(r"^[A-Z][A-Z0-9]{1,7}$")
 _REGIMES = ("trend_up", "trend_down", "range", "volatile", "unclear")
 _VETO = ("allowed", "blocked", "missing", "stale", "not_evaluated")
 _SKIP = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
-         "entry_gate_closed", "order_failed", "other", "ml_filter")
-_NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed", "ml_filter")
+         "entry_gate_closed", "order_failed", "other", "ml_filter",
+         "arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
+         "ml_no_model", "llm_invalid")
+# DD-12: kagit botta veto yok; asagidaki yeni nedenlerle atlanan karar satirlari veto_status='not_evaluated' yazar
+# (record_decision bunu zorlar; eski nedenler icin kural degismedi).
+_NEW_SKIP = ("arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
+             "ml_no_model", "llm_invalid")
+_NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed", "ml_filter",
+                  "arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
+                  "ml_no_model", "llm_invalid")
 _EXIT_REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit",
                  "liquidation", "other")
 _EXCURSION_TFS = ("1m", "5m", "15m")
@@ -185,6 +198,30 @@ def _choice(x, name, allowed) -> str:
     if not isinstance(x, str) or x not in allowed:
         raise LedgerValidationError(f"{name} {tuple(allowed)} icinden olmali")
     return x
+
+
+def _setup_code(x, name="setup") -> str:
+    """Sema 5: kurulum kodu 2-8 karakter (buyuk harf/rakam); T1/R1 ve yeni kurulumlar (TF1, B1, F1, S1, M1, L1...)."""
+    if not isinstance(x, str) or not _SETUP_RE.match(x):
+        raise LedgerValidationError(f"{name} 2-8 karakterlik kurulum kodu olmali")
+    return x
+
+
+def _opt_choice(x, name, allowed) -> str | None:
+    return None if x is None else _choice(x, name, allowed)
+
+
+def _lesson_ids_json(x) -> str | None:
+    if x is None:
+        return None
+    if isinstance(x, (str, bytes)) or not isinstance(x, Iterable):
+        raise LedgerValidationError("lesson_ids kimlik listesi olmali")
+    out = []
+    for i in x:
+        if isinstance(i, bool) or not isinstance(i, (int, str)):
+            raise LedgerValidationError("lesson_ids ogeleri int/str olmali")
+        out.append(i)
+    return _cj(out)
 
 
 def _cj(obj) -> str:
@@ -421,6 +458,10 @@ class DecisionEvent:
     skip_reason: str | None
     supersedes_id: int | None = None
     ml_score: float | None = None          # sema 3: ML filtre puani (kalibre olasilik, [0,1]); yoksa None
+    arm_id: str | None = None               # sema 5: None => setup@trigger_tf
+    session_tag: str | None = None          # sema 5: open/closed/weekend ya da None
+    lesson_ids: Sequence[int | str] | None = None
+    source: str = "arm"                     # sema 5: arm/m1/l1
 
 
 @dataclass(frozen=True)
@@ -614,6 +655,10 @@ class DecisionRecord:
     recorded_at: datetime
     activation_id: int | None
     ml_score: float | None = None
+    arm_id: str | None = None
+    session_tag: str | None = None
+    lesson_ids: tuple | None = None
+    source: str = "arm"
 
 
 @dataclass(frozen=True)
@@ -1061,9 +1106,96 @@ def _migration_3_to_4(bot: str, now_s: str) -> str:
             + drops + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
 
 
+_NEW_SKIPS_SQL = ("'arm_conflict','arm_disabled','session_closed','flat_bar','cluster_cap','max_positions',"
+                  "'ml_no_model','llm_invalid'")
+
+
+def _decision_events_ddl_v5(name: str) -> str:
+    """Sema 5 (DD-12 WP-02): trigger_tf {15m,1h,4h,1d}; setup uzunluk denetimi 2..8; yeni sutunlar arm_id,
+    session_tag, lesson_ids, source; skip_reason sozlugu genisler. `bot` CHECK'i eski satirlar icin kalir."""
+    return f"""
+CREATE TABLE {name} (id INTEGER PRIMARY KEY AUTOINCREMENT, bot TEXT NOT NULL {_bot_check()},
+    bar_close_ts TEXT NOT NULL,
+    trigger_tf TEXT NOT NULL CHECK (trigger_tf IN ('15m','1h','4h','1d')),
+    pair TEXT NOT NULL, side TEXT NOT NULL CHECK (side IN ('long','short')),
+    setup TEXT NOT NULL CHECK (length(setup) BETWEEN 2 AND 8),
+    regime TEXT NOT NULL CHECK (regime IN ('trend_up','trend_down','range','volatile','unclear')),
+    atr_ratio REAL, rh REAL, rl REAL, rh_touches INTEGER NOT NULL, rl_touches INTEGER NOT NULL,
+    features TEXT NOT NULL, planned_entry REAL NOT NULL, planned_stop REAL NOT NULL, planned_target REAL,
+    param_version_id INTEGER NOT NULL REFERENCES param_versions(id),
+    activation_id INTEGER,
+    veto_status TEXT NOT NULL CHECK (veto_status IN ('allowed','blocked','missing','stale','not_evaluated')),
+    veto_reason TEXT, risk_allowed INTEGER CHECK (risk_allowed IS NULL OR risk_allowed IN (0,1)),
+    risk_reason TEXT, size_qty REAL, size_notional REAL, size_margin REAL, size_risk_amount REAL,
+    leverage INTEGER,
+    final_action TEXT NOT NULL CHECK (final_action IN ('entered','skipped')),
+    skip_reason TEXT CHECK (skip_reason IS NULL OR skip_reason IN
+        ('stop_width','rr_below_min','veto_blocked','veto_missing','veto_stale','risk_denied',
+         'entry_gate_closed','order_failed','other','ml_filter',{_NEW_SKIPS_SQL})),
+    supersedes_id INTEGER REFERENCES decision_events(id), recorded_at TEXT NOT NULL,
+    ml_score REAL CHECK (ml_score IS NULL OR (ml_score >= 0 AND ml_score <= 1)),
+    arm_id TEXT CHECK (arm_id IS NULL OR length(arm_id) > 0),
+    session_tag TEXT CHECK (session_tag IS NULL OR session_tag IN ('open','closed','weekend')),
+    lesson_ids TEXT,
+    source TEXT NOT NULL DEFAULT 'arm' CHECK (source IN ('arm','m1','l1')),
+    CHECK ((regime = 'range' AND rh IS NOT NULL AND rl IS NOT NULL)
+        OR (regime <> 'range' AND rh IS NULL AND rl IS NULL)),
+    CHECK (final_action <> 'entered' OR (veto_status = 'allowed' AND risk_allowed = 1
+        AND size_qty IS NOT NULL AND size_notional IS NOT NULL AND size_margin IS NOT NULL
+        AND size_risk_amount IS NOT NULL AND leverage IS NOT NULL AND skip_reason IS NULL)),
+    CHECK (final_action <> 'skipped' OR skip_reason IS NOT NULL),
+    CHECK (veto_status NOT IN ('blocked','missing','stale') OR final_action = 'skipped'),
+    CHECK (risk_allowed IS NOT 0 OR (final_action = 'skipped' AND skip_reason = 'risk_denied')),
+    CHECK (veto_status <> 'not_evaluated' OR (risk_allowed IS NULL
+        AND skip_reason IN ('stop_width','rr_below_min','other','entry_gate_closed','ml_filter',
+                            {_NEW_SKIPS_SQL}))));
+"""
+
+
+_DECISION_COLS_V3 = _DECISION_COLS_V2 + ", ml_score"
+
+_TRADE_NOTES_DDL = """
+CREATE TABLE trade_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, trade_id INTEGER NOT NULL,
+    note_date TEXT NOT NULL, tags TEXT NOT NULL, text TEXT NOT NULL, model TEXT,
+    cost_usd REAL CHECK (cost_usd IS NULL OR cost_usd >= 0));
+CREATE INDEX ix_trade_notes_trade ON trade_notes (trade_id);
+"""
+
+_VIEWS_V5 = _VIEWS_V4.replace(
+    "           x.exit_regime AS exit_regime\n",
+    "           x.exit_regime AS exit_regime,\n           e.arm_id AS arm_id, e.session_tag AS session_tag\n")
+
+
+def _migration_4_to_5(bot: str, now_s: str) -> str:
+    """Sema 5 (DD-12 WP-02): decision_events yeniden kurulur (CHECK degisir); trade_entries'e arm_id/session_tag
+    eklenir; trade_notes yeni. Eski satirlar `arm_id = setup||'@'||trigger_tf`; hicbir satir silinmez/degismez
+    (id'ler korunur). Goruntuler ve append-only tetikleyicileri once dusurulur, sonra kurulur. FK denetimi
+    islem disinda kapali (`_FK_OFF_MIGRATIONS`), goc sonrasi `foreign_key_check`."""
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES
+                      for k in ("no_update", "no_delete"))
+    cols = _DECISION_COLS_V3
+    return ("DROP VIEW IF EXISTS v_closed_trades;\nDROP VIEW IF EXISTS v_trades;\n"
+            "DROP VIEW IF EXISTS v_decisions;\n" + drops + "\n"
+            + _decision_events_ddl_v5("decision_events_v5") + "\n"
+            f"INSERT INTO decision_events_v5 ({cols}, arm_id, session_tag, lesson_ids, source) "
+            f"SELECT {cols}, setup || '@' || trigger_tf, NULL, NULL, 'arm' FROM decision_events;\n"
+            "DROP TABLE decision_events;\n"
+            "ALTER TABLE decision_events_v5 RENAME TO decision_events;\n"
+            "CREATE UNIQUE INDEX ux_decision_key ON decision_events\n"
+            "    (bot, pair, side, setup, trigger_tf, bar_close_ts) WHERE supersedes_id IS NULL;\n"
+            "CREATE INDEX ix_decision_supersedes ON decision_events (supersedes_id);\n"
+            "ALTER TABLE trade_entries ADD COLUMN arm_id TEXT;\n"
+            "ALTER TABLE trade_entries ADD COLUMN session_tag TEXT "
+            "CHECK (session_tag IS NULL OR session_tag IN ('open','closed','weekend'));\n"
+            "UPDATE trade_entries SET arm_id = setup || '@' || "
+            "(SELECT d.trigger_tf FROM decision_events d WHERE d.id = trade_entries.decision_id);\n"
+            + _TRADE_NOTES_DDL
+            + _V_DECISIONS + _VIEWS_V5 + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
+
+
 MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3,
-                                                _migration_3_to_4]
-_FK_OFF_MIGRATIONS = frozenset({2})      # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
+                                                _migration_3_to_4, _migration_4_to_5]
+_FK_OFF_MIGRATIONS = frozenset({2, 4})     # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
 
 
 def _map_sqlite_error(e: sqlite3.Error) -> LedgerError:
@@ -1241,9 +1373,19 @@ class Ledger:
                 raise LedgerSchemaError(f"sema surumu eski ({uv}); migrate=False")
             if uv < 1 or uv > len(MIGRATIONS):
                 raise LedgerSchemaError(f"bilinmeyen eski sema surumu ({uv})")
-            self.backup(f"{self.path}.premigrate-v{uv}")
+            self.backup(self._premigrate_dest(uv))
             self._run_migrations(conn, uv)
         self._verify(conn)
+
+    def _premigrate_dest(self, uv: int) -> str:
+        """Goc oncesi yedek yolu. Yarida kesilen gocun yeniden denemesinde onceki yedek ezilmez ve atlanmaz:
+        ayni surum icin yeni, sonek numarali yedek yazilir (`.premigrate-v4`, `.premigrate-v4.1`, ...)."""
+        base = f"{self.path}.premigrate-v{uv}"
+        dest, n = base, 0
+        while os.path.exists(dest):
+            n += 1
+            dest = f"{base}.{n}"
+        return dest
 
     def _run_migrations(self, conn: sqlite3.Connection, from_v: int) -> None:
         now_s = _fmt_ts(self._now())
@@ -1382,7 +1524,7 @@ class Ledger:
             raise LedgerValidationError("bar_close_ts gelecekte")
         tf = _choice(ev.trigger_tf, "trigger_tf", _TRIGGER_TFS)
         pair, side = _norm_pair(ev.pair), _norm_side(ev.side)
-        setup = _choice(ev.setup, "setup", _SETUPS)
+        setup = _setup_code(ev.setup)
         regime = _choice(ev.regime, "regime", _REGIMES)
         atr_ratio = _opt_num(ev.atr_ratio, "atr_ratio")
         rh, rl = _opt_num(ev.rh, "rh"), _opt_num(ev.rl, "rl")
@@ -1417,6 +1559,14 @@ class Ledger:
         ml_score = _opt_num(ev.ml_score, "ml_score")
         if ml_score is not None and not 0.0 <= ml_score <= 1.0:
             raise LedgerValidationError("ml_score [0,1] araliginda olmali")
+        arm_id = ev.arm_id
+        if arm_id is None:
+            arm_id = f"{setup}@{tf}"
+        elif not isinstance(arm_id, str) or not arm_id.strip() or len(arm_id) > 32:
+            raise LedgerValidationError("arm_id bos olmayan kisa metin olmali")
+        session_tag = _opt_choice(ev.session_tag, "session_tag", _SESSION_TAGS)
+        lesson_ids = _lesson_ids_json(ev.lesson_ids)
+        source = _choice(ev.source, "source", _SOURCES)
         sizes = (sq, sn, sm, sr, lev)
         if ra == 1 and any(s is None for s in sizes):
             raise LedgerValidationError("risk_allowed=True iken size_* ve leverage dolu olmali")
@@ -1433,6 +1583,8 @@ class Ledger:
             raise LedgerValidationError("skip_reason veto_status ile uyumsuz")
         if ra == 0 and (final != "skipped" or skip != "risk_denied"):
             raise LedgerValidationError("risk_allowed=False => skipped, skip_reason=risk_denied")
+        if skip in _NEW_SKIP and veto != "not_evaluated":
+            raise LedgerValidationError(f"skip_reason={skip} => veto_status='not_evaluated' (veto kagit botta yok)")
         if veto == "not_evaluated" and (ra is not None or skip not in _NOT_EVAL_SKIP):
             raise LedgerValidationError("not_evaluated => risk_allowed None, skip_reason stop_width/rr_below_min/other")
         vals = dict(bar_close_ts=_fmt_ts(bar), trigger_tf=tf, pair=pair, side=side, setup=setup, regime=regime,
@@ -1440,7 +1592,8 @@ class Ledger:
                     planned_entry=pe, planned_stop=ps, planned_target=pt, param_version_id=pvid,
                     veto_status=veto, veto_reason=veto_reason, risk_allowed=ra, risk_reason=risk_reason,
                     size_qty=sq, size_notional=sn, size_margin=sm, size_risk_amount=sr, leverage=lev,
-                    final_action=final, skip_reason=skip, ml_score=ml_score)
+                    final_action=final, skip_reason=skip, ml_score=ml_score,
+                    arm_id=arm_id, session_tag=session_tag, lesson_ids=lesson_ids, source=source)
         return vals, sup
 
     @staticmethod
@@ -1450,8 +1603,10 @@ class Ledger:
         req = ["stop_dist_atr", "atr_4h"]
         if "atr_1h" not in features and "atr_tf" not in features:
             raise LedgerValidationError("features: atr_1h (veya atr_tf) eksik")
-        req += (["pullback_ema", "ema_value", "body_ratio"] if setup == "T1"
-                else ["wick_ratio", "rr", "edge_dist_atr"])
+        if setup == "T1":
+            req += ["pullback_ema", "ema_value", "body_ratio"]
+        elif setup == "R1":
+            req += ["wick_ratio", "rr", "edge_dist_atr"]
         for k in req:
             if k not in features:
                 raise LedgerValidationError(f"features: {k} eksik")
@@ -1474,7 +1629,7 @@ class Ledger:
                      "rh_touches", "rl_touches", "features", "planned_entry", "planned_stop", "planned_target",
                      "param_version_id", "veto_status", "veto_reason", "risk_allowed", "risk_reason",
                      "size_qty", "size_notional", "size_margin", "size_risk_amount", "leverage",
-                     "final_action", "skip_reason")
+                     "final_action", "skip_reason", "arm_id", "session_tag", "lesson_ids", "source")
 
     def _write_decision(self, c, vals, sup, now: datetime) -> int:
         bot = self.bot
@@ -1586,7 +1741,8 @@ class Ledger:
             activation_id=d["activation_id"], pair=d["pair"], side=side, setup=d["setup"], entry_ts=ets,
             entry_price=price, planned_entry=pe, planned_stop=d["planned_stop"],
             planned_target=d["planned_target"], qty=qty, leverage=lev, planned_risk=risk, fee_entry=fee,
-            slippage_entry=slip, supersedes_id=sup, recorded_at=_fmt_ts(now), **(ex or {})))
+            slippage_entry=slip, supersedes_id=sup, recorded_at=_fmt_ts(now),
+            arm_id=d["arm_id"], session_tag=d["session_tag"], **(ex or {})))
 
     def record_trade_exit(self, x: TradeExit) -> int:
         self._require_writable()
@@ -1695,6 +1851,48 @@ class Ledger:
             slippage_exit=slip, mfe_r=mfe, mae_r=mae, bars_held=bars, excursion_tf=etf,
             supersedes_id=sup, recorded_at=_fmt_ts(now), **(ex or {})))
 
+    # -- islem notlari (sema 5) ---------------------------------------------
+
+    def record_trade_note(self, trade_id: int, note_date: str, tags: Sequence[str], text: str,
+                          model: str | None = None, cost_usd: float | None = None) -> int:
+        """Gece notu satiri. Islem defterde (v_trades) var olmali; etiket sozlugu bu katmanda denetlenmez."""
+        self._require_writable()
+        tid = _int(trade_id, "trade_id")
+        if not isinstance(note_date, str) or not re.fullmatch(r"\d{4}-\d\d-\d\d", note_date):
+            raise LedgerValidationError("note_date YYYY-AA-GG olmali")
+        if isinstance(tags, (str, bytes)) or not isinstance(tags, Iterable):
+            raise LedgerValidationError("tags metin listesi olmali")
+        tl = list(tags)
+        if not all(isinstance(t, str) and t.strip() for t in tl):
+            raise LedgerValidationError("tags ogeleri bos olmayan metin olmali")
+        if not isinstance(text, str) or not text.strip():
+            raise LedgerValidationError("text bos olmayan metin olmali")
+        if model is not None and (not isinstance(model, str) or not model.strip()):
+            raise LedgerValidationError("model bos olmayan metin ya da None olmali")
+        cost = _opt_num(cost_usd, "cost_usd")
+        if cost is not None and cost < 0:
+            raise LedgerValidationError("cost_usd >= 0 olmali")
+        tags_j = _json_limited(tl, "tags")
+        try:
+            with self._tx() as c:
+                if c.execute("SELECT 1 FROM trade_entries WHERE bot=? AND trade_id=?", (self.bot, tid)).fetchone() is None:
+                    raise LedgerValidationError("trade_id icin islem yok")
+                return self._insert(c, "trade_notes", dict(trade_id=tid, note_date=note_date, tags=tags_j,
+                                                           text=text, model=model, cost_usd=cost))
+        except LedgerWriteError:
+            self._on_write_failure()
+            raise
+
+    def list_trade_notes(self, trade_id: int | None = None) -> list[dict]:
+        sql, args = "SELECT * FROM trade_notes", []
+        if trade_id is not None:
+            sql += " WHERE trade_id=?"
+            args.append(_int(trade_id, "trade_id"))
+        with self._read() as c:
+            rows = c.execute(sql + " ORDER BY id", args).fetchall()
+        return [dict(id=r["id"], trade_id=r["trade_id"], note_date=r["note_date"], tags=json.loads(r["tags"]),
+                     text=r["text"], model=r["model"], cost_usd=r["cost_usd"]) for r in rows]
+
     # -- golge karar satirlari ve oz varlik isaretleri (sema 4) -----------------
     # Spec 5.5 / 0.3: LedgerWriteError'da `_on_write_failure` CAGRILMAZ, spool'a yazilmaz, basarida
     # `_last_write_ok` GUNCELLENMEZ: bu kayitlar islem yolunun sagligini etkilemez.
@@ -1710,7 +1908,7 @@ class Ledger:
             raise LedgerValidationError("bar_close_ts 15 dakikanin tam kati olmali")
         if bar > now + timedelta(seconds=5):
             raise LedgerValidationError("bar_close_ts gelecekte")
-        tf = _choice(ev.trigger_tf, "trigger_tf", _TRIGGER_TFS)
+        tf = _choice(ev.trigger_tf, "trigger_tf", _SHADOW_TFS)
         pair, side = _norm_pair(ev.pair), _norm_side(ev.side)
         setup = _choice(ev.setup, "setup", _SETUPS)
         regime = _choice(ev.regime, "regime", _REGIMES)
@@ -2202,7 +2400,10 @@ class Ledger:
             size_notional=r["size_notional"], size_margin=r["size_margin"],
             size_risk_amount=r["size_risk_amount"], leverage=r["leverage"], final_action=r["final_action"],
             skip_reason=r["skip_reason"], supersedes_id=r["supersedes_id"],
-            recorded_at=_parse_ts(r["recorded_at"]), activation_id=r["activation_id"], ml_score=r["ml_score"])
+            recorded_at=_parse_ts(r["recorded_at"]), activation_id=r["activation_id"], ml_score=r["ml_score"],
+            arm_id=r["arm_id"], session_tag=r["session_tag"],
+            lesson_ids=None if r["lesson_ids"] is None else tuple(json.loads(r["lesson_ids"])),
+            source=r["source"])
 
     def get_decision(self, decision_id: int) -> DecisionRecord:
         with self._read() as c:
@@ -2223,7 +2424,7 @@ class Ledger:
             args.append(_ts(until_ts, "until_ts"))
         if setup is not None:
             where.append("setup=?")
-            args.append(_choice(setup, "setup", _SETUPS))
+            args.append(_setup_code(setup))
         if final_action is not None:
             where.append("final_action=?")
             args.append(_choice(final_action, "final_action", ("entered", "skipped")))
@@ -2315,7 +2516,7 @@ class Ledger:
             args = [self.bot, *args]
             if setup is not None:
                 where += " AND setup=?"
-                args.append(_choice(setup, "setup", _SETUPS))
+                args.append(_setup_code(setup))
             rows = c.execute(f"SELECT * FROM {view} WHERE {where} ORDER BY entry_ts, trade_id", args).fetchall()
         return [self._trade_from(r) for r in rows]
 
@@ -2342,7 +2543,7 @@ class Ledger:
             args: list[Any] = [self.bot, *ids]
             if setup is not None:
                 where.append("setup=?")
-                args.append(_choice(setup, "setup", _SETUPS))
+                args.append(_setup_code(setup))
             if until_ts is not None:
                 u = _ts(until_ts, "until_ts")
                 where.append("entry_ts<? AND (exit_ts IS NULL OR exit_ts<?)")
@@ -2355,7 +2556,7 @@ class Ledger:
         where, args = "bot=? AND param_version_id=?", [self.bot, _int(version_id, "version_id")]
         if setup is not None:
             where += " AND setup=?"
-            args.append(_choice(setup, "setup", _SETUPS))
+            args.append(_setup_code(setup))
         with self._read() as c:
             return c.execute(f"SELECT COUNT(*) FROM v_closed_trades WHERE {where}", args).fetchone()[0]
 

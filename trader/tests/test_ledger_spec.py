@@ -236,9 +236,9 @@ class TestOpenSchema:
     def test_new_file_schema(self, led, dbpath):
         assert led.bot == "learner"
         assert led.min_evidence_trades == 20
-        assert raw(dbpath, "PRAGMA user_version")[0][0] == 4
+        assert raw(dbpath, "PRAGMA user_version")[0][0] == 5
         assert raw(dbpath, "PRAGMA journal_mode")[0][0].lower() == "wal"
-        assert L.SCHEMA_VERSION == 4
+        assert L.SCHEMA_VERSION == 5
         meta = dict(raw(dbpath, "SELECT key, value FROM meta"))
         assert meta["bot"] == "learner"
         assert meta["schema_version"] == "1"
@@ -288,7 +288,7 @@ class TestOpenSchema:
 
     def test_newer_schema_rejected(self, dbpath, clock):
         L.open_ledger(dbpath, "learner", clock=clock).close()
-        c = sqlite3.connect(str(dbpath)); c.execute("PRAGMA user_version=5"); c.commit(); c.close()
+        c = sqlite3.connect(str(dbpath)); c.execute("PRAGMA user_version=6"); c.commit(); c.close()
         with pytest.raises(L.LedgerSchemaError):
             L.open_ledger(dbpath, "learner", clock=clock)
 
@@ -446,7 +446,7 @@ class TestRecordDecision:
         dict(bar_close_ts=datetime(2026, 12, 1, 10, 7, tzinfo=UTC)),          # not 15m multiple
         dict(bar_close_ts=datetime(2026, 12, 1, 10, 0, 1, tzinfo=UTC)),       # seconds
         dict(bar_close_ts=datetime(2026, 12, 1, 10, 15, tzinfo=UTC)),         # future > +5s
-        dict(trigger_tf="5m"), dict(side="up"), dict(setup="X9"), dict(regime="sideways"),
+        dict(trigger_tf="5m"), dict(side="up"), dict(setup="X"), dict(regime="sideways"),
         dict(rh=None), dict(rl=None),                                         # range needs both
         dict(regime="trend_up"),                                              # rh given outside range
         dict(planned_entry=float("nan")), dict(planned_entry=float("inf")),

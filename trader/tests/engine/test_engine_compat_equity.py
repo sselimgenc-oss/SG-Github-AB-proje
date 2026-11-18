@@ -48,6 +48,10 @@ _WP3_COLS = frozenset({"entry_order_ts", "entry_order_ack_ts", "entry_ref_price"
                        "exit_ref_src", "slip_exec_exit", "exit_decision_price", "slip_decision_exit", "exit_regime"})
 
 
+# DD-12 WP-02 (sema 5) goruntulere yalniz yeni sutunlar ekledi; altin ozet eski sutunlar uzerinden kalir.
+_WP5_COLS = frozenset({"arm_id", "session_tag", "lesson_ids", "source"})
+
+
 def _digest(out: Path) -> str:
     import sqlite3
     h = hashlib.sha256()
@@ -55,7 +59,7 @@ def _digest(out: Path) -> str:
     con = sqlite3.connect(f"file:{out / 'ledger.sqlite'}?mode=ro", uri=True)
     for tbl in ("v_decisions", "v_trades"):
         cols = [r[1] for r in con.execute(f"PRAGMA table_info({tbl})")]
-        keep = [c for c in cols if c not in ("id", "recorded_at", "ml_score") and c not in _WP3_COLS]
+        keep = [c for c in cols if c not in ("id", "recorded_at", "ml_score") and c not in _WP3_COLS and c not in _WP5_COLS]
         for row in con.execute(f"SELECT {','.join(keep)} FROM {tbl} ORDER BY 1,2,3"):
             h.update(repr(row).encode())
     con.close()

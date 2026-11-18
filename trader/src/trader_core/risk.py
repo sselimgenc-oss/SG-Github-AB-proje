@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import numbers
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from decimal import Decimal
 
 _SIDES = ("long", "short")
@@ -28,6 +28,14 @@ HARD_LIMITS = {
     "min_maint_margin_rate": 0.004,
     "min_liq_safety_factor": 1.5,
 }
+
+# DD-12 §4.1: YALNIZ kağıt katmanı (mode="paper") için ayrı üst sınırlar. Testnet/canlı/geri test `HARD_LIMITS` kullanır;
+# `RiskConfig` alanları ve HARD_LIMITS değişmez; kağıt sınırları yalnız `PaperRiskConfig` alt sınıfındadır.
+PAPER_LIMITS = {**HARD_LIMITS,
+                "target_trade_risk": 0.014,   # işlem başı risk kağıtta %1 (<= kilitli hedef); gevşemez
+                "daily_max_loss": 0.08,
+                "max_open_risk": 0.12,
+                "max_same_dir_risk": 0.08}
 
 
 def _num(x, name: str = "değer") -> float:
@@ -80,7 +88,10 @@ class RiskConfig:
     liq_safety_factor: float = 1.5
     max_notional_ratio: float = 1.0
 
+    _LIMITS = HARD_LIMITS   # sınıf özniteliği (alan değil): `PaperRiskConfig` kağıt sınırlarını taşır
+
     def __post_init__(self) -> None:
+        limits = self._LIMITS
         pos = ("max_trade_risk", "target_trade_risk", "daily_max_loss", "max_open_risk",
                "max_same_dir_risk", "liq_safety_factor", "max_notional_ratio")
         nonneg = ("fee_rate", "slippage_rate", "maint_margin_rate")
@@ -101,16 +112,36 @@ class RiskConfig:
             raise ValueError("maint_margin_rate < 1 olmalı")
         for n in ("max_trade_risk", "target_trade_risk", "daily_max_loss", "max_open_risk",
                   "max_same_dir_risk", "max_leverage", "max_notional_ratio"):
-            if getattr(self, n) > HARD_LIMITS[n]:
-                raise ValueError(f"{n} kilitli üst sınırı aşıyor ({HARD_LIMITS[n]})")
-        if self.min_leverage < HARD_LIMITS["min_leverage"]:
+            if getattr(self, n) > limits[n]:
+                raise ValueError(f"{n} kilitli üst sınırı aşıyor ({limits[n]})")
+        if self.min_leverage < limits["min_leverage"]:
             raise ValueError("min_leverage kilitli alt sınırın altında")
         for n in ("fee_rate", "slippage_rate", "maint_margin_rate", "liq_safety_factor"):
-            if getattr(self, n) < HARD_LIMITS["min_" + n]:
-                raise ValueError(f"{n} kilitli alt sınırın altında ({HARD_LIMITS['min_' + n]})")
+            if getattr(self, n) < limits["min_" + n]:
+                raise ValueError(f"{n} kilitli alt sınırın altında ({limits['min_' + n]})")
 
 
 LOCKED_CFG = RiskConfig()
+
+
+@dataclass(frozen=True)
+class PaperRiskConfig(RiskConfig):
+    """DD-12 §4.1: yalnız kağıt katmanı; alanlar RiskConfig ile aynı, üst sınırlar PAPER_LIMITS."""
+    _LIMITS = PAPER_LIMITS
+
+# DD-12 §4.1: kağıt parametreleri. Yalnız `paper_config` (trader_engine.config, mode="paper") üretir.
+PAPER_KEYS = ("target_trade_risk", "max_open_risk", "max_same_dir_risk", "daily_max_loss")
+
+
+def paper_config(**kw: float) -> RiskConfig:
+    """Kağıt katmanı RiskConfig'i: LOCKED_CFG'den yalnız `PAPER_KEYS` ayarlanabilir; her biri PAPER_LIMITS'i aşamaz
+    (aşarsa ValueError). Verilmeyen anahtar kilitli değerde kalır; `PaperRiskConfig` döner."""
+    unknown = set(kw) - set(PAPER_KEYS)
+    if unknown:
+        raise ValueError(f"paper_config bilinmeyen anahtar: {sorted(unknown)}")
+    d = {f.name: getattr(LOCKED_CFG, f.name) for f in fields(LOCKED_CFG)}
+    d.update(kw)
+    return PaperRiskConfig(**d)
 
 
 def tightened(base: RiskConfig, *, target_trade_risk: float) -> RiskConfig:

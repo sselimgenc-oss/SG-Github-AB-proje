@@ -37,14 +37,14 @@ def test_strategy_update_moves_label_keeps_params_hash(tmp_path, capsys):
     assert _run(d) == 0
     a0, r0 = _active(tmp_path)
     assert parse_label(r0)[0] == "price_action_v1"
-    assert _run(d, "--env", "paper-ml") == 0                 # strategy_update degil: dokunulmaz
+    assert _run(d, "--env", "paper") == 0                 # strategy_update degil: dokunulmaz
     a1, r1 = _active(tmp_path)
     assert a1.version_id == a0.version_id
-    assert _run(d, "--env", "paper-ml", "--reason", "strategy_update") == 0
+    assert _run(d, "--env", "paper", "--reason", "strategy_update") == 0
     a2, r2 = _active(tmp_path)
     assert parse_label(r2)[0] == "price_action_v1_ml"
     assert a2.version_id != a0.version_id and a2.params_hash == a0.params_hash
-    assert _run(d, "--env", "paper-ml", "--reason", "strategy_update") == 0   # tekrar: degisiklik yok
+    assert _run(d, "--env", "paper", "--reason", "strategy_update") == 0   # tekrar: degisiklik yok
     a3, _ = _active(tmp_path)
     assert a3.version_id == a2.version_id
     assert "zaten" in capsys.readouterr().out
