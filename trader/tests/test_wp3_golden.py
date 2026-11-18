@@ -39,8 +39,14 @@ def test_K1_K2_golden_backtest_equal_to_base(tmp_path, extra):
         assert r.returncode == 0, r.stderr[-2000:]
         outs[tag] = out / "wp3_k1"
     b, n = outs["base"], outs["new"]
-    for f in ("trades.csv", "summary.json", "open_at_end.json"):
+    for f in ("trades.csv", "open_at_end.json"):
         assert _sha(b / f) == _sha(n / f), f
+    # S2 0a: summary.json yalniz fee_only'de ayrisir (native: fee_only == fees_total; taban: fees_total - slip_approx)
+    sb, sn = json.loads((b / "summary.json").read_text()), json.loads((n / "summary.json").read_text())
+    fo_b, fo_n = sb.pop("fee_only"), sn.pop("fee_only")
+    assert sb == sn
+    assert fo_n == sn["fees_total"]
+    assert fo_b == pytest.approx(sb["fees_total"] - sb["slip_approx"])
     mb, mn = json.loads((b / "meta.json").read_text()), json.loads((n / "meta.json").read_text())
     for k in ("git_commit", "duration_s"):
         mb.pop(k, None)

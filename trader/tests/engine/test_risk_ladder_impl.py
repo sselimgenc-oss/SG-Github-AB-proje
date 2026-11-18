@@ -214,7 +214,7 @@ def test_t28_backtest_digest_unchanged(tmp_path):
     assert r.returncode == 0, (r.stdout + r.stderr)[-1500:]
     summ = next(out.rglob("ref/summary.json"))
     trades = next(out.rglob("ref/trades.csv"))
-    assert hashlib.sha256(summ.read_bytes()).hexdigest().startswith("5ee22e24485e")
+    assert hashlib.sha256(summ.read_bytes()).hexdigest().startswith("2bce7db60e19")  # S2 0a: fee_only duzeltmesi (eski onek 5ee22e24485e; yalniz fee_only degisti)
     assert hashlib.sha256(trades.read_bytes()).hexdigest().startswith("89e530326f59")
 
 

@@ -87,7 +87,7 @@ def compute_metrics(trades: pd.DataFrame, *, wallet_start: float, slip_bps: floa
                     fill_model: str = "native", period: tuple[str, str] | None = None,
                     engine: Mapping | None = None) -> dict:
     """`slip_bps` verilirse (uyum kipi) kayma komisyona katilmistir ve `slip_paid = qty*(entry+exit)*slip_bps/1e4`;
-    aksi halde (native) `slip_paid = trades.csv:slip_cost`."""
+    aksi halde (native) `slip_paid = trades.csv:slip_cost`. Native kipte `fee_only == fees_total`; kayma `gross_pnl` icindedir."""
     t = trades[trades["exit_ts"].notna()].copy() if len(trades) else trades.copy()
     res: dict = dict(n_trades=int(len(t)))
     eng = dict(engine or {})
@@ -100,11 +100,12 @@ def compute_metrics(trades: pd.DataFrame, *, wallet_start: float, slip_bps: floa
     t = t.sort_values(["exit_ts", "trade_id"]).reset_index(drop=True)
     t["profit_abs"] = t["realized_pnl"].astype(float)
     t["fee_paid"] = t["fee_entry"] + t["fee_exit"]
-    if slip_bps is not None:
+    if slip_bps is not None:        # legacy_compat: kayma komisyon oranina katilmistir
         t["slip_paid"] = t["qty"] * (t["entry_price"] + t["exit_price"]) * (slip_bps / 1e4)
-    else:
+        t["fee_only"] = t["fee_paid"] - t["slip_paid"]
+    else:                           # native: fee_paid saf komisyondur, kayma dolum fiyatindadir
         t["slip_paid"] = t["slip_cost"] if "slip_cost" in t else 0.0
-    t["fee_only"] = t["fee_paid"] - t["slip_paid"]
+        t["fee_only"] = t["fee_paid"]
     t["funding"] = -t["funding_paid"].astype(float)        # + alinan, - odenen (referans funding isareti)
     t["gross"] = t["gross_pnl"].astype(float)
     t["risk_amt"] = [loss_at_stop(q, e, s) if np.isfinite(s) else np.nan
