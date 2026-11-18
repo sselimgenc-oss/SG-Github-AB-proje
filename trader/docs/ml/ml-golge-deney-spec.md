@@ -51,3 +51,7 @@ Tarih: 18 Kasım 2026. Dayanak: `otonom-trading-arastirma/tasarim-kararlari.md` 
 - Dağıtım: `deploy/trader-engine@learner.service.d/ml-shadow.conf` yalnız `trader-engine@learner` birimine `--env paper-ml` ekler (`install.sh` kopyalar); ikiz, testnet, canlı, base değişmez.
 - G-T5 böyle okunur: `engine.learner.json == {"bot":"learner"}`; `engine.paper-ml.json` ML anahtarlarını taşır ve yüklenir (`load_cli_config(..., "learner", "paper-ml")`); diğer dört yapılandırma `ml_experimental` içermez; base `ml_mode` "off".
 - Mevcut öğrenen defteri `price_action_v1` etiketliyse motor `strategy_mismatch` verir; defter `init-ledger ... --reason strategy_update` ile ya da yeni defterle taşınmalıdır (aynı params ile `create_user_version` "no_change" verebilir; bkz. rapor).
+
+## Etiket göçü notu (18 Kasım 2026)
+- Sunucudaki learner defteri `strategy:price_action_v1@…` etiketli; drop-in açılınca motor `strategy_mismatch` ile durur. Çözüm: motor durukken bir kez `init-ledger --bot learner --env paper-ml --reason strategy_update`. Params aynı kalır (yeni kullanıcı sürümü yalnız etiketi taşır; `create_user_version(allow_same_params=True)`), ikiz `params_hash` eşleşmesi bozulmaz. Etiket zaten aynıysa dokunulmaz. Geri dönüş: `--env` olmadan aynı komut.
+- `deploy/install.sh` drop-in'i yalnız `TRADER_ML_SHADOW=1` ile kurar; aksi halde eski drop-in silinir.

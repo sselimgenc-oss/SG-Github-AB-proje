@@ -1859,7 +1859,10 @@ class Ledger:
         return vid
 
     def create_user_version(self, params: Mapping[str, Any], *, reason: str,
-                            lesson_bounds: Mapping[str, tuple[float, float]] | None = None) -> int:
+                            lesson_bounds: Mapping[str, tuple[float, float]] | None = None,
+                            allow_same_params: bool = False) -> int:
+        """allow_same_params: yalniz strateji etiketi degisimi (`init-ledger --reason strategy_update`); params ayni kalir,
+        yeni surum yalniz `reason` etiketini tasir (ML golge deneyi, 18 Kasim 2026)."""
         self._require_writable()
         self._require_learner()
         p = _norm_params(params)
@@ -1879,7 +1882,8 @@ class Ledger:
             else:
                 bounds_s = _cj({k: list(v) for k, v in LESSON_BOUNDS_DEFAULT.items()})
             h = _hash_params(p)
-            if parent is not None and parent["params_hash"] == h and parent["lesson_bounds"] == bounds_s:
+            if (not allow_same_params and parent is not None and parent["params_hash"] == h
+                    and parent["lesson_bounds"] == bounds_s):
                 raise LedgerValidationError("no_change: params ve lesson_bounds etkin surumle ayni")
             return self._insert(c, "param_versions", dict(
                 bot=self.bot, params=_cj(p), params_hash=h, lesson_bounds=bounds_s,

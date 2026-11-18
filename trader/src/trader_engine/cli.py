@@ -203,8 +203,19 @@ def _init_ledger_work(cfg, reason: str, strategy: str | None) -> int:
         elif not exists:
             led.init_params(params, reason=f"{label} {reason}")
         else:
-            vid = led.create_user_version(params, reason=f"{label} {reason}")
+            cur = led.get_active_params()
+            try:
+                cur_reason = led.get_version(cur.version_id).reason or ""
+            except L.LedgerError:
+                cur_reason = ""
+            from .strategies.registry import parse_label
+            if parse_label(cur_reason) == parse_label(label):
+                print(f"etkin surum zaten {label}: dokunulmadi")
+                return EXIT_OK
+            # strateji etiketi degisimi: params ayni kalir (ikiz params_hash eslesmesi bozulmaz), yalniz etiket tasinir
+            vid = led.create_user_version(params, reason=f"{label} {reason}", allow_same_params=True)
             led.activate_version(vid, actor="user", reason=f"{label} {reason}")
+            print(f"strateji etiketi guncellendi: {'@'.join(x for x in parse_label(cur_reason) if x)} -> {label} (surum {vid})")
         if cfg.bot == "twin":
             lp = Path(cfg.var_dir) / "learner" / "ledger.sqlite"
             if lp.exists():
