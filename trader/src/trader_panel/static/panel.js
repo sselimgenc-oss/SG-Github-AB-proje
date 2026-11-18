@@ -39,6 +39,9 @@
   function usd(x, s) { return num(x) ? (s ? sgn(x) : f2(x)) + ' $' : '—'; }
   function pct(x, d, s) { return num(x) ? (s && x > 0 ? '+' : '') + (x * 100).toFixed(d === undefined ? 2 : d) + ' %' : '—'; }
   function cls(x) { return !num(x) || x === 0 ? '' : (x > 0 ? 'iyi' : 'kotu'); }
+  function kzTxt(p) {                                         // "+7.61 (+2.96%)"; unrealized_pct zaten yuzde
+    return num(p.unrealized_pnl_usd) ? sgn(p.unrealized_pnl_usd) + (num(p.unrealized_pct) ? ' (' + sgn(p.unrealized_pct) + '%)' : '') : '—';
+  }
   function tsi(iso) {                                         // UTC ...Z -> TSİ (sabit UTC+3), yalniz bicim
     var t = Date.parse(iso);
     return isFinite(t) ? new Date(t + 3 * 3600000).toISOString().replace('T', ' ').slice(0, 16) : '—';
@@ -195,6 +198,7 @@
       var st2 = d.strategy && typeof d.strategy === 'object' ? (d.strategy.name || '') + ' ' + (d.strategy.version || '') : '';
       add(z, box('Equity', usd(d.equity)), box('Gün başı equity', usd(d.day_start_equity)),
         box('Açık pozisyon', String((d.open_positions || []).length)),
+        box('AÇIK K/Z', num(d.unrealized_pnl_usd) ? sgn(d.unrealized_pnl_usd) + ' $' : '—', cls(d.unrealized_pnl_usd)),
         box('Kapı', (d.gate_code || '—'), d.gate_code === 'ok' ? 'iyi' : 'kotu'),
         box('Giriş', gate, d.entries_open ? 'iyi' : 'uyarir'),
         box('Sürüm', 'v' + (d.param_version_id === null || d.param_version_id === undefined ? '—' : d.param_version_id) + ' · ' + (d.trigger_tf || '—') + ' · ' + st2));
@@ -346,15 +350,17 @@
 
   function tabPoz(root) {
     clear(root);
-    var cur = statusCur(), p1 = panel('Açık pozisyonlar (motor durumu)', ''), p2 = panel('Açık işlemler (defter)', ''), ig = el('div', 'ig');
+    var cur = statusCur(), p1 = panel('Açık pozisyonlar (motor durumu)', '', 'g2'), p2 = panel('Açık işlemler (defter)', ''), ig = el('div', 'ig');
     add(ig, p1, p2); add(root, ig);
     if (!cur || cur.state !== 'live') add(p1._body, nodata('bayat: ' + (cur ? cur.code : 'status')));
     else {
       var ps = cur.data.open_positions || [];
       if (!ps.length) add(p1._body, el('div', 'yok', 'Açık pozisyon yok.'));
-      else add(p1._body, table(['İşlem', 'Sembol', 'Yön', 'Miktar', 'Giriş', 'Stop'], ps.map(function (p) {
-        return [String(p.trade_id), p.pair, p.side, {t: f2(p.qty, 4), v: p.qty}, {t: f2(p.entry_price, 4), v: p.entry_price}, {t: f2(p.stop, 4), v: p.stop}];
-      }), {right: [3, 4, 5]}));
+      else add(p1._body, table(['İşlem', 'Sembol', 'Yön', 'Miktar', 'Giriş', 'Mark', 'Tutar $', 'K/Z', 'Stop'], ps.map(function (p) {
+        return [String(p.trade_id), p.pair, p.side, {t: f2(p.qty, 4), v: p.qty}, {t: f2(p.entry_price, 4), v: p.entry_price},
+          {t: f2(p.mark, 4), v: p.mark}, {t: f2(p.notional_usd), v: p.notional_usd},
+          {t: kzTxt(p), v: p.unrealized_pnl_usd, c: cls(p.unrealized_pnl_usd)}, {t: f2(p.stop, 4), v: p.stop}];
+      }), {right: [3, 4, 5, 6, 7, 8]}));
     }
     get('/api/ledger?bot=' + S.bot).then(function (r) {
       clear(p2._body);

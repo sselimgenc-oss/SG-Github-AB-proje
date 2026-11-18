@@ -154,6 +154,7 @@ class Engine:
         self._stop = False
         self._last_now: datetime | None = None
         self._last_minute: datetime | None = None
+        self._last_marks: dict[str, tuple[float, datetime]] = {}   # pair -> (son kapanmis 1m last_c, bar kapanis ts); yalniz status.json icin
         self._last_decision: datetime | None = None
         self._last_candle_open: datetime | None = None
         self._last_pre = None
@@ -350,6 +351,7 @@ class Engine:
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
+            "last_marks": dict(self._last_marks),
             "records": self.records_block(),
             "pause": self._pause_status(),
             "risk_ladder": self._ladder_status(),
@@ -914,6 +916,7 @@ class Engine:
                     self.state.set_cursor(pair, "minute", ts)
             self._save_broker()
         self._last_minute = ts
+        self._remember_marks(step)
         self._c["steps"] += 1
 
     def _process_step_live(self, step, ts: datetime) -> None:
@@ -931,7 +934,18 @@ class Engine:
                 if c is None or ts > c:
                     self.state.set_cursor(pair, "minute", ts)
         self._last_minute = ts
+        self._remember_marks(step)
         self._c["steps"] += 1
+
+    def _remember_marks(self, step) -> None:
+        """status.json acik K/Z: islenen son kapanmis 1m last_c (bellekte zaten var; yeni istek yok). Hicbir istisna sizmaz."""
+        try:
+            for pair, bar in step.bars.items():
+                c = getattr(bar, "last_c", None)
+                if c is not None:
+                    self._last_marks[pair] = (float(c), bar.close_ts)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _mtm_minute(self, ts: datetime, step, opens) -> None:
         """6.2: dakika adiminda ters-uc (temkinli) gerceklesmemis K/Z birikimi. Hicbir istisna sizmaz."""

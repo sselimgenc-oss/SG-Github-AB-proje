@@ -80,7 +80,7 @@ details.ince>summary{cursor:pointer;color:var(--vurgu);font-size:11px;padding:6p
 .ayak{margin:14px 0 4px}
 @media (min-width:900px){
 body{padding:16px 20px}
-.serit{grid-template-columns:repeat(6,minmax(0,1fr))}.serit .d{font-size:20px}
+.serit{grid-template-columns:repeat(7,minmax(0,1fr))}.serit .d{font-size:20px}
 .ig{grid-template-columns:repeat(3,minmax(0,1fr))}.g2{grid-column:span 2}.g3{grid-column:1/-1}
 .sag{display:grid;gap:8px;grid-column:3;grid-row:1 / span 2;align-content:start;min-width:0}.sag.s1{grid-row:auto}
 .p.yuk{display:flex;flex-direction:column}.yuk>.pi{flex:1;display:flex;flex-direction:column}.yuk .gk{flex:1;grid-template-rows:minmax(0,1fr) auto}.yuk .gk svg{height:100%;min-height:210px;max-height:340px}

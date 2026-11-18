@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,24 @@ def _ms_to_z(ms) -> str | None:
         return fmt_ts(datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc))
     except (OverflowError, OSError, ValueError):
         return None
+
+
+def _unrealized(p, m) -> dict:
+    """Acik pozisyon K/Z (eklemeli). m = (son kapanmis 1m last_c, bar kapanis ts) ya da None. Fiyat/giris bilinmiyorsa None."""
+    out = {"mark": None, "notional_usd": None, "unrealized_pnl_usd": None, "unrealized_pct": None, "mark_ts": None}
+    try:
+        if not m:
+            return out
+        mark, ts = float(m[0]), m[1]
+        qty, ep = float(p.qty), float(p.entry_price)
+        if not (math.isfinite(mark) and mark > 0 and math.isfinite(qty) and math.isfinite(ep) and ep > 0):
+            return out
+        sgn = 1.0 if p.side == "long" else -1.0
+        out.update(mark=mark, notional_usd=qty * mark, unrealized_pnl_usd=sgn * (mark - ep) * qty,
+                   unrealized_pct=sgn * (mark - ep) / ep * 100.0, mark_ts=_z(ts))
+    except (TypeError, ValueError):
+        pass
+    return out
 
 
 def _exchange_block(engine, f: dict, mode: str) -> dict | None:
@@ -71,8 +90,14 @@ class StatusWriter:
     def build(self, engine) -> dict:
         now = self.clock.now()
         f = engine.status_fields()
+        marks = f.get("last_marks") or {}
         pos = [{"trade_id": p.trade_id, "pair": p.pair, "side": p.side, "qty": p.qty, "entry_price": p.entry_price,
-                "stop": p.current_stop} for p in f["open_positions"] if p.status in ("open", "closing")]
+                "stop": p.current_stop, **_unrealized(p, marks.get(p.pair))}
+               for p in f["open_positions"] if p.status in ("open", "closing")]
+        known = [r["unrealized_pnl_usd"] for r in pos if r["unrealized_pnl_usd"] is not None]
+        mark_tss = [m[1] for m in (marks.get(r["pair"]) for r in pos) if m]
+        unreal_total = sum(known) if known else (0.0 if not pos else None)
+        mark_ts = _z(max(mark_tss)) if mark_tss else None
         ids = [p.trade_id for p in f["open_positions"] if p.status in ("open", "closing")]
         blocked = f["entries_blocked_reason"]
         gate_code = f["gate_code"]
@@ -92,7 +117,7 @@ class StatusWriter:
             "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "account_stale": bool(f.get("account_stale", False)),
             **({"equity_last": f["equity_last"], "account_at": _z(f["account_at"])} if f.get("equity_last") is not None else {}),
             "day_start_equity": f["day_start_equity"],
-            "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
+            "open_positions": pos, "unrealized_pnl_usd": unreal_total, "mark_ts": mark_ts, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"records": f["records"]} if f.get("records") is not None else {}),   # WP-3 9.3: yalniz kayit sayaclari
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),
             **({"risk_ladder": f["risk_ladder"]} if f.get("risk_ladder") is not None else {}),   # 12 §10

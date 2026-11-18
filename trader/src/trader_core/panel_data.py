@@ -33,7 +33,7 @@ CLOSED_MAX = L.Ledger.LIST_CLOSED_MAX
 # status.json'dan panele gecen alanlar (05 §8.2); baska alan gecmez
 STATUS_FIELDS = ("mode", "dry_run", "kill", "kill_state", "entries_open", "entries_blocked_reason", "loop_at",
                  "started_at", "equity", "day_start_equity", "wallet", "counters", "param_version_id", "strategy",
-                 "trigger_tf", "open_positions")
+                 "trigger_tf", "open_positions", "unrealized_pnl_usd", "mark_ts")
 
 
 class SectionError(Exception):
