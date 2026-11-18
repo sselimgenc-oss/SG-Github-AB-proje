@@ -162,3 +162,11 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **ML ve ders gölgede değil, doğrudan etkin** (kâğıt deney botunda; kapı şartı kâğıtta aranmaz, deney etiketi). Gerçek para kapısı (CANLI-K1), testnet/canlı yolu ve araştırma dürüstlüğü (S2 ön kaydı, kilitli dönem) değişmez. S2-1 (4s) kullanıcı isteğiyle durduruldu (kod `f0c6089`, beklemede).
 - **Düzeltme (kullanıcı, 18 Kasım):** "Gölge falan istemiyorum, dümdüz paper olacak, içinde her şey olacak. Deney botu ne, onaylamadan uydurmayın." → Ayrı deney/cross botu YOK, kâğıtta gölge kip YOK. Tek kâğıt bot (learner): bütün enstrümanlar, bütün kurulum aileleri × 15dk/1s/4s/1g, ML etkin, ders otomatik uygulama etkin. İkiz botun kalıp kalmayacağı kullanıcıya soruldu.
 - **Kullanıcı (18 Kasım):** İkiz bot kaldırılır ("ikiz bot yok, sil"). Hisse listesi 20'ye tamamlanır (AMD, Home Depot eklenir). Sunucu büyütülmez (2 GB kalır); plan buna sığdırılır.
+
+## 18 Kasım 2026 — Tur 6 sonrası kullanıcı kararları (research_notes/tur6-karsilastirma/D-sentez.md)
+- **1A:** işlem başı risk %1, en çok 16 eşzamanlı pozisyon (kâğıt).
+- **2A:** her işlem notu ertesi gün "aday ders" olarak kullanılır; işe yaramazsa emekli olur.
+- **3B:** LLM bütçesi bugünkü gibi (aylık 10 $); veto yalnız kriptoda.
+- **4A:** LLM de aday önerir (günde en çok 3, kendi karnesiyle).
+- **5B:** kâğıttan gerçek paraya adaylık ölçütü başka sayılarla — sayılar kullanıcıya soruldu.
+- **Kullanıcı:** "Fable önerilerini kabul etmiyorum. Makine ve ders hemen aktif olacak, işlem sınırı yok, hemen öğrenmeye başlayacaklar." → Kâğıtta ders ve ML için en az işlem/kanıt eşiği (30 işlem), haftalık değişiklik sınırı ve "M1 sonrası" bekleme yok; ilk işlemden itibaren öğrenip uygular. Seans yasakları (8, 9) kalkar. Gerçek para kapısı ve araştırma dürüstlüğü kuralları aynen.
