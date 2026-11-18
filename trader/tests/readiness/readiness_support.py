@@ -37,6 +37,7 @@ def render_env_files(out_dir: Path, trader_dir: str = SERVER_TRADER_DIR, with_tw
     snippet = snippet.replace('"$TRADER_DIR/deploy/', f'"{ROOT}/deploy/')
     # install -o/-g gercek kullanici gerektirir: sahip/grup bayraklarini tmp calismasi icin at
     snippet = snippet.replace('install -m "$4" -o "${3%%:*}" -g "${3##*:}" "$1" "$dst"', 'install -m "$4" "$1" "$dst"')
+    snippet = snippet.replace("; chown root:root " + f"{out_dir}/trader-testnet.env", "")   # chown root yalniz root'ta calisir
     script = (f"set -euo pipefail\nTRADER_DIR={shlex.quote(trader_dir)}\nTRADER_USER=trader\nTG_GROUP=trader-tg\nWITH_TWIN={with_twin}\n{snippet}\n")
     subprocess.run(["bash", "-c", script], check=True, capture_output=True, text=True)
     out: dict[str, dict[str, str]] = {}

@@ -83,7 +83,7 @@ def open_ro(path, missing_code: str = "ledger_missing") -> sqlite3.Connection:
                 if "locked" in str(e).lower() and attempt == 0:
                     continue
                 break
-        if last is None or "unable to open" not in str(last).lower():
+        if last is None or not any(m in str(last).lower() for m in ("unable to open", "readonly database")):
             break
     raise ReportError(missing_code.replace("_missing", "_unreadable"), f"{p}: {last}")
 

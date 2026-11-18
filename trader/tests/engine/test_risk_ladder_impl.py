@@ -201,6 +201,7 @@ def test_paper_engine_observes_and_backtest_has_no_ladder(tmp_path):
 # =====================================================================================================
 # T-28: backtest bit-bit ayni (summary.json / trades.csv ozetleri RK-1 oncesiyle)
 # =====================================================================================================
+@pytest.mark.skipif(not (ROOT / "var" / "history").exists(), reason="var/history yok (gercek piyasa verisi)")
 def test_t28_backtest_digest_unchanged(tmp_path):
     out = tmp_path / "bt"
     out.mkdir()

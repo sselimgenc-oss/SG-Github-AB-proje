@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -25,7 +26,7 @@ def mk(tmp_path, clk=None, **kw):
 
 
 def test_shipped_config_loads():
-    cfg = load_config("/home/user/SG-Github-AB-proje/trader/config/budget.json")
+    cfg = load_config(str(Path(__file__).resolve().parents[1] / "config" / "budget.json"))
     assert cfg.daily_cap_usd == {"veto": 0.25, "lesson": 0.10}
 
 
