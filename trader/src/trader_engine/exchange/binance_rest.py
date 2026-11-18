@@ -222,6 +222,11 @@ class SignedRestClient:
     def sync_time(self) -> int:
         return self._sync(attempts=None, timeout=None)
 
+    def sync_time_once(self) -> int:
+        """DD-2 (D5): periyodik esitleme icin TEK deneme (geri cekilme yok) ve KISA zaman asimi (order_timeout_s): ag
+        sorununda dongu en fazla birkac saniye bloke olur."""
+        return self._sync(attempts=1, timeout=self.order_timeout_s)
+
     def _sync(self, *, attempts: int | None, timeout: Any) -> int:
         t0 = self.now_ms()
         r = self._send("GET", "/fapi/v1/time", None, kind="read", signed=False, protective=True, base=self._base,

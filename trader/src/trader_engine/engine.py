@@ -120,7 +120,7 @@ class Engine:
         if not getattr(broker, "is_simulated", False):
             # 11 §6: canli yol (OrderManager bayraklari; kagit/backtest'te dokunulmaz)
             self.orders.live_mode = True
-            self.orders.max_attempts = max(1, int(live.max_attempts)) if live is not None else 1
+            self.orders.max_attempts = 1                    # DD-2 D10: canli yolda kor yeniden gonderim yok (ayar olu: 1'e sabit)
             if live is not None:
                 self.orders.stop_deadline_s = float(live.stop_deadline_s)
                 self.orders.entry_resolve_window_s = float(live.entry_resolve_window_s)
@@ -214,8 +214,7 @@ class Engine:
             self.state.update_order(cid, **f)
 
     def _block(self, reason: str) -> None:
-        with self.state.tx():
-            self.state.kv_set("entries_blocked_reason", reason)
+        self.state.block_add(reason)          # DD-2 D6: kume; baska nedeni ezmez
 
     def _note_stop_failed(self, trade_id: int | None = None) -> None:
         """DD-6 O3: `stop_failed` olaylarini (pozisyon basina bir) 24 saat boyunca sayar; ikincisinde kalici duraklatma
@@ -325,6 +324,7 @@ class Engine:
         return {
             "tf": self.tf, "param_version_id": self._version_id, "strategy_name": self.strategy.info.name,
             "strategy_version": self.strategy.info.version, "entries_blocked_reason": blocked, "gate_code": code,
+            "entries_blocked_reasons": self.state.block_reasons(),          # DD-2: eklemeli; eski alan degismedi
             "entries_open": code == "ok",
             "kill": killed, "kill_state": self.kill_state(), "wallet": acct.wallet, "equity": acct.equity,
             "day_start_equity": ds if ds is not None else acct.equity, "open_positions": self.state.open_positions(),
@@ -493,11 +493,9 @@ class Engine:
             fresh = cur is None
             self.state.kv_set("day_start:" + day, pre if pre is not None else self.broker.account().equity)
             self.state.kv_set("day_start_date", day)
-            reason = self.state.kv_get("entries_blocked_reason")
-            if reason == "day_start_missing":
-                self.state.kv_set("entries_blocked_reason", None)
+            self.state.block_remove("day_start_missing")
             if not fresh and ts.replace(hour=0, minute=0, second=0, microsecond=0) != ts:
-                self.state.kv_set("entries_blocked_reason", "day_start_missing")
+                self.state.block_add("day_start_missing")
                 log.critical("gun basi anlik goruntusu kayip (%s): girisler kapali", day)
 
     # ================================================================== parametreler
@@ -780,15 +778,12 @@ class Engine:
 
     def _outbox_health(self, res) -> None:
         """Defter outbox'inda takili/gecersiz satir: say ve girisleri kapat (cozulene kadar; islem kapansa da kapali)."""
-        cur = self.state.kv_get("entries_blocked_reason")
         if res.failed > 0:
             self._c["outbox_failed"] += 1
             log.error("outbox takili: %d satir yazilamadi (%s)", res.failed, res.first_error)
-            if not cur:
-                self._block("outbox_stuck")
-        elif cur == "outbox_stuck":
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
+            self._block("outbox_stuck")
+        else:
+            self.state.block_remove("outbox_stuck")
 
     def _process_step(self, step) -> None:
         ts = step.ts
@@ -852,9 +847,24 @@ class Engine:
                 with self.state.tx():
                     self.state.kv_set("kill_seen_at", iso_z(now))
                 log.critical("KILL etkin: girisler kapali, acik pozisyonlar kapatiliyor")
+            first_err: Exception | None = None
             for p in self.state.open_positions():
                 if p.status == "open" and p.qty:
-                    self._submit_exit(p, "force_exit", now)
+                    try:
+                        self._submit_exit(p, "force_exit", now)
+                    except (StateError, EngineExit):
+                        raise
+                    except Exception as e:  # noqa: BLE001
+                        if self.is_paper or self.strict:
+                            raise                              # kagit: dis tx geri alinir; strict: hata gizlenmez (eski davranis)
+                        # DD-2 O9 (yalniz canli): bir pozisyonun cikis hatasi sonrakileri o turda engellemez; say, kaydet,
+                        # devam et. Ilk hata dongu sonunda YENIDEN FIRLATILIR: `_guard("kill")` sayar (CRIT/engine_errors/exit)
+                        self._c["kill_exit_errors"] += 1
+                        log.error("KILL cikisi trade %s: %r (kalan pozisyonlara devam)", p.trade_id, e)
+                        if first_err is None:
+                            first_err = e
+            if first_err is not None:
+                raise first_err
         elif self.state.kv_get("kill_seen_at") is not None:
             with self.state.tx():
                 self.state.kv_set("kill_seen_at", None)
@@ -1351,9 +1361,7 @@ class Engine:
             self._block("clock_skew")
             raise ClockError(f"saat geri gitti: {now} < {self._last_now}")
         self._last_now = now
-        if self.state.kv_get("entries_blocked_reason") == "clock_skew":
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
+        self.state.block_remove("clock_skew")
         step_s = self.view.step_seconds()
         n = 0
         while not self._stop:
@@ -1492,7 +1500,7 @@ class Engine:
         delay = min(ADVANCE_BACKOFF_CAP_S, ADVANCE_BACKOFF_BASE_S * (2 ** (self._adv_errors - 1)))
         self._adv_next_try = now + timedelta(seconds=delay)
         log.error("advance_to veri hatasi (%d. ardisik, %.0f sn sonra yeniden): %r", self._adv_errors, delay, e)
-        if self._adv_errors >= ADVANCE_ERRORS_ENTRIES_OFF and self.state.kv_get("entries_blocked_reason") != "engine_errors":
+        if self._adv_errors >= ADVANCE_ERRORS_ENTRIES_OFF and not self.state.block_has("engine_errors"):
             log.critical("%d ardisik veri hatasi: girisler kapatildi (engine_errors); KILL/bekci/mutabakat surer", self._adv_errors)
             self._block("engine_errors")
 
@@ -1630,7 +1638,7 @@ class Engine:
         if self._ban_until is None or until > self._ban_until:
             self._ban_until = until
         self._c["exchange_ban_rejects"] += 1
-        if http == 429 and not self.state.kv_get("entries_blocked_reason"):
+        if http == 429:
             self._block("exchange_rate_limited")
         elif http in (418, 403, 451) and self.pause is not None:
             try:
@@ -1640,10 +1648,8 @@ class Engine:
 
     def _clear_broker_latches(self) -> None:
         """Temiz yeniden baslatma: brokerin bellek-ici yapiskan nedenleri sifirlanir; kv'ye yansiyanlar da (11 §5)."""
-        cur = self.state.kv_get("entries_blocked_reason")
-        if cur in _BROKER_REASONS:
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
+        for r in _BROKER_REASONS:
+            self.state.block_remove(r)
 
     def _mirror_broker_blocks(self) -> None:
         """Brokerin giris engeli (exchange_auth, ...) kapi icin kv'ye yansitilir (baska nedeni ezmez). exchange_auth ayrica
@@ -1654,26 +1660,22 @@ class Engine:
                 self.pause.add("exchange_auth", by="engine:broker", note="broker exchange_auth")
             except Exception as e:  # noqa: BLE001
                 log.error("pause.add basarisiz: %r", e)
-        br = getattr(self.broker, "entries_blocked_reason", None)
-        if not br:
-            return
-        cur = self.state.kv_get("entries_blocked_reason")
-        if cur is None:
-            self._block(str(br))
+        if not brs:
+            br = getattr(self.broker, "entries_blocked_reason", None)
+            brs = (br,) if br else ()
+        for r in brs:                                      # kumenin TUM uyeleri (yalniz oncelikli degil)
+            self._block(str(r))
 
     def _after_live_reconcile(self, rep) -> None:
         """B4'un kendi exchange_unreachable mandali: yalniz temiz mutabakattan sonra, broker kendininkini kaldirdiysa temizlenir."""
-        cur = self.state.kv_get("entries_blocked_reason")
         reasons = tuple(getattr(self.broker, "entries_blocked_reasons", ()) or ())
         if "exchange_unreachable" in reasons or "exchange_unreachable" in getattr(rep, "findings", ()):
-            if cur is None:
-                self._block("exchange_unreachable")
+            self._block("exchange_unreachable")
             return
         # tur okumalarini tamamladi (temiz mutabakat = okumalar bitti; bulgu varligi temizlemeyi engellemez, 11 §8)
-        if cur == "exchange_unreachable" or (cur == "exchange_rate_limited" and (
-                self._ban_until is None or self.clock.now() >= self._ban_until)):
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
+        self.state.block_remove("exchange_unreachable")
+        if self._ban_until is None or self.clock.now() >= self._ban_until:
+            self.state.block_remove("exchange_rate_limited")
         self._mirror_broker_blocks()
 
     # ================================================================== backtest surucusu

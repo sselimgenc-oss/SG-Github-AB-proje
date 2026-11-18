@@ -2416,9 +2416,40 @@ class Ledger:
         except OSError:
             return False
 
+    def _corrupt_path(self) -> str:
+        return self.path + ".spool.corrupt.jsonl"
+
+    def _spool_tail_torn(self) -> bool:
+        """O14 / D2: spool son bayti satir sonu degilse (guc kesintisi/yarim yazim) True. Yeni kayit o parcaya yapismamali."""
+        try:
+            with open(self._spool_path(), "rb") as f:
+                f.seek(0, os.SEEK_END)
+                if f.tell() == 0:
+                    return False
+                f.seek(-1, os.SEEK_END)
+                return f.read(1) != b"\n"
+        except OSError:
+            return False
+
+    def _quarantine(self, rows: list[str], why: str) -> bool:
+        """Islenemeyen spool satirlarini `<defter>.spool.corrupt.jsonl`a tasir (fsync). Basarisizsa False (satir spool'da kalir)."""
+        try:
+            with open(self._corrupt_path(), "a", encoding="utf-8") as f:
+                for ln in rows:
+                    f.write(json.dumps({"at": _fmt_ts(self._now()), "why": why, "row": ln}, ensure_ascii=False,
+                                       separators=(",", ":")) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            return True
+        except OSError as e:
+            log.critical("spool karantina dosyasi yazilamadi (satirlar spool'da korunuyor): %s", e)
+            return False
+
     def _spool_append(self, payload: Mapping[str, Any]) -> bool:
         try:
             with self._spool_lock, open(self._spool_path(), "a", encoding="utf-8") as f:
+                if self._spool_tail_torn():
+                    f.write("\n")                  # yarim satiri kapat: yeni kayit onunla ayni satira yapismaz
                 f.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
                 f.flush()
                 os.fsync(f.fileno())
@@ -2437,6 +2468,7 @@ class Ledger:
             except OSError:
                 return 0
             remaining: list[str] = []
+            corrupt: list[tuple[str, str]] = []
             stop = False
             for ln in lines:
                 if stop:
@@ -2444,6 +2476,24 @@ class Ledger:
                     continue
                 try:
                     d = json.loads(ln)
+                except ValueError as e:
+                    d = None
+                    why = f"{type(e).__name__}: {e}"
+                else:
+                    why = None
+                    if not isinstance(d, dict):
+                        why = "not_a_dict"
+                    elif d.get("type") not in ("entry", "exit"):
+                        why = f"unknown_type:{d.get('type')!r}"
+                if why is not None:
+                    # O14: YALNIZ yapisal olarak okunamayan satir (JSON hatasi, dict degil, type yok/bilinmiyor) karantinaya
+                    # alinir. Ayristirilabilen ama kayda reddedilen satir (eksik alan, gecersiz deger, durum hatasi) eskisi
+                    # gibi spool'da KALIR (CRIT, girisler kapali, insan onarimi): aksi halde yarim giris + gecerli cikis ikisi de
+                    # karantinaya girip spool'u bosaltir ve kapi yeniden acilirdi (gunluk zarar eksik sayilir).
+                    log.critical("spool satiri okunamiyor, karantinaya aliniyor: %s (%s)", ln, why)
+                    corrupt.append((ln, why))
+                    continue
+                try:
                     if d["type"] == "entry":
                         self._record_entry(TradeEntry(
                             d["trade_id"], d["decision_id"], _parse_ts(d["entry_ts"]), d["entry_price"],
@@ -2466,6 +2516,9 @@ class Ledger:
                     stop = True
                 except (LedgerError, ValueError, KeyError, TypeError) as e:
                     log.critical("spool satiri islenemedi (korunuyor): %s (%s)", ln, e)
+                    remaining.append(ln)
+            for ln, why in corrupt:
+                if not self._quarantine([ln], why):
                     remaining.append(ln)
             try:
                 tmp = self._spool_path() + ".tmp"

@@ -3299,9 +3299,13 @@ class FallbackLog:
 
     def append(self, obj: Mapping) -> None:
         line = canon(dict(obj))
-        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        fd = os.open(self.path, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600)
         try:
-            os.write(fd, (line + "\n").encode("utf-8"))
+            lead = b""
+            end = os.lseek(fd, 0, os.SEEK_END)
+            if end > 0 and os.pread(fd, 1, end - 1) != b"\n":
+                lead = b"\n"                      # O14: yarim satiri kapat; yeni kayit onunla ayni satira yapismaz
+            os.write(fd, lead + (line + "\n").encode("utf-8"))
             os.fsync(fd)
         finally:
             os.close(fd)
@@ -3319,6 +3323,7 @@ class FallbackLog:
                     try:
                         obj = json.loads(ln)
                     except ValueError:
+                        log.error("fallback satiri bozuk (atlandi): %s", scrub(ln[:120]))   # O14: sessiz atlama yok
                         continue
                     if isinstance(obj, dict):
                         out.append(obj)

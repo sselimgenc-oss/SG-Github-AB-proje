@@ -81,6 +81,7 @@ class StatusWriter:
             "strategy": {"name": f["strategy_name"], "version": f["strategy_version"]},
             "entries_open": bool(f["entries_open"]) and not ml_blocked, "gate": {"ok": gate_code == "ok", "code": gate_code},
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
+            "entries_blocked_reasons": list(f.get("entries_blocked_reasons") or ([blocked] if blocked else [])),   # DD-2: eklemeli
             "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"records": f["records"]} if f.get("records") is not None else {}),   # WP-3 9.3: yalniz kayit sayaclari

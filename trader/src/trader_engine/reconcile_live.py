@@ -23,7 +23,7 @@ from .order_manager import EXIT_RETRY_LIMIT
 from .pause import EntryPause
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
                                build_trade_exit, close_position, exec_fields, exec_payload, fill_risk_violation)
-from .reconcile import _AUTO_CLEAR, Reconciler, ReconcileReport
+from .reconcile import _AUTO_CLEAR, Reconciler, ReconcileReport, apply_block_set
 from .state import iso_z, parse_iso_z
 from .types import BrokerEvent, BrokerOrder, BrokerPosition, Fill, OrderRequest, Position, order_side_for, pair_symbol
 
@@ -696,21 +696,9 @@ class LiveReconciler(Reconciler):
             finds.append(f"ledger_check_failed:{type(e).__name__}")
 
     def _apply_blocks(self, reasons: list[str], acts: list[str]) -> None:
-        cur = self.state.kv_get("entries_blocked_reason")
         reasons[:] = list(dict.fromkeys(reasons))
         reasons.sort(key=lambda r: _BLOCK_ORDER.index(r) if r in _BLOCK_ORDER else len(_BLOCK_ORDER))
-        clearable = cur is not None and (cur in _AUTO_CLEAR or str(cur).startswith("reconcile_"))
-        if reasons:
-            if cur != reasons[0] and (cur is None or clearable):
-                self._block(reasons[0])
-        elif clearable:
-            if cur == "order_unknown" and (self.state.unresolved_orders()
-                                           or any(p.status == "opening" for p in self.state.open_positions())):
-                return
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
-            acts.append(f"cleared:{cur}")
-            log.info("mutabakat: giris blokaji kaldirildi (%s)", cur)
+        apply_block_set(self.state, reasons, acts)           # DD-2 D6: kume; kagit mutabakatla ayni kural
 
     # ================================================================== varsayilan olay isleyici (B4 kendi `_handle_events`ini verir)
     def _persist(self, old: Position, new: Position) -> None:

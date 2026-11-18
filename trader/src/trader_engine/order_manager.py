@@ -94,7 +94,18 @@ class OrderManager:
         """Stop yuvarlama tick'i: native = borsa kurali; legacy_compat = pozisyonun GIRIS ayinin tarihsel tick'i."""
         if self.tick_fn is not None and pos.entry_ts is not None:
             return self.tick_fn(pos.pair, pos.entry_ts)
-        return self.rules_fn(pos.pair).tick
+        return self.rules_tick(pos.pair)
+
+    def rules_tick(self, pair: str) -> float:
+        """DD-2 D9: koruyucu yolda (stop kur/guncelle) tick, `place_stop`in kullandigi SON BILINEN kuraldan okunur: bayat (>6 sa)
+        kural `rules()`te DataError atar ama stop yine de kurulabilir; iki yol tutarsiz olmasin. Kagit brokerde `rules_last_known`
+        yok: davranis ayni (`rules_fn`)."""
+        lk = getattr(self.broker, "rules_last_known", None)
+        if lk is not None:
+            r = lk(pair)
+            if r is not None:
+                return r.tick
+        return self.rules_fn(pair).tick
     # ------------------------------------------------------------------ yardimcilar
     def _call(self, req: OrderRequest) -> OrderResult:
         if req.role in ("entry", "exit"):
@@ -299,8 +310,7 @@ class OrderManager:
         return self._after(out, row.trade_id)
 
     def _block(self, reason: str) -> None:
-        with self.state.tx():
-            self.state.kv_set("entries_blocked_reason", reason)
+        self.state.block_add(reason)          # DD-2 D6: kume; baska nedeni ezmez
 
     def _after(self, out: SubmitOutcome, trade_id: int | None) -> SubmitOutcome:
         """Rol bazli yan etkiler (basarisizlik ve kabul)."""
@@ -319,7 +329,7 @@ class OrderManager:
         with self.state.tx():
             if p is not None and p.status == "opening":
                 self.state.update_position(p.trade_id, status="closed", exit_reason="other", closed_ts=self.clock.now())
-            self.state.kv_set("entries_blocked_reason", "order_unknown")
+            self.state.block_add("order_unknown")
         log.error("giris emri basarisiz: %s", row.client_id)
 
     def _exit_effects(self, row: OrderRow, out: SubmitOutcome) -> None:
@@ -436,8 +446,7 @@ class OrderManager:
     def _exit_failed_effects(self, pos: Position) -> None:
         n = int(self.state.kv_get(f"exit_retry:{pos.trade_id}", 0))
         if n >= _EXIT_RETRY_LIMIT:
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", "exit_unknown")
+            self.state.block_add("exit_unknown")
             log.critical("cikis emri cozulemedi: trade %s (stop pozisyonu korur)", pos.trade_id)
 
     # ------------------------------------------------------------------ stop
@@ -532,6 +541,11 @@ class OrderManager:
                 raise
             except Exception as e:  # noqa: BLE001
                 log.warning("eski stop iptal edilemedi %s: %r", old, e)
+            else:
+                if self.live_mode:                  # DD-2 D10: iptal edilen eski stop satiri `accepted` kalmaz (kagit degismez)
+                    row = self.state.get_order(old)
+                    if row is not None and row.status == "accepted":
+                        self._upd(old, status="canceled", detail="replaced_by_tighter_stop")
         return out
 
     def cancel_resting(self, pos: Position) -> None:

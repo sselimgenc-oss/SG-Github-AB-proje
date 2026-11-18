@@ -18,12 +18,13 @@ STARTUP_CHECKER = None
 
 
 def _load_cfg(a):
-    from .config import load_engine_config
+    from .config import absolutize_kill_file, load_engine_config
     d = Path(a.config_dir)
     env = getattr(a, "env", None)
     overlay = d / f"engine.{env}.json" if env else None
     bot = getattr(a, "bot", None) or "learner"
-    return load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
+    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
+    return absolutize_kill_file(cfg, d / "engine.base.json")       # DD-2 D7: KILL yolu cwd'den bagimsiz
 
 
 def _live_startup(cfg, checker) -> int | None:
@@ -64,6 +65,7 @@ def _cmd_run(a, *, checker=None) -> int:
     except ConfigError as e:
         print(f"yapilandirma hatasi: {e}", file=sys.stderr)
         return EXIT_FAZ_B
+    logging.getLogger("engine.cli").warning("KILL dosyasi (mutlak yol): %s", cfg.kill_file)    # DD-2 D7
     if cfg.mode in ("testnet", "live"):
         rc = _live_startup(cfg, checker)       # anahtar + LIVE_CONFIRM (+ enjekte denetim); None => gercek kurulum
         if rc is not None:
@@ -162,6 +164,40 @@ def _cmd_reconcile(a) -> int:
     if cfg.mode in ("testnet", "live"):
         print("faz_b: testnet/live reconcile henuz uygulanmadi", file=sys.stderr)
         return EXIT_FAZ_B
+    if getattr(a, "apply", False):
+        return _reconcile_run(cfg)
+    # DD-2 D8: varsayilan SALT OKUR. State ve defter gecici kopyada mutabakata sokulur; gercek dosyalara (state, defter,
+    # spool, status, kilit) dokunulmaz. Eski (yazan) davranis: `--apply` (motor DURUKEN).
+    import shutil
+    import sqlite3
+    import tempfile
+
+    from .config import apply_overrides
+    src_state, src_ledger = Path(cfg.state_path), Path(cfg.ledger_path)
+    if not src_state.exists() or src_state.stat().st_size == 0:
+        print(f"state yok: {src_state}", file=sys.stderr)
+        return EXIT_FAZ_B
+    with tempfile.TemporaryDirectory(prefix="reconcile-ro-") as tmp:
+        tcfg = apply_overrides(cfg, var_dir=tmp)
+        Path(tcfg.state_path).parent.mkdir(parents=True, exist_ok=True)
+        for src, dst in ((src_state, tcfg.state_path), (src_ledger, tcfg.ledger_path)):
+            if not src.exists():
+                continue
+            sc = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+            try:
+                sc.execute("VACUUM INTO ?", (dst,))              # tutarli kopya (WAL dahil); kaynak salt okunur
+            finally:
+                sc.close()
+        spool = Path(str(src_ledger) + ".spool.jsonl")
+        if spool.exists():
+            shutil.copyfile(spool, tcfg.ledger_path + ".spool.jsonl")
+        rc = _reconcile_run(tcfg)
+    print("salt-okur: gercek state/defter degismedi (yazan mutabakat icin --apply)", file=sys.stderr)
+    return rc
+
+
+def _reconcile_run(cfg) -> int:
+    from .engine import EngineExit, build_engine
     eng = build_engine(cfg)
     try:
         eng.start()
@@ -177,11 +213,75 @@ def _cmd_kill(a) -> int:
     cfg = _load_cfg(a)
     from .killswitch import Killswitch
     k = Killswitch(cfg.kill_file, SystemClock())
+    print(f"kill_file: {cfg.kill_file}")                       # DD-2 D7: cozumlenmis mutlak yol
     if a.clear:
         k.clear()
     else:
         k.set(a.by, a.reason)
     return EXIT_OK
+
+
+def _cmd_unblock(a) -> int:
+    """DD-2 (D6 = dunku O6): elle kalkan giris engeli nedenlerini (`engine_errors`, `strategy_mismatch`) kaldirir. Yalniz motor
+    DURUYORKEN (state kilidi alinamazsa reddedilir); once `block_audit.jsonl`a kayit (fsync), sonra kume guncellenir. Baska
+    nedenlere (otomatik kalkanlar dahil) dokunmaz. `--list`: kumeyi yazdirir (kilit alinir; motor calisiyorsa reddedilir)."""
+    import os
+
+    from .clock import SystemClock
+    from .errors import ConfigError, StateError
+    from .fileio import fmt_ts
+    from .state import MANUAL_CLEAR_REASONS, StateStore
+    try:
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
+    if not a.list:
+        if a.reason not in MANUAL_CLEAR_REASONS:
+            print(f"hata: --reason {'|'.join(MANUAL_CLEAR_REASONS)} olmali (otomatik kalkan nedenler elle kaldirilmaz)",
+                  file=sys.stderr)
+            return EXIT_FAZ_B
+        by = _by_of(a)
+        if by is None:
+            return EXIT_FAZ_B
+    sp = Path(cfg.state_path)
+    if not sp.exists() or sp.stat().st_size == 0:
+        print(f"state yok: {sp}", file=sys.stderr)
+        return EXIT_FAZ_B
+    try:
+        st = StateStore(str(sp), bot=cfg.bot)
+    except StateError as e:
+        print(f"hata: {e} (motor durdurulmadan engel kaldirilmaz)", file=sys.stderr)
+        return EXIT_FAZ_B
+    try:
+        cur = st.block_reasons()
+        if a.list:
+            print(json.dumps({"bot": cfg.bot, "reasons": cur, "primary": st.kv_get("entries_blocked_reason"),
+                              "manual_clear": [r for r in cur if r in MANUAL_CLEAR_REASONS]}, ensure_ascii=False))
+            return EXIT_OK
+        if a.reason not in cur:
+            print(f"neden kumede yok: {a.reason} (mevcut: {cur})", file=sys.stderr)
+            return EXIT_FINDINGS
+        remaining = [r for r in cur if r != a.reason]
+        row = {"at": fmt_ts(SystemClock().now()), "op": "unblock", "reason": a.reason, "by": by,
+               "note": a.note or "", "bot": cfg.bot, "remaining": remaining}
+        ap = Path(cfg.path("block_audit.jsonl"))
+        try:
+            ap.parent.mkdir(parents=True, exist_ok=True)
+            with open(ap, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as e:
+            print(f"hata: denetim kaydi yazilamadi ({type(e).__name__}); engel kaldirilmadi", file=sys.stderr)
+            return EXIT_ENGINE
+        st.block_remove(a.reason)
+        print(json.dumps({"unblocked": a.reason, "remaining": remaining}, ensure_ascii=False))
+        if a.reason == "strategy_mismatch":
+            print("not: strateji surumu hala uyusmuyorsa motor acilista nedeni yeniden ekler", file=sys.stderr)
+        return EXIT_OK
+    finally:
+        st.close()
 
 
 def _cmd_pause(a) -> int:
@@ -543,6 +643,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=_cmd_init_ledger)
     p = sub.add_parser("reconcile")
     bot_args(p)
+    p.add_argument("--apply", action="store_true", help="eski davranis: gercek state/defter uzerinde yazan mutabakat (motor duruyorken)")
     env_arg(p)
     p.set_defaults(fn=_cmd_reconcile)
     p = sub.add_parser("kill")
@@ -552,6 +653,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--config-dir", default="config")
     env_arg(p)
     p.set_defaults(fn=_cmd_kill)
+    p = sub.add_parser("unblock")                       # DD-2 D6: elle kalkan giris engelleri (motor durukken)
+    bot_args(p)
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--reason", default=None, help="engine_errors | strategy_mismatch")
+    p.add_argument("--by", default=None)
+    p.add_argument("--note", default="")
+    env_arg(p)
+    p.set_defaults(fn=_cmd_unblock)
     p = sub.add_parser("pause")
     bot_args(p)
     p.add_argument("--clear", action="store_true")

@@ -13,6 +13,23 @@ log = logging.getLogger("engine.reconcile")
 _AUTO_CLEAR = ("stop_failed", "order_unknown", "exit_unknown")
 
 
+def apply_block_set(state, reasons: list[str], actions: list[str]) -> None:
+    """Mutabakatin kendi nedenlerini (reconcile_*, `_AUTO_CLEAR`) kumeye uygular (DD-2 D6): bulunanlar eklenir, bu turda
+    bulunmayanlar kaldirilir; baska nedenlere (engine_errors, strategy_mismatch, borsa/saat/outbox nedenleri) dokunulmaz.
+    `order_unknown`, cozulmemis emir ya da `opening` pozisyon varken kalkmaz (11 §8; kagit mutabakata da eklendi: O6 acik kisim 2)."""
+    for r in reasons:
+        state.block_add(r)
+    for cur in state.block_reasons():
+        if cur in reasons or not (cur in _AUTO_CLEAR or str(cur).startswith("reconcile_")):
+            continue
+        if cur == "order_unknown" and (state.unresolved_orders()
+                                       or any(p.status == "opening" for p in state.open_positions())):
+            continue
+        state.block_remove(cur)
+        actions.append(f"cleared:{cur}")
+        log.info("mutabakat: giris blokaji kaldirildi (%s)", cur)
+
+
 @dataclass(frozen=True)
 class ReconcileReport:
     ok: bool
@@ -32,15 +49,13 @@ class Reconciler:
 
     # ------------------------------------------------------------------ yardimcilar
     def _block(self, reason: str) -> None:
-        with self.state.tx():
-            if self.state.kv_get("entries_blocked_reason") != reason:
-                self.state.kv_set("entries_blocked_reason", reason)
+        self.state.block_add(reason)          # DD-2 D6: kume; baska nedeni ezmez
 
     def _install_stop(self, pos, actions: list[str]) -> bool:
         """Yeni stop (yeni seq) kur; olmazsa piyasada kapat. True: stop duruyor."""
         om = self.orders
         from .numeric import round_tight
-        tick = om.rules_fn(pos.pair).tick
+        tick = om.rules_tick(pos.pair)
         price = round_tight(pos.current_stop, pos.side, tick)
         seq = pos.stop_seq + 1
         with self.state.tx():
@@ -153,17 +168,9 @@ class Reconciler:
             findings.append(f"ledger_check_failed:{type(e).__name__}")
 
         # blokaj yonetimi
-        cur = self.state.kv_get("entries_blocked_reason")
         reasons = list(dict.fromkeys(reasons))
         # onceligi sabit: unknown_position > state_orphan > ledger_orphan > diger
         order = ("reconcile_unknown_position", "reconcile_state_orphan", "reconcile_ledger_orphan", "stop_failed")
         reasons.sort(key=lambda r: order.index(r) if r in order else len(order))
-        if reasons:
-            if cur != reasons[0] and (cur is None or cur in _AUTO_CLEAR or str(cur).startswith("reconcile_")):
-                self._block(reasons[0])
-        elif cur and (str(cur).startswith("reconcile_") or cur in _AUTO_CLEAR):
-            with self.state.tx():
-                self.state.kv_set("entries_blocked_reason", None)
-            actions.append(f"cleared:{cur}")
-            log.info("mutabakat: giris blokaji kaldirildi (%s)", cur)
+        apply_block_set(self.state, reasons, actions)
         return ReconcileReport(ok=not findings, fatal=fatal, actions=tuple(actions), findings=tuple(findings))

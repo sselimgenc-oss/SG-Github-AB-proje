@@ -44,6 +44,14 @@ def atomic_write_json(path, data: dict) -> Path:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    try:                                    # DD-2 D13: dizin girdisi de diske (en iyi caba)
+        dfd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
     return path
 
 

@@ -17,6 +17,27 @@ from .types import Position, require_utc
 
 SCHEMA_VERSION = 1
 
+# --- giris engeli nedenleri KUMESI (DD-2 / D6 = dunku O6) ---
+# Eskiden tek `entries_blocked_reason` degerini her yazan eziyordu (`engine_errors` -> `stop_failed` -> mutabakatla temizlendi).
+#   * `entries_blocked_reasons` (kv, JSON liste): yapiskan kume; `block_add` digerini ezmez, `block_remove` yalniz o nedeni kaldirir.
+#   * `entries_blocked_reason` (kv, metin): kumenin ONCELIKLI uyesi; kapi, status.json, panel ve Telegram bunu okur (geriye uyum).
+# Elle kalkan nedenler hicbir otomatik yolla temizlenmez; yalniz `trader_engine unblock` kaldirir (kayit birakarak).
+# Kume ile metin uyusmuyorsa (eski state / dis yazim) metin deger esas alinir.
+BLOCK_KV_SET = "entries_blocked_reasons"
+BLOCK_KV_PRIMARY = "entries_blocked_reason"
+MANUAL_CLEAR_REASONS: tuple[str, ...] = ("engine_errors", "strategy_mismatch")
+_BLOCK_PRIORITY: tuple[str, ...] = MANUAL_CLEAR_REASONS + (
+    "reconcile_unknown_position", "reconcile_state_orphan", "reconcile_foreign_order",
+    "reconcile_account_mode_drift", "reconcile_ledger_orphan", "stop_failed", "exit_unknown")
+
+
+def block_primary(reasons: list[str]) -> str | None:
+    """Kapida gorunen neden: once elle kalkanlar, sonra sabit oncelik, sonra eklenme sirasi."""
+    if not reasons:
+        return None
+    return min(reasons, key=lambda r: (_BLOCK_PRIORITY.index(r) if r in _BLOCK_PRIORITY else len(_BLOCK_PRIORITY),
+                                       reasons.index(r)))
+
 _SCHEMA = """
 CREATE TABLE positions(
   trade_id INTEGER PRIMARY KEY, bot TEXT NOT NULL, pair TEXT NOT NULL, side TEXT NOT NULL, setup TEXT NOT NULL,
@@ -152,6 +173,24 @@ def _row_to_order(r: sqlite3.Row) -> OrderRow:
     return OrderRow(**kw)
 
 
+def _ledger_has_history(path: str) -> bool:
+    """Defter islem/karar satiri iceriyor mu (salt okunur; okunamazsa False: defter kendi hatasini verir). Ilk kurulumda
+    yaratilip coken bos defter `dolu` sayilmaz."""
+    try:
+        if os.path.getsize(path) == 0:
+            return False
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            for t in ("trade_entries", "decision_events"):
+                if con.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone() is not None:
+                    return True
+            return False
+        finally:
+            con.close()
+    except (OSError, sqlite3.Error):
+        return False
+
+
 class StateStore:
     def __init__(self, path: str, *, bot: str, durability: str = "full", lock: bool = True) -> None:
         if durability not in ("full", "off"):
@@ -164,6 +203,12 @@ class StateStore:
         self._lock_fd: int | None = None
         memory = self.path == ":memory:"
         existed = (not memory) and os.path.exists(self.path) and os.path.getsize(self.path) > 0
+        if not memory and not existed and os.path.exists(self.path):
+            # DD-2 D9: 0 baytlik state yeni durum sayilmaz, yanindaki defter doluysa (kayip/bozulma belirtisi) sessiz kalinmaz
+            led = os.path.join(os.path.dirname(self.path) or ".", "ledger.sqlite")
+            if _ledger_has_history(led):
+                raise StateError(f"state dosyasi 0 bayt ama defter dolu ({led}): sessizce yeni durum acilmaz; "
+                                 "yedekten donun ya da bilincli olarak 0 baytlik dosyayi silin")
         if lock and not memory:
             self._acquire_lock()
         try:
@@ -428,6 +473,43 @@ class StateStore:
         except (TypeError, ValueError) as e:
             raise ValueError(f"kv degeri JSON olmali: {e}") from e
         self._exec("INSERT OR REPLACE INTO kv(k, v) VALUES(?,?)", (k, s))
+
+    # --- giris engeli kumesi
+    def block_reasons(self) -> list[str]:
+        p = self.kv_get(BLOCK_KV_PRIMARY)
+        s = self.kv_get(BLOCK_KV_SET)
+        if isinstance(s, list) and all(isinstance(r, str) for r in s) and p == block_primary(s):
+            return list(s)
+        # eski state / dis yazim: metin deger esas. Not: `_BLOCK_PRIORITY` degisirse kayitli primary ile turetilen primary
+        # uyusmaz; bu durumda da kume tek elemana (primary) dusurulur => uyum icin oncelik listesi degisince kume bir sonraki
+        # yazimda yeniden kurulur; yalnizca ikincil uyeler kaybolabilir (oncelik degisikligi bunu goz onunde tutmali).
+        return [str(p)] if p else []
+
+    def _block_write(self, rs: list[str]) -> None:
+        with self.tx():
+            self.kv_set(BLOCK_KV_SET, rs or None)
+            self.kv_set(BLOCK_KV_PRIMARY, block_primary(rs))
+
+    def block_add(self, reason: str) -> bool:
+        """Nedeni kumeye ekler (digerlerini ezmez). Degisiklik olduysa True."""
+        rs = self.block_reasons()
+        if reason in rs:
+            if self.kv_get(BLOCK_KV_SET) is None:      # eski state: kume kaydini kur
+                self._block_write(rs)
+            return False
+        self._block_write(rs + [reason])
+        return True
+
+    def block_remove(self, reason: str) -> bool:
+        """Yalniz bu nedeni kaldirir; kumede yoksa dokunmaz (False)."""
+        rs = self.block_reasons()
+        if reason not in rs:
+            return False
+        self._block_write([r for r in rs if r != reason])
+        return True
+
+    def block_has(self, reason: str) -> bool:
+        return reason in self.block_reasons()
 
     # --- ledger kuyrugu
     def outbox_add(self, kind: Literal["entry", "exit"], trade_id: int, payload: dict) -> int:

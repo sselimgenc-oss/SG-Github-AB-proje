@@ -43,6 +43,7 @@ log = logging.getLogger("engine.live_broker")
 D = Decimal
 UTC = timezone.utc
 RULES_REFRESH_S = 3600.0
+CLOCK_SYNC_S = 1800.0          # DD-2 D5: periyodik saat esitleme (11-canli-broker §3: acilista, 30 dakikada bir ve her -1021'de)
 RULES_MAX_AGE_S = 6 * 3600.0
 ACCOUNT_CACHE_S = 2.0
 FILL_WAIT_S = 3.0
@@ -200,6 +201,7 @@ class LiveBroker:
         self._delivered_funding: set[Any] = set()
         self._funding_wait: dict[str, datetime] = {}
         self._last_sync: datetime | None = None
+        self._last_clock_sync: datetime | None = None
         self._last_ok: datetime | None = None
         self._fails = 0
         self._reachable = True
@@ -363,6 +365,11 @@ class LiveBroker:
         if (self._now() - e.ts).total_seconds() > RULES_MAX_AGE_S:
             raise DataError(f"rules_stale:{pair}")
         return e.rules
+
+    def rules_last_known(self, pair: str) -> SymbolRules | None:
+        """DD-2 D9: yas denetimsiz son bilinen kural (koruyucu yol); yoksa None."""
+        e = self._rules.get(pair)
+        return None if e is None else e.rules
 
     def _entry_any(self, pair: str) -> _RuleEntry | None:
         return self._rules.get(pair)          # cikis/stop: son bilinen kural (bayat olsa da)
@@ -756,6 +763,8 @@ class LiveBroker:
             return "step", e
         if req.qty > e.rules.max_qty:
             return "max_qty", e
+        if req.role == "entry" and req.qty < e.rules.min_qty:
+            return "min_qty", e                            # DD-2 D4/D5: yerel `market_min` denetimi; yalniz giris (koruyucu stop/cikis degil)
         return None, e
 
     def _qty_str(self, qty: float, e: _RuleEntry | None) -> str:
@@ -1010,7 +1019,28 @@ class LiveBroker:
         self._queue.sort(key=lambda t: (t[0], t[1]))
         evs = [t[2] for t in self._queue]
         self._queue.clear()
+        self._maybe_sync_clock(now, evs)
         return evs
+
+    def _maybe_sync_clock(self, now: datetime, evs: list) -> None:
+        """DD-2 D5: 30 dakikada bir saat esitleme. Koruyucu yolu geciktirmez: yalniz bu turda olay (dolum vb.) YOKKEN, bekleyen
+        kapanis/stopsuz pozisyon YOKKEN, tek deneme ve kisa zaman asimiyla (order_timeout_s). Ban penceresi burada degil
+        `_send` icinde uygulanir (ban varken istek gitmez). Hata sessizce yutulur (bir sonraki 30 dk)."""
+        if self._last_clock_sync is None:
+            self._last_clock_sync = now
+            return
+        if (now - self._last_clock_sync).total_seconds() < CLOCK_SYNC_S:
+            return
+        if evs or self._pending_market or self._pending_close or self._naked:
+            return
+        fn = getattr(self._rest, "sync_time_once", None)
+        if fn is None:
+            return
+        self._last_clock_sync = now
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            log.warning("periyodik saat esitleme basarisiz: %s", type(e).__name__)
 
     def _sync(self, now: datetime) -> None:
         if self._rules_dirty or (self._rules_at is not None and (now - self._rules_at).total_seconds() >= RULES_REFRESH_S):

@@ -366,6 +366,19 @@ def _read(path: Any) -> dict[str, Any]:
     return data
 
 
+def absolutize_kill_file(cfg: EngineConfig, base_path: Any) -> EngineConfig:
+    """DD-2 (D7): goreli `kill_file` (`shared/KILL`) yapilandirma dizinine gore mutlak yola cevrilir; boylece `trader_engine kill`
+    baska bir dizinden calistirilsa da motorun izledigi dosyaya yazar. Dizin `config/` ise kok onun ustudur (`<kok>/shared/KILL`).
+    `load_engine_config` ham degeri aynen dondurur ("paper config loads unchanged" sozlesmesi); donusum CLI girisinde (`cli._load_cfg`)
+    yapilir, boylece `run` ve `kill` ayni mutlak yolu kullanir."""
+    kf = cfg.kill_file
+    if os.path.isabs(kf):
+        return cfg
+    cdir = Path(base_path).resolve().parent
+    root = cdir.parent if cdir.name == "config" else cdir
+    return dataclasses.replace(cfg, kill_file=str(root / kf))
+
+
 def load_engine_config(base_path: Any, bot_path: Any = None, *,
                        env: Mapping[str, str] | None = None, overlay_path: Any = None) -> EngineConfig:
     """base (+ bot) (+ overlay) JSON birlestirir ve dogrular. LIVE_CONFIRM (11 §3.1) burada YALNIZ `env=` acikca

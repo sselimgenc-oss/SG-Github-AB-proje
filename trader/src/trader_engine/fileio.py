@@ -38,6 +38,21 @@ def _tmp(path: Path) -> Path:
     return path.with_name(f".{path.name}.tmp-{os.getpid()}")
 
 
+def fsync_dir(directory) -> None:
+    """DD-2 (D1/D13): `os.replace` sonrasi dizin girdisini diske iter (guc kesintisinde KILL/duraklatma dosyasi kaybolmasin).
+    Dizin fsync'i desteklemeyen dosya sistemlerinde sessiz gecer (en iyi caba)."""
+    try:
+        fd = os.open(str(directory), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def atomic_write_text(path, text: str) -> Path:
     """Geçici dosya (aynı dizin) + fsync + os.replace: okuyucu ya eski ya yeni TAM dosyayı görür. Hata olursa geçici silinir."""
     path = Path(path)
@@ -52,6 +67,7 @@ def atomic_write_text(path, text: str) -> Path:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    fsync_dir(path.parent)
     return path
 
 

@@ -71,8 +71,18 @@ def write_atomic(path: str, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
+        try:                                # DD-2 D13: dizin girdisi de diske (en iyi caba)
+            dfd = os.open(d, os.O_RDONLY)
+            try:
+                os.fsync(dfd)
+            finally:
+                os.close(dfd)
+        except OSError:
+            pass
     except BaseException:
         try:
             os.unlink(tmp)
