@@ -1,6 +1,6 @@
 # Kendi işlem motorumuz — tasarım (mentor, 16 Kasım 2026)
 
-Kullanıcı kararı: freqtrade yerine kendi motorumuz ("1l3a'yı uyarla ya da sıfırdan yaz, ama şimdi başla").
+Kullanıcı kararı (16 Kasım 2026, parça ilkesi; geçmiş kayıt: o tarihte freqtrade çalışma zamanındaydı): freqtrade yerine kendi motorumuz ("1l3a'yı uyarla ya da sıfırdan yaz, ama şimdi başla").
 Girdi: `research_notes/kullanici-projeleri/1l3a_motor_derin_inceleme.md`, `faz-plani.md`, `tasarim-kararlari.md`,
 `trader/src/trader_core/*`, `trader/user_data/strategies/TraderV1.py`.
 Bu belge karar + mimari + takvimdir; modül bazlı ayrıntılı şartnameler `trader/docs/motor/` (00-index … 08) altındadır. Ayrıntıda çelişki olursa `00-index.md` §5'te "Karar verildi" işaretli satırlar geçerlidir.
@@ -24,7 +24,7 @@ Başka depolardan gelen her parça iki yoldan biriyle girer, üçüncü yol yokt
 - **(a) Kopyala:** olduğu gibi uyuyorsa dosya **bizim ağacımıza kopyalanır** (`trader/src/trader_engine/` altına), bizim kodumuz olarak çalışır, bizim testlerimizle korunur. Kaynak depo çalışma zamanında import edilmez, mount edilmez, bağımlılık olarak kurulmaz; kopyadan sonra 1l3a deposu silinse de sistem çalışır.
 - **(b) Yalnız fikir:** uymuyorsa yalnız fikir/kural alınır, kod bizde sıfırdan yazılır.
 
-Yasak: freqtrade'de yaptığımız gibi bir dış çerçevenin **üstüne** inşa etmek (onun döngüsüne, geri çağrılarına, veri modeline, veritabanına bağlanmak). Buna göre:
+Yasak: (geçmişte) freqtrade'de yaptığımız gibi bir dış çerçevenin **üstüne** inşa etmek (onun döngüsüne, geri çağrılarına, veri modeline, veritabanına bağlanmak). Buna göre:
 - **freqtrade çalışma zamanından ve backtest'ten tamamen çıkar** (kendi backtester'ımız, §4). Kaldırma adımı §4.3'te tarihli ve kapılıdır.
 - İzinli bağımlılıklar yalnız düz yardımcı kütüphaneler: `pandas`, `numpy`, `pyarrow` (feather okuma), `requests`, `websockets` (Faz B), standart kütüphane (`sqlite3`, `hmac`, `decimal`).
 - Yasak bağımlılıklar: işlem çerçeveleri ve borsa SDK'ları (`freqtrade`, `ccxt`, `python-binance`, `backtrader`, `vectorbt` vb.). `trader_engine` ve `trader_core` içinde bunların import edilmediği bir testle kilitlenir (`tests/engine/test_no_framework_imports.py`: kaynak ağacı taranır, `pyproject.toml` bağımlılık listesi denetlenir).
@@ -199,7 +199,7 @@ Bayatlık: karar anı bar kapanışından > 1 tf geçtiyse giriş yapılmaz (`st
 | `bot_loop_start` parametre yenileme + unledgered denetimi | Döngü adım 3 + mutabakat |
 | Bekleyen `_excursion` (mfe/mae) | Doğal olarak 1m'den (`excursion_tf="1m"`) |
 
-Not: `Ledger.find_unledgered_trades(freqtrade_open_trade_ids)` parametre adı freqtrade'e özgü; davranış uygunsa yalnız ad düzeltilir (defter-spec revizyonu, ayrı iş).
+Not (tarihsel; §4.3 madde 5 ile ad değişikliği planlandı): `Ledger.find_unledgered_trades(freqtrade_open_trade_ids)` parametre adı freqtrade'e özgüydü; davranış uygunsa yalnız ad düzeltilir (defter-spec revizyonu, ayrı iş).
 
 ### 2.9 Süreç modeli (1 vCPU / 2 GB, paylaşımlı droplet)
 
@@ -237,7 +237,7 @@ var/<bot>/ledger.sqlite  state.sqlite  status.json ;  var/market.sqlite   (gitig
 
 `trader_engine` kendi kendine yeter: 1l3a'dan gelen her şey bu ağacın içindedir (`exchange/`, `marketdata/rest_public.py`, `status.py`, `tests/engine/fake_exchange.py`); depo dışına yol, alt modül ya da mount yoktur. `pyproject.toml` bağımlılıkları: `pandas`, `numpy`, `pyarrow`, `requests` (+ Faz B `websockets`), test için `pytest`.
 
-Freqtrade kalıntıları çapraz doğrulama geçene kadar **yalnız dondurulmuş referans** olarak durur (çalıştırılmaz, motor onlardan hiçbir şey import etmez), sonra §4.3'teki adımla **silinir**.
+Freqtrade kalıntıları (geçmiş durum) çapraz doğrulama geçene kadar **yalnız dondurulmuş referans** olarak duracaktı (çalıştırılmaz, motor onlardan hiçbir şey import etmez), sonra §4.3'teki adımla **silinecekti**. Güncel durum (18 Kasım 2026): freqtrade hiçbir yerde çalışma zamanı değildir; depoda `docker-compose.yml` ve strateji dosyası yoktur, `trader/src`, `scripts`, `config`, `deploy` altında freqtrade geçmez. Çapraz doğrulama kapısı 16 Kasım'da "KALDI" kaydedilmişti (`trader/docs/motor/06-crosscheck-sonuc.md`); kalan sonuç dosyaları yalnız salt veri referansıdır.
 
 ---
 
@@ -297,7 +297,7 @@ Kayan / ertelenenler:
 
 ---
 
-## 4. Backtest'in freqtrade'den çıkışı ve doğrulama
+## 4. Backtest'in freqtrade'den çıkışı ve doğrulama (tarihsel; geçerli backtester `trader_engine.backtest`, komut `python -m trader_engine backtest`)
 
 ### 4.1 Kendi backtester'ımız
 `backtest.py` = canlıdaki `Engine` + `HistoricalSource` + `SimClock` + `PaperBroker`. Ayrı bir strateji ya da dolum kodu yoktur. Çıktı: çalışma başına taze `ledger.sqlite` (bugünkü düzenle aynı) + `trades.csv`; `research/run_bt.py`'nin metrik kısmı aynen kullanılır, freqtrade çağrısı yerine `python -m trader_engine backtest` gelir. Sinyaller vektörel bir kez hesaplanır; `--paranoid` örneklem modunda her bar kesilmiş veriyle yeniden hesaplanıp eşitlik denetlenir (lookahead kilidi).
@@ -322,7 +322,7 @@ Yöntem notları: ilk sapmadan sonra özsermaye farklılaşır ve sapma zincirle
 
 Sonra **yerel kip** (mark tetik, 1m ayrıntı, ayrı kayma) aynı dönemlerde koşar ve "model farkı raporu" üretilir: mark-vs-last yüzünden değişen stop sayısı, R farkı. Bu rapor mark/last riskinin ölçümüdür. Bundan sonra tek backtester bizimkidir; freqtrade kodu §4.3 ile silinir, yalnız ürettiği sonuç dosyaları salt veri olarak saklanır.
 
-### 4.3 Freqtrade'in silinmesi (kapı: §4.2 kabul tablosu geçti + mentor onayı; hedef 26–27 Kasım, paper başlamadan)
+### 4.3 Freqtrade'in silinmesi (tarihsel plan; 18 Kasım itibarıyla freqtrade çalışma zamanı değil; kapı: §4.2 kabul tablosu geçti + mentor onayı; hedef 26–27 Kasım, paper başlamadan)
 
 Çapraz doğrulama için freqtrade **yeniden çalıştırılmaz**; karşılaştırma zaten üretilmiş çıktılarla yapılır. Kapı geçince tek bir commit ile:
 

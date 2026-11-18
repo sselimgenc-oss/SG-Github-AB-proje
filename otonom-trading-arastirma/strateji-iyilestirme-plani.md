@@ -176,7 +176,7 @@ Tutar ve takvim kullanıcının kararı; faz planına göre kâr/zarar geçişi 
 
 ## 5. Önümüzdeki 7 gün (17–23 Kasım)
 
-**Beklemeli mi?** Teşhis için hayır: dondurulmuş freqtrade çıktıları yeterli. Yeni denemeler için **evet**, kendi backtester'ımız beklenmeli: Deneme 1–5'in hepsi strateji kodu değişikliği istiyor (kurulum kapatma, 4s tetik, başa baş, limit giriş config seçeneği değil) ve `TraderV1.py` silinecek dosyalar listesinde. Oraya yazılan kod atılır, iki motor arasında fark riski doğar. Backtester'ın ilk işi zaten `1h_IS_f2_s2` ve `1h_WF_f2_s2`'yi yeniden üretmek.
+**Beklemeli mi?** Teşhis için hayır: dondurulmuş (eski freqtrade dönemi) çıktılar yeterli. Yeni denemeler için **evet**, kendi backtester'ımız (`trader_engine.backtest`) kullanılmalı, eski freqtrade stratejisine kod yazılmaz: Deneme 1–5'in hepsi strateji kodu değişikliği istiyor (kurulum kapatma, 4s tetik, başa baş, limit giriş config seçeneği değil) ve `TraderV1.py` silinecek dosyalar listesinde. Oraya yazılan kod atılır, iki motor arasında fark riski doğar. Backtester'ın ilk işi zaten `1h_IS_f2_s2` ve `1h_WF_f2_s2`'yi yeniden üretmek.
 
 | Gün | İş | Motor inşasıyla çakışma |
 |---|---|---|

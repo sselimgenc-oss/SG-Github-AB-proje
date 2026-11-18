@@ -1,16 +1,18 @@
 # Faz planı (taslak v2, 15 Kasım 2026 — mentor incelemesi işlendi)
 
+> 18 Kasım 2026: freqtrade kabulü kaldırıldı; parça ilkesi (16 Kasım) gereği kendi motorumuz kullanılıyor.
+
 > **17 Kasım 2026 değişikliği (kullanıcı kararı):** eski madde 29 (makine öğrenmesi) "Sonraki fazlar"dan Faz 2'ye alındı; 19'dan sonra **19a–19d** olarak yazıldı, kağıt dönemindeki devamı **25a–25c**. Diğer numaralar değişmedi. Ayrıntı: `ml-faz-tasarimi.md` (v2).
 
 Hedef: aralık sonu–ocak başı canlı (1000 $, Binance global alt hesap). Teknik sorun çıkarsa takvim kayar; kâr/zarar sonucu geçişi engellemez.
 
 ## Faz 0 — Hazırlık ve en büyük belirsizlik (16–17 Kasım)
 1. Kararları `tasarim-kararlari.md`ye yaz; `mimari-taslak.md`deki "ilk 2 hafta otomatik değişiklik yok" ifadesini "öğrenme ilk günden açık" olarak düzelt.
-2. Proje iskeleti: klasör yapısı, Docker Compose, freqtrade 2026.10 sabit; tek komutla çalışan otomatik testler.
+2. Proje iskeleti: klasör yapısı, kendi motorumuz (`trader/src/trader_engine`; bağımlılıklar `pyproject.toml`/`requirements.lock` ile sabit; Docker Compose yok, systemd birimleri `trader/deploy/`); tek komutla çalışan otomatik testler.
 3. **DigitalOcean Frankfurt sunucusu + Binance erişim testi + vadeli dry-run uçtan uca** (451 engeli her şeyi durdurabilir, en başa alındı). Kullanıcıdan DigitalOcean erişimi bu adımda gerekir.
 
 ## Faz 1 — Altyapı ve risk (17–22 Kasım)
-4. freqtrade iki kopya: öğrenen bot (L) ve ikiz (T, ders almaz, raporda görünmez).
+4. Kendi motorumuzun (`trader_engine`) iki örneği: öğrenen bot (L) ve ikiz (T, ders almaz, raporda görünmez); yapılandırma `engine.learner.json` / `engine.twin.json`, süreç `trader-engine@.service`. (İlk taslakta "freqtrade iki kopya" yazıyordu; 16 Kasım parça ilkesiyle terk edildi.)
 5. Binance vadeli, sahte para, izole teminat, long + short.
 6. Coin listesi: stabil coinler hariç ilk 10 (sabit liste; aylık otomatik güncelleme sonra).
 7. Zaman dilimleri: 15 dk, 1 saat, 4 saat (1 gün 30 Kasım sonrası eklenir); geçmiş veri.

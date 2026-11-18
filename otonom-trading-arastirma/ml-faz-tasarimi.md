@@ -30,7 +30,7 @@ Amaç: botun kendi kayıtlarından (alınan ve alınmayan her aday) düzenli ola
 
 ## 2. Hangi özellik nereden
 
-"Kod" = lisansı uygun, bizim koda monte edilir ve kendi testimizle doğrulanır. "Fikir" = kaynak koda bakmadan kendi kodumuz yazılır. freqtrade/FreqAI **GPL-3.0**'dır (kullanıcı raporundaki "MIT" yanlıştır): yalnız fikir. AGPL ve lisanssız repolar da yalnız fikir.
+"Kod" = lisansı uygun, bizim koda monte edilir ve kendi testimizle doğrulanır. "Fikir" = kaynak koda bakmadan kendi kodumuz yazılır. freqtrade/FreqAI **GPL-3.0**'dır (kullanıcı raporundaki "MIT" yanlıştır): yalnız fikir; freqtrade projede çalışma zamanı da değildir (18 Kasım 2026: motor `trader_engine`, parça ilkesi 16 Kasım). AGPL ve lisanssız repolar da yalnız fikir.
 
 | Özellik | Kaynak | Alınan | Bizdeki yeri | Aşama |
 |---|---|---|---|---|

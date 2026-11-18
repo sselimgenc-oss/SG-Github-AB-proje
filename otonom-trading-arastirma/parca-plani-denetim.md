@@ -1,5 +1,7 @@
 # Parça planı denetimi (15 Kasım 2026)
 
+> **18 Kasım 2026 notu:** Bu denetim freqtrade'in kullanılacağı varsayımıyla yazıldı. 16 Kasım parça ilkesiyle freqtrade kabulü kaldırıldı; emir altyapısı, sahte para (paper), ikiz, durdurma düğmesi ve Telegram/panel artık kendi motorumuz `trader_engine` (L ve T iki örnek) ve `trader_core` üzerinden gider. Aşağıdaki "freqtrade" ifadeleri tarihsel denetim kaydıdır; güncel kaynak `motor-tasarimi.md`.
+
 **Hüküm: düzeltmeli.** Omurga doğru (freqtrade tabanı, risk çerçevesi, ölçüm araçları, lisans seçimleri). Ama ilk sürüm için fazla geniş, dört parça eksik, iki yerde parçalar birbirini engelliyor. Bu denetim yalnızca kod okumaya ve araştırma notlarına dayanır; hiçbir şey çalıştırılmadı.
 
 ## Düzeltilmiş plan
