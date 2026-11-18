@@ -556,6 +556,25 @@ class StateStore:
         self._w()
         self._exec("UPDATE ledger_outbox SET done=1 WHERE id=?", (outbox_id,))
 
+    def outbox_quarantine(self, items: list[tuple[int, str]], now: datetime) -> int:
+        """DD-11 Z-4: teslim edilemeyen (defter dogrulama hatasi veren) satirlari `ledger_outbox_quarantine`a tasir (gerekce +
+        zaman damgasi), `ledger_outbox`tan siler. Tek tx. Tablo tembel olusturulur (sema surumune dokunmaz)."""
+        n = 0
+        with self.tx():
+            self._exec("CREATE TABLE IF NOT EXISTS ledger_outbox_quarantine(id INTEGER PRIMARY KEY, kind TEXT NOT NULL, "
+                       "trade_id INTEGER NOT NULL, payload TEXT NOT NULL, created_ms INTEGER NOT NULL, "
+                       "reason TEXT NOT NULL, quarantined_ms INTEGER NOT NULL)")
+            for oid, reason in items:
+                r = self._exec("SELECT * FROM ledger_outbox WHERE id=? AND done=0", (oid,)).fetchone()
+                if r is None:
+                    continue
+                self._exec("INSERT INTO ledger_outbox_quarantine(id, kind, trade_id, payload, created_ms, reason, quarantined_ms) "
+                           "VALUES(?,?,?,?,?,?,?)",
+                           (r["id"], r["kind"], r["trade_id"], r["payload"], r["created_ms"], reason, to_ms(now)))
+                self._exec("DELETE FROM ledger_outbox WHERE id=?", (oid,))
+                n += 1
+        return n
+
     def drain_outbox(self, ledger) -> DrainResult:
         rows = self.outbox_pending()
         written = 0

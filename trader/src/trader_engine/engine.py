@@ -71,6 +71,11 @@ SHADOW_BUDGET_S = 5.0            # WP-3 5.2: `_shadow_step` zaman butcesi (ciftl
 _EXEC_MEM_MAX = 256              # WP-3: bellekteki `decision_price` kayitlari
 
 
+def _pos_finite(x) -> bool:
+    """DD-11: sayi, sonlu ve > 0 (bool/None/str degil)."""
+    return (not isinstance(x, bool)) and isinstance(x, (int, float)) and math.isfinite(x) and x > 0
+
+
 @dataclass(frozen=True)
 class RecoveryReport:
     replayed_minutes: int
@@ -1037,6 +1042,11 @@ class Engine:
             self._c["unexpected_fills"] += 1
             log.critical("beklenmeyen giris dolumu %s", e.pair)
             return
+        if not (_pos_finite(getattr(fill, "price", None)) and _pos_finite(getattr(fill, "qty", None))):   # DD-11 Z-2
+            self._c["bad_fill"] += 1
+            log.critical("bad_fill %s: gecersiz giris dolumu (price=%r qty=%r); pozisyon opening'de birakildi, outbox yok",
+                         e.pair, getattr(fill, "price", None), getattr(fill, "qty", None))
+            return
         t_fill = self.clock.now()
         newp = apply_entry_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
         xp = self._exec_payload("entry", fill)                  # WP-3: yalniz kayit (emir ani alanlari)
@@ -1705,12 +1715,13 @@ class Engine:
             return
         qty = bo.filled_qty if bo.filled_qty and bo.filled_qty > 0 else row.qty
         price = bo.avg_price
-        if price is None:
+        if not _pos_finite(price):
             try:
                 price = next((bp.entry_price for bp in self.broker.positions() if bp.pair == row.pair), None)
             except Exception:  # noqa: BLE001
                 price = None
-        if price is None or not qty:
+        if not _pos_finite(price) or not _pos_finite(qty):      # DD-11 Z-3
+            self._c["bad_fill"] += 1
             log.critical("bulunan giris dolumunun fiyati yok (%s): mutabakat cozecek", row.client_id)
             return
         now = self.clock.now()
@@ -1996,7 +2007,8 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
         if v2_on:
             from trader_core.ml_live_v2 import RECIPE_NAMES, LiveContextV2, funding_frame_from_points
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
-                                                   expected_features=RECIPE_NAMES[cfg.ml_features])
+                                                   expected_features=RECIPE_NAMES[cfg.ml_features],
+                                                   experimental=cfg.ml_experimental)
             # >= 200 gun kapanmis 1s mum (r02/r03 1g baglam): cift basina 5000 mum tutulur (~2 MB / 10 cift); ilk karar adiminda yuklenir
             ml_v2 = LiveContextV2(
                 cfg.ml_features, cfg.pairs,
@@ -2007,7 +2019,8 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
             except Exception as e:  # noqa: BLE001
                 log.warning("ML v2 baslangic gecmisi yuklenemedi: %s: %s", type(e).__name__, e)
         else:
-            ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now())
+            ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
+                                                   experimental=cfg.ml_experimental)
     signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
                                    ml_v2=ml_v2, pairs=cfg.pairs if ml_v2 is not None else None)
     if live_broker_new:

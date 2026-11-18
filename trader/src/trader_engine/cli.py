@@ -352,6 +352,89 @@ def _cmd_unblock(a) -> int:
         st.close()
 
 
+def _cmd_outbox_quarantine(a) -> int:
+    """DD-11 Z-4: defter dogrulama hatasi veren (teslim edilemez) outbox satirlarini karantinaya tasir. Yalniz motor DURUKEN
+    (state kilidi alinamazsa reddedilir). Varsayilan dry-run; `--apply` uygular. Dogrulama, defterin GECICI kopyasinda sirayla
+    denenir (gercek defter degismez); yalniz LedgerValidationError veren satirlar tasinir, gecerli satirlara dokunulmaz."""
+    import shutil
+    import sqlite3
+    import tempfile
+
+    from trader_core import ledger as L
+
+    from .clock import SystemClock
+    from .errors import ConfigError, StateError
+    from .state import StateStore, _write_ledger
+    try:
+        cfg = _load_cfg(a)
+    except ConfigError as e:
+        print(f"yapilandirma hatasi: {e}", file=sys.stderr)
+        return EXIT_FAZ_B
+    sp, lp = Path(cfg.state_path), Path(cfg.ledger_path)
+    if not sp.exists() or sp.stat().st_size == 0:
+        print(f"state yok: {sp}", file=sys.stderr)
+        return EXIT_FAZ_B
+    if not lp.exists() or lp.stat().st_size == 0:
+        print(f"defter yok: {lp}", file=sys.stderr)
+        return EXIT_FAZ_B
+    try:
+        st = StateStore(str(sp), bot=cfg.bot, ledger_path=cfg.ledger_path)
+    except StateError as e:
+        print(f"hata: {e} (motor calisirken outbox karantinaya alinmaz)", file=sys.stderr)
+        return EXIT_FAZ_B
+    apply = bool(getattr(a, "apply", False))
+    try:
+        try:
+            rows = st.outbox_pending()
+        except (KeyError, TypeError, ValueError) as e:      # bozuk payload JSON (JSONDecodeError ValueError alt sinifi)
+            print(f"hata: bozuk outbox yuku ({type(e).__name__}: {e}); hicbir sey tasinmadi", file=sys.stderr)
+            return EXIT_ENGINE
+        bad: list[tuple] = []
+        with tempfile.TemporaryDirectory(prefix="outbox-quarantine-") as tmp:
+            tl = str(Path(tmp) / "ledger.sqlite")
+            sc = sqlite3.connect(f"file:{lp}?mode=ro", uri=True)
+            try:
+                sc.execute("VACUUM INTO ?", (tl,))
+            finally:
+                sc.close()
+            led = L.open_ledger(tl, cfg.bot, create=False)
+            try:
+                for row in rows:
+                    try:
+                        _write_ledger(led, row)
+                    except L.LedgerValidationError as e:
+                        bad.append((row, str(e) or type(e).__name__))
+                    except (KeyError, TypeError, ValueError) as e:
+                        print(f"hata: bozuk outbox yuku (satir {row.id}): {type(e).__name__}: {e}; hicbir sey tasinmadi",
+                              file=sys.stderr)
+                        return EXIT_ENGINE
+                    except L.LedgerError as e:
+                        print(f"hata: dogrulama disi defter hatasi (satir {row.id}): {e}; hicbir sey tasinmadi", file=sys.stderr)
+                        return EXIT_ENGINE
+            finally:
+                led.close()
+        for row, why in bad:
+            p = row.payload
+            pos = st.get_position(row.trade_id)
+            orders = [o for o in st.orders_for_trade(row.trade_id) if o.role == ("entry" if row.kind == "entry" else "exit")]
+            print(json.dumps({"outbox_id": row.id, "kind": row.kind, "trade_id": row.trade_id,
+                              "pair": getattr(pos, "pair", None), "side": getattr(pos, "side", None),
+                              "qty": p.get("qty", getattr(pos, "qty", None)),
+                              "price": p.get("entry_price" if row.kind == "entry" else "exit_price"),
+                              "client_id": orders[-1].client_id if orders else None, "reason": why}, ensure_ascii=False))
+        if not apply:
+            print(json.dumps({"dry_run": True, "pending": len(rows), "would_quarantine": len(bad)}))
+            return EXIT_OK
+        if bad:
+            logging.getLogger("trader_engine.cli").warning("outbox-quarantine: %d satir tasiniyor, ids=%s", len(bad),
+                                                           [r.id for r, _ in bad])
+        n = st.outbox_quarantine([(r.id, why) for r, why in bad], SystemClock().now()) if bad else 0
+        print(json.dumps({"dry_run": False, "pending": len(rows), "quarantined": n}))
+        return EXIT_OK
+    finally:
+        st.close()
+
+
 def _cmd_pause(a) -> int:
     """11 §9.5: duraklatma tutuslari. `remove` motor kodunda yalniz burada cagrilir (AST korumasi)."""
     from .clock import SystemClock
@@ -692,7 +775,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def env_arg(p):
-        p.add_argument("--env", default=None, choices=("testnet", "live"),
+        p.add_argument("--env", default=None, choices=("testnet", "live", "paper-ml"),
                        help="config/engine.<env>.json katmani (kip + live blogu + env'e ozgu kill/pause yolu)")
 
     def bot_args(p, need_bot=True):
@@ -732,6 +815,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="")
     env_arg(p)
     p.set_defaults(fn=_cmd_unblock)
+    p = sub.add_parser("outbox-quarantine")             # DD-11 Z-4: teslim edilemeyen outbox satirlari (motor durukken)
+    bot_args(p)
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--dry-run", action="store_true", help="varsayilan: yalniz raporlar")
+    g.add_argument("--apply", action="store_true", help="gecersiz satirlari ledger_outbox_quarantine'a tasir")
+    env_arg(p)
+    p.set_defaults(fn=_cmd_outbox_quarantine)
     p = sub.add_parser("pause")
     bot_args(p)
     p.add_argument("--clear", action="store_true")

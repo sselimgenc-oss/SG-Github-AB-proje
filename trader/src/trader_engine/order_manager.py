@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
@@ -189,6 +190,12 @@ class OrderManager:
 
     def _adopt(self, row: OrderRow, bo: BrokerOrder, note: str) -> SubmitOutcome:
         st = _BO_STATUS.get(bo.status, "accepted")
+        px = bo.avg_price
+        if (self.live_mode and row.role == "entry" and st == "filled"
+                and not (isinstance(px, (int, float)) and math.isfinite(px) and px > 0)):
+            st = "accepted"                    # DD-11 D3: fiyatsiz dolum benimsenmez/doldu isaretlenmez; mutabakat (_l3b) cozer
+            log.warning("fiyatsiz giris dolumu benimsenmedi (%s): satir accepted kaldi", row.client_id)
+            return self._outcome(self._upd(row.client_id, status=st, broker_order_id=row.broker_order_id), None, note)
         partial = (self.live_mode and row.role == "entry" and bo.status != "filled" and bo.filled_qty > 0
                    and bo.status in ("expired", "canceled"))
         if partial:

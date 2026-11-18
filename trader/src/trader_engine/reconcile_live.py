@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 from collections import Counter
 from dataclasses import replace
@@ -286,7 +287,11 @@ class LiveReconciler(Reconciler):
             if bp.qty - (bo.filled_qty or bp.qty) >= step / 2:
                 continue                                      # borsada fazladan miktar var: L2
             cur = self.state.get_position(p.trade_id) or p
-            price = bo.avg_price or bp.entry_price
+            price = bo.avg_price if (bo.avg_price and bo.avg_price > 0) else bp.entry_price
+            if not (isinstance(price, (int, float)) and math.isfinite(price) and price > 0):      # DD-11 Z-3
+                log.warning("mutabakat: gec dolum fiyati gecersiz (%s %s); kuyruklama yok", pair, r.client_id)
+                self.counters["bad_fill_price"] += 1
+                continue
             fee = bp.qty * price * float(self.cfg.cost.taker_fee)
             fill = Fill(client_id=r.client_id, pair=pair, role="entry", order_side=r.order_side, qty=bp.qty, price=price,
                         fee=fee, ts=bo.updated_ts or now, reason="market")
@@ -341,7 +346,11 @@ class LiveReconciler(Reconciler):
         step = self._rules(sp.pair)[1]
         if not filled > 0 or bp.qty > filled + step / 2:
             return "unknown", None
-        price = bo.avg_price or bp.entry_price
+        price = bo.avg_price if (bo.avg_price and bo.avg_price > 0) else bp.entry_price
+        if not (isinstance(price, (int, float)) and math.isfinite(price) and price > 0):          # DD-11 Z-3
+            log.warning("mutabakat: benimseme fiyati gecersiz (%s %s); benimseme yok", sp.pair, row.client_id)
+            self.counters["bad_fill_price"] += 1
+            return "unknown", None
         ts = bo.updated_ts if bo.updated_ts and bo.updated_ts <= now else now
         fee = filled * price * float(self.cfg.cost.taker_fee)
         fill = Fill(client_id=row.client_id, pair=sp.pair, role="entry", order_side=row.order_side,
@@ -417,7 +426,27 @@ class LiveReconciler(Reconciler):
     def _l3b(self, sp: Position, now, acts, finds, reasons) -> None:
         win = float(getattr(getattr(self.cfg, "live", None), "entry_resolve_window_s", 60.0) or 60.0)
         rows = [r for r in self.state.orders_for_trade(sp.trade_id) if r.role == "entry"]
-        if any(r.status == "accepted" for r in rows):
+        acc = [r for r in rows if r.status == "accepted"]
+        if acc:
+            # DD-11 D3: pencere dolunca `accepted` satiri sorgulanir; dolu ise _l3b_filled, fiyat bilinmiyorsa bulgu + duraklatma
+            t0a = max([r.created_ts for r in rows], default=sp.signal_bar_close_ts)
+            if (now - t0a).total_seconds() < win:
+                return
+            try:
+                bo = self.broker.query(sp.pair, acc[-1].client_id)
+            except StateError:
+                raise
+            except Exception:  # noqa: BLE001
+                return
+            if bo is None or bo.status != "filled":
+                return
+            px = bo.avg_price
+            if not (isinstance(px, (int, float)) and math.isfinite(px) and px > 0):
+                finds.append(f"opening_unpriced:{sp.trade_id}")
+                self.counters["opening_unpriced"] += 1
+                self.pause.add("unknown_position", by="engine:reconcile", note=f"opening_unpriced {sp.pair} trade {sp.trade_id}")
+                return
+            self._l3b_filled(sp, acc[-1], rows, now, win, acts, finds, reasons)
             return
         filled = [r for r in rows if r.status == "filled"]
         if filled:
@@ -454,6 +483,12 @@ class LiveReconciler(Reconciler):
         except Exception:  # noqa: BLE001
             return                                        # okunamadi: tahmin yok, sonraki tur
         if bo is None or bo.status != "filled":
+            return
+        px = bo.avg_price
+        if not (isinstance(px, (int, float)) and math.isfinite(px) and px > 0):     # DD-11 D3: fiyatsiz dolum uygulanmaz
+            finds.append(f"opening_unpriced:{sp.trade_id}")
+            self.counters["opening_unpriced"] += 1
+            self.pause.add("unknown_position", by="engine:reconcile", note=f"opening_unpriced {sp.pair} trade {sp.trade_id}")
             return
         cb(row, bo)
         acts.append(f"entry_fill_applied:{sp.trade_id}")

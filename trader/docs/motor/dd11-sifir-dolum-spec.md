@@ -27,3 +27,11 @@ Paper broker ve geri test yolu değişmez: altın testler (`tests/test_wp3_golde
 | Z-T4 | Motora fiyatı 0 ya da miktarı 0 olan dolum verilir → outbox satırı yok, `outbox_stuck` yok, pozisyon `opening`, `bad_fill` sayacı 1. |
 | Z-T5 | Mutabakat: `bp.entry_price == 0` ve `avg_price` None → benimseme/kuyruklama yok. `_on_adopted_entry` fiyat 0 → reddedilir. |
 | Z-T6 | `outbox-quarantine`: geçersiz giriş + arkasında geçerli çıkış satırı; `--dry-run` hiçbir şey değiştirmez; `--apply` yalnız geçersiz satırı taşır, sonra `drain_outbox` geçerli satırı… (geçerli çıkış satırı girişi olmadığı için defterde reddedilirse o da doğrulama hatasıdır ve taşınır). Sonuçta outbox boş, defter tutarlı, engel kalkar. Motor çalışırken (kilit tutulu) komut reddeder. |
+
+## Mentor incelemesi (18 Kasım 2026)
+Karar: KABUL (düzeltmelerle). Uygulanan düzeltmeler:
+- **D1** Sıfır-dolum bekleme sayacı (`_zero_fill[cid]=(ilk_ts, n)`): `userTrades` sorgusu en fazla `poll_open_s`'de bir; ≥3 deneme VE ≥30 sn sonra emir `_pending_market`'ten düşer, `zero_fill_unresolved:{cid}` bulgusu + CRITICAL + giriş engeli. `order_rejected` basılmaz (gerçek pozisyon `_close_unopened` ile kapanmasın); periyodik saat eşitleme de serbest kalır.
+- **D2** `register_position`: benimsenen pair'in bekleyen giriş kayıtları `_pending_market`'ten silinir (geç çözülen emir `_open_pairs/_last_pos/_pos_since`'i ezmesin).
+- **D3** `_l3b`: `accepted` giriş satırı pencere dolunca sorgulanır; `filled` ise `_l3b_filled`; fiyat hâlâ bilinmiyorsa `opening_unpriced:{tid}` bulgusu + duraklatma.
+- **D4** `outbox-quarantine`: `--dry-run`/`--apply` karşılıklı dışlayan; bozuk yük (KeyError/TypeError/ValueError) -> "hicbir sey tasinmadi", EXIT_ENGINE; `--apply`'da tek WARNING denetim satırı (sayı + outbox id'leri).
+- **D5** `_recover_entry_price`: `ExchangeBan` için `_note_ban` çağrılır.

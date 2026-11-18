@@ -63,7 +63,8 @@ _COUNTERS = ("fee_rate_fallback", "unknown_reject_codes", "fee_drift", "fee_asse
              "rules_refresh_failed", "prepare_failed", "funding_unresolved", "foreign_close", "clock_rejects",
              "working_type_mismatch", "sync_failures", "exchange_bans", "rules_drift", "working_type_unverified",
              "stop_response_mismatch", "exchange_auth", "close_unresolved", "malformed_trades",
-             "account_mode_drift", "account_mode_unverified", "entry_weight_rejects", "account_mode_unverified_ban")
+             "account_mode_drift", "account_mode_unverified", "entry_weight_rejects", "account_mode_unverified_ban",
+             "zero_fill_pending", "zero_fill_unresolved")
 _BLOCK_PRIORITY = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable")
 STARTUP_BAN_SLEEP_MAX_S = 300.0
 STARTUP_RULES_TRIES = 2
@@ -179,6 +180,8 @@ class LiveBroker:
         self._seq = 0
         self._queue: list[tuple[datetime, int, BrokerEvent]] = []
         self._pending_market: dict[str, _Pending] = {}
+        self._zero_fill: dict[str, tuple[datetime, int]] = {}      # DD-11 D1: cid -> (ilk sifir-dolum zamani, deneme sayisi)
+        self._zero_fill_last: dict[str, datetime] = {}            # cid -> son userTrades sorgusu
         self._pending_nf: dict[str, tuple[datetime, int]] = {}   # cid -> (ilk "yok" zamani, ust uste sayi)
         self._margin_types: dict[str, str] = {}          # son positionRisk okumasindan pair -> isolated|cross
         self._pending_close: dict[str, datetime] = {}
@@ -234,6 +237,11 @@ class LiveBroker:
 
     def register_position(self, pair: str, opened_ts: datetime, client_ids: Sequence[str] = ()) -> None:
         """B5 protect_first / B4 giris dolumu: pozisyonun yetkili acilis zamani ve kimlikleri (funding penceresi, cikis atfi)."""
+        for c in [c for c, i in self._pending_market.items() if i.pair == pair and i.role == "entry"]:
+            del self._pending_market[c]                     # DD-11 D2: benimsenen pair'in bekleyen giris kayitlari (hayalet izleme yok)
+            self._pending_nf.pop(c, None)
+            self._zero_fill.pop(c, None)
+            self._zero_fill_last.pop(c, None)
         self._open_pairs.add(pair)
         self._registered.add(pair)
         self._pos_since[pair] = opened_ts
@@ -945,7 +953,16 @@ class LiveBroker:
         if status == "FILLED" or (ex > 0 and entry):
             avg = _fl(body.get("avgPrice"))
             if entry:
-                cum = _d(body.get("cumQuote")) or ex * _d(body.get("avgPrice"))
+                if ex <= 0:                                     # DD-11 Z-1: FILLED ama miktar 0 -> dolum yok, pending
+                    return self._zero_fill_wait(pair, cid, "executedQty<=0")
+                if not (math.isfinite(avg) and avg > 0):
+                    px = self._recover_entry_price(pair, cid, body, ex)
+                    if px is None:
+                        return self._zero_fill_wait(pair, cid, "avgPrice bilinmiyor")
+                    avg = px
+                self._zero_fill.pop(cid, None)
+                self._zero_fill_last.pop(cid, None)
+                cum = _d(body.get("cumQuote")) or ex * D(repr(avg))
                 fee = float(cum) * self._taker_rate(pair)
                 ts = _ts(body.get("updateTime"), now)
                 sign = D(1) if info.side == "buy" else D(-1)
@@ -963,6 +980,63 @@ class LiveBroker:
             return "partial_exit", float(ex), None, 0.0
         self._push(BrokerEvent("order_rejected", now, pair, cid, detail="expired_unfilled"))
         return "expired_unfilled", 0.0, None, 0.0
+
+    def _zero_fill_wait(self, pair: str, cid: str, why: str) -> tuple[str, float, float | None, float]:
+        """DD-11 D1: sifir/bilinmeyen dolum bekleme sayaci. >=3 deneme VE >=30 sn sonra emri birakir (order_rejected YOK:
+        gercek pozisyon var olabilir); bulgu + CRITICAL + giris engeli. Aksi halde "pending"."""
+        now = self._now()
+        first, n = self._zero_fill.get(cid, (now, 0))
+        n += 1
+        self._zero_fill[cid] = (first, n)
+        self._ctr["zero_fill_pending"] += 1
+        if n >= 3 and (now - first).total_seconds() >= 30.0:
+            self._zero_fill.pop(cid, None)
+            self._zero_fill_last.pop(cid, None)
+            self._ctr["zero_fill_unresolved"] += 1
+            self.findings.append(f"zero_fill_unresolved:{cid}")
+            self._block("zero_fill_unresolved")
+            log.critical("zero_fill_unresolved:%s %s (%s); emir birakildi, giris engellendi, mutabakat cozecek", pair, cid, why)
+            return "zero_fill_unresolved", 0.0, None, 0.0
+        log.warning("zero_fill_pending:%s %s %s; emir pending (deneme %d)", pair, cid, why, n)
+        return "pending", 0.0, None, 0.0
+
+    def _recover_entry_price(self, pair: str, cid: str, body: dict, ex: Decimal) -> float | None:
+        """DD-11 Z-1: avgPrice<=0 iken fiyat = cumQuote/executedQty, o da yoksa emrin userTrades VWAP'i; yoksa None."""
+        cum = _d(body.get("cumQuote"))
+        if ex > 0 and cum > 0:
+            v = float(cum / ex)
+            if math.isfinite(v) and v > 0:
+                return v
+        oid = body.get("orderId")
+        if oid is None:
+            oid = next((k for k, (c, _p) in self._order_ids.items() if c == cid), None)
+        if oid is None:
+            return None
+        now = self._now()
+        last = self._zero_fill_last.get(cid)
+        if last is not None and (now - last).total_seconds() < float(self._live.poll_open_s):
+            return None                                     # DD-11 D1: userTrades en fazla poll_open_s'de bir
+        self._zero_fill_last[cid] = now
+        since = _ts(body.get("time", body.get("updateTime")), now) - timedelta(minutes=5)
+        try:
+            trades = self._rc("user_trades", self._symbol(pair), _ms(since))
+        except ExchangeBan as e:
+            self._note_ban(e)
+            return None
+        except ExchangeError:
+            return None
+        q_sum, n_sum = D(0), D(0)
+        for t in trades or []:
+            if not isinstance(t, dict) or str(t.get("orderId")) != str(oid):
+                continue
+            q, pr = _d(t.get("qty")), _d(t.get("price"))
+            if q > 0 and pr > 0:
+                q_sum += q
+                n_sum += q * pr
+        if q_sum <= 0:
+            return None
+        v = float(n_sum / q_sum)
+        return v if math.isfinite(v) and v > 0 else None
 
     def _protective(self, req: OrderRequest, kind: str) -> OrderResult:
         cid = req.client_id
