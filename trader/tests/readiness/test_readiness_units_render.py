@@ -134,7 +134,7 @@ def test_restart_semantics_match_exit_codes():
     eng = dict(unit_kv((DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")))
     fd = dict(unit_kv((DEPLOY / "trader-feed.service").read_text(encoding="utf-8")))
     assert eng["RestartPreventExitStatus"] == str(EXIT_STARTUP_GATE) == "7"
-    assert fd["RestartPreventExitStatus"] == str(F.EXIT_GEOBLOCK) == "6"
+    assert fd["RestartPreventExitStatus"].split() == [str(F.EXIT_BAN), str(F.EXIT_GEOBLOCK)] == ["3", "6"]
     for u in ("trader-engine@.service", "trader-feed.service", "trader-telegram.service", "trader-veto.service",
               "trader-lesson.service", "trader-health.service", "trader-backup.service", "trader-telegram-report.service",
               "trader-counterfactual@.service"):

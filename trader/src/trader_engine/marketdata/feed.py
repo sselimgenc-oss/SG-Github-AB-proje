@@ -5,14 +5,16 @@ Saat yalnizca enjekte edilen Clock'tan okunur; sleep da Clock.sleep. Tasarim yal
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import fcntl
 import hashlib
 import json
 import logging
 import os
+import random
 import signal
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -40,6 +42,9 @@ CLOCK_WARN_MS = 60_000
 CLOCK_FATAL_MS = 300_000
 RETRY_THROTTLE_MS = 5_000
 TF_GIVEUP_MS = 60_000
+BAN_MARGIN_S = 5                # her yasak uykusuna eklenen guvenlik payi
+BAN_418_DEFAULT_S = 120         # 418 ve Retry-After okunamadi: en az bu kadar uyu
+BAN_MAX_WAIT_S = 3600           # yasakta surec ici uyku ust siniri; asilirsa cikis 3 (birim yeniden baslatmaz, alarm)
 FUNDING_FIRST_LOOKBACK_MS = 30 * 86_400_000
 _DAY_MS = 86_400_000
 _FUNDING_GRID_MS = 8 * 3_600_000
@@ -73,6 +78,18 @@ class FeedConfig:
     rules_refresh_s: float = 3600.0
     retention_1m_days: int = 14
     rules_start_backoff_s: tuple[float, ...] = (5.0, 15.0, 45.0)   # acilis kural cekimi: len+1 deneme, sonra cikis
+    # --- DD-1 ---
+    startup_retry_forever: bool = False     # True: acilista ag/5xx/bozuk JSON hatasinda suresiz ustel geri cekilme (+jitter)
+    startup_backoff_base_s: float = 5.0
+    startup_backoff_cap_s: float = 300.0
+    heal_page_bars: int = 1000              # calisirken bosluk doldurma: istek basina en fazla bar (agirlik 5)
+    heal_min_interval_s: float = 2.0        # iki doldurma istegi arasi en az sure (tum seriler icin ortak)
+    heal_weight_ceiling: int = 1200         # kullanilan dakikalik agirlik bunu gecmisken doldurma yapilmaz (limit 2400)
+    heal_backoff_base_s: float = 30.0       # basarisiz/ilerlemeyen doldurma icin seri basina ustel bekleme
+    heal_backoff_cap_s: float = 600.0       # ilerlemeyen (bos/bozuk veri) doldurma icin
+    heal_net_backoff_base_s: float = 10.0   # ag/5xx/bozuk JSON hatasinda doldurma bekleme: 10,20,40,60 (tavan)
+    heal_net_backoff_cap_s: float = 60.0
+    heal_giveup_strikes: int = 3            # yalniz BASARILI ama ilerlemeyen cevaplar sayilir
 
 
 class RulesFetchError(FailClosed):
@@ -151,8 +168,10 @@ def _rel(a: float, b: float) -> float:
 
 
 class Feed:
-    def __init__(self, cfg: FeedConfig, rest: PublicRestClient, store: MarketStore, clock: Clock) -> None:
+    def __init__(self, cfg: FeedConfig, rest: PublicRestClient, store: MarketStore, clock: Clock,
+                 rng: Callable[[], float] | None = None) -> None:
         self.cfg = cfg
+        self._rng = rng or random.random
         self.rest = rest
         self.store = store
         self.clock = clock
@@ -171,6 +190,13 @@ class Feed:
         self._ban_streak = 0
         self._store_fail_streak = 0
         self._tick_store_err = False
+        self._abn_done: dict[tuple, int] = {}
+        self._heal_at: dict[tuple, int] = {}
+        self._heal_fail: dict[tuple, int] = {}          # basarili ama ilerlemeyen doldurma sayisi
+        self._heal_net_at: dict[tuple, int] = {}        # ag-sinifi hata beklemesi (herhangi bir basarili cevapta temizlenir)
+        self._heal_net_fail: dict[tuple, int] = {}
+        self._next_heal_ms = 0
+        self._start_429 = 0
 
     # ------------------------------------------------------------------ zaman
     def _now_server(self) -> datetime:
@@ -191,7 +217,11 @@ class Feed:
     def _rest(self, fn, *a, **k):
         self._c["requests"] += 1
         try:
-            return fn(*a, **k)
+            r = fn(*a, **k)
+            if self._heal_net_at:       # borsa cevap veriyor: ag-sinifi doldurma beklemeleri bosalir (iyilesme gecikmesin)
+                self._heal_net_at.clear()
+                self._heal_net_fail.clear()
+            return r
         except ExchangeBan:
             self._c["bans"] += 1
             raise
@@ -212,30 +242,95 @@ class Feed:
                 os.close(fd)
                 raise FailClosed(f"locked: baska bir feed sureci calisiyor ({self.cfg.lock_path})") from None
             self._lock_fd = fd
-        self._measure_offset()
+        self._startup_call(self._measure_offset, "saat farki olcumu")
         self.store.meta_set("started_ms", str(to_ms(self.clock.now())))
         self._fetch_rules_at_start()
         self._started = True
         if not self._clock_fatal:
             self.backfill()
 
+    def _startup_delay_s(self, n: int) -> float:
+        """Acilis geri cekilmesi: base*2**n (tavanli) x [0.5, 1.0) jitter (cok istemcili ayni anda yeniden denemeyi dagitir)."""
+        d = min(self.cfg.startup_backoff_cap_s, self.cfg.startup_backoff_base_s * (2 ** min(n, 30)))
+        return d * (0.5 + 0.5 * min(max(float(self._rng()), 0.0), 1.0))
+
+    def _ban_wait_s(self, b: ExchangeBan) -> int:
+        """Yasakta beklenecek sure; ust sinir (BAN_MAX_WAIT_S) asilirsa uyumadan cikis 3 (yasak uzatilmaz, alarm)."""
+        wait = b.retry_after_s if b.retry_after_s is not None else (BAN_418_DEFAULT_S if b.http == 418 else 60)
+        if b.http == 418:
+            wait = max(wait, BAN_418_DEFAULT_S)
+        if wait > BAN_MAX_WAIT_S:
+            log.critical("ban/kisit (HTTP %s): Retry-After=%d sn > ust sinir %d sn; cikiliyor (kod %d)", b.http, wait, BAN_MAX_WAIT_S, EXIT_BAN)
+            raise SystemExit(EXIT_BAN)
+        return wait + BAN_MARGIN_S
+
+    def _startup_wait(self, what: str, n: int, err: Exception) -> None:
+        d = self._startup_delay_s(n)
+        log.warning("acilista %s basarisiz (deneme %d): %s; %.1f sn sonra tekrar", what, n + 1, err, d)
+        self._write_status(to_ms(self._now_server()))
+        self.clock.sleep(d)
+
+    def _startup_429(self, what: str, b: ExchangeBan) -> None:
+        """Acilista ardisik 429: calisma yolundaki gibi MAX_CONSEC_BANS'te cikis 3 (yasak uzatilmaz, alarm)."""
+        self._start_429 += 1
+        wait = self._ban_wait_s(b)
+        log.warning("acilista 429 (%s): %d sn uyuyor (%d/%d)", what, wait, self._start_429, MAX_CONSEC_BANS)
+        if self._start_429 >= MAX_CONSEC_BANS:
+            log.critical("acilista %d ardisik 429; cikiliyor (kod %d)", self._start_429, EXIT_BAN)
+            raise SystemExit(EXIT_BAN)
+        self.clock.sleep(wait)
+
+    def _startup_call(self, fn, what: str):
+        """Acilis adimi. startup_retry_forever: ag/5xx/bozuk JSON (ExchangeError) ve 429 suresiz denenir; 418/451 ve ust siniri asan
+        Retry-After yukselir (cikis 3/6). Kapaliyken tek deneme (eski davranis)."""
+        n = 0
+        while True:
+            try:
+                return fn()
+            except ExchangeBan as b:
+                if not self.cfg.startup_retry_forever or b.http != 429:
+                    raise
+                self._startup_429(what, b)
+            except ExchangeError as e:
+                if not self.cfg.startup_retry_forever:
+                    raise
+                self._start_429 = 0
+                self._startup_wait(what, n, e)
+                n += 1
+
     def _fetch_rules_at_start(self) -> None:
-        """Acilis kural cekimi: sinirli geri cekilmeyle yeniden dener; olmazsa RulesFetchError (10/10 ya da hicbiri)."""
+        """Acilis kural cekimi: sinirli geri cekilmeyle yeniden dener; olmazsa RulesFetchError (10/10 ya da hicbiri).
+        startup_retry_forever iken ag/borsa hatalari (ExchangeError) deneme hakkini TUKETMEZ (suresiz); eksik cift/bozuk kural
+        (DataError/RulesError) yapilandirma hatasidir ve eski sinirli sayiyla biter."""
         waits = tuple(self.cfg.rules_start_backoff_s)
         last = ""
-        for attempt in range(len(waits) + 1):
+        net_n = 0
+        attempt = 0
+        while attempt <= len(waits):
             try:
                 self._refresh_rules(strict=True)
                 return
             except ExchangeBan as e:
                 if e.http == 451:
                     raise RulesFetchError(GEOBLOCK_MSG, geoblock=True) from e
+                if self.cfg.startup_retry_forever and e.http == 429:
+                    self._startup_429("kural cekimi", e)
+                    continue
                 raise
-            except (ExchangeError, DataError, RulesError) as e:
+            except ExchangeError as e:
+                if self.cfg.startup_retry_forever:
+                    self._start_429 = 0
+                    self._startup_wait("kural cekimi", net_n, e)
+                    net_n += 1
+                    continue
+                last = str(e)
+                log.warning("acilista kurallar cekilemedi (%d/%d): %s", attempt + 1, len(waits) + 1, e)
+            except (DataError, RulesError) as e:
                 last = str(e)
                 log.warning("acilista kurallar cekilemedi (%d/%d): %s", attempt + 1, len(waits) + 1, e)
             if attempt < len(waits):
                 self.clock.sleep(waits[attempt])
+            attempt += 1
         raise RulesFetchError(f"acilista borsa kurallari {len(waits) + 1} denemede alinamadi: {last}")
 
     def close(self) -> None:
@@ -255,10 +350,18 @@ class Feed:
             gaps += 1
             log.warning("anormal satir %s %s %s %d (%s)", pair, tf, kind, b.open_ms, b.reason)
         res = self.store.put_bars(bars, now_ms=now_ms)
+        # h<l vb. bozuk mum: store yazmaz; deligi 'abnormal_close' olarak kaydet (sessiz kalmasin, yeniden istek firtinasi olmasin)
+        abn = {b.open_ms for b in bad}
+        for ib in res.invalid_bars:
+            om = to_ms(ib.open_ts)
+            abn.add(om)
+            self.store.mark_gap(kind, pair, tf, om, "abnormal_close", now_ms)
+            gaps += 1
+            log.warning("gecersiz mum %s %s %s %d (h/l tutarsiz vb.); abnormal_close", pair, tf, kind, om)
         self._c["gaps"] += gaps + res.conflicts
         self._c["conflicts"] += res.conflicts
         self._c["bars_written"] += res.inserted
-        return bars, res, gaps
+        return bars, res, gaps, abn
 
     def _ok(self, pair: str, tf: str, kind: str, now_ms: int) -> None:
         k = f"{pair}:{tf}:{kind}"
@@ -311,9 +414,17 @@ class Feed:
                 return (0, 0, 0, 0, False)
         else:
             start_ms = last + 1
+            depth = int(self.cfg.backfill_bars.get(tf, 0))
+            if depth > 0:       # uzun kesintide de sinirli: en fazla backfill_bars kadar geriye
+                if start_ms < end_open - depth * tf_ms:
+                    log.warning("backfill %s %s %s: %d..%d araligi backfill_bars=%d'den derin; atlandi", pair, tf, kind,
+                                start_ms, end_open - depth * tf_ms, depth)
+                self._mark_missing(pair, tf, kind, start_ms, end_open - depth * tf_ms, now_ms) \
+                    if start_ms < end_open - depth * tf_ms else None
+                start_ms = max(start_ms, end_open - depth * tf_ms)
         fn = self.rest.klines_all if kind == "last" else self.rest.mark_price_klines_all
         rows = self._rest(fn, sym, tf, max(start_ms, 0))
-        bars, res, gaps = self._write(pair, tf, kind, rows, now_ms)
+        bars, res, gaps, _ = self._write(pair, tf, kind, rows, now_ms)
         first = self.store.first_open_ms(kind, pair, tf)
         has = first is not None
         if has:
@@ -349,11 +460,11 @@ class Feed:
                 banned = True
                 self._ban_streak += 1
                 wait = b.retry_after_s if b.retry_after_s is not None else 60
-                log.error("ban/kisit (HTTP %s): %d sn uyunuyor (%d/%d)", b.http, wait, self._ban_streak, MAX_CONSEC_BANS)
+                log.error("ban/kisit (HTTP %s): %d sn uyuyor (%d/%d)", b.http, wait, self._ban_streak, MAX_CONSEC_BANS)
                 self._write_status(now_ms)
                 if self._ban_streak >= MAX_CONSEC_BANS:
                     raise SystemExit(EXIT_BAN) from None
-                self.clock.sleep(wait)
+                self.clock.sleep(self._ban_wait_s(b))     # ust sinir asilirsa uyumadan cikis 3
         if self._tick_store_err:
             self._store_fail_streak += 1
             if self._store_fail_streak >= MAX_CONSEC_STORE_FAIL:
@@ -394,14 +505,17 @@ class Feed:
         grace_ms = int(self.cfg.grace_s * 1000)
         m_open = last_closed_open(now, "1m")
         m_close_ms = to_ms(m_open) + 60_000
+        self._heal_pass(now, now_ms)
         for pair in self.pairs:
             sym = pair_symbol(pair)
             if now_ms >= m_close_ms + grace_ms:
                 for kind in ("last", "mark"):
+                    if self._heal_blocks(pair, "1m", kind, now):
+                        continue
                     self._guard(f"{pair} 1m {kind}", self._minute, pair, sym, kind, to_ms(m_open), now_ms)
             for tf in TF_CLOSE_TFS:                 # kapanis siniri: floor_tf(now, tf); grace sonrasi (kendini iyilestirir)
                 b_ms = to_ms(floor_tf(now, tf))
-                if now_ms >= b_ms + grace_ms:
+                if now_ms >= b_ms + grace_ms and not self._heal_blocks(pair, tf, "last", now):
                     self._guard(f"{pair} {tf}", self._tf_close, pair, sym, tf, b_ms, now_ms)
         if now_ms >= self._next_rules_ms:
             self._guard("rules", self._refresh_rules)
@@ -420,13 +534,18 @@ class Feed:
         if (self.store.last_open_ms(kind, pair, "1m") or -1) >= m_ms:
             return
         key = (pair, "1m", kind)
+        if self._abn_done.get(key, -1) >= m_ms:      # bu dakika bozuk mum olarak kaydedildi: yeniden istek yok
+            return
         if now_ms < self._retry_at.get(key, 0):
             return
         fn = self.rest.klines if kind == "last" else self.rest.mark_price_klines
         rows = self._rest(fn, sym, "1m", limit=self.cfg.minute_fetch_limit)
-        bars, res, _ = self._write(pair, "1m", kind, rows, now_ms)
-        if any(to_ms(b.open_ts) >= m_ms for b in bars):
+        bars, res, _, abn = self._write(pair, "1m", kind, rows, now_ms)
+        if any(to_ms(b.open_ts) >= m_ms for b in res.inserted_bars):
             self._ok(pair, "1m", kind, now_ms)
+            self._retry_at.pop(key, None)
+        elif m_ms in abn:
+            self._abn_done[key] = m_ms
             self._retry_at.pop(key, None)
         else:
             self._retry_at[key] = now_ms + RETRY_THROTTLE_MS
@@ -443,18 +562,129 @@ class Feed:
         if now_ms < self._retry_at.get((pair, tf, "last"), 0):
             return
         rows = self._rest(self.rest.klines, sym, tf, limit=2)
-        bars, res, _ = self._write(pair, tf, "last", rows, now_ms)
+        bars, res, _, abn = self._write(pair, tf, "last", rows, now_ms)
         for b in res.inserted_bars:
             self._check_aggregate(b, now_ms)
-        if any(to_ms(b.open_ts) >= want for b in bars):
+        if any(to_ms(b.open_ts) >= want for b in res.inserted_bars):
             self._tf_done[key] = boundary_ms
             self._retry_at.pop((pair, tf, "last"), None)
             self._ok(pair, tf, "last", now_ms)
+        elif want in abn:                # bozuk mum: abnormal_close kaydedildi; bu sinir icin tekrar istek yok
+            self._tf_done[key] = boundary_ms
+            self._retry_at.pop((pair, tf, "last"), None)
+            log.warning("%s %s bari %d bozuk; abnormal_close, yeniden istek yok", pair, tf, want)
         elif now_ms >= boundary_ms + TF_GIVEUP_MS:
             self._tf_done[key] = boundary_ms
             log.warning("%s %s bari %d yayinlanmadi; vazgecildi", pair, tf, want)
         else:
             self._retry_at[(pair, tf, "last")] = now_ms + RETRY_THROTTLE_MS
+
+    # ------------------------------------------- calisirken bosluk doldurma (O12)
+    def _heal_need(self, pair, tf, kind, now: datetime):
+        """(last, end_open) | None. Normal dakikalik/kapanis cekimi (limit=5 / limit=2) deligi kapatamayacaksa doldurma gerekir."""
+        last = self.store.last_open_ms(kind, pair, tf)
+        if last is None:            # hic veri yok: ilk doldurma acilista (start) yapilir
+            return None
+        tf_ms = int(tf_delta(tf).total_seconds() * 1000)
+        end_open = to_ms(floor_tf(now, tf))
+        cover = max(self.cfg.minute_fetch_limit - 1, 1) if tf == "1m" else 1
+        if (end_open - tf_ms - last) // tf_ms <= cover:
+            return None
+        return last, end_open
+
+    def _heal_blocks(self, pair, tf, kind, now: datetime) -> bool:
+        """Doldurma bekleyen seride normal (limit=5/2) cekim ATLANIR: yoksa son N mumu yazip son_acilis'i ilerletir ve eski deligi
+        gorunmez yapar. Doldurma 3 kez ilerlemezse (bozuk/bos veri) normal cekim devam eder; delik loglanir."""
+        if self._heal_fail.get((pair, tf, kind), 0) >= self.cfg.heal_giveup_strikes:
+            return False
+        return self._heal_need(pair, tf, kind, now) is not None
+
+    def _heal_pass(self, now: datetime, now_ms: int) -> None:
+        """Her tur EN FAZLA bir doldurma istegi (agirlik 5); iki istek arasi >= heal_min_interval_s; kullanilan agirlik
+        tavani asarsa bekler; basarisiz/ilerlemeyen seri ustel bekleme alir. Ban gelirse ExchangeBan run_once'a yukselir."""
+        if now_ms < self._next_heal_ms:
+            return
+        try:
+            used = int(self.rest.used_weight())
+        except Exception:  # noqa: BLE001  (sahte/eksik istemci)
+            used = 0
+        if used >= self.cfg.heal_weight_ceiling:
+            return
+        for pair in self.pairs:
+            sym = pair_symbol(pair)
+            for tf in SERIES_TFS:
+                for kind in (("last", "mark") if tf == "1m" else ("last",)):
+                    key = (pair, tf, kind)
+                    if now_ms < self._heal_at.get(key, 0) or now_ms < self._heal_net_at.get(key, 0):
+                        continue
+                    need = self._heal_need(pair, tf, kind, now)
+                    if need is None:
+                        self._heal_fail.pop(key, None)
+                        continue
+                    self._next_heal_ms = now_ms + int(self.cfg.heal_min_interval_s * 1000)
+                    self._guard(f"heal {pair} {tf} {kind}", self._heal_series, pair, sym, tf, kind, need[0], need[1], now_ms)
+                    return
+
+    def _mark_missing(self, pair, tf, kind, lo_ms: int, hi_ms: int, now_ms: int) -> int:
+        """[lo_ms, hi_ms) icinde depoda olmayan her acilisi 'missing' diye kaydet."""
+        exp = [to_ms(t) for t in expected_opens(from_ms(max(lo_ms, 0)), from_ms(max(hi_ms, 0)), tf)]
+        if not exp:
+            return 0
+        have = {to_ms(b.open_ts) for b in self.store.query_range(kind, pair, tf, exp[0], exp[-1] + 1)}
+        miss = [om for om in exp if om not in have]
+        self.store.mark_gaps(kind, pair, tf, miss, "missing", now_ms)
+        self._c["gaps"] += len(miss)
+        return len(miss)
+
+    def _heal_series(self, pair, sym, tf, kind, last: int, end_open: int, now_ms: int) -> None:
+        tf_ms = int(tf_delta(tf).total_seconds() * 1000)
+        key = (pair, tf, kind)
+        start_ms = last + 1
+        depth = int(self.cfg.backfill_bars.get(tf, 0))
+        if depth > 0 and start_ms < end_open - depth * tf_ms:
+            log.warning("doldurma %s %s %s: %d..%d araligi backfill_bars=%d'den derin; atlandi", pair, tf, kind,
+                        start_ms, end_open - depth * tf_ms, depth)
+            skipped_hi = end_open - depth * tf_ms
+            n = self._mark_missing(pair, tf, kind, start_ms, skipped_hi, now_ms)     # atlanan arac da kayitli olsun
+            log.warning("doldurma %s %s %s: atlanan aralik 'missing' kaydedildi (%d bar)", pair, tf, kind, n)
+            start_ms = skipped_hi
+        page = max(int(self.cfg.heal_page_bars), 1)
+        fn = self.rest.klines if kind == "last" else self.rest.mark_price_klines
+        try:
+            rows = self._rest(fn, sym, tf, start_ms, None, page)
+        except ExchangeBan:
+            raise
+        except ExchangeError:
+            # ag/5xx/bozuk JSON: yalniz bekleme; vazgecme sayacina GIRMEZ (kesinti bitince doldurulacak)
+            nf = self._heal_net_fail.get(key, 0)
+            self._heal_net_fail[key] = nf + 1
+            self._heal_net_at[key] = now_ms + int(min(self.cfg.heal_net_backoff_cap_s,
+                                                     self.cfg.heal_net_backoff_base_s * (2 ** min(nf, 20))) * 1000)
+            raise
+        bars, res, gaps, _ = self._write(pair, tf, kind, rows, now_ms)
+        if rows:
+            hi = end_open if len(rows) < page else int(rows[-1][0]) + tf_ms      # kapsanan yari-acik aralik
+            self._mark_missing(pair, tf, kind, start_ms, hi, now_ms)
+        for b in res.inserted_bars:
+            if tf != "1m" and kind == "last":
+                self._check_aggregate(b, now_ms)
+        new_last = self.store.last_open_ms(kind, pair, tf)
+        if res.inserted > 0 and new_last is not None and new_last > last:
+            self._heal_fail.pop(key, None)
+            self._heal_at.pop(key, None)
+            log.warning("bosluk dolduruldu %s %s %s: +%d bar (son %d)", pair, tf, kind, res.inserted, new_last)
+            if new_last >= end_open - tf_ms:
+                self._ok(pair, tf, kind, now_ms)
+            return
+        # basarili cevap ama ilerleme yok (bos/bozuk veri): sayac + ustel bekleme
+        fails = self._heal_fail.get(key, 0) + 1
+        self._heal_fail[key] = fails
+        self._heal_at[key] = now_ms + int(min(self.cfg.heal_backoff_cap_s, self.cfg.heal_backoff_base_s * (2 ** min(fails - 1, 20))) * 1000)
+        if fails == self.cfg.heal_giveup_strikes:
+            # normal cekim artik acilacak ve son_acilis'i ileri sicratabilir: DELIGI ONCE KAYDET
+            n = self._mark_missing(pair, tf, kind, start_ms, end_open, now_ms)
+            log.warning("doldurma vazgecildi %s %s %s: %d..%d araligi doldurulamadi (%d bar 'missing' kaydedildi)",
+                        pair, tf, kind, start_ms, end_open, n)
 
     # -------------------------------------------------------- bar builder (§5.4)
     def _check_aggregate(self, bar: Bar, now_ms: int) -> None:
@@ -566,7 +796,7 @@ def feed_config_from_base(config_dir: str) -> FeedConfig:
 
 
 def _make_rest(clock: Clock) -> PublicRestClient:
-    return PublicRestClient(now_s=lambda: clock.now().timestamp(), sleep=clock.sleep)
+    return PublicRestClient(now_s=lambda: clock.now().timestamp(), sleep=clock.sleep, jitter=random.random)
 
 
 def _parse(argv: Sequence[str] | None, prog: str, extra=None) -> argparse.Namespace:
@@ -584,7 +814,10 @@ def _on_term(signum, frame) -> None:
 def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = None, clock: Clock | None = None,
          max_ticks: int | None = None) -> int:
     """`trader_engine feed`: kilidi al, kurallari cek (10/10), backfill, sonra run_forever. Donus = cikis kodu."""
-    a = _parse(argv, "trader_engine feed")
+    def extra(ap):
+        ap.add_argument("--startup-retry", choices=("bounded", "forever"), default="bounded",
+                        help="forever: acilista ag/5xx/bozuk JSON hatasinda suresiz ustel geri cekilme (418/451 haric)")
+    a = _parse(argv, "trader_engine feed", extra)
     from trader_engine.clock import SystemClock
     clock = clock or SystemClock()
     try:
@@ -592,6 +825,8 @@ def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = N
     except FailClosed as e:
         log.critical("feed baslamadi: %s", e)
         return EXIT_STORE
+    if a.startup_retry == "forever":
+        cfg = dataclasses.replace(cfg, startup_retry_forever=True)
     rest = rest or _make_rest(clock)
     try:
         store = MarketStore(cfg.db_path)

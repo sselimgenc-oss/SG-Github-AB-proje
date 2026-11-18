@@ -49,6 +49,7 @@ class PutResult:
     conflicts: int = 0
     invalid: tuple[DataError, ...] = field(default=())
     inserted_bars: tuple[Bar, ...] = field(default=())
+    invalid_bars: tuple[Bar, ...] = field(default=())   # dogrulamayi gecemeyen (h<l vb.); yazilmadi
 
 
 def _rel_diff(a: float, b: float) -> float:
@@ -143,17 +144,19 @@ class MarketStore:
     # ------------------------------------------------------------------ yazma
     def put_bars(self, bars: Sequence[Bar], *, now_ms: int) -> PutResult:
         invalid: list[DataError] = []
+        invalid_bars: list[Bar] = []
         good: list[Bar] = []
         for b in bars:
             err = _validate(b)
             if err is not None:
                 invalid.append(err)
+                invalid_bars.append(b)
                 log.warning("gecersiz bar yazilmadi: %s", err)
             else:
                 good.append(b)
         if not good:
             self._need_write()
-            return PutResult(invalid=tuple(invalid))
+            return PutResult(invalid=tuple(invalid), invalid_bars=tuple(invalid_bars))
 
         def run() -> PutResult:
             ins = dup = con = 0
@@ -179,7 +182,7 @@ class MarketStore:
                     log.warning("bar cakismasi (eski deger korunur): %s %s %s %d", b.kind, b.pair, b.tf, om)
                     self._db.execute("INSERT OR IGNORE INTO gaps(kind,pair,tf,open_ms,reason,detected_ms) VALUES(?,?,?,?,?,?)",
                                      (b.kind, b.pair, b.tf, om, "conflict", now_ms))
-            return PutResult(ins, dup, con, tuple(invalid), tuple(inserted))
+            return PutResult(ins, dup, con, tuple(invalid), tuple(inserted), tuple(invalid_bars))
 
         return self._tx(run)
 
@@ -206,6 +209,15 @@ class MarketStore:
         self._tx(lambda: self._db.execute(
             "INSERT OR IGNORE INTO gaps(kind,pair,tf,open_ms,reason,detected_ms) VALUES(?,?,?,?,?,?)",
             (kind, pair, tf, int(open_ms), reason, now_ms)))
+
+    def mark_gaps(self, kind, pair, tf, opens, reason, now_ms) -> None:
+        """Toplu mark_gap (tek islem)."""
+        if reason not in GAP_REASONS:
+            raise DataError(f"gecersiz gap nedeni: {reason!r}")
+        rows = [(kind, pair, tf, int(o), reason, now_ms) for o in opens]
+        if rows:
+            self._tx(lambda: self._db.executemany(
+                "INSERT OR IGNORE INTO gaps(kind,pair,tf,open_ms,reason,detected_ms) VALUES(?,?,?,?,?,?)", rows))
 
     def prune(self, now_ms: int, retention_1m_days: int = 14) -> int:
         def run() -> int:

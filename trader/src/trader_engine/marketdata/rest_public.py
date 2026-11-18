@@ -42,19 +42,20 @@ class ExchangeBan(ExchangeError):
         self.retry_after_s = retry_after_s
 
 
-def _retry_after(headers) -> int:
-    """`Retry-After` güvenli ayrıştırma: sayı değilse ya da negatifse 60."""
+def _retry_after(headers, default: int = 60) -> int:
+    """`Retry-After` güvenli ayrıştırma: sayı değilse ya da negatifse `default` (varsayılan 60)."""
     try:
         v = int(str(headers.get("Retry-After")).strip())
     except (TypeError, ValueError):
-        return 60
-    return v if v >= 0 else 60
+        return default
+    return v if v >= 0 else default
 
 
 class PublicRestClient:
     def __init__(self, *, base_url: str = FAPI_BASE, session=None, now_s: Callable[[], float],
                  sleep: Callable[[float], None], max_attempts: int = 5, weight_threshold: int = WEIGHT_THRESHOLD,
-                 timeout_s: float = 20.0, max_total_wait_s: float = 300.0):
+                 timeout_s: float = 20.0, max_total_wait_s: float = 300.0,
+                 jitter: Callable[[], float] | None = None):
         if session is None:
             import requests  # tembel: içe aktarma anında yüklenmez
             session = requests.Session()
@@ -65,10 +66,21 @@ class PublicRestClient:
         self.weight_threshold = weight_threshold
         self.timeout_s = timeout_s
         self.max_total_wait_s = max_total_wait_s
+        self.jitter = jitter      # None: jitter yok (deterministik); aksi halde [0,1) donen kaynak (D3)
         self._used_weight = 0
         self._weight_ts = 0.0
 
+    def _backoff(self, attempt: int) -> float:
+        """Ag/5xx geri cekilmesi: min(2**deneme, 60) sn; jitter varsa en fazla %25 EKLENIR (asla kisalmaz)."""
+        base = float(min(2 ** attempt, 60))
+        if self.jitter is None:
+            return int(base)
+        return base * (1.0 + 0.25 * min(max(float(self.jitter()), 0.0), 1.0))
+
     def used_weight(self) -> int:
+        """Son dakikadaki kullanilan agirlik; 60 sn'den eski olcum 0 sayilir (bayat deger doldurmayi kilitlemesin)."""
+        if self.now_s() - self._weight_ts >= 60:
+            return 0
         return self._used_weight
 
     def _wait_for_weight(self) -> None:
@@ -91,8 +103,8 @@ class PublicRestClient:
                 r = self.session.get(self.base_url + path, params=params, timeout=self.timeout_s)
             except Exception as e:  # noqa: BLE001  (ağ hatası: loglanır, tekrar denenir, sonunda yükseltilir)
                 last_err = ExchangeError(f"{path}: ağ hatası ({type(e).__name__})")
-                wait = min(2 ** attempt, 60)
-                log.warning("GET %s ağ hatası (%d/%d): %s; %d sn sonra tekrar", path, attempt, self.max_attempts, type(e).__name__, wait)
+                wait = self._backoff(attempt)
+                log.warning("GET %s ağ hatası (%d/%d): %s; %.0f sn sonra tekrar", path, attempt, self.max_attempts, type(e).__name__, wait)
                 self.sleep(wait)
                 continue
             w = r.headers.get("X-MBX-USED-WEIGHT-1M")
@@ -102,7 +114,14 @@ class PublicRestClient:
                 except ValueError:
                     pass
             if r.status_code == 200:
-                return r.json()
+                try:
+                    return r.json()
+                except ValueError:     # bozuk/yarım gövde (JSONDecodeError dahil): çökme yok, tekrar denenir (O10/O11)
+                    last_err = ExchangeError(f"{path}: bozuk JSON yanıtı")
+                    wait = self._backoff(attempt)
+                    log.warning("GET %s bozuk JSON (%d/%d); %.0f sn sonra tekrar", path, attempt, self.max_attempts, wait)
+                    self.sleep(wait)
+                    continue
             if r.status_code == 429:
                 wait = _retry_after(r.headers)
                 if waited_429 + wait > self.max_total_wait_s:
@@ -114,14 +133,14 @@ class PublicRestClient:
                 last_err = ExchangeError(f"429 {path}")
                 continue
             if r.status_code == 418:
-                ra = _retry_after(r.headers)
+                ra = _retry_after(r.headers, default=120)     # 418: okunamazsa en az 120 sn
                 raise ExchangeBan(f"418 IP yasağı ({path}); Retry-After={ra} sn. Otomatik tekrar yok.", http=418, retry_after_s=ra)
             if r.status_code == 451:
                 raise ExchangeBan(f"451 konum kısıtı ({path}): bu makineden Binance vadeli erişimi engelli. {r.text[:200]}", http=451)
             if 500 <= r.status_code < 600:
                 last_err = ExchangeError(f"{r.status_code} {path}")
-                wait = min(2 ** attempt, 60)
-                log.warning("GET %s sunucu hatası %d (%d/%d); %d sn sonra tekrar", path, r.status_code, attempt, self.max_attempts, wait)
+                wait = self._backoff(attempt)
+                log.warning("GET %s sunucu hatası %d (%d/%d); %.0f sn sonra tekrar", path, r.status_code, attempt, self.max_attempts, wait)
                 self.sleep(wait)
                 continue
             raise ExchangeError(f"{r.status_code} {path}: {r.text[:300]}")
