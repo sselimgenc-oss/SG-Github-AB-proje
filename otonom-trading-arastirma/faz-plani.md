@@ -61,5 +61,5 @@ Hedef: aralık sonu–ocak başı canlı (1000 $, Binance global alt hesap). Tek
 ## Sonraki fazlar (tarih yok)
 29. ~~FreqAI (makine öğrenmesi modeli)~~ → 17 Kasım'da Faz 2'ye alındı (19a–19d, 25a–25c, 28a). Burada kalanlar: haftalık kendi kendine yenileme (ML-4) ve kendi adayını üreten ML stratejisi (ML-5).
 30. Haber verisi.
-31. ABD hisse + emtia.
+31. ABD hisse + emtia. **18 Kasım 2026 notu (mentor):** kullanıcı listesi Magnificent 7 (AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA) + altın, gümüş, petrol, bakır. Hepsi Binance USDⓈ-M'de USDT perp olarak listeli (arşivde ilk gün Aralık 2025 – Nisan 2026; XAU/XAG/TSLA/AMZN/COPPER/NVDA/GOOGL/META/CL/AAPL/MSFT, Brent BZ de var), ayrı aracı kurum gerekmez. Geçmiş sınav için yetersiz (çoğu kilitli döneme düşüyor); S2'ye ve learner/ikiz botlara eklenmez. Kripto kapısı (CANLI-K1) sonuçlanınca ayrı ön kayıtla (kendi sınav penceresi, Mag7 küme risk sınırı, hafta sonu/bilanço kuralı, maliyet ölçümü). Şimdi yalnız sunucudan `exchangeInfo` ile komisyon/fonlama/en küçük emir/kaldıraç/testnet durumu not edilir.
 32. Üç projeyi tek ekrandan yönetme (copytrade, 1l3a, bu bot) — zorsa yapılmaz; standart durum çıktısı o zaman eklenir.
