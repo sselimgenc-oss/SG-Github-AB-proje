@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
@@ -14,6 +14,7 @@ from trader_core import ledger as L
 from trader_core import risk as K
 from trader_core import veto
 
+from . import arm_guard as AG
 from .bars import tf_delta
 from .brokers.base import Broker
 from .clock import Clock
@@ -145,6 +146,7 @@ class EntryGate:
         self.rules_fn = rules_fn
         self.entry_ref_fn = entry_ref_fn
         self.counters: Counter = Counter()
+        self.session_off: Mapping[str, Collection[str]] | Callable[[], Mapping[str, Collection[str]]] | None = None  # DD-12 D-T7: dersin kapattigi seanslar (sinif|cift -> etiketler); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
     # ------------------------------------------------------------------ cift-bagimsiz kapilar (4-8)
@@ -207,16 +209,26 @@ class EntryGate:
         self.counters["skip:" + code] += 1
         return EntryOutcome("skip", build_decision_event(row, tf, **ev), None, None, code, False, mark)
 
+    def _session_off(self) -> Mapping[str, Collection[str]] | None:
+        so = self.session_off
+        return so() if callable(so) else so
+
     def decide(self, frame: SignalFrame, D: datetime, pre: GateVerdict, active_version: int) -> EntryOutcome:
         if frame.status != "ok" or frame.last is None:                                  # 0
             return self._ignore(frame.status)
         row = frame.last
         pair = row.pair
         tf = _tf_of(row)
+        paper = self.cfg.mode == "paper"                                                # DD-12 WP-04: yalniz kagit
+        tk: dict = {}
+        cls = ""
+        if paper:
+            cls = AG.asset_class(pair, self.cfg.clusters)
+            tk = {"session_tag": AG.session_tag(cls, D)}                                # etiket yasak degil, kayit
         if not row.signal:                                                              # 1 / 1b
             if (row.setup and row.side and row.skip_reason in _FILTERED_SKIPS
                     and self.cfg.record_filtered_candidates and row.param_version_id >= 1):
-                return self._skip(row, tf, row.skip_reason, mark=False, skip_reason=row.skip_reason)
+                return self._skip(row, tf, row.skip_reason, mark=False, skip_reason=row.skip_reason, **tk)
             return self._ignore("no_signal")
         if self.state.is_decided(pair, D):                                              # 2
             return self._ignore("already_decided")
@@ -225,22 +237,39 @@ class EntryGate:
         if row.param_version_id < 1:
             return self._ignore("no_param_version")
         if not pre.ok:                                                                  # 4-8
-            return self._skip(row, tf, pre.code, skip_reason=pre.skip_reason, veto_reason="gate:" + pre.code)
+            return self._skip(row, tf, pre.code, skip_reason=pre.skip_reason, veto_reason="gate:" + pre.code, **tk)
         try:                                                                            # 9
             rules = self.rules_fn(pair)
         except Exception as e:  # noqa: BLE001 - DataError/RulesError/baska: fail-closed
             if not isinstance(e, DataError):
                 log.error("rules_fn beklenmeyen hata %s: %r", pair, e)
-            return self._skip(row, tf, "rules_missing", skip_reason="other", veto_reason="gate:rules_missing")
+            return self._skip(row, tf, "rules_missing", skip_reason="other", veto_reason="gate:rules_missing", **tk)
         now = self.clock.now()
-        lk = self.veto.lookup(pair, row.side, now)                                      # 10
+        if paper:                                                                       # 9a-9c (DD-12 WP-04); veto adimi YOK
+            if self.cfg.flat_bar_guard and frame.trigger_bar is not None and AG.is_flat_bar(
+                    frame.trigger_bar[0], frame.trigger_bar[1], frame.trigger_bar[2]):
+                return self._skip(row, tf, "flat_bar", skip_reason="flat_bar", veto_reason="gate:flat_bar", **tk)
+            if AG.session_closed_by_lesson(self._session_off(), cls, pair, tk["session_tag"]):
+                return self._skip(row, tf, "session_closed", skip_reason="session_closed",
+                                  veto_reason="gate:session_closed", **tk)
+            held = [p.pair for p in self.state.open_positions()]
+            cname = AG.full_cluster(pair, held, self.cfg.clusters)
+            if cname is not None:
+                return self._skip(row, tf, "cluster_cap", skip_reason="cluster_cap",
+                                  veto_reason=f"gate:cluster_cap:{cname}", **tk)
+            if AG.account_full(len(held), self.cfg.max_positions):
+                return self._skip(row, tf, "max_positions", skip_reason="max_positions",
+                                  veto_reason="gate:max_positions", **tk)
+            lk = veto.VetoLookup("allowed", "not_evaluated:paper", False)
+        else:
+            lk = self.veto.lookup(pair, row.side, now)                                  # 10
         if lk.blocks:
             return self._skip(row, tf, f"veto_{lk.status}", skip_reason=f"veto_{lk.status}",
                               veto_status=lk.status, veto_reason=lk.reason)
         acct = self.account_state(D)                                                    # 11
         if acct is None:
             return self._skip(row, tf, "day_start_missing", skip_reason="entry_gate_closed",
-                              veto_reason="gate:day_start_missing")
+                              veto_reason="gate:day_start_missing", **tk)
         lev = entry_leverage(self.cfg)
         ref = self.entry_ref_fn(pair, D, row) if self.entry_ref_fn is not None else row.planned_entry
         cand = K.Candidate(pair, row.side, float(ref), float(row.planned_stop), float(lev),
@@ -249,11 +278,11 @@ class EntryGate:
         dec = K.check_entry(acct, cand, src.risk_config)
         if not dec.allowed:
             return self._skip(row, tf, "risk_denied", skip_reason="risk_denied", veto_status="allowed",
-                              veto_reason=lk.reason, risk_allowed=False, risk_reason=dec.reason)
+                              veto_reason=lk.reason, risk_allowed=False, risk_reason=dec.reason, **tk)
         size = dec.size                                                                 # 12
         self.counters["enter"] += 1
         ev = build_decision_event(
             row, tf, veto_status="allowed", veto_reason=lk.reason, risk_allowed=True, risk_reason=dec.reason,
             size_qty=size.qty, size_notional=size.notional, size_margin=size.margin,
-            size_risk_amount=size.risk_amount, leverage=lev, final_action="entered", skip_reason=None)
+            size_risk_amount=size.risk_amount, leverage=lev, final_action="entered", skip_reason=None, **tk)
         return EntryOutcome("enter", ev, size, lev, "entered", True)

@@ -66,6 +66,7 @@ class SignalFrame:
     detail: str | None
     last: SignalRow | None
     table: pd.DataFrame | None
+    trigger_bar: tuple[float, float, float] | None = None   # DD-12 WP-04: (high, low, volume) son kapanmis tetik bari; yoksa None
 
 
 class SignalSource(Protocol):
@@ -247,7 +248,11 @@ class WindowedSignalSource:
                 table.iloc[-1, table.columns.get_loc(c)] = last_row[c]
             open_ts = trig.index[-1].to_pydatetime()
             row = _to_row(pair, open_ts, D, table.iloc[-1], version_id)
-            return SignalFrame(pair=pair, status="ok", detail=None, last=row, table=table)
+            tb = None
+            if "volume" in trig.columns:
+                lt = trig.iloc[-1]
+                tb = (float(lt["high"]), float(lt["low"]), float(lt["volume"]))
+            return SignalFrame(pair=pair, status="ok", detail=None, last=row, table=table, trigger_bar=tb)
         except Exception as e:  # noqa: BLE001
             if self.strict:
                 raise
