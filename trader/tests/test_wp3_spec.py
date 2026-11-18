@@ -1822,17 +1822,19 @@ def _sha(p):
 def test_K1_K2_golden_backtest_equal_to_base(tmp_path, extra):
     base_src = tmp_path / "base_src"
     base_src.mkdir()
-    tar = subprocess.run(["git", "-C", str(TRADER), "archive", BASE_REF, "--format=tar", "src"],
+    tar = subprocess.run(["git", "-C", str(TRADER), "archive", BASE_REF, "--format=tar", "src", "config"],
                          capture_output=True, timeout=120)
     if tar.returncode != 0:
         pytest.skip("git archive of the base commit failed")
     subprocess.run(["tar", "-x", "-C", str(base_src)], input=tar.stdout, check=True)
+    (base_src / "var").mkdir()                      # lead: taban kendi config/'i ile, cwd=base_src kosar (config cwd'ye goredir)
+    (base_src / "var" / "history").symlink_to(TRADER / "var" / "history")
     outs = {}
     for tag, src in (("base", base_src / "src"), ("new", TRADER / "src")):
         out = tmp_path / f"out_{tag}"
         env = dict(os.environ, PYTHONPATH=str(src))
         cmd = _golden_cmd(extra if tag == "new" else [], out, src)
-        r = subprocess.run(cmd, cwd=str(TRADER), env=env, capture_output=True, text=True, timeout=7200)
+        r = subprocess.run(cmd, cwd=str(base_src if tag == "base" else TRADER), env=env, capture_output=True, text=True, timeout=7200)
         assert r.returncode == 0, r.stderr[-2000:]
         outs[tag] = out / "wp3_k1"
     b, n = outs["base"], outs["new"]
@@ -1842,9 +1844,8 @@ def test_K1_K2_golden_backtest_equal_to_base(tmp_path, extra):
     for k in ("git_commit", "duration_s"):
         mb.pop(k, None)
         mn.pop(k, None)
-    for k in ("flags", "argv"):                      # --record-shadow only differs in the recorded command line
-        mb.pop(k, None) if extra else None
-        mn.pop(k, None) if extra else None
+    for m in (mb, mn):                               # lead: komut satiri (--out-root yolu, --record-shadow) her zaman farkli
+        (m.get("flags") or {}).pop("argv", None)
     assert mb == mn
     q = lambda p, s: [tuple(r) for r in sqlite3.connect(f"file:{p}?mode=ro", uri=True).execute(s)]  # noqa: E731
     lb, ln = b / "ledger.sqlite", n / "ledger.sqlite"
