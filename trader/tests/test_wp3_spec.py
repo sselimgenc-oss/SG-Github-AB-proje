@@ -873,8 +873,12 @@ def test_E9_quote_off_makes_no_book_call(tmp_path):
     try:
         e.enter()
         e.tick(6)
-        assert e.ex.quotes() == []
-        assert lrow(e)["entry_ref_price"] is None
+        # DD-6/D17 (mentor-approved): testnet entry gate does its own single bookTicker GET, so no raw-count assertion;
+        # what E9 guards is that the quote fields stay empty when order_quote is off.
+        assert len(e.ex.quotes()) <= 1
+        r = lrow(e)
+        assert r["entry_ref_price"] is None
+        assert r["entry_ref_spread"] is None
     finally:
         e.close()
 
@@ -964,6 +968,9 @@ def test_E11_counters_equal_to_clean_run(tmp_path):
             counters.append(e.engine.counters())
         finally:
             e.close()
+    # DD-6/D17: a failed quote adds the gate's own fail-open counter; everything else must stay identical.
+    counters[1].pop("testnet_price_unchecked", None)
+    counters[0].pop("testnet_price_unchecked", None)
     assert counters[0] == counters[1]
 
 

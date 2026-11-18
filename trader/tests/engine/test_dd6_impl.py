@@ -306,6 +306,34 @@ def test_dd6_d17_price_unreadable_does_not_block_entry(tmp_path):
 
 
 # ============================================================================================ mentor duzeltmeleri
+def test_dd6_d17_and_order_quote_share_one_book_ticker_get(tmp_path):
+    """D17 kapisi + WP-3 `order_quote`: bir testnet girisi tam BIR bookTicker sorgusu yapar; kapi ve `entry_ref_*` ayni sorguyu kullanir."""
+    import sqlite3
+    e = T.LiveEnv(tmp_path, live_over={"order_quote": True}).boot()
+    try:
+        calls = []
+
+        def bt(pair):
+            calls.append(pair)
+            return (2.004, 2.006)                            # orta 2.005: %0,25 sapma -> kapi gecer
+        e.broker.book_ticker = bt
+        e.signal(T.DEC)
+        e.decide()
+        assert e.pos() is not None and len(e.posted("e")) == 1
+        assert len(calls) == 1, calls                        # kapi + order_quote = tek GET
+        assert e.engine.counters().get("testnet_price_unchecked", 0) == 0
+        e.state.drain_outbox(e.ledger)
+        con = sqlite3.connect(e.cfg.ledger_path)
+        try:
+            ref, spread, src = con.execute(
+                "SELECT entry_ref_price, entry_ref_spread, entry_ref_src FROM v_trades WHERE trade_id=1").fetchone()
+        finally:
+            con.close()
+        assert ref == pytest.approx(2.005) and spread == pytest.approx(0.002 / 2.005) and src == "book"
+    finally:
+        e.close()
+
+
 def test_dd6_d1_throttle_applies_to_attempts_without_hit(tmp_path):
     e = T.LiveEnv(tmp_path).boot()
     try:

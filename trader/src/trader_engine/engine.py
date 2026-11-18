@@ -58,6 +58,7 @@ DECISION_EXIT_RETRIES = 3
 DECISION_EXIT_RETRY_BASE_S = 5.0
 # DD-6 (O3): 24 saatte ikinci (ayri pozisyonda) stop_failed -> kalici duraklatma
 STOP_FAILED_REPEAT_WINDOW_S = 86_400.0
+_GATE_QUOTE_MAX_AGE_S = 5.0   # D17 sorgusunun `order_quote` icin yeniden kullanilabilecegi en gec yas (ayni giris denemesi)
 # DD-6 (D17): yalniz testnet; testnet fiyati planned_entry'den bu orandan fazla saparsa giris atlanir
 TESTNET_PRICE_DIVERGENCE_MAX = 0.005
 # DD-6 (D1): `opening` + borsada pozisyon gorulurse protect_first en sik bu aralikla
@@ -163,6 +164,7 @@ class Engine:
         # WP-3 (defter-ek-alanlar): YALNIZ KAYIT. Bu durum bellekte tutulur, durum deposuna YAZILMAZ ve hicbir karari etkilemez.
         self._dec_price: "OrderedDict[int, tuple[str, float]]" = OrderedDict()   # trade_id -> (cikis client_id, karar mumu kapanisi)
         self._regime_mem: dict[str, tuple[datetime, str]] = {}                   # cift -> (karar adimi D, hizali 4s kosul etiketi)
+        self._gate_quote: tuple[str, datetime, dict | None] | None = None        # D17 sorgusu (cift, ts, sonuc) - tek GET paylasimi
         self._shadow_ctx: tuple | None = None                                    # (D, frames, params) son karar adimi
         self._rec = {"shadow": {"rows": 0, "errors": 0, "budget_skips": 0, "tf15_holdout_wait": 0, "last_step_ms": 0.0},
                      "mtm": {"rows": 0, "errors": 0}, "exec": {"dropped": 0, "quote_errors": 0}}
@@ -448,7 +450,15 @@ class Engine:
 
     def _order_quote(self, pair: str) -> dict | None:
         """3.5: emir oncesi `bookTicker` (yalniz testnet/canli, `live.order_quote=true`). Tek deneme, <= 0,5 sn.
-        Yasak penceresi/agirlik >= %80 iken cagri yapilmaz (broker None doner). Her hata yutulur."""
+        Yasak penceresi/agirlik >= %80 iken cagri yapilmaz (broker None doner). Her hata yutulur.
+        Ayni giris denemesinde D17 kapisi sorguyu zaten yaptiysa o sonuc (hata dahil) bir kez yeniden kullanilir:
+        giris basina en cok BIR bookTicker GET'i."""
+        gq = self._gate_quote
+        if gq is not None:
+            self._gate_quote = None
+            g_pair, g_ts, g_q = gq
+            if g_pair == pair and 0.0 <= (self.clock.now() - g_ts).total_seconds() <= _GATE_QUOTE_MAX_AGE_S:
+                return g_q
         try:
             if self._ban_until is not None and self.clock.now() < self._ban_until:
                 return None
@@ -1244,6 +1254,8 @@ class Engine:
                 out = self.gate.decide(frames[pair], D, pre, self._version_id)
                 if out.action == "enter" and self.cfg.mode == "testnet" and not self.is_paper:
                     out = self._testnet_price_gate(pair, D, frames[pair], out)
+                if out.action != "enter":
+                    self._gate_quote = None
                 if out.action == "ignore":
                     continue
                 if out.action == "skip":
@@ -1265,6 +1277,7 @@ class Engine:
         olculemez: giris ENGELLENMEZ (fail-open; `testnet_price_unchecked` sayaci + uyari) - kapi sartnamede yalniz sapmayi atlar."""
         row = fr.last
         q = self._order_quote(pair)
+        self._gate_quote = (pair, self.clock.now(), q)     # ayni girisin `order_quote` yolu yeniden kullanir (tek GET)
         ref = None if q is None else float(q["order_ref_price"])
         pe = float(row.planned_entry) if row.planned_entry else 0.0
         if ref is None or not pe > 0:
