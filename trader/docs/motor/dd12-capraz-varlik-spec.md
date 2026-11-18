@@ -1,268 +1,265 @@
-# DD-12: Yeni kâğıt evreni (20 kripto + ABD hisseleri + 4 emtia) — belirtim
+# DD-12: Kâğıt bot ana planı — 44 enstrüman, bütün kurulum aileleri, ML ve ders etkin
 
-Tarih: 18 Kasım 2026 (mentor). Sürüm 2: kullanıcının aynı günkü güncellemesiyle 11 sembollük ilk liste yerine geçti. Dayanak: `tasarim-kararlari.md` "Mag7 + emtia şimdi ekleniyor" ve "kâğıtta deneyerek öğrenme tutumu" (`1694322`); kullanıcı: "Enstrümanları değiştiriyorum: stabil coin hariç piyasa değeri en yüksek 20 coin, piyasa değeri en yüksek 20 ABD hissesi, altın, gümüş, Brent, bakır." Bu belge kod, test ve commit içermez.
+Tarih: 18 Kasım 2026 (mentor). Sürüm 3 (önceki taslakların yerine geçer; dosya adı tarihseldir). Dayanak: kullanıcı kararları, 18 Kasım 2026 (`tasarim-kararlari.md`). Bu belge kod, test ve commit içermez.
 
-**Çalışma tutumu.** Kâğıtta deneyip canlı gözlemle öğrenilir; istatistik kesinlik beklenmez ve eksikliği bu işi durdurma gerekçesi değildir. Değişmeyenler: gerçek para kapısı (CANLI-K1; para ve canlı anahtar yok), S2 ön kaydı, kilitli dönem. Hisse/emtia kolu **DENEY** etiketlidir; sonuçları CANLI-K1, ML kapısı ya da S2 kanıtı sayılmaz.
+## 0. Kararlar (kullanıcı) ve bu planın sınırı
 
-## 0. Özet
+- **Tek, düz kâğıt bot:** mevcut `learner` kâğıt motoru. Ayrı bot, ayrı kol, ayrı etiket yok.
+- **Gölge kip kâğıtta hiçbir yerde yok.** ML işlemleri gerçekten etkiler; dersler kendiliğinden uygulanır; gölge karar satırları (`shadow_blocks`) kapatılır.
+- **İçinde her şey:** 44 enstrüman (20 kripto + 20 ABD hissesi + altın, gümüş, Brent, bakır), bütün kurulum aileleri (trend takip, geri çekilme, kırılım, yatay piyasa) × 15dk / 1s / 4s / 1g, ML (aday eler ve kendi adayını üretir), ders.
+- **İkiz bot yok, silinir.**
+- **Sunucu büyütülmez;** plan 2 GB'a sığacak biçimde boyutlanır (§8).
+- **Değişmeyenler:** testnet ve canlı yolu; gerçek para kapısı (CANLI-K1; para ve canlı anahtar yok); S2 ön kaydı; kilitli dönem (2026-05-01 → 2026-11-01).
 
-| Kim | Evren | Not |
-|---|---|---|
-| Kâğıt öğrenen + ikiz | 20 kripto (aynı liste) | Bugünkü 10 çiftin üst kümesi; açık pozisyon ve defter sürer |
-| Kâğıt `cross` kolu (yeni, 3. motor) | 18 hisse + 4 emtia = 22 | DENEY; veto, ML, ders yok; kendi feed'i ve dizini |
-| Testnet (14 Aralık), canlı | 10 çift (taban) | Değişmez |
-| Araştırma (S2, derlem, ML yeniden eğitim) | 10 çift (taban) | Değişmez; ön kayıt donuk |
+Teslim: **Faz 1 ≤ 21 Kasım** (44 enstrüman, mevcut iki kurulum 1 saatlikte, ML etkin, ikiz kaldırılır, ders ikizsiz çalışır) · **Faz 2 ≤ 2 Aralık** (bütün kurulum aileleri, dört zaman dilimi, defter v5) · **Faz 3 ≤ 16 Aralık** (kendi adayını üreten ML, kurulum bazlı ML süzgeci, kurulum aç/kapa dersi).
 
-- `config/engine.base.json` **değişmez**: araştırma, testnet ve canlı çift listesini oradan okur. Kâğıt evrenleri katmanla gelir: `engine.paper.json` (20 kripto), `engine.cross.json` (22).
-- Yeni bot adı yok. Cross kolu testnet kalıbıyla çalışır: `run --bot learner --env cross`, ayrı `var-cross/`. Defter şemasına (`CHECK (bot IN ('learner','twin'))`, 10+ tablo) dokunulmaz.
-- İstenen 44 enstrümandan 42'si var: MA (Mastercard) ve JNJ (Johnson & Johnson) Binance USDⓈ-M'de listeli değil, atlandı.
-- Sunucu: A aşaması (20 kripto) 2 GB'a sığar. B aşaması (cross) ölçümle açılır; 14 Aralık testnet koşusuyla birlikte 2 GB dardır. **Öneri: sunucuyu 4 GB'a büyütmek** (kullanıcı işi).
+## 1. Enstrümanlar (44)
 
-## 1. Evren
+Kaynak: `data.binance.vision` USDⓈ-M arşiv dizini (18 Kasım; yalnız dizin/dosya adları listelendi, veri indirilmedi). Parantez = arşivdeki ilk ay. Piyasa değeri sıralaması mentorun bilgisine dayanır, **doğrulanmadı**; liste kullanıcı onayıyla sabitlenir, kendiliğinden güncellenmez.
 
-Kaynak: `data.binance.vision` USDⓈ-M arşiv dizini (18 Kasım 2026; yalnız dizin ve dosya adları listelendi, veri indirilmedi). "İlk ay" = arşivdeki ilk aylık dosya. Piyasa değeri sıralaması mentorun bilgisine dayanır, **doğrulanmadı**; liste kullanıcı onayıyla sabitlenir ve kendiliğinden güncellenmez (yeniden sıralama = yeni karar).
+**Kripto (20)** — stabil (USDT, USDC, DAI, FDUSD, USDe, USDS) ve sarılı/stake kopyalar (WBTC, WETH, stETH, wstETH, WBETH) hariç; LEO Binance vadelide yok: BTC, ETH, XRP, BNB, SOL, DOGE, TRX, ADA, HYPE (2025-05), LINK, BCH, XLM, SUI, AVAX, HBAR, LTC, TON (2024-03), SHIB (`1000SHIBUSDT`), DOT, XMR. Mevcut 10 çiftin hepsi içindedir.
 
-**Kripto (20)** — stabil (USDT, USDC, DAI, FDUSD, USDe, USDS) ve sarılı/stake kopyalar (WBTC, stETH, wstETH, WETH, WBETH) hariç; LEO Binance vadelide yok.
+**ABD hisseleri (20):** NVDA (2026-03), MSFT (04), AAPL (04), GOOGL (03), AMZN (02), META (03), AVGO (04), TSLA (01), BRKB (05), JPM (05), LLY (06), WMT (05), V (05), ORCL (05), XOM (09), NFLX (06), PLTR (02), COST (06), AMD (05), HD (05). Mastercard ve Johnson & Johnson Binance'te listeli değil; kullanıcı kararıyla AMD ve Home Depot eklendi.
 
-BTC, ETH, XRP, BNB, SOL, DOGE, TRX, ADA, HYPE (2025-05), LINK, BCH, XLM, SUI (2023-05), AVAX, HBAR, LTC, TON (2024-03), SHIB (sözleşme adı `1000SHIBUSDT`, çift `1000SHIB/USDT`), DOT, XMR.
+**Emtia (4):** XAU altın (2025-12), XAG gümüş (2026-01), BZ Brent (2026-04), COPPER bakır (2026-03).
 
-Mevcut 10 çiftin hepsi listededir. Yedek (sıra değişmişse): ZEC, UNI.
+**Sunucuda doğrulanacak (adım 0; bu ortamdan Binance API 451 döndü):** 44 sembol `exchangeInfo`'da `TRADING` mi, hisse/emtia `contractType` değeri (beklenen `TRADIFI_PERPETUAL`), filtreler, kapalı seansta 1 dk mum geliyor mu. `TRADING` olmayan sembol çıkarılır ve kullanıcıya bildirilir.
 
-**ABD hisseleri (20'den 18'i listeli)**
+## 2. Yapı
 
-| # | Hisse | Sembol | İlk ay | # | Hisse | Sembol | İlk ay |
-|---|---|---|---|---|---|---|---|
-| 1 | Nvidia | NVDAUSDT | 2026-03 | 11 | Eli Lilly | LLYUSDT | 2026-06 |
-| 2 | Microsoft | MSFTUSDT | 2026-04 | 12 | Walmart | WMTUSDT | 2026-05 |
-| 3 | Apple | AAPLUSDT | 2026-04 | 13 | Visa | VUSDT | 2026-05 |
-| 4 | Alphabet | GOOGLUSDT | 2026-03 | 14 | Oracle | ORCLUSDT | 2026-05 |
-| 5 | Amazon | AMZNUSDT | 2026-02 | 15 | Mastercard | — | **yok** |
-| 6 | Meta | METAUSDT | 2026-03 | 16 | Exxon Mobil | XOMUSDT | 2026-09 |
-| 7 | Broadcom | AVGOUSDT | 2026-04 | 17 | Netflix | NFLXUSDT | 2026-06 |
-| 8 | Tesla | TSLAUSDT | 2026-01 | 18 | Johnson & Johnson | — | **yok** |
-| 9 | Berkshire B | BRKBUSDT | 2026-05 | 19 | Palantir | PLTRUSDT | 2026-02 |
-| 10 | JPMorgan | JPMUSDT | 2026-05 | 20 | Costco | COSTUSDT | 2026-06 |
+- Tek motor (`trader-engine@learner`), tek feed, tek `var/market.sqlite`, tek defter (`var/learner/ledger.sqlite`). Mevcut açık pozisyonlar ve defter sürer (yeni liste eskisinin üst kümesi).
+- `config/engine.base.json` **değişmez** (10 çift, v1b): testnet, canlı, S2, derlem ve geri test varsayılanı onu okur. Kâğıt botun ayarı tek katmandadır: `config/engine.paper.json`. Birim: `run --bot learner --env paper`.
+- Kurallar gerçek `exchangeInfo`'dan gelir (feed saatte bir yeniler). `--synthetic-rules` yalnız geri testtedir.
+- Hisse/emtia sembolleri feed'de "isteğe bağlı"dır: birinin kuralı ya da verisi gelmezse yalnız o çift bekler; feed ve motor düşmez. Açılış kapısı: 20 kripto için kural + taze veri şart; hisse/emtia için yalnız kural (kapalı seansta bayat çift giriş yapmaz, motor çalışır).
+- Isınma ≈ 50 gün (1s 1200, 15dk 4800, 4s 300 bar). En yeni sembol XOM (2026-09) sınırdadır; yetmezse yalnız o çift bekler.
 
-Kullanıcı 20'ye tamamlamak isterse listeli sıradaki adaylar: AMD (2026-05), Home Depot (2026-05). Varsayılan: tamamlanmaz, 18 ile gidilir.
+## 3. Kurulumlar ve zaman dilimleri
 
-**Emtia (4):** XAUUSDT altın (2025-12), XAGUSDT gümüş (2026-01), BZUSDT Brent (2026-04), COPPERUSDT bakır (2026-03).
+Kimlik `arm_id` = `<kurulum>@<zaman dilimi>`. Katalog: `price-action-kural-katalogu.md`.
 
-**Doğrulanacak (adım 0, sunucuda; bu ortamdan Binance API 451 döndü):** 42 sembolün `exchangeInfo`'da `status=TRADING` olduğu, hisse/emtia için `contractType` değeri (beklenen `TRADIFI_PERPETUAL`), filtreler, kapalı seansta 1 dk mum gelip gelmediği. `TRADING` olmayan sembol listeden çıkarılır ve bildirilir; kalanlarla devam edilir.
+| Kurulum | Aile (katalog) | Zaman dilimleri | Faz |
+|---|---|---|---|
+| `T1` trend içi geri çekilme | geri çekilme (PA-TRD-01/05; mevcut) | 1s (mevcut), 15dk, 4s | 1 / 2 |
+| `R1` yatay piyasa kenarı | yatay piyasa (PA-YTY-02; mevcut) | 1s (mevcut), 4s | 1 / 2 |
+| `TF1` yapı kırılımı yönünde devam | trend takip (PA-YAP-03, PA-FLT-01) | 4s, 1g | 2 |
+| `B1` kırılım + yeniden test | kırılım (PA-KIR-01/02) | 1s, 4s | 2 |
+| `F1` sahte kırılım | kırılım (PA-KIR-03) | 15dk, 1s | 2 |
+| `S1` sıkışma kırılımı (iç bar / NR7) | kırılım (PA-MUM-05, PA-TRD-04) | 1s, 1g | 2 |
+| `M1` ML'in kendi adayı | §5.2 | 1s; sonra 15dk, 4s | 3 |
 
-## 2. Kararlar ve gerekçeleri
+- Her yeni kurulumun kesin tanımı (giriş, stop, hedef, sabitler) kodlanmadan önce bu belgeye tarihli ek olarak yazılır; sabitler katalogdan alınır.
+- `signals.py` donuktur: `T1`/`R1` onu çağırır; `T1@4h` beklemedeki `price_action_v1_4h.py` dosyasını kullanır. Yeni kurulumlar yeni dosyalardadır.
+- 1 günlük bar feed'e eklenmez; 4 saatlik barlardan (6 × 4s, UTC gün) motor içinde toplanır. `market.sqlite` şeması değişmez.
+- Çift başına tek pozisyon kuralı aynen. Aynı çiftte aynı anda birden çok kurulum sinyal verirse büyük zaman dilimi önceliklidir; alınmayanlar deftere `arm_conflict` ile yazılır.
+- Her kurulumun karnesi bütün adaylarından çıkar: alınanlar gerçek kâğıt sonucuyla, alınmayanlar gece işinin hesapladığı "alınsaydı ne olurdu" sonucuyla (mevcut `counterfactual` servisi).
+- Kurulum başına en çok 3 açık pozisyon; `M1` için 2.
 
-**K1 — Öğrenen ve ikiz 20 kriptoya geçer, 42'ye değil.** Hisse ve emtiayı öğrenen/ikize koymak dört şeyi aynı anda bozar: veto (belge 84 karar olur, bağlam BTC'ye dayalı), ders servisi (kripto ve hisse işlemleri tek kanıt havuzunda karışır), ML gölgesi (eğitim evreni dışı) ve açılış kapısı (kapalı seanstaki tek hisse iki çekirdek botu durdurur). 20 kripto ise aynı türdür, 7/24 açıktır, mevcut 10'un üst kümesidir. Kıyas korunur: iki bot aynı anda, aynı listeye geçer; defterler ve 10 R freni sürer; raporlarda "evren 10 → 20" tarihi işaretlenir. Kâğıt yeni başladığı için maliyeti düşüktür.
+## 4. Risk
 
-**K2 — Hisse + emtia ayrı `cross` kolunda.** Ayrı süreç, ayrı feed, ayrı veritabanı (`var-cross/market.sqlite`), ayrı defter, ayrı KILL/PAUSE (`shared/cross/`). Yeni sembollerdeki kural/veri arızası çekirdek feed'i ve öğrenen/ikizi düşüremez. Strateji aynı (v1b), ML `off`, ders/karşı-olgu/sapma zamanlayıcıları kurulmaz, `shadow_blocks` boş.
+İşlem başı risk **%0,5 aynen**; `risk.py` sınırları aynen (toplam açık risk %6, aynı yön %4, günlük zarar). Üstüne, yalnız kâğıt katmanında:
 
-**K3 — Taban dosya donuk; kâğıt evreni katmanla.** `--env` virgüllü liste kabul eder, katmanlar sırayla birleşir: ikiz `--env paper`, öğrenen `--env paper,paper-ml`, cross `--env cross`. Testnet/canlı birimleri değişmez ve 10 çiftte kalır. Böylece S2 koşuları, `build_corpus_v2.py`, ML yeniden eğitimi, OI toplayıcı ve geri test varsayılanı aynı 10 çifti okumayı sürdürür.
+| Sınır | Kapsam | Tavan | Giriş seansı |
+|---|---|---|---|
+| hesap geneli | 44 | 10 pozisyon (≤ %5) | — |
+| `kripto_buyuk` | BTC, ETH, XRP, BNB, SOL | 3 | — |
+| `kripto_diger` | kalan 15 | 4 | — |
+| `hisse` | 20 hisse | 3 | New York 09:30–16:00, Pzt–Cum |
+| `hisse_teknoloji` | NVDA, MSFT, AAPL, GOOGL, AMZN, META, AVGO, TSLA, ORCL, NFLX, PLTR, AMD | 2 | (aynı) |
+| `metal` | XAU, XAG | 1 | Paz 23:00 → Cum 21:00 UTC |
+| `enerji_sanayi` | BZ, COPPER | 1 | Paz 23:00 → Cum 21:00 UTC |
 
-**K4 — ML gölgesi (r03) yalnız eğitim evreninde puanlar.** r03 10 çiftle eğitildi; bağlam özellikleri (genişlik, BTC/ETH) o 10 çift üzerinden tanımlı. Bağlamı 20 çifte genişletmek eski 10 çiftin puanlarını da kaydırır. Bu yüzden: ML bağlam evreni sabit 10 çifttir (`ml_pairs`, `engine.paper-ml.json`); bu 10 çiftin adayları bugünkü gibi puanlanır ve "ML açık olsaydı" kolu aynı tanımla sürer. Yeni 10 çiftin adayları puanlanmaz, `ml_status="out_of_universe"` olarak kaydedilir. Gölge hiçbir adayı elemediği için işlemler etkilenmez. 14 günlük yeniden eğitim aynı tarifle 10 çiftte kalır. 20 çiftli model = yeni tarif = yeni ön kayıt (şimdi değil).
+Bir çift birden çok kümede olabilir; hepsinde yer olmalıdır. Sayım açık ve açılmakta olan pozisyonları kapsar. Hisse/emtiada iki giriş koruması: seans dışında giriş yok; son kapanmış tetik barı `volume == 0` ya da `high == low` ise giriş yok (tatil). Açık pozisyonun stop/hedef yönetimi her zaman sürer; hafta sonuna taşınan pozisyon kapatılmaz. Hisse/emtia kayması tabanın iki katı sayılır (giriş 4, çıkış 4, stop 10 bp; tahmin).
 
-**K5 — Veto: öğrenen/ikizde 20 çift için açık, cross'ta kapalı.** `veto.json` `pairs_from` → `config/engine.paper.json:pairs`; belge 40 karar taşır. Çıktı sınırı yetmeyebilir: `max_tokens` üst sınırı 2000 → 4000, değer 3600. Cross için `veto_mode="off"` (yalnız `paper` + `experimental`); defterde neden `not_evaluated:experimental`.
+**Veto (LLM):** 20 kripto için açık (40 karar; `max_tokens` üst sınırı 2000 → 4000). Hisse/emtia vetosuz başlar: veto bağlamı BTC'ye dayalı ve 44 enstrümanda API maliyeti kabaca 4 katına çıkar. Kullanıcı isterse 44'e yayılır (§14).
 
-**K6 — Testnet 10 çiftte kalır.** Yeni sembollerin testnette varlığı doğrulanmadı; testnetin amacı emir yolunu sınamaktır, evren genişliği değil. Kâğıt–testnet karşılaştırması yalnız ortak 10 çift üzerinden yapılır.
+## 5. ML — etkin
 
-**K7 — Kurallar gerçek `exchangeInfo`'dan** (feed saatte bir yeniler, `rules` tablosu). `--synthetic-rules` yalnız geri testtedir. `extract_rules` bugün `contractType != "PERPETUAL"` olanı reddeder; kabul listesi parametreye çevrilir, yalnız cross genişletir.
+Model puanı boyutu değiştirmez; risk kilidi son sözü söyler. Kâğıtta kapı şartı aranmaz. Testnet/canlıya kapıdan geçmemiş model yüklenemez (mevcut kural, aynen).
 
-**K8 — Isınma ve kısa geçmiş.** v1b ısınması ≈ 50 gün (1h 1200, 15m 4800, 4h 300 bar; kesintisizlik tetik 20, 4h 150). Feed geri doldurması bunu karşılar. En yeni sembol XOM (2026-09): sınırda; yetmezse yalnız o çift `no_history` ile bekler, motor durmaz. Yeni 10 kriptonun hepsi yeterli geçmişe sahip.
+### 5.1 Süzgeç (aday eler)
+- **Faz 1:** r03, `ml_mode="active"`. r03 taban 10 çiftle eğitildi ve 200 günlük geçmiş ister; bağlamı o 10 çiftle sabit tutulur (`ml_pairs`), puanları bugünküyle aynı kalır. Bu 10 çiftin eşik altı adayları **elenir**. Diğer 34 enstrümanın adayları elenmeden geçer (kayıt: `out_of_universe`); bugünkü "puanlanamayan aday elenir" davranışı onlara uygulanırsa hisseler hiç işlem yapamaz. Not: r03 kapıda başarısızdı (AUC 0,50); elemesi rastgeleye yakın olabilir, etkisi §7'deki ölçümle görülür.
+- **Faz 3:** kurulum bazlı süzgeçler, 44 enstrümanı kapsar; eğitim verisi kâğıtta biriken aday + sonuç kayıtlarıdır. Kurulum başına ≥ 300 etiketli aday dolana kadar o kurulum süzgeçsiz çalışır.
 
-**K9 — Seans ve ince piyasa (yalnız cross, yalnız yeni giriş).** Kapalı seansta fiyat düz/ince olur, ATR küçülür, miktar büyür, açılış boşluğu stopu aşar. İki koruma: (a) küme seans penceresi dışında giriş yok; (b) son kapanmış tetik barında `volume == 0` ya da `high == low` ise giriş yok (tatilleri de yakalar). Açık pozisyonun stop/hedef yönetimi her zaman sürer; hafta sonuna taşınan pozisyon kapatılmaz, boşluk zararı kâğıtta görülür. Göstergeler (`signals.py`, donuk) 7/24 dizide aynen hesaplanır; düz barların etkisi düzeltilmez, izlenir.
+### 5.2 ML'in kendi adayı (price action'ı kendisi öğrenir) — Faz 3
+- Girdi: son 64 barın ATR'ye ölçekli mum dizisi (gövde, fitiller, kapanış konumu, getiri) + yapı özellikleri (son salınım tepe/dibine uzaklık, aralık içi konum, ortalama eğimleri, sıkışma ölçüsü, üst zaman dilimi yönü). Enstrüman kimliği özelliği yok.
+- Etiket: üçlü bariyer (stop 1,5 ATR, hedef 3 ATR, süre 48 bar), uzun ve kısa ayrı.
+- Model: LightGBM, üç sınıf (uzun / kısa / yok); eşik, eğitim dışı dilimde barların en yüksek puanlı ≈ %2'sini seçecek biçimde sabitlenir.
+- Eğitim: sunucu dışında, 20 kripto, 2021-01 → 2026-04-30; **kilitli dönem eğitime ve değerlendirmeye girmez**; 2026-11-01 sonrası canlı veri biriktikçe eklenir. Hisse/emtiada kilit öncesi geçmiş neredeyse yok; model onlara kripto eğitimiyle uygulanır.
+- Çalışma: `M1@1h` kurulumu olarak; giriş bar kapanışında piyasa emri; küme/seans/risk kapılarının hepsinden geçer. 14 günde bir yeniden eğitim.
+- Kod yeni pakettedir (`src/trader_ml/pa_proposer/`); dondurulmuş dosyalara dokunulmaz.
 
-**K10 — Açılış kapısı.** Öğrenen/ikiz: 20/20, aynen. Cross: adım 0'da kapalı seansta da 1 dk mum geldiği görülürse 22/22 aynen. Gelmiyorsa cross için `startup_gate="rules_only"` (yalnız `experimental`): kural 22/22 + en az bir çiftte taze veri yeter; bayat çift çalışma anında zaten `stale_data` ile giriş yapmaz. Cross çıkış 7'de 5 dakikada bir yeniden dener, saatte 6 denemeden sonra `failed` + Telegram alarmı.
+### 5.3 Kayıt
+Kâğıtta çalışan her model `research/paper_models.csv`'ye yazılır (ad, tarif, veri penceresi, commit, sha256, tarih). Bu modellerden biri ileride kapıya ya da CANLI-K1'e aday olursa, buradaki tarif sayısı deneme sayısına eklenir.
 
-**K11 — Ortak IP, ortak ban.** İki feed aynı IP'den çıkar. Cross feed çekirdeğin ban dosyasını (`var/`) salt okunur ek kaynak olarak dikkate alır; kendi kaydını `var-cross/`a yazar.
+## 6. Ders — etkin, ikizsiz
 
-**K12 — Cross maliyet modeli (tahmin).** Komisyon 5 bp; kayma tabanın iki katı (giriş 4, çıkış 4, stop 10 bp). İki hafta sonra `bookTicker` yayılımına bakılıp bir kez ayarlanabilir.
+İkiz kalktığı için "iyileşti mi" sorusu botun kendi kayıtlarından yanıtlanır. Dayanak: defter her adayı özellikleriyle yazar ve gece işi alınmayan adayların "alınsaydı" sonucunu hesaplar.
 
-## 3. Risk
+- **Referans sürüm:** kullanıcının son onayladığı (başlangıçta bugünkü) ayar sürümü.
+- **Ders etkisi (R):** aynı dönemde, bugünkü ayarlarla referans ayarların **farklı karar verdiği** adaylar üzerinden ölçülür: `etki = Σ R(bugünkü ayarın aldığı, referansın almayacağı işlemler; gerçek sonuç) − Σ R(referansın alacağı, bugünkü ayarın elediği adaylar; "alınsaydı" sonucu)`. İki taraf aynı piyasa döneminden geldiği için "önce/sonra" kıyasındaki dönem farkı karışmaz. Tavan ve sıra etkileşimleri hesaba girmez (yaklaşık ölçüdür).
+- **Tek değişikliğin geri alınması:** bir değişiklikten sonra farklı karar verilen ≥ 30 adayda o değişikliğin etkisi ≤ −3 R ise değişiklik geri alınır (bugünkü otomatik geri almanın ikizsiz karşılığı).
+- **10 R freni (yeni tanım):** referans sürümden beri toplam ders etkisi ≤ −10 R ise referans sürüme dönülür, otomatik uygulama durur, Telegram'a haber gider.
+- **"İkizden en çok 2 adım"** → "referans sürümden en çok 2 adım".
+- Otomatik uygulama ilk günden açık: sıkılaştırma ve gevşetme onaysız uygulanır, Telegram'a bilgi gider. Eşik kalibrasyonu (`lesson_calibrate.py`) bilgi içindir, ön şart değildir. Kalan korumalar: tek ayar, tek adım, haftada en çok bir değişiklik, sınırlar.
+- **Faz 1–2:** mevcut ders ayarları `T1` ve `R1` kanıtıyla çalışır.
+- **Faz 3 — kurulum dersi:** bir kurulum, alınan + "alınsaydı" ≥ 40 adayda ortalama ≤ −0,15 R ise kapatılır (aday ve sonuç kaydı sürer); son 40 adayda ≥ +0,05 R'ye dönerse yeniden açılır.
+- **ML etkisi** aynı yolla ölçülür: `−Σ R(ML'nin elediği adaylar; "alınsaydı" sonucu)` ve `M1` işlemlerinin gerçek R toplamı.
 
-İşlem başı risk **%0,5 aynen**. Hesap sınırları aynen (`risk.py`: toplam açık risk %6, aynı yön %4, günlük zarar). Üstüne iki yeni, yalnız kâğıt katmanlarında tanımlı sınır: hesap geneli `max_positions` ve küme tavanları. Bir çift birden çok kümede olabilir; hepsinde yer olmalıdır. Sayım açık ve açılmakta olan pozisyonları kapsar; aynı barda sıra `pairs` sırasıdır.
+## 7. Telegram ve pano
 
-| Bot | Küme | Çiftler | Tavan | Seans (giriş) |
-|---|---|---|---|---|
-| öğrenen/ikiz | `kripto_buyuk` | BTC, ETH, XRP, BNB, SOL | 3 | — |
-| | `kripto_diger` | kalan 15 | 5 | — |
-| | hesap geneli | 20 | **8** (≤ %4 açık risk) | — |
-| cross | `hisse` | 18 hisse | 3 | New York 09:30–16:00, Pzt–Cum |
-| | `hisse_teknoloji` | NVDA, MSFT, AAPL, GOOGL, AMZN, META, AVGO, TSLA, ORCL, NFLX, PLTR | 2 | (aynı) |
-| | `metal` | XAU, XAG | 1 | Paz 23:00 → Cum 21:00 UTC |
-| | `enerji_sanayi` | BZ, COPPER | 1 | Paz 23:00 → Cum 21:00 UTC |
-| | hesap geneli | 22 | **5** (≤ %2,5 açık risk) | — |
+Sade başlıklar: "Kâğıt bot". Özel etiket yok.
 
-Öğrenen ve ikiz aynı küme tanımını okur (aynı katman dosyası). Testnet/canlıda `clusters`/`max_positions` verilemez (yapılandırma hatası); oraya taşınması ayrı karardır.
+- Günlük rapor: net R (bugün / toplam), açık pozisyonlar (küme adıyla), **ders etkisi** ve **ML etkisi** (§6), atlama sayıları (seans, tatil barı, küme tavanı, hesap tavanı, kurulum çakışması, ML elemesi).
+- Kurulum karnesi (Faz 2; haftalık rapor ve `/kurulumlar`): kurulum başına aday, alınan, ortalama R (alınan), ortalama R (alınan + alınsaydı), varlık sınıfı kırılımı, açık/kapalı.
+- Ders: her otomatik uygulama ve geri almada bildirim.
+- İkizle ilgili bütün satır, komut ve pano alanları kaldırılır.
+- Sağlık: hisse/emtiada kapalı seans bayatlığı alarm üretmez; beklenen bot listesi yalnız `learner`.
 
-## 4. Yapılandırma
+## 8. Kapasite — 2 GB'da kalınır
 
-`config/engine.paper.json` (yeni; öğrenen ve ikiz):
-```json
-{"pairs": ["BTC/USDT","ETH/USDT","XRP/USDT","BNB/USDT","SOL/USDT","DOGE/USDT","TRX/USDT","ADA/USDT","HYPE/USDT","LINK/USDT",
-           "BCH/USDT","XLM/USDT","SUI/USDT","AVAX/USDT","HBAR/USDT","LTC/USDT","TON/USDT","1000SHIB/USDT","DOT/USDT","XMR/USDT"],
- "max_positions": 8,
- "clusters": {"kripto_buyuk": {"pairs": ["BTC/USDT","ETH/USDT","XRP/USDT","BNB/USDT","SOL/USDT"], "max_positions": 3},
-              "kripto_diger": {"pairs": ["…kalan 15…"], "max_positions": 5}}}
-```
-`config/engine.paper-ml.json` (ek anahtar): `"ml_pairs": [taban 10 çift]`.
+Bellek ve işlemci sayıları **tahmindir**; dağıtımda ölçülür.
 
-`config/engine.cross.json` (yeni):
-```json
-{"experimental": true,
- "pairs": ["NVDA/USDT","MSFT/USDT","AAPL/USDT","GOOGL/USDT","AMZN/USDT","META/USDT","AVGO/USDT","TSLA/USDT","BRKB/USDT","JPM/USDT",
-           "LLY/USDT","WMT/USDT","V/USDT","ORCL/USDT","XOM/USDT","NFLX/USDT","PLTR/USDT","COST/USDT",
-           "XAU/USDT","XAG/USDT","BZ/USDT","COPPER/USDT"],
- "var_dir": "var-cross", "market_db": "var-cross/market.sqlite", "history_dir": "var-cross/history",
- "kill_file": "shared/cross/KILL", "pause_file": "shared/cross/PAUSE",
- "veto_mode": "off", "ml_mode": "off", "shadow_blocks": [],
- "cost": {"slip_entry_bps": 4.0, "slip_exit_bps": 4.0, "slip_stop_bps": 10.0},
- "contract_types": ["PERPETUAL", "TRADIFI_PERPETUAL"],
- "max_positions": 5, "flat_bar_guard": true,
- "clusters": {
-   "hisse": {"pairs": ["…18…"], "max_positions": 3,
-             "session": {"tz": "America/New_York", "days": [0,1,2,3,4], "open": "09:30", "close": "16:00"}},
-   "hisse_teknoloji": {"pairs": ["…11…"], "max_positions": 2},
-   "metal": {"pairs": ["XAU/USDT","XAG/USDT"], "max_positions": 1,
-             "session": {"tz": "UTC", "week_open": "Sun 23:00", "week_close": "Fri 21:00"}},
-   "enerji_sanayi": {"pairs": ["BZ/USDT","COPPER/USDT"], "max_positions": 1,
-                     "session": {"tz": "UTC", "week_open": "Sun 23:00", "week_close": "Fri 21:00"}}}}
-```
-`config/veto.json`: `pairs_from` → `config/engine.paper.json:pairs`, `max_tokens` 3600.
+- **REST ağırlığı** (sınır 2400/dk, istemci eşiği 1800): sürekli 88/dk; saat başı tepe ≈ 270/dk; ilk geri doldurma ≈ 4100 (istemci kendini kısar, 3–4 dk). Sorun değil.
+- **Disk:** 1 dk barlar (14 gün) ≈ 200 MB; uzun barlar ≈ 180 MB/yıl; defter yılda < 1 GB. Sorun değil.
+- **Bellek (tahmini RSS, MB):**
 
-## 5. Dosya dosya değişiklikler
+| Birim | Bugün | Faz 1 | Faz 2–3 |
+|---|---|---|---|
+| feed (44) | 55 | 85 | 85 |
+| öğrenen | 200 | 320 | 450–520 |
+| ikiz | 160 | **0 (kaldırıldı)** | 0 |
+| testnet (14 Aralık) | — | — | 180 |
+| pano + telegram | 110 | 110 | 120 |
+| işletim sistemi | 230 | 230 | 230 |
+| geçici işler (pano yayını, ders, veto, gece işi) | 300 | 300 | 350 |
+| **En kötü an** | 1055 | **1045** | **1415–1485 / 1960** |
 
-**Dokunulmaz:** `s2-on-kayit.md` §1.8 listesi (`scripts/build_corpus_v2.py`, `research/ml_build_candidates.py`, `trader_ml/{features,features_v2,labels,guards,config}.py`, `trader_core/{ml_features,ml_features_v2,signals,regime,indicators}.py`, `trader_engine/holdout.py`); ayrıca `ledger.py` (şema sürümü 4, göç yok), `engine.base.json`, `engine.learner.json`, `engine.twin.json`, `engine.testnet.json`, `engine.live.json`, `risk.py`, `brokers/paper.py`, `order_manager.py`, `research/*`. freqtrade/ccxt/python-binance yok.
+İkizin kalkması Faz 1'i bugünkü düzeyde tutar; Faz 2–3 ≈ 500 MB payla sığar. `trader.slice` aynen (1100M / 1300M). Birim tavanları: öğrenen `MemoryHigh=600M`, `MemoryMax=750M`; feed 200M/260M; testnet aynen (250M/320M). Yumuşak tavan toplamı 200 + 600 + 250 = 1050 ≤ 1100.
+
+- **Boyutlama kuralları (öğrenen ≤ 550 MB hedefi):** çift × zaman dilimi başına yalnız son pencere tutulur (15dk 5000, 1s 1500, 4s 1500 bar); gösterge tabloları adımlar arası saklanmaz; 1 günlük bar anında türetilir; ML özellik tamponu son 64 bar; aynı türden tek model bellekte.
+- **İşlemci:** yalnız kapanan zaman diliminin kurulumları hesaplanır (15 dakikalık adımda 2 kurulum, saat başında 7, 4 saatte 11, gün başında 13). Hedef: karar adımı < 120 sn; `CPUQuota=90%`. Kâğıtta stoplar 1 dk barlardan sonradan değerlendirildiği için gecikme sonucu değiştirmez.
+- **Sığmazsa (sessizce kısılmaz, kullanıcıya sorulur):** ölçümde öğrenen > 550 MB ya da saat başı adımı > 120 sn çıkarsa en küçük kısıntı önerisi şudur: **15 dakikalık kurulumlar (`T1@15m`, `F1@15m`) yalnız 20 kriptoda çalışır**, hisse/emtiada 1s/4s/1g kalır (en büyük pencere 15 dakikalıktır; ≈ 100 MB ve 15 dakikalık hesabın yarısından fazlası kazanılır). İkinci basamak: 14 Aralık'ta testnet başlarken pano yayınını 5 dakikadan 15 dakikaya seyreltmek.
+- **İzlenecek:** `systemctl show trader-engine@learner trader-feed -p MemoryCurrent -p MemoryPeak`; `free -m`; `journalctl -k | grep -i oom`; karar adımı süresi (`status.json`); feed `used_weight`.
+
+## 9. Dosya dosya değişiklikler
+
+**Dokunulmaz:** `s2-on-kayit.md` §1.8 listesi (`scripts/build_corpus_v2.py`, `research/ml_build_candidates.py`, `trader_ml/{features,features_v2,labels,guards,config}.py`, `trader_core/{ml_features,ml_features_v2,signals,regime,indicators}.py`, `trader_engine/holdout.py`); `engine.base.json`, `engine.learner.json`, `engine.testnet.json`, `engine.live.json`; `risk.py`, `brokers/*`, `order_manager.py`; `research/s2_run.py`; testnet/canlı birimleri. freqtrade/ccxt/python-binance yok. Yeni yapılandırma anahtarları verilmediğinde (taban, testnet, canlı, geri test) davranış bit bit aynıdır.
+
+### Faz 1 (≤ 21 Kasım)
 
 | Dosya | Değişiklik |
 |---|---|
-| `src/trader_engine/config.py` | Yeni isteğe bağlı anahtarlar, verilmezse davranış bit bit aynı: `max_positions: int \| None`, `clusters` (çiftler `pairs` içinde; `max_positions ≥ 1`; isteğe bağlı `session`), `ml_pairs: tuple \| None` (hepsi `pairs` içinde), `experimental: bool`, `contract_types` (varsayılan `("PERPETUAL",)`), `flat_bar_guard: bool`, `startup_gate: "all" \| "rules_only"`. Kurallar: `clusters`/`max_positions` yalnız `paper`/`backtest`; `experimental` yalnız `paper`; `veto_mode="off"` yalnız `backtest` ya da `paper`+`experimental`; `session`, `flat_bar_guard`, `startup_gate≠all`, genişletilmiş `contract_types` yalnız `experimental`. `experimental` iken: `var_dir` son bileşeni `var` olamaz, `market_db` `var_dir` altında, `kill_file`/`pause_file` `shared/KILL`/`shared/PAUSE` olamaz, `ml_mode="off"`, `ladder_follow` yok; `var_dir` mutlaklaştırılır. `load_cli_config`: `env` virgüllü liste, katmanlar sırayla. |
-| `src/trader_engine/cli.py` | `--env` seçenek listesi yerine ad kalıbı (`^[a-z][a-z0-9-]{0,19}$`, virgüllü); dosyası olmayan ad hata. |
-| `src/trader_engine/exchange/rules.py` | `extract_rules(..., *, contract_types=("PERPETUAL",))`, `extract_all_rules` aynı parametre. Canlı/testnet çağrıları parametre vermez. |
-| `src/trader_engine/marketdata/feed.py` | `feed` ve `rules-snapshot` için `--env` (taban üstüne katman; yalnız `pairs`, `var_dir`, `market_db`, `history_dir`, `contract_types` okunur; pandas yüklenmez). `--also-ban-dir <dizin>` (salt okunur ek ban kaynağı). `--env` yokken çıktı aynı. |
-| `src/trader_core/ban_store.py` | `BanGuard(..., extra_paths=())`: ek dosyalar yalnız okunur. |
-| `src/trader_engine/cross_guard.py` (yeni, saf) | `clusters_of`, `session_open(cluster, now)` (`zoneinfo`), `caps_full(cfg, pair, open_pairs) -> str \| None`, `flat_bar(bar)`. |
-| `src/trader_engine/gates.py` | `decide`: kural adımından (9) sonra, vetodan (10) önce; yalnız ilgili anahtar doluysa: seans → düz bar → küme tavanı → hesap `max_positions`. Reddedilen aday mevcut defter değerleriyle yazılır: `skip_reason="risk_denied"`, `risk_allowed=False`, `veto_status="allowed"`, `risk_reason` ∈ {`session_closed:<küme>`, `flat_bar`, `cluster_cap:<küme>`, `max_positions`}; sayaçlar `skip:<kod>`. |
-| `src/trader_engine/engine.py` | `NoVeto` nedeni `experimental` iken `not_evaluated:experimental`; `startup_gate="rules_only"` dalı; `LiveContextV2` `ml_pairs` (yoksa `pairs`) ile kurulur, evren dışı aday puanlanmaz (`out_of_universe`); `status.json`'a `env`, `experimental`, küme başına açık sayı. |
-| `src/trader_engine/strategies/price_action_v1_ml.py` | Evren dışı çiftte puanlama atlanır, kayıt `out_of_universe`; gölge kipte eleme yok (bugünkü gibi). |
-| `src/trader_core/veto.py` | `max_tokens` üst sınırı 4000. Başka değişiklik yok. |
-| `config/` | §4. |
-| `deploy/trader-engine@.service` | `--env paper` (init-ledger ve run). `trader-engine@learner.service.d/ml-shadow.conf`: `--env paper,paper-ml`. `trader-feed.service`: `--env paper`. |
-| `deploy/trader-cross.slice` (yeni) | `MemoryHigh=360M`, `MemoryMax=450M`. |
-| `deploy/trader-feed-cross.service` (yeni) | `trader-feed.service` kalıbı; `Slice=trader-cross.slice`; `feed --config-dir config --env cross --startup-retry forever --also-ban-dir /opt/trader/var`; `MemoryHigh=100M`, `MemoryMax=140M`; `OOMScoreAdjust=300`; `ReadWritePaths=/opt/trader/var-cross`. |
-| `deploy/trader-engine-cross.service` (yeni) | `trader-engine-testnet.service` kalıbı, **anahtar dosyası yok**; `Slice=trader-cross.slice`; `After/Wants=trader-feed-cross.service`; `run --bot learner --env cross --config-dir config --ensure-ledger`; `RestartSec=300`, `RestartPreventExitStatus=2 8`, `StartLimitIntervalSec=3600`, `StartLimitBurst=6`; `OnFailure=trader-health-fail@%n.service`; `MemoryHigh=260M`, `MemoryMax=330M`; `OOMScoreAdjust=300`; `CPUQuota=40%`; `ReadWritePaths=/opt/trader/var-cross /opt/trader/shared/cross`. |
-| `deploy/install.sh`, `uninstall.sh` | `--with-cross` (varsayılan kapalı) / `--no-cross`; dizinler `var-cross/`, `var-cross/history/`, `shared/cross/`; sağlık ortamına `MARKET_PAIRS` = `engine.paper.json` listesi; `CROSS_*` yolları (§8). |
-| `scripts/health_backup.py` | `var-cross/learner/ledger.sqlite` yedeğe eklenir (varsa). |
-| `src/trader_core/{telegram,health}.py`, `scripts/report_run.py`, `src/trader_panel/*`, `config/panel.json` | §8. |
-| `docs/` | `00-index.md` DD-12 satırı; `sunucu-kurulum.md` "Yeni kâğıt evreni" bölümü. |
+| `config/engine.paper.json` (yeni) | `pairs` (44), `optional_pairs` (24), `strategy: "price_action_v1_full_ml"`, `ml_mode: "active"`, `ml_pairs` (taban 10), `ml_features: "r03"`, `ml_model_path`, `ml_experimental: true` (iç anahtar adı; kullanıcıya görünmez), `shadow_blocks: []`, `max_positions: 10`, `clusters` (§4, seanslarıyla), `flat_bar_guard`, `contract_types`, `veto_exempt_pairs` (24), `cost_overrides`. |
+| `config/engine.paper-ml.json`, `config/engine.twin.json` | **Silinir.** |
+| `config/veto.json` | `pairs_from` → kâğıt listesi eksi muaflar; `max_tokens` 3600. |
+| `config/lesson.json` | İkizsiz ölçüm (§6); gevşetme onaysız; kalibrasyon şartı kapalı. |
+| `src/trader_engine/config.py` | İsteğe bağlı anahtarlar: `max_positions`, `clusters` (+`session`), `flat_bar_guard`, `optional_pairs`, `veto_exempt_pairs`, `contract_types`, `cost_overrides`, `ml_pairs`; yalnız `mode="paper"` (testler için `backtest`), testnet/canlıda `ConfigError`. `ml_experimental`: `paper` + `active` de geçerli. `bot` yalnız `learner`; `ladder_follow` kaldırılır. |
+| `src/trader_engine/cli.py` | `--env paper` eklenir; `--bot twin` ve ikiz parametre karması denetimi kaldırılır. |
+| `src/trader_engine/exchange/rules.py` | `extract_rules(..., *, contract_types=("PERPETUAL",))`; canlı/testnet çağrıları parametre vermez. |
+| `src/trader_engine/marketdata/feed.py` | `feed` ve `rules-snapshot` için `--env`; isteğe bağlı çiftin kural/veri hatası ölümcül değil. pandas yüklenmez. |
+| `src/trader_engine/arm_guard.py` (yeni, saf) | Küme üyeliği, seans, tavan sayımı, tatil barı. |
+| `src/trader_engine/gates.py` | Kural adımından sonra, vetodan önce: seans → tatil barı → küme tavanı → hesap tavanı. Faz 1'de defter şeması değişmez: red satırı `skip_reason="risk_denied"`, `risk_reason` ∈ {`session_closed:<küme>`, `flat_bar`, `cluster_cap:<küme>`, `max_positions`}. Vetodan muaf çift: `allowed`, neden `exempt`. |
+| `src/trader_engine/engine.py` | Açılış kapısı (§2); `ml_pairs` bağlamı; çift bazlı kayma; ikize özel başlatma gecikmesi kaldırılır; `status.json`'a küme sayıları. |
+| `src/trader_engine/strategies/price_action_v1_ml.py`, `registry.py` | Yeni kayıt `price_action_v1_full_ml` (T1 + R1'i sarar); evren dışı aday puanlanmaz ve elenmez. |
+| `src/trader_core/veto.py` | `max_tokens` üst sınırı 4000; muaf çiftler belge kümesinden çıkar. |
+| `src/trader_core/lesson.py`, `scripts/lesson_run.py`, `lesson_calibrate.py`, `lesson_stats_check.py` | İkiz okuması kaldırılır; §6 ölçümü (farklı-karar kümesi, tek değişiklik geri alma, 10 R freni, referanstan 2 adım). |
+| `src/trader_core/ledger.py` | Şema değişmez. `_require_learner` ve ikiz dalları sadeleşir; `bot` CHECK'i olduğu gibi kalır (eski satırlar için). |
+| `src/trader_core/{telegram,health,panel_data,live_paths}.py`, `src/trader_panel/*`, `scripts/{telegram_run,health_run,report_run,drift_run,counterfactual_run,health_backup,engine_retry}.py`, `config/panel.json` | İkiz yolları, satırları, komutları ve fark hesabı kaldırılır; §7'nin Faz 1 kısmı. Sağlık `require_bots = ("learner",)`. |
+| `deploy/` | `trader-engine@.service`: `--env paper`, tavanlar §8. `trader-engine@learner.service.d/ml-shadow.conf` **silinir**. `trader-feed.service`: `--env paper`, 200M/260M. `install.sh`: ikiz birimi ve zamanlayıcıları (`trader-engine@twin`, `trader-engine-retry@twin`, `trader-counterfactual@twin`, `trader-drift@twin`) durdurur, devre dışı bırakır; `--with-twin`/`--no-twin` kaldırılır; `HEALTH_BOTS=learner`; `var/twin/` **silinmez**, `var/arsiv/twin-<tarih>/` altına taşınır. `uninstall.sh` aynı. |
+| `tests/` | İkize dayanan testler bağımsız yazarca güncellenir/kaldırılır (liste iş emrinde). |
 
-OI toplayıcı (`oi_collect.py`) ve `fetch_binance_vision.py` tabandaki 10 çiftte kalır.
+### Faz 2 (≤ 2 Aralık)
 
-## 6. S2, kilitli dönem, kirlenme
-
-- **S2 değişmez.** Ön kayıt 10 çiftle donuk ("taban yapılandırmadaki liste"); taban dosya değişmediği için S2 koşuları, derlem ve ML yeniden eğitimi aynı girdiyi okur. S2 §8 tarafsızlık testleri ve altın testler bu belgenin her kod commit'inde geçmelidir.
-- **Kilitli dönem (2026-05-01 → 2026-11-01) araştırma kuralıdır, aynen.** Canlı feed'in ısınma geri doldurması bu döneme ait barları `market.sqlite`'a yazar; çekirdek feed bugün de bunu yapıyor, canlı karar için gereklidir. Yasak olan: bu döneme değen geri test, tarama, dilimleme. `backtest`/`run_range` `check_holdout` ile, `fetch_binance_vision.py` URL üretmeyerek zaten engeller. `market.sqlite` dosyaları araştırma betiğiyle okunmaz.
-- **Hisse ve emtiada kilit öncesi geçmiş neredeyse yok** (çoğu 2026-03 sonrası listelendi, sekizi kilit döneminin içinde). Bu sembollerde anlamlı geri test yapılamaz; kol yalnız ileriye dönük kâğıt gözlemdir. İleride geri test = ayrı ön kayıt, S2'nin 6 hakkından bağımsız.
-- **Yeni 10 kriptoda** uzun geçmiş var; onlarla geri test ya da evren genişletme araştırması yine ayrı ön kayıt ister. Şimdi yapılmaz.
-- **Gözleme dayalı ayar:** 18 Kasım sonrası kâğıt sonuçlarına bakıp küme tavanı, seans, kayma gibi DD-12 ayarlarını değiştirmek serbesttir (tarihli not). Aynı gözlemle v1b parametresi ya da S2 tanımı değiştirilmez.
-- **Ders servisi:** öğrenen kanıt havuzu 20 çifte genişler; işlem sıklığı kabaca iki katına çıkar, 30 işlem eşiğine daha çabuk ulaşılır. Korumalar aynen. Cross defterini ders servisi açmaz.
-
-## 7. Kapasite (2 GB sunucu)
-
-Aşağıdaki bellek sayıları **tahmindir**; sunucuda bugünkü `MemoryCurrent`/`MemoryPeak` ölçülmeden kesinleşmez.
-
-**REST ağırlığı (sınır 2400/dk, istemci eşiği 1800):** sürekli 2 istek/çift/dk → çekirdek 40 + cross 44 = 84/dk. Saat başı tepe (15m + 1h + 4h kapanışı + fonlama + kurallar) ≈ 260/dk. Geri doldurma bir kerelik: çift başına ≈ 120 ağırlık → yeni 10 kripto ≈ 1200, cross 22 çift ≈ 2600 (istemci kendini kısar, 2–3 dk). Cross feed, çekirdek geri doldurması bittikten sonra başlatılır. Sıralı tur süresi ≈ 6–8 sn/dk; tazelik sınırı 5 dk.
-
-**Disk:** 1 dk barlar 14 gün tutulur, çift başına ≈ 4,5 MB → çekirdek ≈ 90 MB, cross ≈ 100 MB. 15m/1h/4h süresiz: 42 çift ≈ 170 MB/yıl. Sorun değil.
-
-**Bellek (tahmini RSS, MB):**
-
-| Birim | Bugün (10 çift) | Yeni |
-|---|---|---|
-| trader-feed | ~55 | ~65 (20 çift) |
-| öğrenen (ML gölge) | ~200 | ~230 |
-| ikiz | ~160 | ~190 |
-| pano + telegram | ~110 | ~110 |
-| **A aşaması toplamı** | ~525 | **~595** |
-| cross motor (22 çift) | — | ~190 |
-| cross feed | — | ~65 |
-| **A + B** | | **~850** |
-| testnet gölge (14 Aralık) | — | ~180 |
-| **A + B + testnet** | | **~1030** |
-| işletim sistemi | | ~230 |
-| geçici işler (pano yayını node ~250, ders, veto, sağlık) | | ~300 tepe |
-| **En kötü an** | | **~1560 / 1960** |
-
-Değerlendirme: A aşaması 2 GB'a rahat sığar; çekirdek birim tavanları (280M/350M) ve `trader.slice` (1100M/1300M) aynen kalır. A + B testnet yokken sığar. A + B + testnet + pano yayını anında boş bellek ≈ 300–400 MB'a iner; motor tahminleri %20 saparsa takasa girilir. Çalışır ama pay dardır.
-
-**Öneri (kullanıcı işi): sunucuyu 4 GB'a büyütmek**, en geç 14 Aralık'tan önce. Yalnız CPU/RAM büyütmesi; birkaç dakikalık kapalı kalma, IP değişmez, geri alınabilir; aylık ücret yaklaşık iki katına çıkar. LON1'de büyütmenin açık olduğu doğrulanmadı. 4 GB'da tavanlar değişmez, yalnız pay açılır.
-
-**Büyütülmezse (en küçük değişiklik):** A hemen; B yalnız ölçüm geçerse (`free -m` available ≥ 500 MB, `trader.slice` MemoryPeak ≤ 850 MB); 14 Aralık'ta testnet önceliklidir, available < 300 MB ise cross durdurulur.
-
-**Koruma:** cross ayrı slice'ta (360M/450M) ve `OOMScoreAdjust=300`: baskıda pano yayınından (+500) sonra, çekirdekten (−200) önce ölür. `test_readiness_memory` çekirdek değerleri değişmez.
-
-**İzlenecek (ilk 48 saat, sonra haftalık):** `systemctl show trader-engine@learner trader-engine@twin trader-feed trader-engine-cross trader-feed-cross -p MemoryCurrent -p MemoryPeak`; `free -m` available ve takas; `journalctl -k | grep -i oom`; öğrenenin `MemoryCurrent`'ı 250 MB'ı geçiyorsa (yumuşak tavana yakın) bildirilir; motor döngü gecikmesi (`status.json`); feed `used_weight`.
-
-## 8. Telegram ve pano
-
-- **Öğrenen/ikiz:** raporlar ve pano çift listesini durum dosyasından alır; 20 çift kendiliğinden görünür. Günlük raporda bir kez "Evren 10 → 20 çift: <tarih>" satırı; ML satırında "puanlanan / evren dışı" aday sayısı. Küme atlamaları mevcut "risk reddi" sayımına nedenleriyle girer.
-- **Cross (ortam anahtarları boşsa kapalı):** `CROSS_STATUS_PATH`, `CROSS_LEDGER_PATH`, `CROSS_FEED_STATUS`.
-  - Telegram günlük raporda ayrı blok, başlık "Hisse + emtia (DENEY, kâğıt)": bugün kapanan işlem ve net R, açık pozisyonlar (küme adıyla), başlangıçtan toplam, atlama sayıları (`session_closed`, `flat_bar`, `cluster_cap`, `max_positions`). Komut `/capraz`. Öğrenen–ikiz farkı, ders ve ML satırlarına girmez. `/durdur` ve `/kademe` cross'a dokunmaz.
-  - Sağlık: motor durumu > 15 dk eski, feed durumu > 10 dk eski → en çok WARN. Birim `failed` → mevcut `trader-health-fail@` alarmı (ek kod yok).
-  - Pano: `cross_status_path`, `cross_ledger_path` doluysa ayrı kart "Hisse + emtia — DENEY" (öz varlık, açık pozisyonlar, son 20 işlem, küme sayıları). `BOTS` ve `diff_pnl` değişmez.
-
-## 9. Dağıtım
-
-**Adım 0 (yoklama, sunucuda):** `exchangeInfo`'da 42 sembol; her biri için `klines` ve `markPriceKlines` 1m; bir hafta sonu saatinde yineleme. Sonuç bu belgeye tarihli ek; listeler ve K10 seçimi kesinleşir.
-
-**A aşaması — öğrenen/ikiz 20 kripto**
-1. Kod + testler birleşir (mentor incelemesi zorunlu; altın ve S2 tarafsızlık testleri değişmeden geçer).
-2. `install.sh`; `rules-snapshot --env paper` → 20/20.
-3. `systemctl restart trader-feed`; geri doldurma bitene kadar beklenir.
-4. Öğrenen ve ikiz **aynı dakikada** yeniden başlatılır; günlükte "acilis kapisi tamam: 20/20". Açık pozisyonlar sürer.
-5. Veto turu 40 kararla geçti mi; sağlık temiz mi; bellek ölçümü.
-6. `tasarim-kararlari.md`'ye geçiş tarihi (ayrı commit, belge sahibi).
-
-**B aşaması — cross** (bellek ön ölçümü ya da 4 GB sonrası)
-1. `install.sh --with-cross`; `rules-snapshot --env cross` → 22/22.
-2. `trader-feed-cross` geri doldurma; `trader-engine-cross` "acilis kapisi tamam".
-3. Yan etki denetimi: öğrenen/ikiz durum damgaları ilerliyor, çekirdek feed'de yeni hata yok.
-4. 48 saat bellek izleme.
-
-**Geri alma:** A için birimler `--env` eki olmadan önceki sürüme döner; taban 10 çift yerindedir. Yeni 10 çiftte açık kâğıt pozisyon varsa önce `pause` ile yeni giriş kapatılır, pozisyonlar stop/hedefle kapanınca dönülür. B için `install.sh --no-cross`; `var-cross/` silinmez.
-
-## 10. Testler (bağımsız yazar)
-
-| Kod | Davranış |
+| Dosya | Değişiklik |
 |---|---|
-| X-T1 | Katmansız yükleme (`learner`, `twin`, `testnet`, `live`) bu değişiklikten önceki `EngineConfig` ile eşit; yeni alanlar varsayılanda; 10 çift. |
-| X-T2 | `--env paper` (ikiz) ve `--env paper,paper-ml` (öğrenen): çift listeleri ve küme tanımları **özdeş**, 20 çift, taban 10 çiftin üst kümesi; öğrenende `ml_pairs` = taban 10. `engine.base.json` içeriği sabit karma ile korunur. |
-| X-T3 | `--env cross`: 22 çift, `var-cross` yolları mutlak, veto `off`, ML `off`, `experimental`. |
-| X-T4 | Reddedilen yapılandırmalar: `experimental`/`clusters`/`max_positions` + testnet/canlı; `veto_mode=off` + paper + `experimental=false`; `experimental` + `var_dir="var"` / `kill_file="shared/KILL"` / `ml_mode="shadow"`; küme çifti `pairs` dışında; `ml_pairs` `pairs` dışında; `contract_types` boş; `session` + `experimental=false`; olmayan `--env` adı. |
-| X-T5 | `extract_rules`: `TRADIFI_PERPETUAL` varsayılanla `not_trading`, kabul listesiyle kural döner; `PERPETUAL` iki durumda aynı. |
-| X-T6 | Feed `--env paper`: 20 çift, yollar `var/`. `--env cross`: yollar `var-cross/`, `var/market.sqlite`'a yazma yok. `--env` yokken `feed_config_from_base` çıktısı aynı. Feed her iki katmanla pandas yüklemez. |
-| X-T7 | Ban: `var/` altında etkin ban varken cross feed istek atmaz ve `var/` altına yazmaz; `--also-ban-dir` yokken davranış aynı. |
-| X-T8 | Küme tavanı (kripto): 3 `kripto_buyuk` açıkken dördüncü `cluster_cap:kripto_buyuk`; 8 açık pozisyonda dokuzuncu `max_positions`; aynı barda tavanı aşan adaylar `pairs` sırasıyla alınır. |
-| X-T9 | Küme tavanı (cross): 2 teknoloji açıkken üçüncü teknoloji atlanır, teknoloji dışı hisse girebilir; 3 hisse açıkken dördüncü `cluster_cap:hisse`; XAU açıkken XAG atlanır; hesap geneli 5. |
-| X-T10 | Seans: hisse için Cumartesi, Pazartesi 09:29 ve 16:00 New York atlanır, 09:30 geçer; yaz/kış saati haftalarında doğru UTC. Metal için Cuma 21:00 ve Pazar 22:59 UTC atlanır, Pazar 23:00 geçer. Pencere dışında açık pozisyonun stop/hedef çıkışı çalışır. |
-| X-T11 | Düz bar: `volume=0` ya da `high==low` → `flat_bar`; `flat_bar_guard=false` iken geçer. |
-| X-T12 | Atlanan adayların karar satırı defter CHECK'lerinden geçer (şema 4, göç yok). |
-| X-T13 | ML: evren içi çiftin puanı ve özellik vektörü, `pairs` 10 iken ve 20 iken **bit bit aynı**; evren dışı aday `out_of_universe`, puan yok, gölgede eleme yok; ML açık değilken hiçbir fark yok. |
-| X-T14 | Veto: 40 kararlı belge üretilir, ayrıştırılır, imzalanır, motor 20 çiftin her yönünü bulur; `max_tokens` 4001 reddedilir. |
-| X-T15 | Tarafsızlık: yeni anahtarlar boşken altın testler (`tests/test_wp3_golden.py`, `test_t28_backtest_digest_unchanged`, `test_engine_compat_equity.py`) ve S2 §8 testleri aynen. |
-| X-T16 | Yalıtım: cross motoru bir tur koşar; `var/`, `user_data/`, `shared/KILL`, `shared/PAUSE*`, `shared/veto/` altında değişiklik yok. `shared/KILL` cross'u, `shared/cross/KILL` öğrenen/ikizi etkilemez. Ders servisi cross defterini açmaz. |
-| X-T17 | Kısa geçmiş: bir çiftte 1h 600 bar → o çift `no_history`, diğerleri karar üretir, motor çıkmaz. |
-| X-T18 | Açılış kapısı: `all` kipte bir çift bayat → çıkış 7; `rules_only` kipte kural tam + bir çift taze → geçer, bayat çift `stale_data` ile giriş yapmaz; kural eksikse iki kipte de çıkış 7. |
-| X-T19 | Geçiş: 10 çiftli durum/defterle (açık pozisyonlu) kapanan motor 20 çiftle açılır; pozisyon, imleçler ve parametre sürümü korunur; yeni çiftler imleçsiz başlar. |
-| X-T20 | Dağıtım: cross birimleri `Slice=trader-cross.slice`, tavanlar slice içinde, `OOMScoreAdjust=300`, anahtar `EnvironmentFile` yok, `ReadWritePaths` `var` içermez; şablon birim `--env paper`, öğrenen drop-in `--env paper,paper-ml`, testnet/canlı birimleri değişmedi; `install.sh` varsayılanda cross kurmaz. `test_readiness_memory` çekirdek değerleri aynı (`test_every_service_in_trader_slice` yalnız `*-cross.service` için `trader-cross.slice` kabul eder). |
-| X-T21 | Telegram/pano: `CROSS_*` boşken çıktı bayt bayt eski; doluyken "DENEY" başlıklı ayrı blok/kart; öğrenen–ikiz fark sayıları değişmez. |
-| X-T22 | Yasak içe aktarma taraması: freqtrade, ccxt, python-binance yok. |
+| `src/trader_core/ledger.py` | **Şema 4 → 5** (tablo yeniden kurma; `_FK_OFF_MIGRATIONS`'a 4 eklenir; göç öncesi otomatik yedek mevcut). Karar, süzülmüş aday ve gölge karar tablolarında: `trigger_tf IN ('15m','1h','4h','1d')`; `setup` sabit listesi yerine `length(setup) BETWEEN 2 AND 8` (geçerli kodlar kodda kayıtlı; yeni kurulum göç istemez); yeni sütun `arm_id TEXT` (eski satırlar `setup || '@' || trigger_tf`); `skip_reason` listesine `arm_conflict`, `arm_disabled`, `session_closed`, `flat_bar`, `cluster_cap`, `max_positions` (`veto_status='not_evaluated'`, `risk_allowed IS NULL` grubunda). `trade_entries`'e `arm_id`. |
+| `src/trader_engine/strategies/lab.py` (yeni) | Bileşik strateji `price_action_lab_ml`: kayıtlı kurulumları tutar; her adımda kapanan zaman dilimlerinin kurulumlarını çalıştırır; çift başına öncelikli adayı ve diğerlerini (`arm_conflict`) döndürür; ML süzgecini uygular. |
+| `src/trader_engine/strategies/arms/{t1,r1,tf1,b1,f1,s1}.py` (yeni) | Kurulum başına bir dosya; saf; tarihli ekteki tanım. |
+| `src/trader_engine/strategy_runner.py`, `bars.py` | Çok zaman dilimli pencere; 1g barın 4s'ten toplanması; kurulum bazlı ısınma. |
+| `src/trader_engine/engine.py` | Karar adımı 15 dakika; bir adımda çift başına birden çok karar satırı; kurulum başına pozisyon tavanı; `arm_id`. Taban yapılandırmada (tek kurulum, 1s) yol ve çıktı aynen. |
+| `src/trader_engine/gates.py` | Faz 1 redleri kendi `skip_reason` değerleriyle. |
+| `src/trader_core/counterfactual.py`, `scripts/counterfactual_run.py` | Yeni kurulum/zaman dilimleri; sonuçlar `arm_id` ile. |
+| `src/trader_core/lesson.py` | Kanıt süzgeci `arm_id`. |
+| Rapor, Telegram, pano | Kurulum karnesi (§7). |
+| `config/engine.paper.json` | `strategy: "price_action_lab_ml"`, `arms`, `arm_max_positions`. |
 
-## 11. Bilinen sınırlar (gözlemin parçası)
+### Faz 3 (≤ 16 Aralık)
 
-- v1b parametreleri 10 kripto çiftiyle ayarlandı; yeni 10 kriptoda ve özellikle hisse/emtiada sınanmadı. v1b'nin uzun dönem geri testi zaten zarardaydı; evreni genişletmek bunu düzeltmez, yalnız daha çok gözlem üretir.
-- Piyasa değeri sıralaması doğrulanmadı; liste kullanıcı onayıyla sabittir.
-- Kâğıt dolumlar benzetimdir; ince seans kayması ve hisse vadelilerinin fonlama davranışı ölçülmedi.
-- Yarım gün seansları ve kazanç açıklaması boşlukları için koruma yok.
-- Cross sonuçları öğrenen/ikizle karşılaştırılmaz (farklı evren, maliyet, veto yok).
+| Dosya | Değişiklik |
+|---|---|
+| `src/trader_ml/pa_proposer/{features,labels,train,package}.py` (yeni) | §5.2; eğitim girdisi kilitli dönemi yapısal olarak reddeder. |
+| `research/pa_proposer_build.py`, `research/paper_models.csv` (yeni) | Sunucu dışı eğitim; model kaydı. |
+| `src/trader_engine/strategies/arms/m1.py` (yeni) | Paket yok/süresi dolmuş → aday üretmez (motor durmaz). |
+| `src/trader_core/ml_package.py`, `ml_live_v2.py` | Birden çok paket; kurulum bazlı süzgeç eşlemesi. |
+| `src/trader_core/lesson.py`, `ledger.py` | Kurulum aç/kapa dersi; `param_versions` içinde `arms_enabled` (JSON alanı, şema değişmez). |
+| `scripts/health_run.py` | Paket tazeliği alarmı birden çok paket için. |
 
-## 12. Sonraki adımlar (ayrı karar)
+## 10. S2, kilitli dönem, araştırma kuralları (değişmedi)
 
-20 çiftli ML tarifi (yeni ön kayıt); cross için veto ve varlık sınıfına özel parametre; bu sembollerde geri test (ayrı ön kayıt); testnet evreninin genişletilmesi; küme tavanlarının testnet/canlıya taşınması; gerçek para (yalnız CANLI-K1'i geçen dondurulmuş aday).
+- S2 ön kaydı donuktur (10 çift, taban dosya, 6 hak, CANLI-K1 hesap tanımları). S2-1 beklemede; bu plan onu koşmaz ve tanımını değiştirmez. S2 §8 tarafsızlık testleri ve altın testler her kod commit'inde geçer.
+- Kilitli dönem: canlı feed'in ısınma geri doldurması o döneme ait barları `market.sqlite`'a yazar (bugün de öyle; canlı karar için gerekli). Yasak olan o döneme değen geri test, eğitim, tarama, dilimlemedir. `backtest`/`run_range` ve `fetch_binance_vision.py` yapısal olarak engeller; `pa_proposer` eğitimi aynı sınırı uygular. `market.sqlite` araştırma betiğiyle okunmaz.
+- Kurulumlar geçmişte başarıma göre seçilmez; doğrudan kâğıtta denenir. Yeni kurulum için geçmiş koşu yalnız teknik doğrulamadır (ileriye bakma, belirlenimcilik), 2021-01 → 2024-01 aralığında. Bir kurulumun tam dönem geri testi ön kayıtlı denemedir.
+- Kâğıtta iyi görünen kurulum/model gerçek paraya ancak dondurulup ön kayıtla CANLI-K1'den geçerek gider.
+- Hisse/emtiada kilit öncesi geçmiş neredeyse yok; yalnız ileriye dönük gözlemdir.
+
+## 11. Dağıtım
+
+**Adım 0:** sunucuda `exchangeInfo` ve 1m `klines`/`markPriceKlines` yoklaması 44 sembol için, bir kez de hafta sonu saatinde; bellek ön ölçümü. Sonuç bu belgeye tarihli ek.
+
+**Faz 1**
+1. Kod + testler birleşir (mentor incelemesi zorunlu; altın ve S2 tarafsızlık testleri değişmeden geçer).
+2. İkiz durdurulur, birimleri devre dışı bırakılır, `var/twin/` arşive taşınır.
+3. `install.sh`; `rules-snapshot --env paper` → 44/44 (eksik bildirilir).
+4. `systemctl restart trader-feed`; geri doldurma biter.
+5. Öğrenen yeniden başlar; açık pozisyonlar ve defter sürer.
+6. Denetim: açılış kapısı tamam; veto 40 kararla geçti; `ml_filter` satırları oluşuyor; ders servisi ikizsiz tur attı; bellek ve adım süresi ölçümü.
+7. `tasarim-kararlari.md`'ye geçiş tarihi (ayrı commit).
+
+**Faz 2:** motor durur → defter yedeği → kod → ilk açılışta 4 → 5 göçü → `ledger verify` → başlat; gece işi, ders, pano, Telegram aynı sürümle. Ölçüm §8 eşiklerini aşarsa kullanıcıya §8'deki kısıntı sorulur.
+
+**Faz 3:** paket sunucu dışında eğitilir, `models/` altına sha256 ile konur, `paper_models.csv` satırı commit'lenir, motor yeniden başlar.
+
+**Geri alma:** birim `--env` eki olmadan taban yapılandırmaya döner (10 çift, v1b); önce `pause` ile yeni giriş kapatılır, taban dışı kâğıt pozisyonlar kapanınca dönülür. Defter v5 geri alınmaz (taban davranış v5 defterle aynen çalışır); gerekirse göç öncesi yedekten dönülür. İkiz arşivden geri getirilebilir.
+
+## 12. Testler (bağımsız yazar)
+
+| Kod | Faz | Davranış |
+|---|---|---|
+| D-T1 | 1 | Katmansız yükleme (`learner`, `testnet`, `live`) önceki `EngineConfig` ile eşit; `engine.base.json` sabit karma ile korunur; `bot="twin"` reddedilir. |
+| D-T2 | 1 | `--env paper`: 44 çift (taban 10'un üst kümesi), kümeler, ML etkin, `shadow_blocks` boş. Yeni anahtarlar testnet/canlıda `ConfigError`; küme çifti / `ml_pairs` / `optional_pairs` `pairs` dışında → hata. |
+| D-T3 | 1 | `extract_rules`: `TRADIFI_PERPETUAL` varsayılanla reddedilir, kabul listesiyle döner; `PERPETUAL` iki durumda aynı. |
+| D-T4 | 1 | Feed: isteğe bağlı çiftin hatası süreci düşürmez; zorunlu çiftin hatası bugünkü çıkış koduyla; `--env` yokken çıktı aynı; pandas yüklenmez. |
+| D-T5 | 1 | Açılış kapısı: kripto çifti bayat → çıkış 7; hisse bayat → geçer, o çift giriş yapmaz; hissede kural yok → yalnız o çift bekler. |
+| D-T6 | 1 | Tavanlar: küme, çok üyelik (teknoloji 2 doluyken teknoloji dışı hisse girer; hisse 3 doluyken girmez), hesap 10; aynı barda sıra `pairs` sırası. |
+| D-T7 | 1 | Seans: hisse için Cumartesi, Pzt 09:29 ve 16:00 New York atlanır, 09:30 geçer; yaz/kış saati haftaları; metal için Cuma 21:00 ve Pazar 22:59 UTC atlanır, 23:00 geçer; seans dışında stop/hedef çıkışı çalışır. Tatil barı koruması. |
+| D-T8 | 1 | ML etkin: evren içi çiftin puanı `pairs` 10 iken ve 44 iken **bit bit aynı**; eşik altı aday `ml_filter` ile elenir; evren dışı aday elenmez. Kâğıt yapılandırmasında hiçbir gölge yolu çalışmaz (gölge satır sayısı 0). |
+| D-T9 | 1 | Veto: 40 kararlı belge; muaf çift `allowed`/`exempt`; muaf olmayan eksik çift kapalı. |
+| D-T10 | 1 | Ders ikizsiz: farklı-karar kümesi doğru kurulur (sıkılaştırmada elenenlerin "alınsaydı" sonucu, gevşetmede eklenenlerin gerçek sonucu); ≥ 30 adayda ≤ −3 R → o değişiklik geri alınır; toplam ≤ −10 R → referans sürüme dönüş, otomatik uygulama durur, bildirim; referanstan en çok 2 adım; haftada en çok bir değişiklik; ikiz defteri yokken hata yok. |
+| D-T11 | 1 | İkiz kaldırma: `install.sh` ikiz birimlerini durdurur/devre dışı bırakır, `var/twin` arşive taşınır (silinmez); sağlık, Telegram, pano, yedek ikiz olmadan temiz çalışır; hiçbir çıktıda ikiz satırı yok. |
+| D-T12 | 1 | Geçiş: 10 çiftli, açık pozisyonlu durum/defter 44 çiftle açılır; pozisyon, imleç, parametre sürümü korunur. |
+| D-T13 | 1–3 | Tarafsızlık: yeni anahtarlar boşken altın testler (`tests/test_wp3_golden.py`, `test_t28_backtest_digest_unchanged`, `test_engine_compat_equity.py`) ve S2 §8 testleri aynen; testnet/canlı birim dosyaları değişmedi. |
+| D-T14 | 1 | Bellek bütçe testi yeni birim tavanlarıyla (200 + 600 + 250 ≤ 1100; slice aynı); her servis `trader.slice`'ta. |
+| D-T15 | 2 | Defter göçü 4 → 5: satır sayıları ve içerik korunur, `arm_id` eski satırlarda dolu, yabancı anahtar denetimi temiz, yedek oluştu; yeni zaman dilimi, kurulum kodu ve atlama nedenleri kabul edilir, geçersizler reddedilir; yarıda kesilen göç defteri v4'te bırakır. |
+| D-T16 | 2 | Bileşik strateji: yalnız kapanan zaman diliminin kurulumları çalışır; 1g bar = 6 × 4s (UTC), eksik 4s barla 1g bar üretilmez; öncelik büyük zaman dilimi; kaybedenler `arm_conflict`; kurulum başına tavan. |
+| D-T17 | 2 | Her kurulum: ileriye bakma yok, belirlenimci, ısınma eksikken yalnız o kurulum bekler. |
+| D-T18 | 2 | Eşdeğerlik: bileşik strateji yalnız `T1@1h` + `R1@1h` ile, aynı veride `price_action_v1_full` ile aynı girişleri üretir. |
+| D-T19 | 2 | Gece işi: `arm_conflict`, tavan, seans ve ML redleri etiketlenir; kurulum karnesi alınan + alınsaydı toplamını doğru verir. |
+| D-T20 | 2 | Boyutlama: 44 çift × 13 kurulumla motor tepe RSS ve saat başı adım süresi ölçülür ve raporlanır (eşik 550 MB / 120 sn; aşım testi kırmaz, uyarı ve rapor üretir). |
+| D-T21 | 3 | `pa_proposer`: eğitim girdisinde kilitli döneme ait tek satır varsa hata; özellikler yalnız kapanmış barlardan; aynı girdi → aynı paket sha256; canlı özellik = eğitim özelliği (bit bit). |
+| D-T22 | 3 | `M1`: paket yok/süresi dolmuş → aday yok, motor çalışır; aday bütün kapılardan geçer. Kurulum dersi: eşik altı kurulum kapanır, kaydı sürer, toparlanınca açılır. |
+| D-T23 | 1–3 | Telegram/pano: sade başlıklar; ders ve ML etkisi sayıları defterle tutarlı; hisse kapalı seansında bayatlık alarmı yok. |
+| D-T24 | 1–3 | Yasak içe aktarma taraması (freqtrade, ccxt, python-binance); dondurulmuş dosyaların sha256'ları değişmedi. |
+
+## 13. Bilinen sınırlar
+
+- v1b uzun dönem geri testte zarardaydı ve r03 kapıdan geçmedi; ikisi de kâğıtta bilerek çalışır. Sonuç neyse görülür.
+- İkiz olmadığı için ders ve ML etkisi §6'daki yaklaşık ölçüyle izlenir; tavan ve sıra etkileşimlerini içermez.
+- Piyasa değeri sıralaması doğrulanmadı. Kâğıt dolumlar benzetimdir; ince seans kayması ve hisse vadelilerinin fonlaması ölçülmedi. Kazanç açıklaması boşlukları ve yarım gün seansları için koruma yok.
+- ML'in kendi adayı hisse/emtiaya kripto eğitimiyle uygulanır.
+- Bellek ve işlemci sayıları tahmindir; §8'deki eşikler aşılırsa kısıntı kullanıcıya sorulur.
+
+## 14. Kullanıcıya kalanlar
+
+1. 44 enstrüman listesinin onayı (§1; kripto sıralaması doğrulanmadı).
+2. Veto hisse/emtiada kapalı başlıyor (API maliyeti ≈ 4 kat). 44'e yayılsın isterseniz söyleyin.
+3. Bilgi: kripto vetosu 20 → 40 karara çıktığı için API maliyeti kabaca iki katına çıkar.
