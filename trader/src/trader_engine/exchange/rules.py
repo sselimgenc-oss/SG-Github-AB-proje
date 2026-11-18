@@ -45,12 +45,14 @@ def _dec(v, sembol: str, ad: str) -> Decimal:
     return d
 
 
-def extract_rules(info: dict, symbol: str) -> SymbolRuleSpec:
-    """exchangeInfo -> tek sembol kuralı (Decimal). Eksik/bozuk filtre = RulesError (tahmin yok)."""
+def extract_rules(info: dict, symbol: str, contract_types: Iterable[str] = ("PERPETUAL",)) -> SymbolRuleSpec:
+    """exchangeInfo -> tek sembol kuralı (Decimal). Eksik/bozuk filtre = RulesError (tahmin yok).
+    contract_types: kabul edilen contractType listesi (varsayılan yalnız PERPETUAL; TRADIFI_PERPETUAL açıkça verilmeli, DD-12 §2)."""
+    accepted = (contract_types,) if isinstance(contract_types, str) else tuple(contract_types)
     for s in info.get("symbols", []):
         if s.get("symbol") != symbol:
             continue
-        if s.get("status") != "TRADING" or s.get("contractType") != "PERPETUAL":
+        if s.get("status") != "TRADING" or s.get("contractType") not in accepted:
             raise RulesError(f"{symbol}: not_trading")
         f = {x["filterType"]: x for x in s.get("filters", [])}
         if "PRICE_FILTER" not in f or "LOT_SIZE" not in f:
@@ -78,12 +80,12 @@ def extract_rules(info: dict, symbol: str) -> SymbolRuleSpec:
     raise RulesError(f"{symbol}: exchangeInfo'da yok")
 
 
-def extract_all_rules(info: dict, symbols: Iterable[str]) -> dict[str, SymbolRuleSpec | RulesError]:
+def extract_all_rules(info: dict, symbols: Iterable[str], contract_types: Iterable[str] = ("PERPETUAL",)) -> dict[str, SymbolRuleSpec | RulesError]:
     """Tek çiftin hatası diğerlerini bozmaz: hata değer olarak döner."""
     out: dict[str, SymbolRuleSpec | RulesError] = {}
     for s in symbols:
         try:
-            out[s] = extract_rules(info, s)
+            out[s] = extract_rules(info, s, contract_types)
         except RulesError as e:
             out[s] = e
     return out

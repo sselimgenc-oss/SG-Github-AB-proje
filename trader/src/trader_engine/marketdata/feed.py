@@ -70,6 +70,8 @@ class FeedConfig:
     db_path: str
     lock_path: str
     status_path: str
+    optional_pairs: tuple[str, ...] = ()    # DD-12 §2: kurali/verisi gelmeyen isteğe bagli cift sureci dusurmez
+    contract_types: tuple[str, ...] = ("PERPETUAL",)
     grace_s: float = 3.0
     minute_fetch_limit: int = 5
     backfill_bars: Mapping[str, int] = field(default_factory=_default_backfill)
@@ -142,11 +144,11 @@ class RulesSnapshot(dict):
 
 
 def snapshot_rules(rest: PublicRestClient, pairs: Sequence[str], clock: Clock, *, store: MarketStore | None = None,
-                   out_json_path: str | None = None) -> dict[str, str]:
+                   out_json_path: str | None = None, contract_types: Sequence[str] = ("PERPETUAL",)) -> dict[str, str]:
     """exchangeInfo -> extract_all_rules -> {pair: spec_json}. RulesError veren cift atlanir (sonuc.errors, exit_code=1)."""
     info = rest.exchange_info()
     cpairs = [canon_pair(p) for p in pairs]
-    res = extract_all_rules(info, [pair_symbol(p) for p in cpairs])
+    res = extract_all_rules(info, [pair_symbol(p) for p in cpairs], contract_types)
     out = RulesSnapshot()
     now_ms = to_ms(clock.now())
     for p in cpairs:
@@ -176,6 +178,7 @@ class Feed:
         self.store = store
         self.clock = clock
         self.pairs = tuple(canon_pair(p) for p in cfg.pairs)
+        self.optional = frozenset(canon_pair(p) for p in cfg.optional_pairs)
         self.offset_ms = 0
         self._clock_fatal = False
         self._lock_fd: int | None = None
@@ -732,10 +735,15 @@ class Feed:
         now_ms = to_ms(self._now_server())
         self.store.meta_set("rules_attempt_at", str(now_ms))
         try:
-            res = snapshot_rules(self.rest, self.pairs, self.clock, store=self.store)
+            res = snapshot_rules(self.rest, self.pairs, self.clock, store=self.store, contract_types=self.cfg.contract_types)
             self._c["requests"] += 1
-            if strict and res.errors:
-                raise DataError("kural eksik: " + "; ".join(f"{p}: {m}" for p, m in sorted(res.errors.items())))
+            if strict:
+                for p, m in sorted(res.errors.items()):
+                    if p in self.optional:
+                        log.warning("isteğe bagli cift kurali yok, atlandi %s: %s", p, m)
+                req = {p: m for p, m in res.errors.items() if p not in self.optional}
+                if req:
+                    raise DataError("kural eksik: " + "; ".join(f"{p}: {m}" for p, m in sorted(req.items())))
         except Exception as e:  # noqa: BLE001
             try:
                 self.store.meta_set("rules_last_error", str(e)[:300])
@@ -807,11 +815,45 @@ def _read_base(config_dir: str) -> dict:
     return raw
 
 
-def feed_config_from_base(config_dir: str) -> FeedConfig:
+def _read_env_overlay(config_dir: str, env: str) -> dict:
+    """`--env`: engine.<env>.json katmanindan feed'in alanlari (ham JSON; EngineConfig/pandas yuklenmez)."""
+    path = os.path.join(config_dir, f"engine.{env}.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise FailClosed(f"engine.{env}.json okunamadi: {path}: {e}") from e
+    if not isinstance(raw, dict):
+        raise FailClosed(f"{path}: nesne olmali")
+    return raw
+
+
+def feed_config_from_base(config_dir: str, env: str | None = None) -> FeedConfig:
     raw = _read_base(config_dir)
+    optional: tuple[str, ...] = ()
+    ctypes: tuple[str, ...] = ("PERPETUAL",)
+    if env:
+        ov = _read_env_overlay(config_dir, env)
+        raw = {**raw, **{k: ov[k] for k in ("pairs", "var_dir", "market_db", "history_dir") if k in ov}}
+        for k in ("pairs", "var_dir", "market_db", "history_dir"):
+            if k in ov and (not ov[k] or not isinstance(ov[k], (list, str))):
+                raise FailClosed(f"engine.{env}.json: {k} gecersiz")
+        if "optional_pairs" in ov:
+            op = ov["optional_pairs"]
+            if not isinstance(op, list) or not all(isinstance(x, str) for x in op):
+                raise FailClosed(f"engine.{env}.json: optional_pairs liste olmali")
+            optional = tuple(canon_pair(p) for p in op)
+            if not set(optional) <= {canon_pair(p) for p in raw["pairs"]}:
+                raise FailClosed(f"engine.{env}.json: optional_pairs pairs disinda")
+        if "contract_types" in ov:
+            ct = ov["contract_types"]
+            if not isinstance(ct, list) or not ct or not all(isinstance(x, str) for x in ct):
+                raise FailClosed(f"engine.{env}.json: contract_types bos olmayan liste olmali")
+            ctypes = tuple(ct)
     var = raw["var_dir"].rstrip("/")
     return FeedConfig(pairs=tuple(canon_pair(p) for p in raw["pairs"]), db_path=raw["market_db"],
-                      lock_path=f"{var}/feed.lock", status_path=f"{var}/feed-status.json")
+                      lock_path=f"{var}/feed.lock", status_path=f"{var}/feed-status.json",
+                      optional_pairs=optional, contract_types=ctypes)
 
 
 def _make_rest(clock: Clock) -> PublicRestClient:
@@ -843,13 +885,15 @@ def main(argv: Sequence[str] | None = None, *, rest: PublicRestClient | None = N
          max_ticks: int | None = None) -> int:
     """`trader_engine feed`: kilidi al, kurallari cek (10/10), backfill, sonra run_forever. Donus = cikis kodu."""
     def extra(ap):
+        ap.add_argument("--env", default=None, choices=("testnet", "live", "paper"),
+                        help="config/engine.<env>.json katmani (pairs, optional_pairs, contract_types); yoksa yalniz engine.base.json")
         ap.add_argument("--startup-retry", choices=("bounded", "forever"), default="bounded",
                         help="forever: acilista ag/5xx/bozuk JSON hatasinda suresiz ustel geri cekilme (418/451 haric)")
     a = _parse(argv, "trader_engine feed", extra)
     from trader_engine.clock import SystemClock
     clock = clock or SystemClock()
     try:
-        cfg = feed_config_from_base(a.config_dir)
+        cfg = feed_config_from_base(a.config_dir, a.env)
     except FailClosed as e:
         log.critical("feed baslamadi: %s", e)
         return EXIT_STORE
