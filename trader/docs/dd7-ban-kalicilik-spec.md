@@ -178,7 +178,7 @@ class BanGuard:
 
 **Sorun.** Kullanılan ağırlık yüksekken yeni pozisyon açmak, dolumdan hemen sonra stop isteğinin yasağa takılma olasılığını büyütür. Bugün `weight_soft` üstünde giriş yalnız dolaylı olarak (DD-8 D2 okuması reddedildiği için `account_mode_unverified` → `not_prepared`) engelleniyor; neden yanlış etiketleniyor.
 
-**Gerekli davranış.** `market_order`, yalnız `role == "entry"`, yerel denetimlerden sonra ve DD-8 D2 `position_risk` okumasından **önce**: `env != "testnet"` ve `rest.health()["used_weight"] >= rest.weight_soft` (1200) ise emir gönderilmez → `OrderResult` reddi `reason="weight_high"`; sayaç `entry_weight_rejects` +1; `WARNING`. Hiçbir istek gitmez (`position_risk` de POST da). Mandal, tutuş ve `on_ban` tetiklenmez; `account_mode_unverified` artmaz; bir sonraki sinyal olağan yoldan denenir. Testnette atlanır (ağırlık başlığı paylaşımlı/gürültülü; mevcut mentor kararıyla tutarlı). Çıkış, stop, hedef, iptal yolları etkilenmez. Yasak penceresi etkinken giriş zaten `exchange_ban` ile reddedilir (değişmez; ban denetimi önce gelir).
+**Gerekli davranış.** `market_order`, yalnız `role == "entry"`, yerel denetimlerden sonra ve DD-8 D2 `position_risk` okumasından **önce**: `env != "testnet"` ve `rest.health()["used_weight"] >= rest.weight_soft` (1200) ise emir gönderilmez → `OrderResult` reddi `reason="weight_high"`; sayaç `entry_weight_rejects` +1; `WARNING`. Hiçbir istek gitmez (`position_risk` de POST da). Mandal, tutuş ve `on_ban` tetiklenmez; `account_mode_unverified` artmaz; bir sonraki sinyal olağan yoldan denenir. Testnette atlanır (ağırlık başlığı paylaşımlı/gürültülü; mevcut mentor kararıyla tutarlı). Çıkış, stop, hedef, iptal yolları etkilenmez. Yasak penceresi etkinken girişin ret etiketi `not_prepared`dir: ağırlık denetiminden sonra gelen DD-8 D2 okuması gönderim öncesi `ExchangeBan` alır (`account_mode_unverified` +1, `_note_ban` çağrılır, POST'a hiç gelinmez); `exchange_ban` etiketi giriş yolunda görülmez. *(18 Kasım düzeltmesi; bu sayacın yasak kaynaklı artışı DD-9 §8.1'de alarmdan ayrılır.)*
 
 **Fail-closed.** `health()` istisna verirse ya da `used_weight` sayı değilse giriş `weight_high` ile reddedilir.
 
@@ -226,7 +226,7 @@ class BanGuard:
 
 - **DD-5'e eklenecek "canlı-yalnız" satırı:** `/futures/data/openInterestHist` ve long/short oranı uçları `X-MBX-USED-WEIGHT-1M` başlığını döndürüyor mu (T-5'in gerçek kanıtı). Döndürmüyorsa OI kısması ölçüsüz kalır; konu o zaman mentora döner.
 - **Yeniden başlatma döngüsü:** çıkış 5 + en çok 300 sn uyku, `StartLimit` (10 dk'da 5) sınırına takılmaz; kalan süre çok kısaysa da her tur en az `kalan + 2 sn` uyur.
-- **Test dosyaları.** Şartname testleri `tests/engine/test_dd7_spec.py` (bağımsız ajan), uygulama testleri `tests/engine/test_dd7_impl.py`; sağlık `tests/test_health_dd7.py`; OI `tests/test_oi_dd7.py`.
+- **Test dosyaları.** Şartname testleri `tests/engine/test_dd7_spec.py` (bağımsız ajan), uygulama testleri `tests/engine/test_dd7_impl.py`. Sağlık (S) ve OI (T) testleri de bu iki dosyadadır; ayrı `tests/test_health_dd7.py` / `tests/test_oi_dd7.py` dosyaları **yoktur** *(18 Kasım düzeltmesi: metin fiili düzene çekildi, test taşınmadı)*.
 - **Teslim.** Tüm test paketi yeşil; altın geri test bit-özdeş; dondurulmuş dosyalarda `git diff` boş; `tests/engine/test_engine_module_inventory.py` değişmeden geçer (yeni modül `trader_core` altındadır); yeni bağımlılık yok.
 
 ## 8. Kullanıcıya gidecek kararlar
