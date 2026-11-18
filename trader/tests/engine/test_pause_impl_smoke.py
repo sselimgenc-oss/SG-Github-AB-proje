@@ -81,7 +81,7 @@ def test_bad_reason(tmp_path):
     with pytest.raises(ValueError):
         p.remove("nope", "x")
     assert set(REASONS) == {"user_cmd", "drawdown_review", "capital_floor", "unknown_position", "late_fill",
-                            "exchange_ban", "exchange_auth", "manual"}   # 12 ile guncellendi: capital_floor
+                            "exchange_ban", "exchange_auth", "manual", "stop_failed_repeat"}   # 12: capital_floor; DD-6: stop_failed_repeat
 
 
 def test_audit_log(tmp_path):

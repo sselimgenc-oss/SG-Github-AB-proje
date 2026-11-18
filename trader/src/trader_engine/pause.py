@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 SCHEMA = "pause/1"
 REASONS = ("user_cmd", "drawdown_review", "capital_floor", "unknown_position", "late_fill", "exchange_ban", "exchange_auth",
-           "manual")      # 12 ile guncellendi: capital_floor (son taban; yalniz sunucuda CLI ile kalkar)
+           "manual", "stop_failed_repeat")      # 12: capital_floor (son taban); DD-6: stop_failed_repeat (24 sa'te 2. stop_failed) - ikisi de yalniz sunucuda CLI ile kalkar
 UNREADABLE = "unreadable"
 AUDIT_NAME = "pause_audit.jsonl"
 

@@ -56,6 +56,7 @@ class Reconciler:
         if cur.status == "open":
             om.submit_exit(cur, "force_exit", self.clock.now())
         self._block("stop_failed")
+        om.note_stop_failed(pos.trade_id)
         actions.append(f"stop_failed_closed:{pos.trade_id}")
         return False
 

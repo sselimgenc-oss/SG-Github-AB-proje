@@ -20,9 +20,9 @@ from .bars import floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
-from .errors import ClockError, ConfigError, EngineExit, FailClosed, StateError
+from .errors import ClockError, ConfigError, DataError, EngineExit, FailClosed, StateError
 from .holdout import check_holdout
-from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
+from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, _tf_of, entry_leverage
 from .killswitch import Killswitch
 from .pause import EntryPause
 from . import shadow as SH
@@ -49,6 +49,19 @@ _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_fai
                     "minute_gaps", "funding_missing", "exit_data_gap")
 STARTUP_MAX_AGE_S = 300          # acilis kapisi: son kapanmis 1m (last+mark) en fazla bu kadar eski olabilir
 EXIT_STARTUP_GATE = 7
+# DD-6 (O1): canli `advance_to` veri hatasi dayanikliligi. Hata = cikis degil: ussel geri cekilme, N ardisik hatada girisler kapanir.
+ADVANCE_BACKOFF_BASE_S = 2.0
+ADVANCE_BACKOFF_CAP_S = 30.0
+ADVANCE_ERRORS_ENTRIES_OFF = 5
+# DD-6 (D11): karar adimi hata verirse ayni barin yazilim cikislari icin sinirli yeniden deneme (canli yol)
+DECISION_EXIT_RETRIES = 3
+DECISION_EXIT_RETRY_BASE_S = 5.0
+# DD-6 (O3): 24 saatte ikinci (ayri pozisyonda) stop_failed -> kalici duraklatma
+STOP_FAILED_REPEAT_WINDOW_S = 86_400.0
+# DD-6 (D17): yalniz testnet; testnet fiyati planned_entry'den bu orandan fazla saparsa giris atlanir
+TESTNET_PRICE_DIVERGENCE_MAX = 0.005
+# DD-6 (D1): `opening` + borsada pozisyon gorulurse protect_first en sik bu aralikla
+OPENING_PROTECT_MIN_GAP_S = 5.0
 FEED_MODES = ("paper", "testnet", "live")        # 11 §6.1: "feed'li canli dongu" (benzetimli broker ayrimi: is_paper)
 _BROKER_REASONS = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable",
                    "exchange_rate_limited")
@@ -136,6 +149,10 @@ class Engine:
         self._last_decision: datetime | None = None
         self._last_candle_open: datetime | None = None
         self._last_pre = None
+        self._adv_errors = 0                                   # DD-6 O1
+        self._adv_next_try: datetime | None = None
+        self._exit_retry: dict | None = None                   # DD-6 D11
+        self._last_opening_protect: datetime | None = None     # DD-6 D1
         self._last_reconcile: datetime | None = None
         self._entry_events: dict[int, object] = {}
         self._started = False
@@ -155,6 +172,8 @@ class Engine:
                                enabled=bool(cfg.mtm_marks))
         if not simulated and live is not None and live.order_quote:
             self.orders.quote_fn = self._order_quote
+        if not simulated:
+            self.orders.on_stop_failed = self._note_stop_failed     # DD-6 O3
 
     def _make_reconciler(self):
         if self.is_paper:
@@ -195,6 +214,35 @@ class Engine:
     def _block(self, reason: str) -> None:
         with self.state.tx():
             self.state.kv_set("entries_blocked_reason", reason)
+
+    def _note_stop_failed(self, trade_id: int | None = None) -> None:
+        """DD-6 O3: `stop_failed` olaylarini (pozisyon basina bir) 24 saat boyunca sayar; ikincisinde kalici duraklatma
+        `stop_failed_repeat` (yalniz sunucuda CLI ile kalkar). Yalniz testnet/canli; kagit ve geri test degismez."""
+        if self.is_paper or self.cfg.mode not in ("testnet", "live"):
+            return
+        try:
+            now = self.clock.now()
+            raw = self.state.kv_get("stop_failed_log") or {}
+            keep: dict[str, str] = {}
+            from .state import parse_iso_z
+            for k, v in dict(raw).items():
+                try:
+                    if (now - parse_iso_z(v)).total_seconds() <= STOP_FAILED_REPEAT_WINDOW_S:
+                        keep[str(k)] = v
+                except (ValueError, TypeError):
+                    continue
+            keep.setdefault(str(trade_id) if trade_id is not None else f"?{iso_z(now)}", iso_z(now))
+            with self.state.tx():
+                self.state.kv_set("stop_failed_log", keep)
+            if len(keep) >= 2 and self.pause is not None:
+                log.critical("24 saatte %d stop_failed (%s): girisler kalici duraklatildi (stop_failed_repeat)",
+                             len(keep), sorted(keep))
+                self.pause.add("stop_failed_repeat", by="engine:stop_failed",
+                               note=f"{len(keep)} stop_failed / 24h: trade {','.join(sorted(keep))}")
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001 - sayac hatasi korumayi geciktirmez
+            log.error("stop_failed sayaci hatasi: %r", e)
 
     def _last_exit(self, pair: str, D: datetime):
         since = D - tf_delta(self.tf)
@@ -502,7 +550,7 @@ class Engine:
     def _startup_gate(self) -> None:
         """10/10 ya da hicbiri: tum ciftlerde kural + taze 1m last/mark yoksa sinirli bekler, sonra EngineExit(7)."""
         waited = 0.0
-        step = max(1.0, min(15.0, self.cfg.loop_sleep_s * 3))
+        step = max(1.0, min(15.0, self.cfg.loop_sleep_s * (1 if not self.is_paper else 3)))   # DD-6: canlida kapi beklerken KILL/bekci sik calissin
         while True:
             missing, stale = self.check_inputs()
             if not missing and not stale:
@@ -515,8 +563,20 @@ class Engine:
                 raise EngineExit(EXIT_STARTUP_GATE, msg)
             if waited == 0.0:
                 log.warning("acilis kapisi bekliyor: kural eksik=%s veri bayat=%s", missing or "-", stale or "-")
+            if not self.is_paper:
+                self._gate_wait_protect()                         # DD-6 O1: beklerken KILL + stop bekcisi calisir
             self.clock.sleep(step)
             waited += step
+
+    def _gate_wait_protect(self) -> None:
+        """DD-6 O1: canli acilis kapisi beklerken KILL (acik pozisyon piyasada kapanir), olaylar ve stop bekcisi calisir.
+        Hicbiri kapi bekleyisini bozmaz (hata sayilir, `_guard` 10 ardisik hatada EngineExit(3))."""
+        now = self.clock.now()
+        self._set_clock(now)
+        self._guard("kill", lambda: self._kill_step(now))
+        self._guard("events", lambda: self._drain_events())
+        self._post_commit()
+        self._guard("watchdog", lambda: self._stop_watchdog(self.clock.now()))
 
     def protect_first(self):
         """11 §6.2 adim 2: veri kapisindan ONCE, piyasa verisi gerektirmez (yalniz canli). Stopsuz pozisyonu korur."""
@@ -929,6 +989,8 @@ class Engine:
         elif row.role == "stop" and pos.status == "open":
             log.critical("stop reddedildi trade %s (%s): mutabakat yeniden kuracak", pos.trade_id, e.detail)
             self._block("stop_failed")
+            if "would_trigger" not in str(e.detail or ""):      # would_trigger = stop kurulamadi degil, fiyat gecmis: sayilmaz
+                self._note_stop_failed(pos.trade_id)
 
     def _close_unopened(self, pos: Position, now: datetime) -> None:
         with self.state.tx():
@@ -944,12 +1006,50 @@ class Engine:
 
     # ================================================================== karar adimi
     def decision_step(self, D: datetime) -> None:
-        if self._guard("decision", lambda: self._decision_step(D)):
+        self._exit_retry = None                                 # DD-6 D11: yeni karar adimi eski bekleyen denemeyi gecersiz kilar
+        if not self._guard("decision", lambda: self._decision_step(D)):
+            if not self.is_paper and self.cfg.mode in ("testnet", "live"):
+                self._schedule_exit_retry(D)
+        else:
             self._post_commit()
             if self.status is not None:
                 self.status.write(self, force=True)
             self._mtm_decision(D)                               # WP-3: karar adiminin butun isleri bittikten SONRA
             self._shadow_step(D)
+
+    # ------------------------------------------------------------------ DD-6 D11: ayni bar icin yazilim cikislari yeniden denemesi
+    def _schedule_exit_retry(self, D: datetime) -> None:
+        self._exit_retry = {"D": D, "n": 0, "next": self.clock.now() + timedelta(seconds=DECISION_EXIT_RETRY_BASE_S)}
+        self._c["decision_failures"] += 1
+        log.critical("karar adimi basarisiz (bar %s): yazilim cikislari %d kez yeniden denenecek", D, DECISION_EXIT_RETRIES)
+
+    def _retry_exits(self, now: datetime) -> None:
+        r = self._exit_retry
+        if r is None or now < r["next"]:
+            return
+        r["n"] += 1
+        D = r["D"]
+        try:
+            self._set_clock(now)
+            params = self._frame_params()
+            frames = {pair: self.signals.frame(pair, D, params, self._version_id) for pair in self.cfg.pairs}
+            with self._outer_tx():
+                self._exits(D, frames)
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            self._c["exit_retry_errors"] += 1
+            if r["n"] >= DECISION_EXIT_RETRIES:
+                self._exit_retry = None
+                log.critical("bar %s yazilim cikis denemesi %d kez basarisiz: vazgecildi (borsa stopu koruyor): %r",
+                             D, r["n"], e)
+                return
+            r["next"] = now + timedelta(seconds=DECISION_EXIT_RETRY_BASE_S * (2 ** r["n"]))
+            log.error("bar %s yazilim cikis denemesi %d basarisiz: %r", D, r["n"], e)
+            return
+        self._exit_retry = None
+        self._c["exit_retry_ok"] += 1
+        log.warning("bar %s yazilim cikislari %d. denemede degerlendirildi", D, r["n"])
 
     def _decision_step(self, D: datetime) -> None:
         self._shadow_ctx = None
@@ -1133,14 +1233,23 @@ class Engine:
     def _entries(self, D: datetime, frames: Mapping[str, SignalFrame]) -> None:
         pre = self.gate.pre(D, self.tf, self._params_ok, self._active_tf or self.tf)
         self._last_pre = pre
+        attempted = False
         for pair in self.cfg.pairs:
             try:
+                if attempted or not self.is_paper:
+                    # DD-6 O3: kapi (blokaj nedeni, KILL, duraklatma, kademe) her girisden once yeniden okunur; bir onceki giris
+                    # `stop_failed` yazdiysa kalan ciftler `gate:<neden>` ile atlanir. Kagit/geri test: yalniz giris denemesinden sonra.
+                    pre = self.gate.pre(D, self.tf, self._params_ok, self._active_tf or self.tf)
+                    self._last_pre = pre
                 out = self.gate.decide(frames[pair], D, pre, self._version_id)
+                if out.action == "enter" and self.cfg.mode == "testnet" and not self.is_paper:
+                    out = self._testnet_price_gate(pair, D, frames[pair], out)
                 if out.action == "ignore":
                     continue
                 if out.action == "skip":
                     self._record_skip(pair, D, out)
                 else:
+                    attempted = True
                     self._enter(pair, D, frames[pair], out)
             except StateError:
                 raise
@@ -1149,6 +1258,26 @@ class Engine:
                     raise
                 self._c["callback_errors"] += 1
                 log.critical("giris degerlendirmesi hatasi %s: %r", pair, e, exc_info=True)
+
+    def _testnet_price_gate(self, pair: str, D: datetime, fr: SignalFrame, out: EntryOutcome) -> EntryOutcome:
+        """DD-6 D17 (11-canli-broker §11): yalniz testnet. Testnet fiyati (bookTicker orta) `planned_entry`den %0,5'ten fazla
+        saparsa giris `testnet_price_divergence` ile atlanir. Fiyat okunamazsa (yasak penceresi/agirlik/hata) sapma
+        olculemez: giris ENGELLENMEZ (fail-open; `testnet_price_unchecked` sayaci + uyari) - kapi sartnamede yalniz sapmayi atlar."""
+        row = fr.last
+        q = self._order_quote(pair)
+        ref = None if q is None else float(q["order_ref_price"])
+        pe = float(row.planned_entry) if row.planned_entry else 0.0
+        if ref is None or not pe > 0:
+            self._c["testnet_price_unchecked"] += 1
+            return out
+        if abs(ref - pe) / pe <= TESTNET_PRICE_DIVERGENCE_MAX:
+            return out
+        code = "testnet_price_divergence"
+        self._c[code] += 1
+        log.warning("testnet giris atlandi %s: %s (planned_entry=%s testnet=%s)", pair, code, row.planned_entry, ref)
+        self.gate.counters["enter"] -= 1
+        return self.gate._skip(row, _tf_of(row), code, skip_reason="entry_gate_closed",      # noqa: SLF001
+                               veto_reason="gate:" + code)
 
     def _record_skip(self, pair: str, D: datetime, out: EntryOutcome) -> None:
         try:
@@ -1330,12 +1459,29 @@ class Engine:
             else self.cfg.reconcile_flat_s
         if self._last_reconcile is None or (now - self._last_reconcile).total_seconds() >= every:
             self._guard("reconcile", lambda: self._reconcile(now))
-        try:
-            self.advance_to(now)
-        except ClockError as e:
-            log.critical("%s", e)
+        self._guard("exit_retry", lambda: self._retry_exits(now))
+        if self._adv_next_try is None or now >= self._adv_next_try:
+            try:
+                self.advance_to(now)
+                self._adv_errors = 0
+                self._adv_next_try = None
+            except ClockError as e:
+                log.critical("%s", e)
+            except DataError as e:
+                self._advance_failed(e, now)
         if self.status is not None:
             self.status.write(self)
+
+    def _advance_failed(self, e: Exception, now: datetime) -> None:
+        """DD-6 O1: gecici veri hatasi motoru oldurmez. Say, ussel geri cekil, N ardisik hatada girisleri kapat (engine_errors)."""
+        self._adv_errors += 1
+        self._c["advance_errors"] += 1
+        delay = min(ADVANCE_BACKOFF_CAP_S, ADVANCE_BACKOFF_BASE_S * (2 ** (self._adv_errors - 1)))
+        self._adv_next_try = now + timedelta(seconds=delay)
+        log.error("advance_to veri hatasi (%d. ardisik, %.0f sn sonra yeniden): %r", self._adv_errors, delay, e)
+        if self._adv_errors >= ADVANCE_ERRORS_ENTRIES_OFF and self.state.kv_get("entries_blocked_reason") != "engine_errors":
+            log.critical("%d ardisik veri hatasi: girisler kapatildi (engine_errors); KILL/bekci/mutabakat surer", self._adv_errors)
+            self._block("engine_errors")
 
     def _stop_watchdog(self, now: datetime) -> None:
         """11 §6.5: borsada kabul edilmis stopu olmayan open/closing pozisyon stop_deadline_s'i (>) asarsa reduceOnly piyasa."""
@@ -1366,10 +1512,37 @@ class Engine:
                 if p.status == "open" and p.qty:
                     self._block("stop_failed")
                     self._submit_exit(p, "other", now)
+                    self._note_stop_failed(p.trade_id)
         self._naked_rows = rows
         sn = getattr(self.broker, "set_naked", None)
         if callable(sn):
             sn(list(rows))
+        self._opening_watch(now)                               # DD-6 D1: korumali pozisyonlardan SONRA (stop asla gecikmez)
+
+    def _opening_watch(self, now: datetime) -> None:
+        """DD-6 D1: `opening` pozisyonun cifti `broker.positions()` icinde gorunuyorsa (belirsiz giris sonradan doldu) mutabakati
+        beklemeden `protect_first` (adopt + stop). En sik `OPENING_PROTECT_MIN_GAP_S` araliklarla; hata bekciyi bozmaz."""
+        opening = [p for p in self.state.open_positions() if p.status == "opening"]
+        if not opening:
+            return
+        last = self._last_opening_protect
+        if last is not None and (now - last).total_seconds() < OPENING_PROTECT_MIN_GAP_S:
+            return
+        self._last_opening_protect = now                       # deneme aninda yazilir (isabet olmasa da REST okumasi kisitlanir)
+        try:
+            self.orders.resolve_unresolved()                   # 11 §8 L1: once coz, sonra oku
+            held = {bp.pair for bp in self.broker.positions()}
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.error("opening bekcisi: pozisyonlar okunamadi: %r", e)
+            return
+        hit = [p for p in opening if p.pair in held]
+        if not hit:
+            return
+        self._c["opening_protect"] += 1
+        log.critical("opening pozisyon borsada dolu gorundu (%s): protect_first hemen", [p.pair for p in hit])
+        self.protect_first()
 
     def _register(self, trade_id: int) -> None:
         """LiveBroker.register_position: yetkili acilis zamani + pozisyona ait kimlikler (best-effort)."""

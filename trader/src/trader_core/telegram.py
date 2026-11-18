@@ -1299,6 +1299,7 @@ NEDEN_TR = {
     "capital_floor": "sermaye tabanına inildi (yalnız sunucuda açılır)", "capital_missing": "sermaye kaydı yok",
     "ladder_invalid": "risk kademesi kaydı bozuk", "unknown_position": "borsada tanınmayan pozisyon bulundu",
     "late_fill": "geç gelen bir emir dolumu var", "exchange_ban": "borsa geçici engel koydu",
+    "stop_failed_repeat": "24 saatte ikinci kez stop kurulamadı (yalnız sunucuda açılır)",
     "exchange_auth": "borsa erişim anahtarı sorunlu", "exchange_unreachable": "borsaya ulaşılamıyor",
     "exchange_rate_limited": "borsa istek sınırına takıldı", "exchange_unknown_code": "borsadan beklenmedik yanıt geldi",
     "working_type_unverified": "borsa stop ayarı doğrulanamadı", "params_unavailable": "strateji ayarları yüklenemedi",

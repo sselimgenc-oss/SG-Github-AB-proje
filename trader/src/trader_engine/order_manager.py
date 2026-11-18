@@ -75,6 +75,11 @@ class OrderManager:
         # WP-3 (defter-ek-alanlar 3.1): yalniz kayit. Durum deposuna YAZILMAZ; yeniden baslatmada kaybolur.
         self.exec_meta: "OrderedDict[str, dict]" = OrderedDict()
         self.quote_fn: Callable[[str], dict | None] | None = None   # 3.5 (Engine._order_quote); varsayilan yok
+        self.on_stop_failed: Callable[[int | None], None] | None = None   # DD-6 O3 (Engine._note_stop_failed); kagitta yok
+
+    def note_stop_failed(self, trade_id: int | None) -> None:
+        if self.on_stop_failed is not None:
+            self.on_stop_failed(trade_id)
 
     def _eff_qty(self, pos: Position) -> float:
         """Canli: L4 (dis azaltma) sonrasi state qty ORIJINAL kalir; emir miktari min(pos.qty, borsa miktari) (11 §8 L4)."""
@@ -461,6 +466,7 @@ class OrderManager:
         cur = self.state.get_position(pos.trade_id) or pos
         self.market_exit(cur, "other", self.clock.now())
         self._block("stop_failed")
+        self.note_stop_failed(pos.trade_id)
         return SubmitOutcome(False, out.status, out.order, out.result, "stop_failed_closed")
 
     def _stop_deadline_path(self, pos: Position, price: float, out: SubmitOutcome, t_fill: datetime) -> SubmitOutcome:
@@ -476,6 +482,7 @@ class OrderManager:
         self.market_exit(cur, "other", self.clock.now())
         if not would:
             self._block("stop_failed")
+            self.note_stop_failed(pos.trade_id)
         return SubmitOutcome(False, out.status, out.order, out.result, "would_trigger_closed" if would else "stop_failed_closed")
 
     def _stop_attempt(self, pos: Position, price: float, seq: int) -> SubmitOutcome:

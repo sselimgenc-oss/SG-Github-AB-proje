@@ -588,6 +588,7 @@ class LiveReconciler(Reconciler):
             if last is None or last.note != "would_trigger":
                 reasons.append("stop_failed")
                 self._block("stop_failed")
+                self.orders.note_stop_failed(sp.trade_id)
             acts.append(f"stop_failed_closed:{sp.trade_id}")
         else:
             log.warning("mutabakat: stop yeniden kurulamadi (%s); eski stop duruyor", last.note if last else None)
