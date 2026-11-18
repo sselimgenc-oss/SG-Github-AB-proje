@@ -87,6 +87,7 @@ class MlModelView:
     expires_at: datetime
     user_approved: bool
     _tree: TreeModel = field(repr=False, compare=False)
+    experimental: bool = False                    # golge deneyi: kapidan gecmemis paket (yalniz shadow); log/gerekcede ml_exp=1
 
     def expired(self, now: datetime) -> bool:
         return now >= self.expires_at
@@ -96,22 +97,27 @@ class MlModelView:
         return self._tree.predict_proba(X)
 
 
-def view_from_package(pkg: dict) -> MlModelView:
+def view_from_package(pkg: dict, *, experimental: bool = False) -> MlModelView:
     meta = pkg["meta"]
+    thr = pkg["threshold"]
     return MlModelView(
-        model_id=f"{meta.get('version', '?')}@{meta['model_hash'][:12]}", threshold=float(pkg["threshold"]),
+        model_id=f"{meta.get('version', '?')}@{meta['model_hash'][:12]}", threshold=0.5 if thr is None else float(thr),
         features=tuple(meta["features"]), expires_at=expires_at(pkg), user_approved=meta.get("user_approved") is True,
-        _tree=TreeModel(pkg["model"], pkg["calibration"]))
+        _tree=TreeModel(pkg["model"], pkg["calibration"]),
+        experimental=experimental)
 
 
 def load_model_view(path: str | Path | dict, *, expected_features, ml_mode: str,
-                    now: datetime | None = None) -> MlModelView:
+                    now: datetime | None = None, experimental: bool = False) -> MlModelView:
     """Motor yukleyicisi: `load_package` (kapi + hash + 21 gun) + ozellik listesi canli ozellik ureticisiyle ayni olmali.
-    `active` modu ayrica kullanici onayi ister (`meta.user_approved is True`); yoksa PackageError (19a)."""
-    pkg = load_package(path, now=now)
+    `active` modu ayrica kullanici onayi ister (`meta.user_approved is True`); yoksa PackageError (19a).
+    `experimental=True` yalniz `ml_mode == "shadow"` ile (aksi ValueError); kapi denetimi atlanir, hash + 21 gun kalir."""
+    if experimental and ml_mode != "shadow":
+        raise ValueError(f"experimental yalniz ml_mode='shadow' ile gecerli (ml_mode={ml_mode!r})")
+    pkg = load_package(path, now=now, require_gate=not experimental)
     if list(pkg["meta"]["features"]) != list(expected_features):
         raise PackageError("model ozellik listesi canli ozellik ureticisiyle ayni degil")
-    view = view_from_package(pkg)
+    view = view_from_package(pkg, experimental=experimental)
     if ml_mode == "active" and not view.user_approved:
         raise PackageError("active modu icin model kullanici onayli degil (meta.user_approved)")
     return view

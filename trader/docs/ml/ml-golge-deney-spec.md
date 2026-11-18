@@ -36,3 +36,18 @@ Tarih: 18 Kasım 2026. Dayanak: `otonom-trading-arastirma/tasarim-kararlari.md` 
 | G-T4 | Hash bozuk ya da süresi dolmuş paket `experimental=True` iken de reddedilir. |
 | G-T5 | `config/engine.learner.json` yüklenir; diğer dört yapılandırma `ml_experimental` içermez; base `ml_mode` "off". |
 | G-T6 | `models/ml1-r03.json` içeriği `research/ml/r03/model_candidate.json` ile bayt bayt aynı. |
+
+## Uygulama notu (18 Kasım 2026)
+- `models/` dizini `.gitignore` kapsamında DEĞİL (izlenen konum); `models/ml1-r03.json` `research/ml/r03/model_candidate.json`'ın bayt kopyasıdır.
+- `ml_features` anahtarı `"r03"`: `RECIPE_NAMES["r03"]` r03 paketinin `meta.features` listesiyle (8 öznitelik) birebir eşleşir (`r02` eşleşmez).
+- r03 paketi: `created_at` 2026-11-18T15:27Z, süre sınırı 2026-12-09T15:27Z (21 gün); `gate_passed=false`, `threshold=0.5`. Süre dolunca gölgede model yüklenmez (uyarı + sayaç), bot ML'siz sürer.
+- `ml_model_path` göreli (`models/...`) ve çalışma dizinine göre çözülür (diğer paper yolları gibi); servis kökü depo kökü olmalıdır.
+- Gerekçe etiketi: deneysel modelde `ml:p=0.xxxxxx|ml_exp=1|...`.
+
+## Düzeltme notu (18 Kasım 2026, G-4 / G-T5)
+`config/engine.learner.json` testnet ve canlı hizmetler (`--bot learner --env testnet|live`) ile geri testler/altın testler tarafından da yüklenir; ML anahtarları orada `ml_experimental` kilidini kırar ve ML'yi testnet/canlıya sızdırır. Bu yüzden:
+- `config/engine.learner.json` aynen `{"bot": "learner"}` kalır.
+- ML anahtarları yalnız kâğıt katmanı `config/engine.paper-ml.json` içindedir (`strategy`, `ml_mode: shadow`, `ml_features: r03`, `ml_model_path`, `ml_experimental: true`); CLI `--env paper-ml` kabul eder.
+- Dağıtım: `deploy/trader-engine@learner.service.d/ml-shadow.conf` yalnız `trader-engine@learner` birimine `--env paper-ml` ekler (`install.sh` kopyalar); ikiz, testnet, canlı, base değişmez.
+- G-T5 böyle okunur: `engine.learner.json == {"bot":"learner"}`; `engine.paper-ml.json` ML anahtarlarını taşır ve yüklenir (`load_cli_config(..., "learner", "paper-ml")`); diğer dört yapılandırma `ml_experimental` içermez; base `ml_mode` "off".
+- Mevcut öğrenen defteri `price_action_v1` etiketliyse motor `strategy_mismatch` verir; defter `init-ledger ... --reason strategy_update` ile ya da yeni defterle taşınmalıdır (aynı params ile `create_user_version` "no_change" verebilir; bkz. rapor).

@@ -460,6 +460,13 @@ for f in "$REL_DIR"/deploy/trader-*.service "$REL_DIR"/deploy/trader-*.timer; do
   if [ "$(basename "$f")" = "trader-engine-live.service" ] && [ "$LIVE" -ne 1 ]; then continue; fi
   render "$f" "${UNIT_DIR}/$(basename "$f")"
 done
+# ML golge deneyi: yalniz ogrenen kagit birimine drop-in (twin/testnet/live degismez)
+if [ -d "$REL_DIR/deploy/trader-engine@learner.service.d" ]; then
+  mkdir -p "${UNIT_DIR}/trader-engine@learner.service.d"
+  for f in "$REL_DIR"/deploy/trader-engine@learner.service.d/*.conf; do
+    render "$f" "${UNIT_DIR}/trader-engine@learner.service.d/$(basename "$f")"
+  done
+fi
 if [ "$NO_LIVE" -eq 1 ]; then
   say "Canli kip kapatiliyor (--no-live)"
   systemctl disable --now trader-engine-env-retry@live.timer >/dev/null 2>&1 || true

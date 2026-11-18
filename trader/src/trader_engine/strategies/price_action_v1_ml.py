@@ -27,13 +27,17 @@ ML_MODES = ("off", "shadow", "active")
 
 
 def load_engine_model(path: str | None, ml_mode: str, now: datetime,
-                      expected_features=None) -> tuple[MlModelView | None, str | None]:
+                      expected_features=None, *, experimental: bool = False) -> tuple[MlModelView | None, str | None]:
     """Motor tarafi yukleme: kapi (gate_passed True) + hash + 21 gun + ozellik listesi (+ active icin kullanici onayi).
+    `experimental=True` (yalniz shadow; aksi ValueError -> (None, kod)): kapi denetimi atlanir, hash/sure kalir.
     Hata -> (None, kod): `active`te yeni giris yok, `shadow`da yalniz uyari (log + sayac)."""
     if not path:
         return None, "ml_model_path_missing"
     try:
-        return load_model_view(path, expected_features=FEATURE_NAMES if expected_features is None else expected_features, ml_mode=ml_mode, now=now), None
+        if experimental:
+            log.info("ML modeli DENEYSEL yukleniyor (ml_exp=1, kapi atlandi, yalniz shadow): %s", path)
+        return load_model_view(path, expected_features=FEATURE_NAMES if expected_features is None else expected_features, ml_mode=ml_mode, now=now,
+                                experimental=experimental), None
     except (OSError, ValueError, KeyError, TypeError) as e:
         log.warning("ML modeli yuklenemedi (%s): %s: %s", ml_mode, type(e).__name__, e)
         return None, f"{type(e).__name__}: {e}"
@@ -94,7 +98,8 @@ class PriceActionV1Ml:
             return sig
         out = sig.copy()
         reasons = out["reasons"].astype(object).copy()
-        tags = pd.Series([f"ml:p={float(v):.6f}|" for v in p], index=sig.index[cand], dtype=object)
+        exp = "ml_exp=1|" if getattr(model, "experimental", False) else ""     # golge deneyi: kapidan gecmemis paket
+        tags = pd.Series([f"ml:p={float(v):.6f}|{exp}" for v in p], index=sig.index[cand], dtype=object)
         reasons.loc[cand] = tags + reasons.loc[cand].astype(str)
         out["reasons"] = reasons
         return out

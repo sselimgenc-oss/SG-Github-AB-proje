@@ -1,0 +1,1 @@
+{"strategy": "price_action_v1_ml", "ml_mode": "shadow", "ml_features": "r03", "ml_model_path": "models/ml1-r03.json", "ml_experimental": true}

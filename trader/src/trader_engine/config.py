@@ -82,6 +82,7 @@ class EngineConfig:
     ml_mode: Literal["off", "shadow", "active"] = "off"      # 05 §13.4a; yalniz price_action_v1_ml okur
     ml_model_path: str | None = None                          # model paketi (JSON); off iken okunmaz
     ml_features: Literal["v1", "r02", "r03"] = "v1"           # ML-G5 bayragi: v1 = bugunku ozellikler (varsayilan, degismez); r02/r03 = v2 motor baglami
+    ml_experimental: bool = False                             # ML golge deneyi (G-1): yalniz paper+shadow; kapidan gecmemis paketi golgede yukler
     pause_file: str = "shared/PAUSE"                          # 11 §3.1: gercek yol f"{pause_file}.{bot}"
     startup_wait_s: float = 600.0                             # paper acilis kapisi: kural+taze 1m veri icin azami bekleme
     leverage: int = LOCKED_CFG.min_leverage                   # 11 §3.1: [min_leverage, max_leverage]
@@ -120,7 +121,7 @@ _TOP_KEYS = {f.name for f in dataclasses.fields(EngineConfig)}
 _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wait_s",
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
-_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "startup_wait_s", "pause_file",
+_OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
                   "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks"}
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
@@ -320,6 +321,9 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         raise ConfigError(f"strategy gecersiz (^[a-z][a-z0-9_]{{0,39}}$): {strategy!r}")
     ml_mode = _choice("ml_mode", raw.get("ml_mode", "off"), ("off", "shadow", "active"))
     ml_features = _choice("ml_features", raw.get("ml_features", "v1"), ("v1", "r02", "r03"))
+    ml_experimental = _bool("ml_experimental", raw.get("ml_experimental", False))
+    if ml_experimental and not (mode == "paper" and ml_mode == "shadow"):
+        raise ConfigError(f"ml_experimental yalniz paper+shadow (mode={mode!r}, ml_mode={ml_mode!r})")
     ml_path = raw.get("ml_model_path")
     if ml_path is not None and (not isinstance(ml_path, str) or not ml_path):
         raise ConfigError("ml_model_path bos olmayan str ya da null olmali")
@@ -369,6 +373,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         reconcile_open_s=nums["reconcile_open_s"], reconcile_flat_s=nums["reconcile_flat_s"],
         start_delay_s=nums["start_delay_s"], strategy=strategy,
         target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path, ml_features=ml_features,  # type: ignore[arg-type]
+        ml_experimental=ml_experimental,
         startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live, ladder_follow=ladder_follow,
         shadow_blocks=shadow_blocks, mtm_marks=mtm_marks,
         **{n: raw[n] for n in _STR},
