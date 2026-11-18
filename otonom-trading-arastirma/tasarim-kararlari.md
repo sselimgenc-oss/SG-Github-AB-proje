@@ -154,3 +154,9 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - Liste (11): AAPL, MSFT, NVDA, GOOGL, AMZN, META, TSLA, XAU (altın), XAG (gümüş), BZ (Brent petrol), COPPER (bakır) — Binance USDⓈ-M USDT perp.
 - Uygulama sınırları (mentor belirtimi ile): yalnız kâğıt; S2 ön kaydı ve kilitli dönem kuralları değişmez; learner/ikiz kıyası korunur; gerçek para kuralı (CANLI-K1) aynen.
 - **Çalışma tutumu (kullanıcı, 18 Kasım):** "Ne söylesem kesin/garanti değil, biliyoruz. 2 günlük proje kâr edecek değil; bazı şeyleri deneyerek öğreneceğiz. Gerçek para koymuyoruz." → Kâğıtta deneyerek öğrenme önceliklidir; istatistiksel kesinlik beklemek kâğıt denemelerini engellemez (deney etiketiyle). Gerçek para kapısı (CANLI-K1) ve araştırma dürüstlüğü kuralları (S2 ön kaydı, kilitli dönem) aynen kalır.
+
+## 18 Kasım 2026 — Deney botu: çok kollu price action, 44 enstrüman, ML ve ders doğrudan etkin (kullanıcı kararı)
+- **Kullanıcı:** "Projede dedim ki price action'ı makine öğrenecek. Kim dedi daralt, 1 tane yap diye? Paper aşamasında neyi ispat ediyoruz? Birçok şey deneyeceğiz ki görelim." Mentor bugün daraltmanın hata olduğunu kabul etti.
+- Kurulum kütüphanesi (trend takip, geri çekilme, kırılım, yatay piyasa; 15dk/1s/4s/1g) + ML'in price action örüntülerini kendisinin öğrenmesi (kendi adayını üreten ML öne alınır), hepsi kâğıtta deney etiketiyle.
+- Enstrümanlar: 44 (stabil coin hariç piyasa değeri en yüksek 20 kripto, Binance USDⓈ-M'de bulunan en yüksek piyasa değerli 20 ABD hissesi, altın, gümüş, Brent, bakır), ilk günden hepsi. Sunucu büyütme gerekirse kullanıcı adımı.
+- **ML ve ders gölgede değil, doğrudan etkin** (kâğıt deney botunda; kapı şartı kâğıtta aranmaz, deney etiketi). Gerçek para kapısı (CANLI-K1), testnet/canlı yolu ve araştırma dürüstlüğü (S2 ön kaydı, kilitli dönem) değişmez. S2-1 (4s) kullanıcı isteğiyle durduruldu (kod `f0c6089`, beklemede).
