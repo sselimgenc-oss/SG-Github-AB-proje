@@ -69,8 +69,8 @@ jobs:
 
       - name: Kilitli donem korumalari
         working-directory: trader
-        run: pytest -q tests/engine/test_no_holdout_in_tests.py tests/engine/test_engine_holdout_lock.py
+        run: python -m pytest -q tests/engine/test_no_holdout_in_tests.py tests/engine/test_engine_holdout_lock.py
 
       - name: pytest (tam; var/history yoksa gercek-veri testleri atlanir)
         working-directory: trader
-        run: pytest -q
+        run: python -m pytest -q   # python -m: trader/ sys.path basinda (tests.engine iceaktarimlari)
