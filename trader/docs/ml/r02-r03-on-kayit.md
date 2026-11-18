@@ -175,21 +175,31 @@ Bu tabloyu doldurmak tanım değişikliği değildir. Tablo commit'lenmeden koş
 
 **Durum notu (18 Kasım 2026 — mentor):** tablo **doldurulmadı, dondurma yapılmadı.** `--precheck-only` (r02) güç vetosu verdi (IC gün sayısı 0 → gereken rho sonsuz > 0,08): alınan-işlem katmanındaki 660 işlemin tamamı 2021'de, sınav dilimlerinde alınan işlem yok (geri testte 2021-11-03'te `stop_failed` giriş kilidi kalıcı kaldı). r02 koşulmadı; ayrıntı `docs/ml/r02-kapi-raporu.md`. Derlem v2 sha256 `4d7c76b0…2f7bc6` doğrulandı; kusurlu katman (sha256 `a03f2847…e6536f`, `config_hash` `ca6e1433…d3d40b`, commit `7399343` = yeniden yazım sonrası `3c084d4`) dondurulmaz, yeniden kurulmalıdır.
 
+**Dondurma notu (18 Kasım 2026 — mentor): tablo dolduruldu, DONDURULDU.** Katman, `tasarim-kararlari.md` 18 Kasım kararına (BT-1: `would_trigger` giriş kilidi yazmaz) göre temiz çalışma ağacında C = `8632b24` ile yeniden kuruldu; derlem v2 yeniden kurulmadı. §2.2 tanımı ve bu belgedeki diğer tanımlar değişmedi. `verify_overlay_manifest` ve `verify_corpus_manifest` hatasız; `--precheck-only` (r02) güç şartını geçti.
+
+Katmanın hızlandırılmış kodla (`8632b24`) kurulmasının sonucu değiştirmediğinin kanıtı — altın 3 çift eşdeğerliği, `8e63e5f` (hızlandırma öncesi) ile `8632b24`, aynı `--id eqv`, üç dosya bayt bayt aynı:
+
+- `trades.csv` `5c24abf29d59cb278619410d24b6b22bc3a3f489756e9d7d19e607117c9b6df1`
+- `summary.json` `6d61844c11fac65b646c3bf7e1b7608cb983c8d4567be546f90202429df7dad2`
+- `open_at_end.json` `66ebd29ed9ec29e6f3786a76e25a0b0a3ff32be1aa0b37808e6af0c5e39393f3`
+
+Çapraz denetim: yarıda kesilen `8e63e5f` katman koşusunun defterindeki `exit_ts` < 2022-03-01 olan 950 işlem, yeni katmandakilerle birebir aynı.
+
 | Alan | Değer |
 |---|---|
-| `corpus_v2.parquet` sha256 (`corpus.sha256`) | — (kurulumda yazılır) |
-| `corpus.content_sha256` | — |
-| Derlem kurulum commit'i (`git.commit`, ağaç temiz) | — |
-| Satır sayısı; yıl bazında; `label_1r` çözülmüş / çözülmemiş | — |
-| `funding_stale_count` | — |
-| Elle kontrol (150/150) | — |
-| `corpus_v2_taken.parquet` sha256; backtest `config_hash`; commit | — |
-| Alınan / alınmayan satır; eşleşmeyen alınmış işlem (0 olmalı); dönem sonu açık atılan | — |
-| Koşu commit'i (kod) | — |
-| lightgbm sürümü | — |
-| `--precheck-only` r02: özellik sağlığı; gereken t (DSR), gereken rho (IC), IC gün sayısı | — |
+| `corpus_v2.parquet` sha256 (`corpus.sha256`) | `4d7c76b0adb1c40f9ac4b966ce82bd815e65249a168a393d289bb9c11d2f7bc6` |
+| `corpus.content_sha256` | `8d116b9792da2ff6b9452768a540c0c8b37a619d824c9ccbe610a424210e1ad8` |
+| Derlem kurulum commit'i (`git.commit`, ağaç temiz) | `0f4a6c663a2f` (ağaç temiz); geçmiş yeniden yazımından sonra `cf6f25d`. Derlem yeniden kurulmadı |
+| Satır sayısı; yıl bazında; `label_1r` çözülmüş / çözülmemiş | 7335; 2021 1374, 2022 1305, 2023 1474, 2024 1361, 2025 1346, 2026 475; çözülmüş 7329 / çözülmemiş 6 |
+| `funding_stale_count` | 0 (`candle_gaps` 10 çiftte 0) |
+| Elle kontrol (150/150) | 50/50 elle doğru; bağımsız yeniden hesap 150/150 (`verify_sample_check` hatasız) |
+| `corpus_v2_taken.parquet` sha256; backtest `config_hash`; commit | `87fe782f347df616302311fc42c97bc79e1d8ac8793a4d7af78a1227ae8ae3ab`; `7c0a9198471243869d2e345c804bd09119a7ab7b1d1b1f2f8ee8c5aab470c397`; katman kurulum commit'i **C = `8632b24`** (ağaç temiz; BT-1 düzeltmesi + geri test hızlandırması), manifest commit'i `ec757f7` |
+| Alınan / alınmayan satır; eşleşmeyen alınmış işlem (0 olmalı); dönem sonu açık atılan | katman: alınan 4698, atlanan 2637, eşleşmeyen alınmış **0**, R'sız 0, dönem sonu açık 3. Koşu tablosu: 7329 satır, alınan 4695, alınmayan 2634 (etiketi çözülmemiş 6 satır atıldı; 3'ü alınmış). Dilim başına alınan 932 / 1040 / 918 / 974; yıl: 2021 809, 2022 873, 2023 952, 2024 896, 2025 868, 2026 300; ilk giriş 2021-02-20 17:00, son giriş 2026-04-30 05:00; `gate_closed_skips` boş |
+| Koşu commit'i (kod) | bu dondurma commit'i (yalnız bu belge değişir; kod `ec757f7` ile aynı, `code_sha256` 13/13 tutuyor). Kesin karma `gate_result.json` ve r02 raporuna yazılır |
+| lightgbm sürümü | 4.6.0 |
+| `--precheck-only` r02: özellik sağlığı; gereken t (DSR), gereken rho (IC), IC gün sayısı | TEMİZ (boş/sabit/kopya yok); t = 3,22 (günlük SR ≥ 0,0812; 1576 gün); rho = **0,0558** ≤ 0,08 → veto yok; IC gün sayısı 1284. Çıkış kodu 0 (`ec757f7`, temiz çalışma ağacı) |
 | `--precheck-only` r03 (r02 raporundan sonra doldurulur) | — |
-| Koşu anındaki n_trials | — (en az 10) |
+| Koşu anındaki n_trials | 10 (defter 5 satır × 2; değişmedi) |
 
 ## 11. Değişmeyenler
 
