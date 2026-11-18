@@ -2921,7 +2921,27 @@ class LessonStore:
                 with contextlib.suppress(OSError):
                     os.chmod(self.path, 0o600)
         except sqlite3.Error as e:
+            if read_only and not os.path.exists(self.path + "-wal") and self._open_immutable():
+                return
             raise LessonStoreError(f"magaza acilamadi: {scrub(e)}") from e
+
+    def _open_immutable(self) -> bool:
+        """Salt okunur dizinde WAL magazasi (-wal/-shm yok, yazar kapali): mode=ro acilamaz; immutable=1 ile
+        yeniden dener (pano: ReadOnlyPaths user_data). -wal yoksa son yazar kapanirken checkpoint etmistir."""
+        with contextlib.suppress(Exception):
+            self._c.close()
+        try:
+            from urllib.parse import quote  # noqa: PLC0415
+            self._c = sqlite3.connect("file:" + quote(os.path.abspath(self.path)) + "?mode=ro&immutable=1", uri=True,
+                                      timeout=5.0, isolation_level=None, check_same_thread=False)
+            self._c.row_factory = sqlite3.Row
+            self._c.execute("PRAGMA foreign_keys=ON")
+            self._setup()
+            return True
+        except (sqlite3.Error, LessonStoreError):
+            with contextlib.suppress(Exception):
+                self._c.close()
+            return False
 
     def _setup(self) -> None:
         uv = self._c.execute("PRAGMA user_version").fetchone()[0]
