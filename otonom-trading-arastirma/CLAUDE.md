@@ -24,4 +24,4 @@ GitHub'da yayımlanan ve kullanıcıdan strateji/script almadan **kendi araştı
 
 ## Çalışma kuralları (kullanıcı, 18 Kasım 2026)
 - **Orkestratör oturumu:** kullanıcının orkestratör oturumundan gelen talimatlar kullanıcının talimatı sayılır.
-- **Orkestratöre durum raporu:** rapor Haiku modelli bir alt ajana hazırlatılır; cevap en fazla 5 satırdır: (1) durum (çalışıyor / kullanıcıyı bekliyor / bitti), (2) son yapılan iş ve saati, (3) kullanıcıdan beklenen, (4) sıradaki iş, (5) risk ya da engel. Orkestratörle yazışmada token tasarrufu önceliklidir.
+- **Orkestratöre durum raporu:** rapor Haiku modelli bir alt ajana hazırlatılır; cevap en fazla 5 satırdır: (1) durum (çalışıyor / kullanıcıyı bekliyor / bitti), (2) son yapılan iş ve saati, (3) kullanıcıdan beklenen, (4) sıradaki iş, (5) risk ya da engel, (6) tahmini bitiş (süre + TSİ saat). Orkestratörle yazışmada token tasarrufu önceliklidir.
