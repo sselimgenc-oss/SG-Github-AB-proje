@@ -11,9 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd  # noqa: F401
 import pytest
 
-from test_wp3_spec import BASE_REF, TRADER, _golden_cmd, _sha, table_cols  # noqa: E402
+from test_wp3_spec import BASE_REF, TRADER, _golden_cmd, _sha, metrics_mod, table_cols  # noqa: E402
 
 
 @pytest.mark.slow
