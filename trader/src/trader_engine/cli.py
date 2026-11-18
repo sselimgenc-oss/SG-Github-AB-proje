@@ -172,6 +172,12 @@ def _init_ledger_work(cfg, reason: str, strategy: str | None) -> int:
         # create=True yeni dosya kurar; var olan eski sema dosyasi BURADA goc ettirilmez (goc yalniz motor surecinde)
         led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, migrate=False)
     except L.LedgerSchemaError as e:
+        # paper: var olan ESKI semali defter hata degildir; goc motor surecinde (yedekle) yapilir. Birim ExecStartPre'si
+        # (trader-engine@.service init-ledger) burada 4 donerse motor hic acilamaz ve goc hic olmaz (18 Kasim sunucu olayi).
+        # testnet/live bu yola girmez: `run --ensure-ledger` damga denetimiyle ayri karar verir (DD-9 F1).
+        if cfg.mode == "paper" and "eski" in str(e) and Path(cfg.ledger_path).exists():
+            print(f"defter eski semada: {e}; goc motor baslarken yapilacak", file=sys.stderr)
+            return EXIT_OK
         print(f"defter sema hatasi: {e} (goc motor baslarken yapilir)", file=sys.stderr)
         return EXIT_ENGINE
     try:

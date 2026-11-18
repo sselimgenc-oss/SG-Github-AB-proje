@@ -134,3 +134,21 @@ def test_impl9_f1_ensure_ledger_old_schema_no_stamp_exit_8_untouched(tmp_path, m
     assert run_env9.calls == []
     assert _sha(cfg.ledger_path) == sha and _uv(cfg.ledger_path) == 3
     assert not [p for p in Path(cfg.ledger_path).parent.iterdir() if "premigrate" in p.name]
+
+
+def test_paper_init_ledger_old_schema_exits_0_untouched_engine_migrates_later(tmp_path, monkeypatch):
+    """18 Kasim sunucu olayi: kagit birimin ExecStartPre `init-ledger`i eski semali (v3) defterde 4 donup motoru hic acmiyordu.
+    Artik paper'da 0 doner, dosyaya dokunmaz (goc motor surecinde yedekle yapilir)."""
+    from trader_engine import cli
+    cdir, _ = D8.make_tree(tmp_path, "testnet")
+    monkeypatch.chdir(tmp_path)
+    cfg = D8.cli_cfg(cdir, None)
+    assert cfg.mode == "paper"
+    Path(cfg.ledger_path).parent.mkdir(parents=True, exist_ok=True)
+    _make_v3(cfg.ledger_path, stamp=None)
+    sha = _sha(cfg.ledger_path)
+    assert cli.main(["init-ledger", "--bot", "learner", "--config-dir", str(cdir)]) == 0
+    assert _sha(cfg.ledger_path) == sha and _uv(cfg.ledger_path) == 3
+    led = L.open_ledger(cfg.ledger_path, "learner", create=True)         # motorun acilisi (paper: migrate varsayilan)
+    led.close()
+    assert _uv(cfg.ledger_path) == L.SCHEMA_VERSION
