@@ -58,7 +58,7 @@ EXPECTED_FIELDS = {
     "OrderResult": ["status", "client_id", "order_id", "filled_qty", "avg_price", "fee", "reason", "ts"],
     "BrokerOrder": ["client_id", "pair", "role", "order_side", "qty", "trigger_price", "reduce_only",
                     "status", "filled_qty", "avg_price", "created_ts", "updated_ts"],
-    "Fill": ["client_id", "pair", "role", "order_side", "qty", "price", "fee", "ts", "reason"],
+    "Fill": ["client_id", "pair", "role", "order_side", "qty", "price", "fee", "ts", "reason", "ref_price"],  # ref_price: WP-3 (defter-ek-alanlar-spec)
     "BrokerEvent": ["kind", "ts", "pair", "client_id", "fill", "funding_paid", "rate", "mark", "detail"],
     "BrokerPosition": ["pair", "side", "qty", "entry_price", "leverage", "margin", "liq_price",
                        "funding_paid", "fee_paid_entry", "opened_ts", "mark_price", "unrealized"],
@@ -75,6 +75,7 @@ EXPECTED_FIELDS = {
 
 # defaults (field -> default); every other field must be required
 EXPECTED_DEFAULTS = {
+    "Fill": {"ref_price": None},
     "Bar": {"v": 0.0},
     "MinuteBar": {"volume": 0.0},
     "OrderRequest": {"working_type": "MARK_PRICE", "signal_bar_close_ts": None, "created_ts": None},

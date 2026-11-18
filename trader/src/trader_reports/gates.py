@@ -17,6 +17,13 @@ _RISK_PREFIX = (("aynı yön", "ayni_yon"), ("günlük zarar bütçesi", "gunluk
                 ("toplam açık risk", "acik_risk"), ("toplam teminat", "teminat_toplam"), ("likidasyon çok yakın", "likidasyon"))
 FIXED_ROWS = (("koşul:volatile", lambda d: d["regime"] == "volatile"), ("koşul:unclear", lambda d: d["regime"] == "unclear"),
               ("R1 kapalı (v1b)", lambda d: d["setup"] == "R1"), ("15m kapalı", lambda d: d["trigger_tf"] == "15m"))
+# WP-3 8-2 (rapor-paketi-spec v1.1): sabit satirlar `v_shadow_decisions.block`'tan gelir (sema 4); tablo yoksa FIXED_ROWS (kanit_yok).
+SHADOW_ROWS = (("koşul:volatile", "regime_volatile"), ("koşul:unclear", "regime_unclear"),
+               ("R1 kapalı (v1b)", "r1_disabled"), ("15m kapalı", "tf_15m"), ("aynı mumda yeniden giriş", "same_bar_reentry"))
+SHADOW_NOTES = {"koşul:volatile": "yalnız T1 (bu koşulda R1 tanımsız)", "koşul:unclear": "yalnız T1 (bu koşulda R1 tanımsız)",
+                "15m kapalı": "1 saatlik ızgarada oynatılır (yaklaşık)"}
+SHADOW_TABLE_NOTE = ("Gölge satırlar karar paydasına girmez (pay —); n_pozisyon_acik gerçekte hiç alınamayacak satırları ayrı "
+                     "gösterir: kanıt üst sınırdır.")
 CF_NOTE = ("Alınmayan sinyallerin sonucu (karşı-olgu) üst sınırdır: emir gerçekleşmesi, sonraki kapılar ve gerçek çıkış kuralı "
            "hesaba katılmaz (varsayım).")
 TAKEN_NOTE = "gerçek çıkışla; karşı-olgu satırlarıyla birebir kıyaslanamaz"
@@ -100,7 +107,8 @@ def _stats(dids, n_engel: int, cf: dict | None, n_total: int, period_days: float
 
 
 def build(trades: list[dict], decisions: list[dict], cf: dict | None, *, mode_backtest: bool, period_days: float | None,
-          veto_cost, risk_usd: float, cf_warning: str | None, section: str = "gates") -> dict:
+          veto_cost, risk_usd: float, cf_warning: str | None, section: str = "gates",
+          shadow: list[dict] | None = None, cf_shadow: dict | None = None) -> dict:
     blocks: list = []
     n_total = len(decisions)
     skipped = [d for d in decisions if d["final_action"] == "skipped"]
@@ -163,19 +171,44 @@ def build(trades: list[dict], decisions: list[dict], cf: dict | None, *, mode_ba
 
     # ---- 7.4 sabit satirlar
     rows = []
-    for name, pred in FIXED_ROWS:
-        dids = [d["id"] for d in decisions if pred(d)]
-        row, _ = _stats(dids, len(dids), use_cf, n_total, period_days)
-        if not dids:
-            row["yargi"] = "kanit_yok"
-        r = {"hucre": name, "kapi": name}
-        merge(r, {c: row[c] for c in ("n_engel", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak")})
-        if not dids:
-            r["bayrak"] = ""
-        r["not"] = "" if dids else "gölge karar satırı WP-3'te"
-        rows.append(r)
-    blocks.append(plain("aday_uretmeyen", "2.4 Aday üretmeyen yasaklar",
-                        ["hucre", "kapi", "n_engel", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak", "not"], rows, [CF_NOTE]))
+    if shadow is None:                                   # sema < 4: gölge tablo yok -> bugunku kanit_yok + not
+        for name, pred in FIXED_ROWS:
+            dids = [d["id"] for d in decisions if pred(d)]
+            row, _ = _stats(dids, len(dids), use_cf, n_total, period_days)
+            if not dids:
+                row["yargi"] = "kanit_yok"
+            r = {"hucre": name, "kapi": name}
+            merge(r, {c: row[c] for c in ("n_engel", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak")})
+            if not dids:
+                r["bayrak"] = ""
+            r["not"] = "" if dids else "gölge karar satırı WP-3'te"
+            rows.append(r)
+        r5 = {"hucre": "aynı mumda yeniden giriş", "kapi": "aynı mumda yeniden giriş"}
+        merge(r5, {"n_engel": 0, "pay": None, "n_cf": None, "ort_r_cf": None, "hedef_once": None, "yargi": "kanit_yok",
+                   "bayrak": ""})
+        r5["not"] = "gölge karar satırı WP-3'te"
+        rows.append(r5)
+        blocks.append(plain("aday_uretmeyen", "2.4 Aday üretmeyen yasaklar",
+                            ["hucre", "kapi", "n_engel", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak", "not"],
+                            rows, [CF_NOTE]))
+    else:
+        cfs = None if mode_backtest else cf_shadow
+        for name, block in SHADOW_ROWS:
+            sids = [s["id"] for s in shadow if s["block"] == block]
+            row, _ = _stats(sids, len(sids), cfs, 0, period_days)
+            if not sids:
+                row["yargi"] = "kanit_yok"
+            r = {"hucre": name, "kapi": name}
+            merge(r, {c: row[c] for c in ("n_engel", "n_cf", "ort_r_cf", "hedef_once", "yargi", "bayrak")})
+            r["pay"] = DASH                              # gölge satırlar karar paydasına girmez
+            r["n_pozisyon_acik"] = sum(1 for s in shadow if s["block"] == block and s.get("pos_open"))
+            if not sids:
+                r["bayrak"] = ""
+            r["not"] = SHADOW_NOTES.get(name, "")
+            rows.append(r)
+        blocks.append(plain("aday_uretmeyen", "2.4 Aday üretmeyen yasaklar",
+                            ["hucre", "kapi", "n_engel", "n_pozisyon_acik", "pay", "n_cf", "ort_r_cf", "hedef_once", "yargi",
+                             "bayrak", "not"], rows, [CF_NOTE, SHADOW_TABLE_NOTE]))
     counts = {k: len(v) for k, v in by_gate.items()}
     return {"blocks": blocks, "veto": veto, "gate_counts": counts, "n_engel_toplam": len(skipped), "cf_warning": cf_warning}
 

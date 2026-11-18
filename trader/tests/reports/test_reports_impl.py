@@ -274,7 +274,7 @@ def test_cli_holdout_rows_and_readonly(tmp_path, capsys, ver):
 def test_cli_errors_and_empty(tmp_path, capsys):
     rc, j = run_cli(["--bot", "learner", "--ledger", str(tmp_path / "yok.sqlite"), "--now", NOW, "--out", str(tmp_path / "o")], capsys)
     assert rc == 2 and j["code"] == "ledger_missing" and not (tmp_path / "yok.sqlite").exists()
-    for v in (1, 4):
+    for v in (1, 5):   # sema 4 (WP-3) artik kabul; reddedilen ilk yeni surum 5
         led = tmp_path / f"l{v}.sqlite"
         make_ledger(led, v)
         rc, j = run_cli(["--bot", "twin", "--ledger", str(led), "--now", NOW, "--out", str(tmp_path / "o")], capsys)

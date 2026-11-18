@@ -113,6 +113,7 @@ def build_report(o: Options) -> dict:
     try:
         meta["defter_surumu"] = I.check_ledger_schema(conn)
         decisions, dskip = I.load_decisions(conn, since, until)
+        shadow = I.load_shadow(conn, since, until)          # WP-3 8-2: sema 4; yoksa None
         has_xr = False
         if backtest:
             by_id = {d["id"]: d for d in decisions}
@@ -129,6 +130,9 @@ def build_report(o: Options) -> dict:
         cf, cfskip, cf_warn = I.load_cf(o.cf, o.bot, now_iso, since, until, {d["id"] for d in decisions})
         if cf_warn:
             warnings.append(cf_warn)
+    cf_shadow = None
+    if not backtest and shadow:
+        cf_shadow = I.load_cf_shadow(o.cf, o.bot, now_iso, since, until, {s["id"] for s in shadow})
     counters["holdout_skipped_cf"] = cfskip
     counters["holdout_skipped"] = tskip + dskip   # islem + atlanan karar (karsi-olgu satiri atlanan kararla ayni olay)
 
@@ -172,7 +176,7 @@ def build_report(o: Options) -> dict:
         if "gates" in secs:
             cost = None if backtest else I.veto_cost_usd(o.budget, since, until) if o.budget else None
             ga = GA.build(trades, decisions, cf, mode_backtest=backtest, period_days=period_days, veto_cost=cost,
-                          risk_usd=risk_usd, cf_warning=cf_warn)
+                          risk_usd=risk_usd, cf_warning=cf_warn, shadow=shadow, cf_shadow=cf_shadow)
             if o.compare_backtest:
                 cdir = Path(o.compare_backtest)
                 cmp_ok = False

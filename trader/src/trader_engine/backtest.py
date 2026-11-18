@@ -180,6 +180,7 @@ class BacktestSpec:
     config_dir: str = "config"
     pairs: tuple[str, ...] | None = None
     target_trade_risk: float | None = None      # None -> kilitli hedef risk (LOCKED_CFG); verilirse yalniz daha SIKI (<=) deger
+    record_shadow: bool = False                 # WP-3 5.1: --record-shadow (tf_15m geri testte DESTEKLENMEZ)
     flags: dict = field(default_factory=dict)
 
 
@@ -331,7 +332,8 @@ class BacktestRunner:
         # backtest/capraz dogrulama kilitli hedef riskle kosar (taban yapilandirmadaki paper degeri 0.005 sonuclari kaydirmasin)
         kw = dict(mode="backtest", veto_mode="off", bot="learner", strategy=s.strategy, cost=cost,
                   target_trade_risk=(K.LOCKED_CFG.target_trade_risk if s.target_trade_risk is None else s.target_trade_risk),
-                  record_filtered_candidates=bool(s.record_filtered))
+                  record_filtered_candidates=bool(s.record_filtered),
+                  shadow_blocks=(("regime", "r1_disabled", "same_bar_reentry") if s.record_shadow else ()))
         if s.pairs:
             kw["pairs"] = tuple(canon_pair(p) for p in s.pairs)
         if s.market_db:
@@ -459,6 +461,7 @@ class BacktestRunner:
                          entry_ts=iso_z(p.entry_ts) if p.entry_ts else None, entry_price=p.entry_price, qty=p.qty,
                          initial_stop=p.initial_stop, current_stop=p.current_stop) for p in state.open_positions()]
         tdf = M.enrich_trades(trades, eq)
+        mtm_rows = list(eng.mtm.rows)
         ledger.close()
         state.close()
         dur = time.perf_counter() - t0
@@ -492,8 +495,41 @@ class BacktestRunner:
         (out_dir / "summary.json").write_text(json.dumps(summ, indent=1, default=_json_default))
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=1, default=_json_default))
         (out_dir / "open_at_end.json").write_text(json.dumps(open_pos, indent=1, default=_json_default))
+        self._write_mtm(out_dir, mtm_rows, trades, met, cfg.wallet_start, s.start)
         return BacktestResult(out_dir=out_dir, summary=summ, meta=meta, trades=tdf, open_at_end=open_pos, snapshot=snap,
                               signals=signals)
+
+    @staticmethod
+    def _write_mtm(out_dir: Path, rows: list, trades: pd.DataFrame, met: dict, wallet_start: float,
+                   start: datetime) -> None:
+        """WP-3 6.4: YENI dosyalar (`equity_mtm.csv`, `mtm.json`); trades.csv/summary.json/open_at_end.json degismez."""
+        with open(out_dir / "equity_mtm.csv", "w", encoding="utf-8", newline="") as f:
+            f.write("ts,wallet,equity,equity_low,n_open\n")
+            for ts, w, e, lo, n in rows:
+                f.write(f"{iso_z(ts)},{w!r},{e!r},{lo!r},{int(n)}\n")
+        eqs = [r[2] for r in rows]
+        lows = [r[3] for r in rows]
+        st = M.drawdown_stats(eqs, lows, wallet_start)
+        loc = M.drawdown_locations(eqs, lows, wallet_start)
+
+        def ts_at(curve_idx: int) -> str:
+            return iso_z(start) if curve_idx <= 0 else iso_z(rows[curve_idx - 1][0])
+
+        def ts_low(i: int) -> str:
+            return iso_z(rows[i][0])
+
+        closed = trades[trades["exit_ts"].notna()].sort_values(["exit_ts", "trade_id"]) if len(trades) else trades
+        pnl = [float(x) for x in closed["realized_pnl"]] if len(closed) else []
+        out = dict(schema="mtm/1", wallet_start=float(wallet_start), n_rows=len(rows),
+                   max_dd_realized_pct=float(met.get("max_dd_pct", 0.0)), max_dd_realized_abs=float(met.get("max_dd_abs", 0.0)),
+                   max_dd_mtm_pct=st["max_dd_mtm_pct"], max_dd_mtm_abs=st["max_dd_mtm_abs"],
+                   max_dd_mtm_low_pct=st["max_dd_mtm_low_pct"], max_dd_mtm_low_abs=st["max_dd_mtm_low_abs"],
+                   peak_ts=ts_at(loc["peak_idx"]) if rows else None,
+                   trough_ts=ts_at(loc["trough_idx"]) if rows else None,
+                   low_peak_ts=ts_at(loc["low_peak_idx"]) if rows else None,
+                   low_trough_ts=ts_low(loc["low_trough_idx"]) if rows else None,
+                   max_underwater_steps=st["max_underwater_steps"], max_consecutive_losses=M.max_consecutive_losses(pnl))
+        (out_dir / "mtm.json").write_text(json.dumps(out, indent=1, default=_json_default))
 
     # -- --paranoid
     DISCRETE = ("signal", "setup", "side", "skip_reason", "regime", "rh_touches", "rl_touches")
@@ -731,6 +767,8 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--record-filtered", dest="record_filtered", action="store_true", default=True)
     g.add_argument("--no-record-filtered", dest="record_filtered", action="store_false")
     ap.add_argument("--no-skip-flat", action="store_true")
+    ap.add_argument("--record-shadow", action="store_true",
+                    help="WP-3: golge karar satirlari (regime, r1_disabled, same_bar_reentry); tf_15m geri testte yok")
     ap.add_argument("--paranoid", nargs="?", const=200, type=int, default=None)
     ap.add_argument("--seed", type=int, default=17)
     ap.add_argument("--truncate-check", default=None, help="END' (YYYYMMDDTHH)")
@@ -765,7 +803,7 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         record_filtered=a.record_filtered, skip_flat=not a.no_skip_flat, paranoid=a.paranoid, seed=a.seed,
         truncate_check=trunc, from_paper_ledger=a.from_paper_ledger, out_root=a.out_root, config_dir=a.config_dir,
         pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None,
-        target_trade_risk=a.target_trade_risk,
+        target_trade_risk=a.target_trade_risk, record_shadow=bool(a.record_shadow),
         flags=dict(argv=list(argv)))
 
 

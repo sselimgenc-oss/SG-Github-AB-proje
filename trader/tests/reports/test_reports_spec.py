@@ -546,10 +546,10 @@ def test_g5_engine_does_not_load_reports_and_run_leaves_backtest_outputs(tmp_pat
     assert (sha(run / "trades.csv"), sha(run / "summary.json")) == b
 
 
-@pytest.mark.parametrize("ver,ok", [(1, False), (4, False), (2, True), (3, True)])
+@pytest.mark.parametrize("ver,ok", [(1, False), (5, False), (2, True), (3, True), (4, True)])   # v1.1: 4 kabul
 def test_g6_user_version(tmp_path, ver, ok):
     tr = [mk_trade(1)]
-    sc = scenario(tmp_path, [], tr, version=3 if ver in (1, 4) else ver)
+    sc = scenario(tmp_path, [], tr, version=3 if ver in (1, 5) else ver)
     con = sqlite3.connect(str(sc.ledger))
     con.execute(f"PRAGMA user_version={ver}")
     con.commit()

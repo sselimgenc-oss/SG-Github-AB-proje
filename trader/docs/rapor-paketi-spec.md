@@ -1,8 +1,10 @@
-# Rapor paketi: çıkış karnesi, kapı/veto karnesi, piyasa koşulu tabloları, "varsayım" etiketi, küçük hesap kontrolü (spesifikasyon v1, 17 Kasım 2026)
+# Rapor paketi: çıkış karnesi, kapı/veto karnesi, piyasa koşulu tabloları, "varsayım" etiketi, küçük hesap kontrolü (spesifikasyon v1.1, 17 Kasım 2026)
 
 İş paketi **WP-4** (`tasarim-kararlari.md` 17 Kasım "Repo denetimi onay listesi"). Onay listesi maddeleri: **4, 7 (yalnız karne), 16 (yalnız tablolar), 17, 19**. Denetim kimlikleri: B-01, B-02 (1. adım), C-01, A-10, B-03, A-09, B-27 · B-07, D-17, A-16 · A-14, D-05, B-18 · A-13 · A-19.
 
 Bu belge kod, test ve commit içermez; testler bu belgeden yazılır (§12). Çelişkide `defter-spec.md`, `alinmayan-sinyal-spec.md`, `motor/06-backtester.md` geçerlidir.
+
+**v1.1 (WP-3 ardılı, `defter-ek-alanlar-spec.md` §8):** (1) defter şema kontrolü `(2, 3, 4)` kabul eder (§2.1, G6); (2) §7.4 sabit satırları `v_shadow_decisions.block`'tan gelir, yeni satır `aynı mumda yeniden giriş`, ek sütun `n_pozisyon_acik`, `pay` bu tabloda `—`; karşı-olgu `cf_shadow_outcomes`'tan; (3) `exit_regime` sütunu sürüm 4'te vardır, §8.5 geçiş tablosu kendiliğinden üretilir (kod değişikliği yok); (4) kilitli dönem koruması gölge satır okumasına da uygulanır (§4). Rapor yine yalnız okur.
 
 ## 0. Bağlayıcı ilkeler
 
@@ -41,7 +43,7 @@ trader/scripts/report_run.py   # CLI (argparse, saat, dosya yazımı, isteğe ba
 
 ### 2.1 Defter (`var/<bot>/ledger.sqlite`; backtest: `<koşu>/ledger.sqlite`)
 
-`PRAGMA user_version` **2 ya da 3** kabul edilir (backtest çıktıları 2, güncel kod 3: `ledger.py SCHEMA_VERSION = 3`). 1 ya da >3 ⇒ `ledger_schema` hatası. Göç **çalıştırılmaz**.
+`PRAGMA user_version` **2, 3 ya da 4** kabul edilir (eski backtest çıktıları 2, sürüm 3 defterler, güncel kod 4: `ledger.py SCHEMA_VERSION = 4`). 1 ya da >4 ⇒ `ledger_schema` hatası. Göç **çalıştırılmaz**. Sürüm 4'te `v_trades`/`v_closed_trades` sütun listesinin sonuna `entry_order_ts … exit_regime` (on beş sütun) eklenir; rapor yalnız adlandırdığı sütunları okur, `v_decisions` değişmez.
 
 - `v_decisions` (yerine geçilmemiş kararlar): `id, bot, bar_close_ts, trigger_tf('1h'|'15m'), pair, side('long'|'short'), setup('T1'|'R1'), regime('trend_up'|'trend_down'|'range'|'volatile'|'unclear'), atr_ratio, features (JSON: atr_tf ya da atr_1h, atr_4h, stop_dist_atr, …), planned_entry, planned_stop, planned_target, param_version_id, veto_status('allowed'|'blocked'|'missing'|'stale'|'not_evaluated'), veto_reason, risk_allowed, risk_reason, size_qty, size_notional, size_margin, size_risk_amount, leverage, final_action('entered'|'skipped'), skip_reason, recorded_at`; sürüm 3'te ayrıca `ml_score`.
   - `skip_reason` kümesi: `stop_width, rr_below_min, veto_blocked, veto_missing, veto_stale, risk_denied, entry_gate_closed, order_failed, other` (+ sürüm 3: `ml_filter`).
@@ -49,7 +51,9 @@ trader/scripts/report_run.py   # CLI (argparse, saat, dosya yazımı, isteğe ba
   - `risk_reason` Türkçe serbest metindir (`risk.py _check_entry`); sınıflandırma §7.1.
 - `v_closed_trades`: `trade_id, decision_id, pair, side, setup, regime (girişteki), atr_ratio, param_version_id, entry_ts, entry_price, planned_entry, planned_stop, planned_target, qty, leverage, planned_risk, fee_entry, slippage_entry, exit_ts, exit_price, exit_reason('stop'|'target'|'trail_stop'|'regime_flip'|'time_stop'|'manual'|'force_exit'|'liquidation'|'other'), planned_exit, fee_exit, funding_paid, gross_pnl, realized_pnl, r_multiple, slippage_exit, mfe_r, mae_r, bars_held, excursion_tf`.
   - `r_multiple = realized_pnl / planned_risk` (net: komisyon + fonlama dahil). `mfe_r = max(0, yön·(en iyi fiyat − entry_price)·qty / planned_risk)`, `mae_r` simetrik; ikisi de ≥ 0 ya da ikisi de NULL.
-  - **`exit_regime` sütunu bugün yoktur** (WP-3 ekleyecek). Varlığı `PRAGMA table_info(trade_exits)` ile sorulur (§8.5).
+  - **`exit_regime`** sürüm 4'te vardır (`trade_exits.exit_regime`, `v_closed_trades.exit_regime`; çıkış dolumundan önceki son karar adımındaki hizalanmış 4s koşul etiketi, bilinmiyorsa NULL); sürüm 2/3'te yoktur. Varlığı `PRAGMA table_info(trade_exits)` / görünüm sütunuyla sorulur (§8.5).
+- `v_shadow_decisions` (**sürüm 4**; `defter-ek-alanlar-spec.md` §2.4; aday bastıran blokların gölge satırları): `id, bot, block('regime_volatile'|'regime_unclear'|'r1_disabled'|'same_bar_reentry'|'tf_15m'), bar_close_ts, trigger_tf, pair, side, setup, regime, atr_ratio, rh, rl, features, planned_entry, planned_stop, planned_target, param_version_id, strategy, reasons, pos_open, gate_code, recorded_at, final_action('shadow')`. Satırlar `v_decisions`'a **girmez** ve karar paydasına (`n_total`) sayılmaz. Görünüm yoksa (sürüm < 4) §7.4 eski davranışı korur.
+- `counterfactual.sqlite` içinde `cf_shadow_outcomes` (gece işi, `defter-ek-alanlar-spec.md` §7): `cf_outcomes` ile aynı sütunlar, `decision_id` yerine `shadow_id`, `skip_reason` yerine `block`; tablo yoksa karşı-olgu sütunları boş (`bekleyen`).
 - Zaman damgaları metin `YYYY-MM-DDTHH:MM:SS.mmmZ` (UTC); sözlük sırası = zaman sırası.
 
 ### 2.2 Backtest çıktısı (`var/backtests/<id>/`)
@@ -214,7 +218,7 @@ Karşılaştırma satırı `alınanlar`: `n`, ortalama `r_multiple`, aralık (no
 
 ### 7.4 Aday üretmeyen yasaklar (A-11) ve ölü ayar denetimi (A-16)
 
-- Sabit satırlar: `koşul:volatile`, `koşul:unclear`, `R1 kapalı (v1b)`, `15m kapalı`. Bu koşullarda defterde karar satırı varsa (`regime IN ('volatile','unclear')`, `setup='R1'`, `trigger_tf='15m'`) aynı sütunlar hesaplanır; yoksa `yargi = kanit_yok`, not *"gölge karar satırı WP-3'te"*.
+- Sabit satırlar (**v1.1**): `koşul:volatile`, `koşul:unclear`, `R1 kapalı (v1b)`, `15m kapalı`, `aynı mumda yeniden giriş`. Kaynak `v_decisions` üzerindeki yüklemler **değil**, `v_shadow_decisions.block` sütunudur: `koşul:volatile` ← `regime_volatile`; `koşul:unclear` ← `regime_unclear`; `R1 kapalı (v1b)` ← `r1_disabled`; `15m kapalı` ← `tf_15m`; `aynı mumda yeniden giriş` ← `same_bar_reentry`. `n_engel` = blok satır sayısı; ek sütun `n_pozisyon_acik` = `pos_open = 1` satır sayısı (gerçekte hiç alınamayacak satırlar; iki sayı ayrı gösterilir); `pay` sütunu bu tabloda `—` (gölge satırlar karar paydasına girmez). Karşı-olgu sütunları (`n_cf`, `ort_r_cf`, `hedef_once`, `yargi`, `bayrak`) `cf_shadow_outcomes`'tan (yöntem `barrier`; `tf_15m` 1 saatlik ızgarada, yaklaşık) §5 kurallarıyla hesaplanır. Satır notları: koşul satırlarında *"yalnız T1 (bu koşulda R1 tanımsız)"*, `15m kapalı` satırında *"1 saatlik ızgarada oynatılır (yaklaşık)"*; tablo altında *"gölge satırlar karar paydasına girmez; n_pozisyon_acik gerçekte hiç alınamayacak satırları ayrı gösterir"*. **`v_shadow_decisions` yoksa** (sürüm < 4) bugünkü davranış korunur: satır `yargi = kanit_yok`, not *"gölge karar satırı WP-3'te"* (yeni satır dahil, `n_engel = 0`). Kapı karnesinin 2.1 tablosu, `n_engel_toplam` ve `pay` paydası gölge satırlardan **etkilenmez**. Kilitli dönem koruması (§4) gölge satır okumasına (`bar_close_ts`) ve `cf_shadow_outcomes` (`decision_ts`) okumasına aynen uygulanır.
 - `--compare-backtest KOŞU_DİZİNİ` verilirse: backtest `trades.csv`'de görülüp canlı/kağıt defterde hiç görülmeyen `exit_reason` değerleri ve backtest'te `n_engel > 0` olup canlıda `n_engel = 0` olan kapılar listelenir (kağıt dönemi ≥ 28 gün ise; değilse *"erken"*). A-16 (1) (ders ayarlarının motor çıktısını değiştirdiğini sınayan test) bu paketin kapsamı dışındadır.
 
 ## 8. Madde 16 — Piyasa koşuluna göre tablolar (`regimes.py`)
@@ -225,7 +229,7 @@ Hepsi alt grup tablosudur (§5.4), ölçüt `net_r`, evren kapanmış işlemler.
 2. **Giriş koşulu × oynaklık (A-14):** oynaklık durumu `atr_ratio`'dan, **sabit** sınırlarla: `düşük < 0,80 ≤ orta < 1,00 ≤ yüksek` (`atr_ratio` NULL ⇒ `bilinmiyor`). Sınırlar 1h_IS geri testindeki aday dağılımının yaklaşık üçte birlik noktalarıdır (0,80 / 1,00), bu belgede sabitlenmiştir, veriyle yeniden hesaplanmaz. Ek sütun `tutuyor`: etiket `çıtayı geçti` **ve** hücrenin kendi %90 aralığı 0'ı içermiyorsa `evet`, aksi `hayır`. Not: *"İncelenen botlarda hiçbir koşul hücresi kalıcı çıkmadı; hücre 'tutuyor' demeden koşula bağlı kural yazılmaz."*
 3. **Giriş koşulu × çıkış nedeni (D-05):** `n`, toplam R, `pay = |toplam R| / Σ|toplam R|` (tablo geneli).
 4. **Haftalık "trend ödedi" etiketi (B-18):** havuz = o ISO haftasında `bar_close_ts`'si olan alınan işlemlerin `r_multiple`'ı ∪ atlanan kararların `barrier` `hyp_r_net`'i (depo yoksa yalnız alınanlar; `etiket_kaynagi = alinan|aday`). Hafta etiketi: `n < 5` ⇒ `yetersiz`; ortalama > 0 ⇒ `trend_odedi`; aksi `trend_odemedi`. Haftalık liste (hafta, n, ortalama, etiket) basılır. Etikete göre sonuç tablosunda döngüselliği azaltmak için her işlem **kendi çifti hariç** hesaplanan hafta etiketini alır. Not: *"Etiket geleceği ve iki farklı getiri tanımını kullanır; yalnız değerlendirme (varsayım)."*
-5. **Çıkıştaki koşul:** `trade_exits.exit_regime` sütunu yoksa bölüm tek satırdır: *"`exit_regime` alanı defterde yok (WP-3 ekleyecek); tablo üretilmedi."* Varsa: giriş koşulu × çıkış koşulu geçiş tablosu (`n`, ortalama R, etiket); NULL değerler `bilinmiyor`.
+5. **Çıkıştaki koşul:** `trade_exits.exit_regime` sütunu yoksa (sürüm < 4) bölüm tek satırdır: *"`exit_regime` alanı defterde yok (WP-3 ekleyecek); tablo üretilmedi."* Varsa (sürüm 4; kod değişmeden): giriş koşulu × çıkış koşulu geçiş tablosu (`n`, ortalama R, etiket); NULL değerler `bilinmiyor`.
 
 Ardından standart dökümler (madde 17'nin uygulama alanı): çift, yön, kurulum, UTC saat dilimi, haftanın günü; ve §5.5 yıl satırları.
 
@@ -307,7 +311,7 @@ Testler `tests/reports/` altında, sentetik defter/depo/mum dosyalarını kendis
 - G3. Olmayan defter/depo yolu ⇒ dosya **oluşturulmaz**; defter için kod 2 `ledger_missing`, depo için uyarı + rapor üretilir.
 - G4. Statik (`ast`) tarama: `src/trader_reports/**` içinde `trader_ml` içe aktarması yok; `pandas` yok; `datetime.now`/`utcnow`/`time.time` çağrısı yok; yazma SQL sözcükleri yok; `sqlite3.connect` yalnız `inputs.open_ro` içinde. `src/trader_engine`, `src/trader_core`, `src/trader_ml` içinde `trader_reports` içe aktarması yok.
 - G5. Paket varken ve yokken (ya da rapor koşusundan önce/sonra) referans geri test `trades.csv` + `summary.json` bayt bayt aynı (küçük sentetik koşu yeterli).
-- G6. `user_version = 1` ve `= 4` defter ⇒ kod 2 `ledger_schema`; 2 ve 3 ⇒ başarılı, aynı tablolar.
+- G6. `user_version = 1` ve `= 5` defter ⇒ kod 2 `ledger_schema`; 2, 3 ve 4 ⇒ başarılı, aynı tablolar (v1.1).
 - G7. Aynı girdiler + aynı `--now` iki koşu ⇒ dört çıktı dosyası bayt bayt aynı. `--dry-run` ⇒ `--out` altında dosya yok.
 
 **Kilitli dönem**
@@ -378,7 +382,7 @@ Testler `tests/reports/` altında, sentetik defter/depo/mum dosyalarını kendis
 
 ## 13. Açık noktalar (mentor notu; uygulamayı engellemez)
 
-1. `exit_regime` ve aday üretmeyen yasakların gölge karar satırları WP-3'te gelir; bu paket ikisine de hazırdır (§7.4, §8.5), kendisi alan eklemez.
+1. `exit_regime` ve aday üretmeyen yasakların gölge karar satırları WP-3 ile sürüm 4'te geldi (v1.1); bu paket ikisini de okur (§7.4, §8.5), kendisi alan eklemez.
 2. Canlı/kağıt defterde giriş anındaki özsermaye yok (`state.sqlite` `eq:<trade_id>` anahtarında var); v1 `state.sqlite` okumaz, "gerçekleşen risk oranı" yalnız backtest kipinde üretilir.
 3. Plasebo giriş satırı (A-02, madde 10) ve `real_exit` karşı-olgusu (A-01, madde 6) geldiğinde §6.6 ve §7.2'ye birer sütun eklenir; `rapor.json schema` 2 olur.
 4. Wilson aralığının kümelenmemiş olması bilinen sadeleştirmedir (§5.2 notu); bağlayıcı hiçbir karar buna dayanmaz.

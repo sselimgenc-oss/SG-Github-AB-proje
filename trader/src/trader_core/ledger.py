@@ -1,4 +1,5 @@
-"""Islem defteri ve parametre degisiklik gunlugu (sqlite3, stdlib). Bkz. docs/defter-spec.md (v1 + Revizyon 2, sema 2).
+"""Islem defteri ve parametre degisiklik gunlugu (sqlite3, stdlib). Bkz. docs/defter-spec.md (v1 + Revizyon 2-4, sema 4;
+sema 4 = docs/defter-ek-alanlar-spec.md).
 
 Yalnizca ekleme (append-only), fail-closed. pandas/numpy ve dis cerceve import edilmez.
 """
@@ -22,7 +23,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("trader_core.ledger")
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 BOTS = ("learner", "twin")
 MIN_FREE_BYTES = 50 * 1024 * 1024
 MAX_REASON = 500
@@ -97,6 +98,9 @@ _NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed", "m
 _EXIT_REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit",
                  "liquidation", "other")
 _EXCURSION_TFS = ("1m", "5m", "15m")
+_SHADOW_BLOCKS = ("regime_volatile", "regime_unclear", "r1_disabled", "same_bar_reentry", "tf_15m")
+_REF_SRCS = ("sim_open", "book")
+_EQ_SRCS = ("sim", "exchange")
 _PROPOSAL_ACTORS = ("lesson", "user", "system")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _BAR = timedelta(minutes=15)
@@ -291,6 +295,97 @@ def _norm_bounds(bounds, params: Mapping[str, Any], *, require_contain: bool) ->
 
 
 # ---------------------------------------------------------------------------
+# Sema 4 olcum alanlari (defter-ek-alanlar-spec 2.1, 2.2, 3.3, 3.4)
+# ---------------------------------------------------------------------------
+
+EXEC_KEYS = ("order_ts", "order_ack_ts", "order_ref_price", "order_ref_spread", "order_ref_src",
+             "decision_price", "exit_regime")
+
+
+def _aware_dt(x) -> bool:
+    return isinstance(x, datetime) and x.tzinfo is not None and x.utcoffset() is not None
+
+
+def _good_num(x, *, positive: bool) -> bool:
+    if isinstance(x, bool) or not isinstance(x, numbers.Real):
+        return False
+    try:
+        v = float(x)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return math.isfinite(v) and (v > 0 if positive else v >= 0)
+
+
+def clean_exec_fields(d: Mapping) -> dict:
+    """Spec 3.3: yalniz yedi olcum anahtarini dondurur; 2.1 kurallarini ciglayen GRUBU None yapar.
+    Hicbir girdide istisna atmaz."""
+    out: dict[str, Any] = dict.fromkeys(EXEC_KEYS)
+    try:
+        get = d.get if isinstance(d, Mapping) else (lambda k, default=None: default)
+        ts, ack = get("order_ts"), get("order_ack_ts")
+        if ts is not None and _aware_dt(ts):
+            out["order_ts"] = ts
+            if ack is not None and _aware_dt(ack):
+                try:
+                    if _fmt_ts(ack) >= _fmt_ts(ts):
+                        out["order_ack_ts"] = ack
+                except Exception:       # noqa: BLE001 - olcum hicbir zaman yazimi dusurmez
+                    pass
+        price, spread, src = get("order_ref_price"), get("order_ref_spread"), get("order_ref_src")
+        if price is not None and _good_num(price, positive=True) and src in _REF_SRCS:
+            if spread is None:
+                out["order_ref_price"], out["order_ref_src"] = float(price), src
+            elif src == "book" and _good_num(spread, positive=False):
+                out["order_ref_price"], out["order_ref_spread"], out["order_ref_src"] = \
+                    float(price), float(spread), src
+        dp = get("decision_price")
+        if dp is not None and _good_num(dp, positive=True):
+            out["decision_price"] = float(dp)
+        xr = get("exit_regime")
+        if isinstance(xr, str) and xr in _REGIMES:
+            out["exit_regime"] = xr
+    except Exception:                   # noqa: BLE001
+        return dict.fromkeys(EXEC_KEYS)
+    return out
+
+
+def _prep_exec(obj, *, exit_: bool) -> dict[str, Any]:
+    """Sikı dogrulama (LedgerValidationError) -> sutun degerleri."""
+    ts, ack = obj.order_ts, obj.order_ack_ts
+    ts_s = None if ts is None else _ts(ts, "order_ts")
+    ack_s = None if ack is None else _ts(ack, "order_ack_ts")
+    if ack_s is not None:
+        if ts_s is None:
+            raise LedgerValidationError("order_ack_ts icin order_ts gerekli")
+        if ack_s < ts_s:
+            raise LedgerValidationError("order_ack_ts >= order_ts olmali")
+    price = _opt_num(obj.order_ref_price, "order_ref_price")
+    spread = _opt_num(obj.order_ref_spread, "order_ref_spread")
+    src = obj.order_ref_src
+    if src is not None:
+        _choice(src, "order_ref_src", _REF_SRCS)
+    if price is not None and price <= 0:
+        raise LedgerValidationError("order_ref_price > 0 olmali")
+    if spread is not None and spread < 0:
+        raise LedgerValidationError("order_ref_spread >= 0 olmali")
+    if (src is None) != (price is None):
+        raise LedgerValidationError("order_ref_src ve order_ref_price birlikte dolu ya da birlikte NULL olmali")
+    if spread is not None and src != "book":
+        raise LedgerValidationError("order_ref_spread yalniz order_ref_src='book' ile verilir")
+    vals: dict[str, Any] = dict(order_ts=ts_s, order_ack_ts=ack_s, order_ref_price=price,
+                                order_ref_spread=spread, order_ref_src=src)
+    if exit_:
+        dp = _opt_num(obj.decision_price, "decision_price")
+        if dp is not None and dp <= 0:
+            raise LedgerValidationError("decision_price > 0 olmali")
+        xr = obj.exit_regime
+        if xr is not None:
+            _choice(xr, "exit_regime", _REGIMES)
+        vals.update(decision_price=dp, exit_regime=xr)
+    return vals
+
+
+# ---------------------------------------------------------------------------
 # Veri sinifları
 # ---------------------------------------------------------------------------
 
@@ -338,6 +433,11 @@ class TradeEntry:
     leverage: int
     fee_entry: float
     supersedes_id: int | None = None
+    order_ts: datetime | None = None            # sema 4 (defter-ek-alanlar-spec 2.1): hepsi NULL olabilir
+    order_ack_ts: datetime | None = None
+    order_ref_price: float | None = None
+    order_ref_spread: float | None = None
+    order_ref_src: str | None = None
 
 
 @dataclass(frozen=True)
@@ -353,6 +453,62 @@ class TradeExit:
     max_favorable_price: float | None = None   # sema 2 (3.4.1): uclu birlikte verilir ya da birlikte None
     max_adverse_price: float | None = None
     excursion_tf: str | None = None            # "1m" | "5m" | "15m"
+    order_ts: datetime | None = None            # sema 4 (2.2): hepsi NULL olabilir
+    order_ack_ts: datetime | None = None
+    order_ref_price: float | None = None
+    order_ref_spread: float | None = None
+    order_ref_src: str | None = None
+    decision_price: float | None = None
+    exit_regime: str | None = None
+
+
+@dataclass(frozen=True)
+class ShadowEvent:
+    """Sema 4 (2.4): aday bastiran bloklarin golge karar satiri. `decision_events`'e girmez."""
+    block: str
+    bar_close_ts: datetime
+    trigger_tf: str
+    pair: str
+    side: str
+    setup: str
+    regime: str
+    atr_ratio: float | None
+    rh: float | None
+    rl: float | None
+    features: Mapping[str, float | int | str]
+    planned_entry: float
+    planned_stop: float
+    planned_target: float | None
+    param_version_id: int
+    strategy: str
+    reasons: str
+    pos_open: bool
+    gate_code: str | None = None
+
+
+@dataclass(frozen=True)
+class ShadowRecord(ShadowEvent):
+    id: int = 0
+    bot: str = ""
+    recorded_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class EquityMark:
+    """Sema 4 (2.5): karar adimi basina oz varlik isareti."""
+    ts: datetime
+    wallet: float
+    equity: float
+    equity_low: float
+    n_open: int
+    src: str
+
+
+@dataclass(frozen=True)
+class EquityMarkRecord(EquityMark):
+    id: int = 0
+    bot: str = ""
+    recorded_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -495,6 +651,21 @@ class TradeRecord:
     mae_r: float | None = None
     bars_held: int | None = None
     excursion_tf: str | None = None
+    entry_order_ts: datetime | None = None           # sema 4 (2.3): gorunum sutunlari, ayni adlarla
+    entry_order_ack_ts: datetime | None = None
+    entry_ref_price: float | None = None
+    entry_ref_spread: float | None = None
+    entry_ref_src: str | None = None
+    slip_exec_entry: float | None = None
+    exit_order_ts: datetime | None = None
+    exit_order_ack_ts: datetime | None = None
+    exit_ref_price: float | None = None
+    exit_ref_spread: float | None = None
+    exit_ref_src: str | None = None
+    slip_exec_exit: float | None = None
+    exit_decision_price: float | None = None
+    slip_decision_exit: float | None = None
+    exit_regime: str | None = None
 
 
 @dataclass(frozen=True)
@@ -546,9 +717,10 @@ class AggregateRow:
 # Sema
 # ---------------------------------------------------------------------------
 
-_APPEND_ONLY_TABLES = ("meta", "decision_events", "trade_entries", "trade_exits", "param_versions",
-                       "param_activations", "lesson_proposals", "proposal_status_events",
-                       "health_probes", "schema_migrations")
+_APPEND_ONLY_TABLES_V3 = ("meta", "decision_events", "trade_entries", "trade_exits", "param_versions",
+                          "param_activations", "lesson_proposals", "proposal_status_events",
+                          "health_probes", "schema_migrations")
+_APPEND_ONLY_TABLES = _APPEND_ONLY_TABLES_V3 + ("shadow_decisions", "equity_marks")
 
 
 def _bot_check():
@@ -666,9 +838,10 @@ CREATE VIEW v_proposals AS
 """
 
 
-def _trigger_ddl() -> str:
+def _trigger_ddl(tables: Sequence[str] = _APPEND_ONLY_TABLES_V3) -> str:
+    """Goc n -> n+1 SQL'i o surumun tablolariyla kurulur (eski goc yeni tabloya tetikleyici koymaz)."""
     parts = []
-    for t in _APPEND_ONLY_TABLES:
+    for t in tables:
         parts.append(f"CREATE TRIGGER trg_{t}_no_update BEFORE UPDATE ON {t} "
                      f"BEGIN SELECT RAISE(ABORT, 'append-only'); END;")
         parts.append(f"CREATE TRIGGER trg_{t}_no_delete BEFORE DELETE ON {t} "
@@ -721,7 +894,7 @@ BEGIN SELECT RAISE(ABORT, 'excursion_check'); END;
 
 def _migration_1_to_2(bot: str, now_s: str) -> str:
     """Bolum 10.1: yalnizca ekleyici; mevcut satirlara dokunulmaz."""
-    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES_V3
                       for k in ("no_update", "no_delete"))
     return ("ALTER TABLE trade_exits ADD COLUMN mfe_r REAL;\n"
             "ALTER TABLE trade_exits ADD COLUMN mae_r REAL;\n"
@@ -785,7 +958,7 @@ def _migration_2_to_3(bot: str, now_s: str) -> str:
     SQLite'in resmi yeniden-kurma yordami: `PRAGMA foreign_keys=OFF` islemin DISINDA (`_FK_OFF_MIGRATIONS`),
     goc sonrasi `foreign_key_check`; goruntuler once dusurulur (RENAME/DROP hata vermesin), sonra kurulur;
     append-only tetikleyicileri yeniden kurulur."""
-    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES_V3
                       for k in ("no_update", "no_delete"))
     return ("DROP VIEW IF EXISTS v_closed_trades;\nDROP VIEW IF EXISTS v_trades;\nDROP VIEW IF EXISTS v_decisions;\n"
             + _decision_events_ddl_v3("decision_events_v3") + "\n"
@@ -799,7 +972,97 @@ def _migration_2_to_3(bot: str, now_s: str) -> str:
 
 
 # Sirali goc listesi: MIGRATIONS[n] = n -> n+1 icin SQL ureten fonksiyon (bot, now_s).
-MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3]
+_EXEC_COLS_ENTRY = (
+    ("order_ts", "TEXT"),
+    ("order_ack_ts", "TEXT CHECK (order_ack_ts IS NULL OR (order_ts IS NOT NULL AND order_ack_ts >= order_ts))"),
+    ("order_ref_price", "REAL CHECK (order_ref_price IS NULL OR order_ref_price > 0)"),
+    ("order_ref_spread", "REAL CHECK (order_ref_spread IS NULL OR order_ref_spread >= 0)"),
+    ("order_ref_src", "TEXT CHECK ((order_ref_src IS NULL) = (order_ref_price IS NULL) "
+                      "AND (order_ref_src IS NULL OR order_ref_src IN ('sim_open','book')) "
+                      "AND (order_ref_spread IS NULL OR order_ref_src = 'book'))"),
+)
+_EXEC_COLS_EXIT = _EXEC_COLS_ENTRY + (
+    ("decision_price", "REAL CHECK (decision_price IS NULL OR decision_price > 0)"),
+    ("exit_regime", "TEXT CHECK (exit_regime IS NULL OR exit_regime IN "
+                    "('trend_up','trend_down','range','volatile','unclear'))"),
+)
+
+_SHADOW_DDL = f"""
+CREATE TABLE shadow_decisions (id INTEGER PRIMARY KEY AUTOINCREMENT, bot TEXT NOT NULL {_bot_check()},
+    block TEXT NOT NULL CHECK (block IN ('regime_volatile','regime_unclear','r1_disabled','same_bar_reentry','tf_15m')),
+    bar_close_ts TEXT NOT NULL, trigger_tf TEXT NOT NULL CHECK (trigger_tf IN ('1h','15m')),
+    pair TEXT NOT NULL, side TEXT NOT NULL CHECK (side IN ('long','short')),
+    setup TEXT NOT NULL CHECK (setup IN ('T1','R1')),
+    regime TEXT NOT NULL CHECK (regime IN ('trend_up','trend_down','range','volatile','unclear')),
+    atr_ratio REAL, rh REAL, rl REAL, features TEXT NOT NULL,
+    planned_entry REAL NOT NULL CHECK (planned_entry > 0), planned_stop REAL NOT NULL CHECK (planned_stop > 0),
+    planned_target REAL,
+    param_version_id INTEGER NOT NULL REFERENCES param_versions(id),
+    strategy TEXT NOT NULL, reasons TEXT NOT NULL,
+    pos_open INTEGER NOT NULL CHECK (pos_open IN (0,1)), gate_code TEXT, recorded_at TEXT NOT NULL,
+    CHECK ((side='long' AND planned_stop < planned_entry) OR (side='short' AND planned_stop > planned_entry)),
+    UNIQUE (bot, block, pair, side, setup, trigger_tf, bar_close_ts));
+CREATE INDEX ix_shadow_ts ON shadow_decisions (bot, bar_close_ts);
+CREATE VIEW v_shadow_decisions AS SELECT s.*, 'shadow' AS final_action FROM shadow_decisions s;
+CREATE TABLE equity_marks (id INTEGER PRIMARY KEY AUTOINCREMENT, bot TEXT NOT NULL {_bot_check()},
+    ts TEXT NOT NULL, wallet REAL NOT NULL, equity REAL NOT NULL, equity_low REAL NOT NULL,
+    n_open INTEGER NOT NULL CHECK (n_open >= 0), src TEXT NOT NULL CHECK (src IN ('sim','exchange')),
+    recorded_at TEXT NOT NULL, CHECK (equity_low <= equity), UNIQUE (bot, ts));
+"""
+
+_VIEWS_V4 = """
+CREATE VIEW v_trades AS
+    SELECT e.bot AS bot, e.trade_id AS trade_id, e.id AS entry_id, e.decision_id AS decision_id,
+           e.pair AS pair, e.side AS side, e.setup AS setup, d.regime AS regime, d.atr_ratio AS atr_ratio,
+           e.param_version_id AS param_version_id, e.activation_id AS activation_id,
+           e.entry_ts AS entry_ts, e.entry_price AS entry_price, e.planned_entry AS planned_entry,
+           e.planned_stop AS planned_stop, e.planned_target AS planned_target, e.qty AS qty,
+           e.leverage AS leverage, e.planned_risk AS planned_risk, e.fee_entry AS fee_entry,
+           e.slippage_entry AS slippage_entry,
+           x.id AS exit_id, x.exit_ts AS exit_ts, x.exit_price AS exit_price,
+           x.exit_reason AS exit_reason, x.planned_exit AS planned_exit, x.fee_exit AS fee_exit,
+           x.funding_paid AS funding_paid, x.gross_pnl AS gross_pnl, x.realized_pnl AS realized_pnl,
+           x.r_multiple AS r_multiple, x.slippage_exit AS slippage_exit,
+           x.mfe_r AS mfe_r, x.mae_r AS mae_r, x.bars_held AS bars_held, x.excursion_tf AS excursion_tf,
+           e.order_ts AS entry_order_ts, e.order_ack_ts AS entry_order_ack_ts,
+           e.order_ref_price AS entry_ref_price, e.order_ref_spread AS entry_ref_spread,
+           e.order_ref_src AS entry_ref_src,
+           CASE WHEN e.order_ref_price IS NULL THEN NULL
+                WHEN e.side = 'long' THEN (e.entry_price - e.order_ref_price) / e.order_ref_price
+                ELSE (e.order_ref_price - e.entry_price) / e.order_ref_price END AS slip_exec_entry,
+           x.order_ts AS exit_order_ts, x.order_ack_ts AS exit_order_ack_ts,
+           x.order_ref_price AS exit_ref_price, x.order_ref_spread AS exit_ref_spread,
+           x.order_ref_src AS exit_ref_src,
+           CASE WHEN x.order_ref_price IS NULL THEN NULL
+                WHEN e.side = 'long' THEN (x.order_ref_price - x.exit_price) / x.order_ref_price
+                ELSE (x.exit_price - x.order_ref_price) / x.order_ref_price END AS slip_exec_exit,
+           x.decision_price AS exit_decision_price,
+           CASE WHEN x.decision_price IS NULL THEN NULL
+                WHEN e.side = 'long' THEN (x.decision_price - x.exit_price) / x.decision_price
+                ELSE (x.exit_price - x.decision_price) / x.decision_price END AS slip_decision_exit,
+           x.exit_regime AS exit_regime
+    FROM trade_entries e
+    JOIN decision_events d ON d.id = e.decision_id
+    LEFT JOIN trade_exits x ON x.bot = e.bot AND x.trade_id = e.trade_id
+         AND NOT EXISTS (SELECT 1 FROM trade_exits sx WHERE sx.supersedes_id = x.id)
+    WHERE NOT EXISTS (SELECT 1 FROM trade_entries se WHERE se.supersedes_id = e.id);
+CREATE VIEW v_closed_trades AS SELECT * FROM v_trades WHERE exit_ts IS NOT NULL;
+"""
+
+
+def _migration_3_to_4(bot: str, now_s: str) -> str:
+    """Sema 4 (defter-ek-alanlar-spec 2.6): yalnizca ekleyici; tablo yeniden kurulmaz."""
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES_V3
+                      for k in ("no_update", "no_delete"))
+    alters = "\n".join(f"ALTER TABLE trade_entries ADD COLUMN {c} {d};" for c, d in _EXEC_COLS_ENTRY) + "\n" \
+        + "\n".join(f"ALTER TABLE trade_exits ADD COLUMN {c} {d};" for c, d in _EXEC_COLS_EXIT) + "\n"
+    return (alters + _SHADOW_DDL
+            + "DROP VIEW v_closed_trades;\nDROP VIEW v_trades;\n" + _VIEWS_V4 + "\n"
+            + drops + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
+
+
+MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3,
+                                                _migration_3_to_4]
 _FK_OFF_MIGRATIONS = frozenset({2})      # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
 
 
@@ -1240,18 +1503,19 @@ class Ledger:
         if fee < 0:
             raise LedgerValidationError("fee_entry >= 0 olmali")
         sup = None if e.supersedes_id is None else _int(e.supersedes_id, "supersedes_id", minimum=1)
+        ex = _prep_exec(e, exit_=False)
         try:
             with self._tx() as c:
-                return self._write_entry(c, tid, did, ets, price, qty, lev, fee, sup, now)
+                return self._write_entry(c, tid, did, ets, price, qty, lev, fee, sup, now, ex)
         except LedgerWriteError:
             self._on_write_failure()
             if spool:
                 self._spool_append({"type": "entry", "trade_id": tid, "decision_id": did, "entry_ts": ets,
                                     "entry_price": price, "qty": qty, "leverage": lev, "fee_entry": fee,
-                                    "supersedes_id": sup})
+                                    "supersedes_id": sup, **ex})
             raise
 
-    def _write_entry(self, c, tid, did, ets, price, qty, lev, fee, sup, now) -> int:
+    def _write_entry(self, c, tid, did, ets, price, qty, lev, fee, sup, now, ex=None) -> int:
         bot = self.bot
         d = c.execute("SELECT * FROM decision_events WHERE id=? AND bot=?", (did, bot)).fetchone()
         if d is None:
@@ -1296,7 +1560,7 @@ class Ledger:
             activation_id=d["activation_id"], pair=d["pair"], side=side, setup=d["setup"], entry_ts=ets,
             entry_price=price, planned_entry=pe, planned_stop=d["planned_stop"],
             planned_target=d["planned_target"], qty=qty, leverage=lev, planned_risk=risk, fee_entry=fee,
-            slippage_entry=slip, supersedes_id=sup, recorded_at=_fmt_ts(now)))
+            slippage_entry=slip, supersedes_id=sup, recorded_at=_fmt_ts(now), **(ex or {})))
 
     def record_trade_exit(self, x: TradeExit) -> int:
         self._require_writable()
@@ -1331,10 +1595,11 @@ class Ledger:
             _choice(etf, "excursion_tf", _EXCURSION_TFS)
             if mfp <= 0 or map_ <= 0:
                 raise LedgerValidationError("uc fiyatlar > 0 olmali")
+        ex = _prep_exec(x, exit_=True)
         try:
             with self._tx() as c:
                 return self._write_exit(c, tid, xts, price, reason, pex, fee, fund, sup, now,
-                                        mfp, map_, etf)
+                                        mfp, map_, etf, ex)
         except LedgerWriteError:
             self._on_write_failure()
             if spool:
@@ -1342,11 +1607,11 @@ class Ledger:
                                     "exit_reason": reason, "planned_exit": pex, "fee_exit": fee,
                                     "funding_paid": fund, "supersedes_id": sup,
                                     "max_favorable_price": mfp, "max_adverse_price": map_,
-                                    "excursion_tf": etf})
+                                    "excursion_tf": etf, **ex})
             raise
 
     def _write_exit(self, c, tid, xts, price, reason, pex, fee, fund, sup, now,
-                    mfp=None, map_=None, etf=None) -> int:
+                    mfp=None, map_=None, etf=None, ex=None) -> int:
         bot = self.bot
         ent = c.execute(
             "SELECT * FROM trade_entries e WHERE e.bot=? AND e.trade_id=? "
@@ -1402,7 +1667,124 @@ class Ledger:
             bot=bot, trade_id=tid, exit_ts=xts, exit_price=price, exit_reason=reason, planned_exit=pex,
             fee_exit=fee, funding_paid=fund, gross_pnl=gross, realized_pnl=realized, r_multiple=r,
             slippage_exit=slip, mfe_r=mfe, mae_r=mae, bars_held=bars, excursion_tf=etf,
-            supersedes_id=sup, recorded_at=_fmt_ts(now)))
+            supersedes_id=sup, recorded_at=_fmt_ts(now), **(ex or {})))
+
+    # -- golge karar satirlari ve oz varlik isaretleri (sema 4) -----------------
+    # Spec 5.5 / 0.3: LedgerWriteError'da `_on_write_failure` CAGRILMAZ, spool'a yazilmaz, basarida
+    # `_last_write_ok` GUNCELLENMEZ: bu kayitlar islem yolunun sagligini etkilemez.
+
+    def record_shadow(self, ev: ShadowEvent) -> int:
+        self._require_writable()
+        if not isinstance(ev, ShadowEvent):
+            raise LedgerValidationError("ShadowEvent bekleniyor")
+        now = self._now()
+        block = _choice(ev.block, "block", _SHADOW_BLOCKS)
+        bar = _to_utc(ev.bar_close_ts, "bar_close_ts")
+        if bar.second or bar.microsecond or bar.minute % 15:
+            raise LedgerValidationError("bar_close_ts 15 dakikanin tam kati olmali")
+        if bar > now + timedelta(seconds=5):
+            raise LedgerValidationError("bar_close_ts gelecekte")
+        tf = _choice(ev.trigger_tf, "trigger_tf", _TRIGGER_TFS)
+        pair, side = _norm_pair(ev.pair), _norm_side(ev.side)
+        setup = _choice(ev.setup, "setup", _SETUPS)
+        regime = _choice(ev.regime, "regime", _REGIMES)
+        atr_ratio = _opt_num(ev.atr_ratio, "atr_ratio")
+        rh, rl = _opt_num(ev.rh, "rh"), _opt_num(ev.rl, "rl")
+        feats = self._prep_features(ev.features, setup)
+        pe, ps = _num(ev.planned_entry, "planned_entry"), _num(ev.planned_stop, "planned_stop")
+        pt = _opt_num(ev.planned_target, "planned_target")
+        if pe <= 0 or ps <= 0:
+            raise LedgerValidationError("planned_entry ve planned_stop > 0 olmali")
+        if (side == "long" and not ps < pe) or (side == "short" and not ps > pe):
+            raise LedgerValidationError("planned_stop yon ile uyumsuz")
+        pvid = _int(ev.param_version_id, "param_version_id", minimum=1)
+        strategy = _text(ev.strategy, "strategy", required=True)
+        reasons = _text(ev.reasons if ev.reasons is not None else "", "reasons", limit=10 ** 9)
+        reasons = reasons[:MAX_REASON]
+        if not isinstance(ev.pos_open, (bool, int)) or ev.pos_open not in (0, 1):
+            raise LedgerValidationError("pos_open bool olmali")
+        gate = _text(ev.gate_code, "gate_code")
+        vals = dict(bot=self.bot, block=block, bar_close_ts=_fmt_ts(bar), trigger_tf=tf, pair=pair, side=side,
+                    setup=setup, regime=regime, atr_ratio=atr_ratio, rh=rh, rl=rl, features=feats,
+                    planned_entry=pe, planned_stop=ps, planned_target=pt, param_version_id=pvid,
+                    strategy=strategy, reasons=reasons, pos_open=int(ev.pos_open), gate_code=gate,
+                    recorded_at=_fmt_ts(now))
+        with self._tx() as c:
+            if not c.execute("SELECT 1 FROM param_versions WHERE id=? AND bot=?", (pvid, self.bot)).fetchone():
+                raise LedgerValidationError("param_version_id mevcut degil")
+            row = c.execute(
+                "SELECT id FROM shadow_decisions WHERE bot=? AND block=? AND pair=? AND side=? AND setup=? "
+                "AND trigger_tf=? AND bar_close_ts=?",
+                (self.bot, block, pair, side, setup, tf, vals["bar_close_ts"])).fetchone()
+            if row is not None:
+                return row["id"]
+            return self._insert(c, "shadow_decisions", vals)
+
+    @staticmethod
+    def _shadow_from(r) -> ShadowRecord:
+        return ShadowRecord(
+            block=r["block"], bar_close_ts=_parse_ts(r["bar_close_ts"]), trigger_tf=r["trigger_tf"],
+            pair=r["pair"], side=r["side"], setup=r["setup"], regime=r["regime"], atr_ratio=r["atr_ratio"],
+            rh=r["rh"], rl=r["rl"], features=MappingProxyType(json.loads(r["features"])),
+            planned_entry=r["planned_entry"], planned_stop=r["planned_stop"], planned_target=r["planned_target"],
+            param_version_id=r["param_version_id"], strategy=r["strategy"], reasons=r["reasons"],
+            pos_open=bool(r["pos_open"]), gate_code=r["gate_code"], id=r["id"], bot=r["bot"],
+            recorded_at=_parse_ts(r["recorded_at"]))
+
+    def list_shadow(self, *, since_ts: datetime | None = None, until_ts: datetime | None = None,
+                    block: str | None = None, limit: int | None = None) -> list[ShadowRecord]:
+        where, args = ["bot=?"], [self.bot]
+        if since_ts is not None:
+            where.append("bar_close_ts>=?")
+            args.append(_ts(since_ts, "since_ts"))
+        if until_ts is not None:
+            where.append("bar_close_ts<?")
+            args.append(_ts(until_ts, "until_ts"))
+        if block is not None:
+            where.append("block=?")
+            args.append(_choice(block, "block", _SHADOW_BLOCKS))
+        sql = f"SELECT * FROM v_shadow_decisions WHERE {' AND '.join(where)} ORDER BY bar_close_ts, id"
+        if limit is not None:
+            sql += " LIMIT ?"
+            args.append(_int(limit, "limit", minimum=0))
+        with self._read() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [self._shadow_from(r) for r in rows]
+
+    def record_equity_mark(self, m: EquityMark) -> int:
+        self._require_writable()
+        if not isinstance(m, EquityMark):
+            raise LedgerValidationError("EquityMark bekleniyor")
+        now = self._now()
+        ts = _ts(m.ts, "ts")
+        wallet, eq, low = _num(m.wallet, "wallet"), _num(m.equity, "equity"), _num(m.equity_low, "equity_low")
+        if low > eq:
+            raise LedgerValidationError("equity_low <= equity olmali")
+        n_open = _int(m.n_open, "n_open", minimum=0)
+        src = _choice(m.src, "src", _EQ_SRCS)
+        with self._tx() as c:
+            row = c.execute("SELECT id FROM equity_marks WHERE bot=? AND ts=?", (self.bot, ts)).fetchone()
+            if row is not None:
+                return row["id"]
+            return self._insert(c, "equity_marks", dict(bot=self.bot, ts=ts, wallet=wallet, equity=eq,
+                                                         equity_low=low, n_open=n_open, src=src,
+                                                         recorded_at=_fmt_ts(now)))
+
+    def list_equity_marks(self, *, since_ts: datetime | None = None,
+                          until_ts: datetime | None = None) -> list[EquityMarkRecord]:
+        where, args = ["bot=?"], [self.bot]
+        if since_ts is not None:
+            where.append("ts>=?")
+            args.append(_ts(since_ts, "since_ts"))
+        if until_ts is not None:
+            where.append("ts<?")
+            args.append(_ts(until_ts, "until_ts"))
+        with self._read() as c:
+            rows = c.execute(f"SELECT * FROM equity_marks WHERE {' AND '.join(where)} ORDER BY ts, id",
+                             args).fetchall()
+        return [EquityMarkRecord(ts=_parse_ts(r["ts"]), wallet=r["wallet"], equity=r["equity"],
+                                 equity_low=r["equity_low"], n_open=r["n_open"], src=r["src"], id=r["id"],
+                                 bot=r["bot"], recorded_at=_parse_ts(r["recorded_at"])) for r in rows]
 
     # -- parametre surumleri -------------------------------------------------
 
@@ -1814,7 +2196,15 @@ class Ledger:
             exit_reason=r["exit_reason"], planned_exit=r["planned_exit"], fee_exit=r["fee_exit"],
             funding_paid=r["funding_paid"], gross_pnl=r["gross_pnl"], realized_pnl=r["realized_pnl"],
             r_multiple=r["r_multiple"], slippage_exit=r["slippage_exit"], mfe_r=r["mfe_r"],
-            mae_r=r["mae_r"], bars_held=r["bars_held"], excursion_tf=r["excursion_tf"])
+            mae_r=r["mae_r"], bars_held=r["bars_held"], excursion_tf=r["excursion_tf"],
+            entry_order_ts=_parse_ts(r["entry_order_ts"]), entry_order_ack_ts=_parse_ts(r["entry_order_ack_ts"]),
+            entry_ref_price=r["entry_ref_price"], entry_ref_spread=r["entry_ref_spread"],
+            entry_ref_src=r["entry_ref_src"], slip_exec_entry=r["slip_exec_entry"],
+            exit_order_ts=_parse_ts(r["exit_order_ts"]), exit_order_ack_ts=_parse_ts(r["exit_order_ack_ts"]),
+            exit_ref_price=r["exit_ref_price"], exit_ref_spread=r["exit_ref_spread"],
+            exit_ref_src=r["exit_ref_src"], slip_exec_exit=r["slip_exec_exit"],
+            exit_decision_price=r["exit_decision_price"], slip_decision_exit=r["slip_decision_exit"],
+            exit_regime=r["exit_regime"])
 
     def _trades(self, where: str = "", args: Sequence[Any] = (), closed: bool = False) -> list[TradeRecord]:
         view = "v_closed_trades" if closed else "v_trades"
@@ -2057,12 +2447,18 @@ class Ledger:
                     if d["type"] == "entry":
                         self._record_entry(TradeEntry(
                             d["trade_id"], d["decision_id"], _parse_ts(d["entry_ts"]), d["entry_price"],
-                            d["qty"], d["leverage"], d["fee_entry"], d.get("supersedes_id")), spool=False)
+                            d["qty"], d["leverage"], d["fee_entry"], d.get("supersedes_id"),
+                            _parse_ts(d.get("order_ts")), _parse_ts(d.get("order_ack_ts")),
+                            d.get("order_ref_price"), d.get("order_ref_spread"), d.get("order_ref_src")),
+                            spool=False)
                     else:
                         self._record_exit(TradeExit(
                             d["trade_id"], _parse_ts(d["exit_ts"]), d["exit_price"], d["exit_reason"],
                             d["planned_exit"], d["fee_exit"], d["funding_paid"], d.get("supersedes_id"),
-                            d.get("max_favorable_price"), d.get("max_adverse_price"), d.get("excursion_tf")),
+                            d.get("max_favorable_price"), d.get("max_adverse_price"), d.get("excursion_tf"),
+                            _parse_ts(d.get("order_ts")), _parse_ts(d.get("order_ack_ts")),
+                            d.get("order_ref_price"), d.get("order_ref_spread"), d.get("order_ref_src"),
+                            d.get("decision_price"), d.get("exit_regime")),
                             spool=False)
                     done += 1
                 except LedgerWriteError:

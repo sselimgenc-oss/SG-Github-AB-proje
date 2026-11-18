@@ -41,6 +41,13 @@ def _add_1m(hist: Path) -> None:
             {c: m[c].to_numpy() for c in ("open", "high", "low", "close", "volume")})
 
 
+# WP-3 (sema 4) v_trades'e yalniz olcum sutunlari ekledi; altin ozet sema-3 sutunlari uzerinden kalir (lead: yeni
+# sutunlarla ozet degisti, eski sutunlarla birebir ayni oldugu dogrulandi).
+_WP3_COLS = frozenset({"entry_order_ts", "entry_order_ack_ts", "entry_ref_price", "entry_ref_spread", "entry_ref_src",
+                       "slip_exec_entry", "exit_order_ts", "exit_order_ack_ts", "exit_ref_price", "exit_ref_spread",
+                       "exit_ref_src", "slip_exec_exit", "exit_decision_price", "slip_decision_exit", "exit_regime"})
+
+
 def _digest(out: Path) -> str:
     import sqlite3
     h = hashlib.sha256()
@@ -48,7 +55,7 @@ def _digest(out: Path) -> str:
     con = sqlite3.connect(f"file:{out / 'ledger.sqlite'}?mode=ro", uri=True)
     for tbl in ("v_decisions", "v_trades"):
         cols = [r[1] for r in con.execute(f"PRAGMA table_info({tbl})")]
-        keep = [c for c in cols if c not in ("id", "recorded_at", "ml_score")]
+        keep = [c for c in cols if c not in ("id", "recorded_at", "ml_score") and c not in _WP3_COLS]
         for row in con.execute(f"SELECT {','.join(keep)} FROM {tbl} ORDER BY 1,2,3"):
             h.update(repr(row).encode())
     con.close()

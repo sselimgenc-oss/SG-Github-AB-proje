@@ -113,9 +113,13 @@ def user_version(conn) -> int:
 
 def check_ledger_schema(conn) -> int:
     uv = user_version(conn)
-    if uv not in (2, 3):
-        raise ReportError("ledger_schema", f"defter sema surumu {uv}; 2 ya da 3 bekleniyor")
+    if uv not in (2, 3, 4):
+        raise ReportError("ledger_schema", f"defter sema surumu {uv}; 2, 3 ya da 4 bekleniyor")
     return uv
+
+
+def has_view(conn, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type IN ('view','table') AND name = ?", (name,)).fetchone() is not None
 
 
 def has_column(conn, table: str, col: str) -> bool:
@@ -161,6 +165,50 @@ def load_decisions(conn, since: str | None, until: str | None) -> tuple[list[dic
         out.append(r)
     n_skip = run_query(conn, f"SELECT COUNT(*) FROM v_decisions WHERE {per} AND {lock} AND final_action = 'skipped'", p).fetchone()[0]
     return out, int(n_skip)
+
+
+def load_shadow(conn, since: str | None, until: str | None) -> list[dict] | None:
+    """WP-3 8-2: golge karar satirlari (`v_shadow_decisions`; sema 4). Gorunum yoksa None (sema < 4). Kilitli donem
+    korumasi gölge satir okumasina da uygulanir (SQL'de elenir). Satirlar karar paydasina GIRMEZ."""
+    if not has_view(conn, "v_shadow_decisions"):
+        return None
+    p = {"since": _bound(since, LOW_TS), "until": _bound(until, HIGH_TS), **guard.PARAMS}
+    per = "bar_close_ts >= :since AND bar_close_ts < :until"
+    lock = guard.ts_lock_sql("bar_close_ts")
+    sql = ("SELECT id, block, bar_close_ts, pair, side, setup, trigger_tf, pos_open FROM v_shadow_decisions "
+           f"WHERE {per} AND NOT {lock} ORDER BY id")
+    return [r for r in _dicts(run_query(conn, sql, p))]
+
+
+def load_cf_shadow(path, bot: str, now_iso: str, since, until, shadow_ids: set | None) -> dict | None:
+    """Golge adaylarin karsi-olgusu (`cf_shadow_outcomes`). Depo yoksa/okunamazsa None; tablo henuz yoksa {}.
+    Yalniz window_end_ts <= now; kilitli donem korumasi decision_ts'te. Sonuc: {shadow_id: {'barrier'|'plan': satir|None}}."""
+    p = Path(path)
+    if not p.is_file():
+        return None
+    conn = open_ro(p, "cf_missing")
+    try:
+        if not has_view(conn, "cf_shadow_outcomes"):
+            return {}
+        try:
+            q = {"bot": bot, "now": now_iso, "since": _bound(since, LOW_TS), "until": _bound(until, HIGH_TS), **guard.PARAMS}
+            per = "decision_ts >= :since AND decision_ts < :until AND bot = :bot"
+            lock = guard.ts_lock_sql("decision_ts")
+            sql = ("SELECT shadow_id, method, version, exit_reason, hyp_outcome, hyp_r_net, hyp_r_gross, decision_ts, "
+                   "window_start_ts, window_end_ts, planned_entry, planned_stop, pair, side FROM cf_shadow_outcomes "
+                   f"WHERE {per} AND window_end_ts <= :now AND NOT {lock} ORDER BY shadow_id, method")
+            cf: dict = {}
+            for r in _dicts(run_query(conn, sql, q)):
+                if shadow_ids is not None and r["shadow_id"] not in shadow_ids:
+                    continue
+                if r["method"] == "plan" and (r["version"] or 0) < 2:
+                    continue
+                cf.setdefault(r["shadow_id"], {"barrier": None, "plan": None})[r["method"]] = r
+            return cf
+        except ReportError:
+            return None
+    finally:
+        conn.close()
 
 
 _TRADE_COLS = ("trade_id", "decision_id", "pair", "side", "setup", "regime", "atr_ratio", "entry_ts", "exit_ts", "entry_price",

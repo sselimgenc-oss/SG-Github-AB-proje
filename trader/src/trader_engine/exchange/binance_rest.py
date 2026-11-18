@@ -420,6 +420,12 @@ class SignedRestClient:
     def exchange_info(self) -> dict:
         return self.request("GET", "/fapi/v1/exchangeInfo", None, kind="read", signed=False)
 
+    def book_ticker(self, symbol: str, *, timeout: tuple[float, float] = (0.25, 0.25)) -> dict:
+        """WP-3 (defter-ek-alanlar 3.5): en iyi alis/satis (`bookTicker`). TEK deneme, baglanti+okuma toplami <= 0,5 sn;
+        yeniden deneme/uyku/saat esitleme yok. Imzasiz kamusal okuma; yalniz kayit icindir."""
+        return self._send("GET", "/fapi/v1/ticker/bookTicker", {"symbol": symbol}, kind="read", signed=False,
+                          protective=False, base=self._base, attempts=1, timeout=timeout)
+
     def mark_price(self, symbol: str) -> Decimal:
         r = self.request("GET", "/fapi/v1/premiumIndex", {"symbol": symbol}, kind="read", signed=False)
         return Decimal(str(r["markPrice"]))

@@ -66,14 +66,16 @@ def test_v2_to_v3_migration_preserves_rows_and_fk(tmp_path):
     before = {t: _table_rows(p, t) for t in ("decision_events", "trade_entries", "param_versions")}
     led = open_ledger(p, "learner", clock=clock)                # migrate=True (varsayilan)
     led.close()
-    assert raw(p, "PRAGMA user_version")[0][0] == 3
+    assert raw(p, "PRAGMA user_version")[0][0] == 4
     assert (2, 3) in raw(p, "SELECT from_version, to_version FROM schema_migrations")
     assert "ml_score" in cols(p, "decision_events")
     after = raw(p, "SELECT " + ", ".join(c for c in cols(p, "decision_events") if c != "ml_score")
                 + " FROM decision_events ORDER BY id")
     assert after == before["decision_events"]                    # satirlar ayni id ve icerikle
     assert [r[0] for r in raw(p, "SELECT ml_score FROM decision_events")] == [None, None]
-    assert _table_rows(p, "trade_entries") == before["trade_entries"]
+    # sema 4 (WP-3) trade_entries'e 5 ekleyici NULL sutun getirir; mevcut sutunlar degismez
+    assert [r[:-5] for r in _table_rows(p, "trade_entries")] == before["trade_entries"]
+    assert all(r[-5:] == (None,) * 5 for r in _table_rows(p, "trade_entries"))
     assert raw(p, "PRAGMA foreign_key_check") == []
     assert raw(p, "SELECT COUNT(*) FROM v_decisions")[0][0] == 2
     assert raw(p, "SELECT COUNT(*) FROM v_trades")[0][0] == 1

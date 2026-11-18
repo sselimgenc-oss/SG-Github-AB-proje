@@ -543,6 +543,11 @@ class LiveBroker:
         self._acct = (now, acc)
         return acc
 
+    def account_cached(self) -> BrokerAccount | None:
+        """WP-3: son okunan hesap, YASINA BAKMADAN; yoksa None. Ag cagrisi YAPMAZ (yalniz kayit olan MtM isareti kesintide
+        yeniden denemeli REST cagrisini tetikleyemez)."""
+        return None if self._acct is None else self._acct[1]
+
     def transfers(self, since: datetime, until: datetime) -> list:
         """12 §7 [V-8]: `GET /fapi/v1/income?incomeType=TRANSFER` (sembolsuz): vadeli cuzdana giren (+) / cikan (-) aktarimlar,
         `tranId` ile tekillestirilir. Okuma hatasi istisna olarak yukselir (cagiran fail-closed)."""
@@ -670,6 +675,18 @@ class LiveBroker:
     def foreign_open_orders(self) -> list[dict]:
         return [r for r in self._open_rows(None)
                 if _cid_role(str(r.get("clientAlgoId") or r.get("clientOrderId") or "")) is None]
+
+    def book_ticker(self, pair: str) -> tuple[float, float] | None:
+        """WP-3 (3.5): (bid, ask) ya da None (yasak penceresi / agirlik >= %80: cagri HIC yapilmaz). Hatalar disari
+        sizar (motor yutar); `_rc`/`_note_ban` yolundan gecmez: mevcut sayac ve kilitler degismez."""
+        h = self._rest.health()
+        if int(h.get("ban_until_ms") or 0) > int(self._rest.now_ms()):
+            return None
+        lim = float(getattr(self._rest, "weight_soft", 1200))
+        if float(h.get("used_weight") or 0) >= 0.8 * lim:
+            return None
+        r = self._rest.book_ticker(self._symbol(pair))
+        return float(r["bidPrice"]), float(r["askPrice"])
 
     def prepare(self, pair: str, leverage: int) -> None:
         if pair in self._prepared and leverage == self._lev:

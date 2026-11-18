@@ -48,6 +48,10 @@ class LiveSettings:
     stop_deadline_s: float = 10.0
     entry_resolve_window_s: float = 60.0
     max_attempts: int = 1
+    order_quote: bool = False       # WP-3 (defter-ek-alanlar 3.5): emir ani bookTicker sorgusu; varsayilan KAPALI
+
+
+SHADOW_BLOCK_KEYS = ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,8 @@ class EngineConfig:
     leverage: int = LOCKED_CFG.min_leverage                   # 11 §3.1: [min_leverage, max_leverage]
     live: LiveSettings | None = None                          # 11 §3.1: testnet/live icin ZORUNLU, digerlerinde yasak
     ladder_follow: str | None = None                          # 12 §8.4: baska botun kademe gunlugunun yolu; yalniz paper
+    shadow_blocks: tuple[str, ...] = ()                       # WP-3 5.1: golge karar satiri bloklari; bos = kapali
+    mtm_marks: bool = True                                    # WP-3 6.2: oz varlik isaretleri (yalniz kayit)
 
     @functools.cached_property
     def risk_config(self) -> RiskConfig:
@@ -115,7 +121,7 @@ _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wa
         "reconcile_open_s", "reconcile_flat_s", "start_delay_s")
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "startup_wait_s", "pause_file",
-                  "leverage", "live", "ladder_follow"}
+                  "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks"}
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -180,6 +186,23 @@ def _int(name: str, v: Any, lo: int, hi: int) -> int:
     return v
 
 
+def _bool(name: str, v: Any) -> bool:
+    if not isinstance(v, bool):
+        raise ConfigError(f"{name} bool olmali: {v!r}")
+    return v
+
+
+def _build_shadow_blocks(v: Any) -> tuple[str, ...]:
+    if isinstance(v, (str, bytes)) or not isinstance(v, (list, tuple)):
+        raise ConfigError(f"shadow_blocks liste olmali: {v!r}")
+    for b in v:
+        if not isinstance(b, str) or b not in SHADOW_BLOCK_KEYS:
+            raise ConfigError(f"shadow_blocks gecersiz oge {b!r} (izinli: {SHADOW_BLOCK_KEYS})")
+    if len(set(v)) != len(v):
+        raise ConfigError("shadow_blocks yinelenen oge iceriyor")
+    return tuple(v)
+
+
 def _build_live(raw: Any) -> LiveSettings:
     if isinstance(raw, LiveSettings):
         raw = dataclasses.asdict(raw)
@@ -207,7 +230,8 @@ def _build_live(raw: Any) -> LiveSettings:
         stop_deadline_s=_num("live.stop_deadline_s", raw.get("stop_deadline_s", d.stop_deadline_s), 5, 15),
         entry_resolve_window_s=_num("live.entry_resolve_window_s",
                                     raw.get("entry_resolve_window_s", d.entry_resolve_window_s), 0, 3600),
-        max_attempts=_int("live.max_attempts", raw.get("max_attempts", d.max_attempts), 1, 2))
+        max_attempts=_int("live.max_attempts", raw.get("max_attempts", d.max_attempts), 1, 2),
+        order_quote=_bool("live.order_quote", raw.get("order_quote", d.order_quote)))
 
 
 def load_keys(env: Mapping[str, str]) -> tuple[str, str]:
@@ -293,6 +317,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
             raise ConfigError("ladder_follow bos olmayan str ya da null olmali")
         if mode != "paper":
             raise ConfigError(f"ladder_follow yalniz mode='paper' ile verilebilir (mode={mode!r})")
+    shadow_blocks = _build_shadow_blocks(raw.get("shadow_blocks", ()))
+    mtm_marks = _bool("mtm_marks", raw.get("mtm_marks", True))
     live_raw = raw.get("live")
     if mode in ("testnet", "live"):
         if live_raw is None:
@@ -324,6 +350,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         start_delay_s=nums["start_delay_s"], strategy=strategy,
         target_trade_risk=float(ttr), ml_mode=ml_mode, ml_model_path=ml_path, ml_features=ml_features,  # type: ignore[arg-type]
         startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live, ladder_follow=ladder_follow,
+        shadow_blocks=shadow_blocks, mtm_marks=mtm_marks,
         **{n: raw[n] for n in _STR},
     )
 

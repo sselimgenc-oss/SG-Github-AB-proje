@@ -459,7 +459,7 @@ class PaperBroker:
         o.status, o.filled_qty, o.avg_price, o.updated_ts = "filled", o.qty, fp, ts
         self._events.append(BrokerEvent(kind="fill", ts=ts, pair=o.pair, client_id=o.client_id, fill=Fill(
             client_id=o.client_id, pair=o.pair, role=o.role, order_side=o.order_side, qty=o.qty,  # type: ignore[arg-type]
-            price=fp, fee=fee, ts=ts, reason="market")))
+            price=fp, fee=fee, ts=ts, reason="market", ref_price=bar.last_o)))
 
     def _fill_exit(self, o: _Order, bar: MinuteBar, rules: SymbolRules) -> None:
         ts = bar.open_ts
@@ -469,10 +469,10 @@ class PaperBroker:
         qty = min(o.qty, pos.qty)
         fp = self._slipped(bar.last_o, o.order_side, self._cfg.cost.slip_exit_bps, rules.tick, o.pair, pos.opened_ts)
         fee = qty * fp * self._cfg.cost.taker_fee
-        self._close(o, pos, qty, fp, fee, ts, "market", "fill", None)
+        self._close(o, pos, qty, fp, fee, ts, "market", "fill", None, ref_price=bar.last_o)
 
     def _close(self, o: _Order, pos: _Pos, qty: float, price: float, fee: float, ts: datetime,
-               reason: str, kind: str, detail: str | None) -> None:
+               reason: str, kind: str, detail: str | None, ref_price: float | None = None) -> None:
         pair = o.pair
         gross = qty * (price - pos.entry_price) * _sign(pos.side)
         self._wallet += gross - fee
@@ -486,7 +486,7 @@ class PaperBroker:
         self._events.append(BrokerEvent(kind=kind, ts=ts, pair=pair, client_id=o.client_id, detail=detail,  # type: ignore[arg-type]
                                         fill=Fill(client_id=o.client_id, pair=pair, role=o.role,
                                                   order_side=o.order_side, qty=qty, price=price, fee=fee,  # type: ignore[arg-type]
-                                                  ts=ts, reason=reason)))  # type: ignore[arg-type]
+                                                  ts=ts, reason=reason, ref_price=ref_price)))  # type: ignore[arg-type]
         if full:
             for x in self._orders.values():
                 if x.pair == pair and x.status == "new" and x.reduce_only and x.role in ("stop", "target"):
@@ -567,7 +567,8 @@ class PaperBroker:
         return {"kind": e.kind, "ts": _iso(e.ts), "pair": e.pair, "client_id": e.client_id,
                 "fill": None if f is None else {
                     "client_id": f.client_id, "pair": f.pair, "role": f.role, "order_side": f.order_side,
-                    "qty": f.qty, "price": f.price, "fee": f.fee, "ts": _iso(f.ts), "reason": f.reason},
+                    "qty": f.qty, "price": f.price, "fee": f.fee, "ts": _iso(f.ts), "reason": f.reason,
+                    "ref_price": f.ref_price},
                 "funding_paid": e.funding_paid, "rate": e.rate, "mark": e.mark, "detail": e.detail}
 
     @staticmethod
@@ -575,7 +576,8 @@ class PaperBroker:
         f = d["fill"]
         fill = None if f is None else Fill(client_id=f["client_id"], pair=f["pair"], role=f["role"],
                                            order_side=f["order_side"], qty=f["qty"], price=f["price"],
-                                           fee=f["fee"], ts=_dt(f["ts"]), reason=f["reason"])
+                                           fee=f["fee"], ts=_dt(f["ts"]), reason=f["reason"],
+                                           ref_price=f.get("ref_price"))
         return BrokerEvent(kind=d["kind"], ts=_dt(d["ts"]), pair=d["pair"], client_id=d["client_id"], fill=fill,
                            funding_paid=d["funding_paid"], rate=d["rate"], mark=d["mark"], detail=d["detail"])
 

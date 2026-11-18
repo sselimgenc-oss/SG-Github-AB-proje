@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Literal
@@ -20,6 +21,7 @@ _ROLE_LETTER = {"entry": "e", "stop": "s", "target": "t", "exit": "x"}
 _BO_STATUS = {"filled": "filled", "new": "accepted", "canceled": "canceled", "rejected": "rejected",
               "expired": "expired"}
 _OK = ("accepted", "filled")
+EXEC_META_MAX = 256           # WP-3: bellekteki emir-ani kaydi (ilk giren ilk cikar; kullanilinca silinir)
 EXIT_RETRY_LIMIT = 3          # kamusal sabit (reconcile_live ve testler ice aktarir)
 _EXIT_RETRY_LIMIT = EXIT_RETRY_LIMIT
 
@@ -70,6 +72,9 @@ class OrderManager:
         # 11 §6.4/§8: canli piyasa cikislari ve giris-penceresi kapanisi motorun kendi yolundan gecer
         self.exit_fn: Callable[[Position, str, datetime], object] | None = None          # Engine._submit_exit
         self.close_unopened_fn: Callable[[Position, datetime], None] | None = None       # Engine._close_unopened
+        # WP-3 (defter-ek-alanlar 3.1): yalniz kayit. Durum deposuna YAZILMAZ; yeniden baslatmada kaybolur.
+        self.exec_meta: "OrderedDict[str, dict]" = OrderedDict()
+        self.quote_fn: Callable[[str], dict | None] | None = None   # 3.5 (Engine._order_quote); varsayilan yok
 
     def _eff_qty(self, pos: Position) -> float:
         """Canli: L4 (dis azaltma) sonrasi state qty ORIJINAL kalir; emir miktari min(pos.qty, borsa miktari) (11 §8 L4)."""
@@ -179,7 +184,12 @@ class OrderManager:
         return self._outcome(row, None, note)
 
     # ------------------------------------------------------------------ ortak gonderim
-    def _submit(self, req: OrderRequest, seq: int, trade_id: int | None) -> SubmitOutcome:
+    def _put_meta(self, cid: str, meta: dict) -> None:
+        self.exec_meta[cid] = meta
+        while len(self.exec_meta) > EXEC_META_MAX:
+            self.exec_meta.popitem(last=False)
+
+    def _submit(self, req: OrderRequest, seq: int, trade_id: int | None, quote: bool = False) -> SubmitOutcome:
         cid = req.client_id
         existing = self.state.get_order(cid)
         if existing is not None:
@@ -191,9 +201,22 @@ class OrderManager:
                        broker_order_id=None, detail=None, created_ts=now, updated_ts=now)
         with self.state.tx():
             self.state.insert_order(row)          # POST'tan once commit
+        meta = None
+        if req.role in ("entry", "exit"):
+            meta = {"order_ts": now}
+            if quote and self.quote_fn is not None:
+                try:
+                    q = self.quote_fn(req.pair)                 # 3.5: tek deneme, <= 0.5 sn; hata = None
+                except Exception:  # noqa: BLE001 - olcum emri hicbir zaman durdurmaz
+                    q = None
+                if q:
+                    meta.update(q)
+            self._put_meta(cid, meta)
         res = self._send(req)
         if res is None:
             return self._unknown_path(row, req)
+        if meta is not None and self.live_mode:
+            meta["order_ack_ts"] = self.clock.now()
         out = self._apply_result(row, res, None)
         return self._after(out, trade_id)
 
@@ -331,7 +354,7 @@ class OrderManager:
         return self._entry_pending_or_fail(row)
 
     # ------------------------------------------------------------------ giris / cikis
-    def submit_entry(self, intent: Intent, trade_id: int) -> SubmitOutcome:
+    def submit_entry(self, intent: Intent, trade_id: int, quote: bool = False) -> SubmitOutcome:
         if intent.kind != "entry":
             raise ValueError("intent.kind 'entry' olmali")
         if intent.qty is None or not intent.qty > 0:
@@ -351,7 +374,7 @@ class OrderManager:
                 raise
             except Exception as e:  # noqa: BLE001
                 return self._prepare_failed(req, trade_id, e)
-        return self._submit(req, 0, trade_id)
+        return self._submit(req, 0, trade_id, quote)
 
     def _prepare_failed(self, req: OrderRequest, trade_id: int, e: Exception) -> SubmitOutcome:
         now = self.clock.now()
@@ -363,7 +386,7 @@ class OrderManager:
             self.state.insert_order(row)
         return self._after(SubmitOutcome(False, "failed", row, None, "prepare_failed"), trade_id)
 
-    def submit_exit(self, pos: Position, reason: str, at: datetime) -> SubmitOutcome:
+    def submit_exit(self, pos: Position, reason: str, at: datetime, quote: bool = False) -> SubmitOutcome:
         if pos.qty is None or not pos.qty > 0:
             raise ValueError("pozisyon qty yok")
         cid = make_client_id(self.bot, "exit", pos.pair, pos.side, at, 0)
@@ -371,7 +394,7 @@ class OrderManager:
                            qty=self._eff_qty(pos), trigger_price=None, reduce_only=True, leverage=None,
                            signal_bar_close_ts=at, created_ts=self.clock.now())
         self._pupd(pos.trade_id, exit_reason=reason)
-        out = self._submit(req, 0, pos.trade_id)
+        out = self._submit(req, 0, pos.trade_id, quote)
         if out.status == "failed" and out.order.status == "failed":
             self._exit_failed_effects(pos)
         return out

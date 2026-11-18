@@ -12,6 +12,7 @@
     "poll_flat_s": 30.0,
     "stop_deadline_s": 10.0,
     "entry_resolve_window_s": 60.0,
-    "max_attempts": 1
+    "max_attempts": 1,
+    "order_quote": true
   }
 }

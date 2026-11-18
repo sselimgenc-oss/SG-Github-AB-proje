@@ -1685,7 +1685,7 @@ class TestTwinLearner:
         b = load_engine_config(ROOT / "config" / "engine.base.json", ROOT / "config" / "engine.twin.json")
         da, db = dataclasses.asdict(a), dataclasses.asdict(b)
         diff = {k for k in da if da[k] != db[k]}
-        assert diff == {"bot", "start_delay_s"}
+        assert diff == {"bot", "start_delay_s", "shadow_blocks"}      # WP-3 5.1: ikizde golge yok
         assert a.ledger_path != b.ledger_path and a.state_path != b.state_path and a.status_path != b.status_path
         assert a.market_db == b.market_db and a.kill_file == b.kill_file
 

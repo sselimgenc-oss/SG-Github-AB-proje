@@ -116,7 +116,12 @@ def _cmd_init_ledger(a) -> int:
     label = make_label(strat.info.name, strat.info.version)
     Path(cfg.ledger_path).parent.mkdir(parents=True, exist_ok=True)
     params = {k: getattr(DEFAULT_SIGNAL_PARAMS, k) for k in L.PARAM_KEYS}
-    led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True)
+    try:
+        # create=True yeni dosya kurar; var olan eski sema dosyasi BURADA goc ettirilmez (goc yalniz motor surecinde)
+        led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, migrate=False)
+    except L.LedgerSchemaError as e:
+        print(f"defter sema hatasi: {e} (goc motor baslarken yapilir)", file=sys.stderr)
+        return EXIT_ENGINE
     try:
         try:
             led.get_active_params()
@@ -491,6 +496,8 @@ def _cmd_feed(a) -> int:
 
 
 def _cmd_backtest(a) -> int:
+    """`backtest` alt komutu tum argumanlari backtest.py'nin ayristiricisina gecirir (WP-3: `--record-shadow` orada
+    tanimlidir; golge satirlar geri testte varsayilan KAPALI, tf_15m desteklenmez)."""
     from . import backtest as B
     return int(B.main(a.rest) or 0)
 

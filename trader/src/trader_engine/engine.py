@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections import Counter
+from collections import Counter, OrderedDict
 from contextlib import nullcontext
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields, replace
@@ -25,11 +25,13 @@ from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, entry_leverage
 from .killswitch import Killswitch
 from .pause import EntryPause
+from . import shadow as SH
 from .marketdata.sources import MarketView, MinuteStep
-from .order_manager import EXIT_RETRY_LIMIT, OrderManager
+from .mtm import MtmRecorder
+from .order_manager import EXIT_RETRY_LIMIT, OrderManager, make_client_id
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
-                               build_trade_exit, close_position, evaluate_exit, fill_risk_violation,
-                               update_excursion)
+                               build_trade_exit, close_position, evaluate_exit, exec_fields, exec_payload,
+                               fill_risk_violation, update_excursion)
 from .reconcile import Reconciler, ReconcileReport
 from .state import StateStore, iso_z
 from .status import StatusWriter
@@ -50,6 +52,8 @@ EXIT_STARTUP_GATE = 7
 FEED_MODES = ("paper", "testnet", "live")        # 11 §6.1: "feed'li canli dongu" (benzetimli broker ayrimi: is_paper)
 _BROKER_REASONS = ("exchange_auth", "exchange_unknown_code", "working_type_unverified", "exchange_unreachable",
                    "exchange_rate_limited")
+SHADOW_BUDGET_S = 5.0            # WP-3 5.2: `_shadow_step` zaman butcesi (ciftler arasinda denetlenir)
+_EXEC_MEM_MAX = 256              # WP-3: bellekteki `decision_price` kayitlari
 
 
 @dataclass(frozen=True)
@@ -139,6 +143,18 @@ class Engine:
         self._exit_throttle: dict[int, datetime] = {}
         self._naked_rows: list[dict] = []
         self._in_drain = 0
+        # WP-3 (defter-ek-alanlar): YALNIZ KAYIT. Bu durum bellekte tutulur, durum deposuna YAZILMAZ ve hicbir karari etkilemez.
+        self._dec_price: "OrderedDict[int, tuple[str, float]]" = OrderedDict()   # trade_id -> (cikis client_id, karar mumu kapanisi)
+        self._regime_mem: dict[str, tuple[datetime, str]] = {}                   # cift -> (karar adimi D, hizali 4s kosul etiketi)
+        self._shadow_ctx: tuple | None = None                                    # (D, frames, params) son karar adimi
+        self._rec = {"shadow": {"rows": 0, "errors": 0, "budget_skips": 0, "tf15_holdout_wait": 0, "last_step_ms": 0.0},
+                     "mtm": {"rows": 0, "errors": 0}, "exec": {"dropped": 0, "quote_errors": 0}}
+        simulated = bool(getattr(broker, "is_simulated", False))
+        self.mtm = MtmRecorder(None if cfg.mode == "backtest" else self._write_equity_mark,
+                               src="sim" if simulated else "exchange", keep=cfg.mode == "backtest",
+                               enabled=bool(cfg.mtm_marks))
+        if not simulated and live is not None and live.order_quote:
+            self.orders.quote_fn = self._order_quote
 
     def _make_reconciler(self):
         if self.is_paper:
@@ -265,6 +281,7 @@ class Engine:
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
+            "records": self.records_block(),
             "pause": self._pause_status(),
             "risk_ladder": self._ladder_status(),
             **({} if self.is_paper else {"exchange": self._exchange_status()}),
@@ -326,6 +343,84 @@ class Engine:
 
     def stop(self) -> None:
         self._stop = True
+
+    # ================================================================== WP-3: kayit yardimcilari (yalniz kayit)
+    def records_block(self) -> dict:
+        """status.json `records` (9.3): bu sayaclar `counters()`'a GIRMEZ; alarm uretmez."""
+        r = self._rec
+        return {"shadow": dict(r["shadow"]),
+                "mtm": {"rows": int(self.mtm.rows_written), "errors": int(self.mtm.errors)},
+                "exec": dict(r["exec"])}
+
+    def _write_equity_mark(self, ts, wallet, equity, low, n_open, src) -> None:
+        self.ledger.record_equity_mark(L.EquityMark(ts=ts, wallet=wallet, equity=equity, equity_low=low,
+                                                    n_open=n_open, src=src))
+
+    def _exec_payload(self, role: str, fill, extra: dict | None = None) -> dict:
+        """Dolum icin olcum alanlari (temiz, JSON'a uygun). Hicbir hata disari sizmaz: hata = bos yuk (NULL)."""
+        try:
+            cid = fill.client_id
+            meta = self.orders.exec_meta.pop(cid, None) if cid else None
+            row = self.state.get_order(cid) if cid else None
+            raw = exec_fields(role, meta, fill, row)
+            if extra:
+                raw.update({k: v for k, v in extra.items() if v is not None})
+            out, dropped = exec_payload(raw)
+            if dropped:
+                self._rec["exec"]["dropped"] += dropped
+            return out
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            self._rec["exec"]["dropped"] += 1
+            log.warning("olcum alanlari uretilemedi: %r", e)
+            return {}
+
+    def _remember_dec_price(self, pos: Position, D: datetime, price) -> None:
+        try:
+            if price is None or not float(price) > 0:
+                return
+            cid = make_client_id(self.cfg.bot, "exit", pos.pair, pos.side, D, 0)
+            self._dec_price[pos.trade_id] = (cid, float(price))
+            while len(self._dec_price) > _EXEC_MEM_MAX:
+                self._dec_price.popitem(last=False)
+        except Exception:  # noqa: BLE001
+            return
+
+    def _exit_regime_for(self, pair: str, fill_ts: datetime) -> str | None:
+        """4: son karar adimindaki hizalanmis 4s etiketi; yas siniri 0 <= fill.ts - D <= tf + 120 sn, aksi NULL."""
+        m = self._regime_mem.get(pair)
+        if m is None:
+            return None
+        D, label = m
+        age = (fill_ts - D).total_seconds()
+        if 0 <= age <= tf_delta(self.tf).total_seconds() + 120:
+            return label
+        return None
+
+    def _order_quote(self, pair: str) -> dict | None:
+        """3.5: emir oncesi `bookTicker` (yalniz testnet/canli, `live.order_quote=true`). Tek deneme, <= 0,5 sn.
+        Yasak penceresi/agirlik >= %80 iken cagri yapilmaz (broker None doner). Her hata yutulur."""
+        try:
+            if self._ban_until is not None and self.clock.now() < self._ban_until:
+                return None
+            fn = getattr(self.broker, "book_ticker", None)
+            if not callable(fn):
+                return None
+            res = fn(pair)
+            if res is None:
+                return None
+            bid, ask = float(res[0]), float(res[1])
+            if not (bid > 0 and ask >= bid and ask == ask and bid == bid and ask != float("inf")):
+                raise ValueError("gecersiz bookTicker")
+            mid = (bid + ask) / 2.0
+            return {"order_ref_price": mid, "order_ref_spread": (ask - bid) / mid, "order_ref_src": "book"}
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            self._rec["exec"]["quote_errors"] += 1
+            log.warning("bookTicker sorgusu basarisiz (%s): %r", pair, e)
+            return None
 
     # ================================================================== gun basi
     def ensure_day_start(self, ts: datetime) -> None:
@@ -639,10 +734,12 @@ class Engine:
             self.broker.advance(step.bars, "triggers")          # type: ignore[attr-defined]
             self._handle_events(self.broker.poll(end), step, end)
             self._kill_step(end)                                # kill emri bu adimda verilir, sonraki adimda dolar
-            for p in self.state.open_positions():
+            opens = self.state.open_positions()
+            for p in opens:
                 bar = step.bars.get(p.pair)
                 if bar is not None and p.status in ("open", "closing"):
                     self._persist(p, update_excursion(p, bar))
+            self._mtm_minute(ts, step, opens)                   # WP-3 madde 18: yalniz kayit
             for pair in self.cfg.pairs:
                 c = self.state.get_cursor(pair, "minute")
                 if c is None or ts > c:
@@ -654,10 +751,12 @@ class Engine:
     def _process_step_live(self, step, ts: datetime) -> None:
         """Canli dakika adimi (11 §6.2 madde 4): yalniz gun basi, MFE/MAE ve imlec. Olay/KILL live_tick'te."""
         self.ensure_day_start(ts)
-        for p in self.state.open_positions():
+        opens = self.state.open_positions()
+        for p in opens:
             bar = step.bars.get(p.pair)
             if bar is not None and p.status in ("open", "closing"):
                 self._persist(p, update_excursion(p, bar))
+        self._mtm_minute(ts, step, opens)                       # WP-3 madde 18: yalniz kayit
         with self.state.tx():
             for pair in self.cfg.pairs:
                 c = self.state.get_cursor(pair, "minute")
@@ -665,6 +764,17 @@ class Engine:
                     self.state.set_cursor(pair, "minute", ts)
         self._last_minute = ts
         self._c["steps"] += 1
+
+    def _mtm_minute(self, ts: datetime, step, opens) -> None:
+        """6.2: dakika adiminda ters-uc (temkinli) gerceklesmemis K/Z birikimi. Hicbir istisna sizmaz."""
+        if not self.mtm.enabled or not opens:
+            return
+        try:
+            wallet = float(self.broker.account().wallet) if self.is_paper else None   # canli: onbellek (ek REST yok)
+            self.mtm.on_minute(ts, step.bars, opens, wallet)
+        except Exception as e:  # noqa: BLE001
+            self.mtm.errors += 1
+            log.warning("mtm dakika isareti hatasi: %r", e)
 
     def _kill_step(self, now: datetime) -> None:
         if self.kill.active():
@@ -680,7 +790,7 @@ class Engine:
                 self.state.kv_set("kill_seen_at", None)
             log.warning("KILL kalkti: girisler bir sonraki karar adiminda yeniden acilir")
 
-    def _submit_exit(self, pos: Position, reason: str, at: datetime):
+    def _submit_exit(self, pos: Position, reason: str, at: datetime, quote: bool = False):
         """Piyasa cikisi; canlida hemen poll (11 §5.3 not 2) ve olaylari isle."""
         if not self.is_paper and self._ban_until is not None and self.clock.now() < self._ban_until:
             self._c["ban_skipped_exits"] += 1          # pencere icinde gonderim zaten reddedilir; yeni kimlik/satir uretme
@@ -695,7 +805,8 @@ class Engine:
                     self._c["exit_throttled"] += 1
                     return None
                 self._exit_throttle[pos.trade_id] = now
-        out = self.orders.submit_exit(pos, reason, at)
+        out = (self.orders.submit_exit(pos, reason, at, True) if (quote and self.orders.quote_fn is not None)
+               else self.orders.submit_exit(pos, reason, at))
         if not self.is_paper:
             self._register(pos.trade_id)
             self._drain_events()
@@ -731,10 +842,11 @@ class Engine:
             return
         t_fill = self.clock.now()
         newp = apply_entry_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
+        xp = self._exec_payload("entry", fill)                  # WP-3: yalniz kayit (emir ani alanlari)
         with self.state.tx():                                   # G2: pozisyon open + emir filled + outbox
             self._persist(pos, newp)
             self._mark_order(fill.client_id, "filled")
-            self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp))
+            self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp, xp))
         self._c["trades_opened"] += 1
         eq = self.state.kv_get(f"eq:{pos.trade_id}")
         tick = self.orders.stop_tick(newp)
@@ -776,9 +888,14 @@ class Engine:
             closed = replace(closed, exit_reason="manual")
             log.critical("yabanci kapanis %s trade %s: exit_reason=manual", e.pair, pos.trade_id)
         newp = close_position(pos, closed)
+        dp = self._dec_price.pop(pos.trade_id, None)            # WP-3: yalniz kayit; yalniz KARARIN verdigi piyasa cikisi icin
+        extra = {"exit_regime": self._exit_regime_for(pos.pair, fill.ts)}
+        if dp is not None and fill.reason == "market" and dp[0] == fill.client_id:
+            extra["decision_price"] = dp[1]
+        xp = self._exec_payload("exit", fill, extra)
         with self.state.tx():                                   # G3
             self._persist(pos, newp)
-            self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed))
+            self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed, ex=xp))
             self._mark_order(fill.client_id, "filled")
         self._c["trades_closed"] += 1
         if not self.is_paper and self.state.kv_get(f"naked:{pos.trade_id}") is not None:
@@ -831,8 +948,11 @@ class Engine:
             self._post_commit()
             if self.status is not None:
                 self.status.write(self, force=True)
+            self._mtm_decision(D)                               # WP-3: karar adiminin butun isleri bittikten SONRA
+            self._shadow_step(D)
 
     def _decision_step(self, D: datetime) -> None:
+        self._shadow_ctx = None
         self._set_clock(D)
         now = self.clock.now()
         with self._outer_tx():
@@ -854,6 +974,7 @@ class Engine:
                     c = fr.last.bar_open_ts
                     if self._last_candle_open is None or c > self._last_candle_open:
                         self._last_candle_open = c
+                    self._regime_mem[pair] = (D, fr.last.regime)          # WP-3 madde 16: yalniz kayit
             self._exits(D, frames)
             self._entries(D, frames)
             with self.state.tx():                                   # G4: imecler
@@ -863,8 +984,104 @@ class Engine:
                         self.state.set_cursor(pair, "decision", D)
                 if self.is_paper:
                     self.state.kv_set("broker_snapshot", self.broker.snapshot())   # type: ignore[attr-defined]
+        self._shadow_ctx = (D, frames, params)
         self._last_decision = D
         self._c["decisions"] += 1
+
+    # ------------------------------------------------------------------ WP-3: karar adimi sonrasi kayitlar (yalniz kayit)
+    def _mtm_decision(self, D: datetime) -> None:
+        """6.2: karar adimi basina bir oz varlik isareti; butun is bittikten sonra. Hicbir istisna sizmaz."""
+        if not self.mtm.enabled:
+            return
+        try:
+            if self.is_paper:
+                acct = self.broker.account()                       # benzetim: saf
+            else:                                                  # canli: yalniz onbellek, ag cagrisi yok
+                fn = getattr(self.broker, "account_cached", None)
+                acct = fn() if callable(fn) else None
+                if acct is None:
+                    return                                         # isaret atlanir; hata degil
+            n_open = sum(1 for p in self.state.open_positions() if p.status in ("open", "closing"))
+            self.mtm.on_decision(D, acct, n_open)
+        except Exception as e:  # noqa: BLE001
+            self.mtm.errors += 1
+            log.warning("mtm karar isareti hatasi: %r", e)
+
+    def _shadow_table(self, pair: str, D: datetime, fr: SignalFrame):
+        t = fr.table
+        if t is None:
+            ft = getattr(self.signals, "frame_table", None)          # geri test: onceden hesaplanmis tablo
+            t = ft(pair, D) if callable(ft) else None
+        return None if t is None else t.iloc[-SH.N4H:]
+
+    def _shadow_step(self, D: datetime) -> None:
+        """5.2: golge karar satirlari. `state`/`broker`/`orders`/`gate`/`veto`/`kill`/`pause`/`ladder` uzerinde YAZMA ya da
+        cagri yok (yalniz `state.position_for_pair` okuma); istisna sizmaz; butce `SHADOW_BUDGET_S`."""
+        ctx, self._shadow_ctx = self._shadow_ctx, None
+        keys = set(self.cfg.shadow_blocks or ())
+        if not keys or self._stop or ctx is None or ctx[0] != D:
+            return
+        rec = self._rec["shadow"]
+        t0 = self.clock.now()
+        try:
+            _, frames, params = ctx
+            sp = params if isinstance(params, SignalParams) else None
+            blocks = {b for k in keys for b in SH.BLOCK_OF_KEY.get(k, ())}
+            code = getattr(self._last_pre, "code", None)
+            pairs = list(self.cfg.pairs)
+            if pairs:                                              # butce kuyrugu hep ayni ciftlere dusmesin: baslangic zamanla doner
+                k = int(D.timestamp() // 3600) % len(pairs)
+                pairs = pairs[k:] + pairs[:k]
+            for i, pair in enumerate(pairs):
+                if (self.clock.now() - t0).total_seconds() >= SHADOW_BUDGET_S:
+                    rec["budget_skips"] += len(pairs) - i
+                    break
+                try:
+                    self._shadow_pair(pair, D, frames.get(pair), sp, blocks, code)
+                except Exception as e:  # noqa: BLE001
+                    rec["errors"] += 1
+                    log.warning("golge adimi hatasi (%s): %r", pair, e)
+        except Exception as e:  # noqa: BLE001
+            rec["errors"] += 1
+            log.warning("golge adimi hatasi: %r", e)
+        finally:
+            try:
+                rec["last_step_ms"] = round((self.clock.now() - t0).total_seconds() * 1000.0, 1)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _shadow_pair(self, pair: str, D: datetime, fr, sp, blocks: set, gate_code: str | None) -> None:
+        rec = self._rec["shadow"]
+        cands: list = []
+        tf = self.tf
+        if fr is not None and fr.status == "ok" and fr.last is not None:
+            rb = blocks & {"r1_disabled", "same_bar_reentry"}
+            if rb:
+                cands += SH.row_candidates(fr.last, rb, trigger_tf=tf)
+            gb = blocks & {"regime_volatile", "regime_unclear"}
+            if gb and sp is not None and fr.last.reasons == "regime_blocked":
+                cands += SH.regime_cands(fr.last, self._shadow_table(pair, D, fr), sp, gb, trigger_tf=tf)
+        if "tf_15m" in blocks and sp is not None and tf == "1h":
+            cands += SH.tf15_candidates(self.view, pair, D, sp, counters=rec)
+        if not cands:
+            return
+        info = self.strategy.info
+        strat = f"{info.name}@{info.version}"
+        pos_open = self.state.position_for_pair(pair) is not None
+        for c in cands:
+            if SH.in_holdout(c.bar_close_ts):
+                continue
+            try:
+                self.ledger.record_shadow(L.ShadowEvent(
+                    block=c.block, bar_close_ts=c.bar_close_ts, trigger_tf=c.trigger_tf, pair=c.pair, side=c.side,
+                    setup=c.setup, regime=c.regime, atr_ratio=c.atr_ratio, rh=c.rh, rl=c.rl,
+                    features=c.features, planned_entry=c.planned_entry, planned_stop=c.planned_stop,
+                    planned_target=c.planned_target, param_version_id=self._version_id, strategy=strat,
+                    reasons=c.reasons[:L.MAX_REASON], pos_open=pos_open, gate_code=gate_code))
+                rec["rows"] += 1
+            except Exception as e:  # noqa: BLE001 - golge yazimi hicbir seyi etkilemez
+                rec["errors"] += 1
+                log.warning("golge satiri yazilamadi (%s %s): %r", pair, c.block, e)
 
     # ------------------------------------------------------------------ cikislar (kapisiz)
     def _vet(self, pos: Position, dec):
@@ -893,13 +1110,15 @@ class Engine:
                 dec = policy.evaluate(pos, ctx) if policy is not None else evaluate_exit(pos, ctx)
                 dec = self._vet(pos, dec)
                 if dec.kind == "exit":
-                    self._submit_exit(pos, dec.reason, D)
+                    self._remember_dec_price(pos, D, getattr(ctx, "last_close", None))
+                    self._submit_exit(pos, dec.reason, D, quote=True)
                 elif dec.kind == "stop_update":
                     out = self.orders.replace_stop(pos, dec.new_stop)
                     if out.note == "would_trigger":
                         cur = self.state.get_position(pos.trade_id) or pos
                         if cur.status == "open":
-                            self._submit_exit(cur, "trail_stop", D)
+                            self._remember_dec_price(cur, D, getattr(ctx, "last_close", None))
+                            self._submit_exit(cur, "trail_stop", D, quote=True)
                     elif out.ok and not self.is_paper:
                         self._register(pos.trade_id)
             except StateError:
@@ -971,7 +1190,8 @@ class Engine:
         intent = Intent(kind="entry", bot=self.cfg.bot, pair=pair, side=row.side, signal_bar_close_ts=row.bar_close_ts,
                         setup=row.setup, qty=size.qty, leverage=out.leverage, planned_entry=row.planned_entry,
                         stop_price=row.planned_stop, target_price=row.planned_target, reason="entry", decision_id=did)
-        res = self.orders.submit_entry(intent, tid)
+        res = (self.orders.submit_entry(intent, tid, quote=True) if self.orders.quote_fn is not None
+               else self.orders.submit_entry(intent, tid))
         if not self.is_paper:
             self._drain_events()                                # 11 §6.4: dolum ayni cagri zincirinde -> stop
             if res.status == "failed" and res.order.status == "unknown":

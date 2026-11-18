@@ -9,7 +9,7 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timezone
 from typing import Any, Iterator, Literal
 
-from trader_core.ledger import LedgerError, TradeEntry, TradeExit
+from trader_core.ledger import LedgerError, TradeEntry, TradeExit, clean_exec_fields
 
 from .bars import from_ms, to_ms
 from .errors import StateError
@@ -467,10 +467,26 @@ def _write_ledger(ledger, row: OutboxRow) -> None:
     p = dict(row.payload)
     if row.kind == "entry":
         p["entry_ts"] = parse_iso_z(p["entry_ts"])
+        _parse_exec_ts(p)
+        p.update(clean_exec_fields(p))
         ledger.record_trade_entry(TradeEntry(**_only(TradeEntry, p)))
     else:
         p["exit_ts"] = parse_iso_z(p["exit_ts"])
+        _parse_exec_ts(p)
+        p.update(clean_exec_fields(p))
         ledger.record_trade_exit(TradeExit(**_only(TradeExit, p)))
+
+
+def _parse_exec_ts(p: dict) -> None:
+    """WP-3: emir-ani zaman alanlari (varsa) ISO-Z'den datetime'a; bozuksa NULL (olcum yazimi dusurmez)."""
+    for k in ("order_ts", "order_ack_ts"):
+        v = p.get(k)
+        if v is None:
+            continue
+        try:
+            p[k] = parse_iso_z(v)
+        except Exception:  # noqa: BLE001
+            p[k] = None
 
 
 def _only(cls, p: dict) -> dict:

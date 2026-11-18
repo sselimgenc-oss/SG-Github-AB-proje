@@ -22,7 +22,7 @@ from .numeric import round_tight
 from .order_manager import EXIT_RETRY_LIMIT
 from .pause import EntryPause
 from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
-                               build_trade_exit, close_position, fill_risk_violation)
+                               build_trade_exit, close_position, exec_fields, exec_payload, fill_risk_violation)
 from .reconcile import _AUTO_CLEAR, Reconciler, ReconcileReport
 from .state import iso_z, parse_iso_z
 from .types import BrokerEvent, BrokerOrder, BrokerPosition, Fill, OrderRequest, Position, order_side_for, pair_symbol
@@ -295,7 +295,8 @@ class LiveReconciler(Reconciler):
                                exit_client_id=None)
                 self._persist(cur, newp)
                 self.state.update_order(r.client_id, status="filled", updated_ts=now)
-                self.state.outbox_add("entry", cur.trade_id, build_trade_entry(newp))
+                self.state.outbox_add("entry", cur.trade_id,
+                                      build_trade_entry(newp, exec_payload(exec_fields("entry", None, fill, r))[0]))
                 self.state.kv_set(f"entry_fee_estimated:{cur.trade_id}", True)
             log.critical("mutabakat: GEC DOLUM %s trade %s yeniden acildi", pair, cur.trade_id)
             self.counters["late_fill"] += 1
@@ -350,7 +351,8 @@ class LiveReconciler(Reconciler):
             self._persist(sp, newp)
             if row.status != "filled":
                 self.state.update_order(row.client_id, status="filled", updated_ts=now)
-            self.state.outbox_add("entry", sp.trade_id, build_trade_entry(newp))
+            self.state.outbox_add("entry", sp.trade_id,
+                                  build_trade_entry(newp, exec_payload(exec_fields("entry", None, fill, row))[0]))
             self.state.kv_set(f"entry_fee_estimated:{sp.trade_id}", True)
         self.counters["opening_adopted"] += 1
         acts.append(f"opening_adopted:{sp.trade_id}")
@@ -727,8 +729,9 @@ class LiveReconciler(Reconciler):
                 with self.state.tx():
                     closed = apply_exit_fill(pos, e.fill, None, now)
                     self._persist(pos, close_position(pos, closed))
-                    self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed))
                     row = self.state.get_order(e.fill.client_id)
+                    self.state.outbox_add("exit", pos.trade_id, build_trade_exit(
+                        pos, closed, ex=exec_payload(exec_fields("exit", None, e.fill, row))[0]))
                     if row is not None and row.status not in ("filled", "rejected", "canceled", "failed"):
                         self.state.update_order(row.client_id, status="filled", updated_ts=now)
                 self.orders.cancel_resting(pos)

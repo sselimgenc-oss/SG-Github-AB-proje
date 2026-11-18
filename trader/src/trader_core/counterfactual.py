@@ -20,7 +20,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 __all__ = ["VERSION", "HORIZON_BARS", "PLAN_HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
-           "run_once", "summary", "outcomes", "RunResult", "CounterfactualError"]
+           "run_once", "summary", "outcomes", "RunResult", "CounterfactualError",
+           "run_shadow", "shadow_outcomes", "ShadowRunResult"]
 
 VERSION = 2                          # 2: plan ufku 48 mum; target yanlis tarafta -> invalid_plan
 # --- trader_ml.config'in KOPYASI (parite testi esitligi kilitler); ML etiketi degisirse VERSION artar
@@ -100,7 +101,24 @@ CREATE TABLE IF NOT EXISTS cf_outcomes (
   version INTEGER NOT NULL,
   PRIMARY KEY (bot, decision_id, method));
 CREATE INDEX IF NOT EXISTS ix_cf_ts ON cf_outcomes (bot, decision_ts);
-"""
+CREATE TABLE IF NOT EXISTS cf_shadow_outcomes (
+  bot TEXT NOT NULL CHECK (bot IN ('learner','twin')),
+  shadow_id INTEGER NOT NULL,
+  method TEXT NOT NULL CHECK (method IN ('barrier','plan')),
+  pair TEXT NOT NULL, side TEXT NOT NULL, setup TEXT, trigger_tf TEXT,
+  block TEXT NOT NULL,
+  decision_ts TEXT NOT NULL,
+  planned_entry REAL NOT NULL, planned_stop REAL NOT NULL, planned_target REAL,
+  window_start_ts TEXT NOT NULL, window_end_ts TEXT NOT NULL,
+  hyp_outcome INTEGER CHECK (hyp_outcome IS NULL OR hyp_outcome IN (0,1)),
+  hyp_r_gross REAL, hyp_r_net REAL, cost_r REAL,
+  exit_reason TEXT NOT NULL CHECK (exit_reason IN ('target','stop','time','data_gap','invalid_plan')),
+  bars_held INTEGER,
+  computed_at TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  PRIMARY KEY (bot, shadow_id, method));
+CREATE INDEX IF NOT EXISTS ix_cfs_ts ON cf_shadow_outcomes (bot, decision_ts);
+"""             # WP-3 (defter-ek-alanlar 7): golge satirlar AYRI tabloda; `cf_outcomes` golge icermez; depo user_version 1 kalir
 
 
 def _fmt(dt: datetime) -> str:
@@ -161,6 +179,37 @@ class CounterfactualStore:
         rows = self._db.execute("SELECT decision_id FROM cf_outcomes WHERE bot=? GROUP BY decision_id HAVING COUNT(*)=?",
                                 (bot, len(METHODS))).fetchall()
         return {r[0] for r in rows}
+
+    def done_shadow_ids(self, bot: str) -> set[int]:
+        try:
+            rows = self._db.execute("SELECT shadow_id FROM cf_shadow_outcomes WHERE bot=? GROUP BY shadow_id "
+                                    "HAVING COUNT(*)=?", (bot, len(METHODS))).fetchall()
+        except sqlite3.Error:
+            return set()                                           # tablo yok (salt okunur eski depo)
+        return {r[0] for r in rows}
+
+    def insert_shadow(self, rows: Iterable[Mapping]) -> int:
+        """Idempotent: ayni (bot, shadow_id, method) varsa dokunmaz. Doner: yeni eklenen satir sayisi."""
+        if self.read_only:
+            raise CounterfactualError("depo salt okunur", "read_only")
+        cols = ("bot", "shadow_id", "method", "pair", "side", "setup", "trigger_tf", "block", "decision_ts",
+                "planned_entry", "planned_stop", "planned_target", "window_start_ts", "window_end_ts", "hyp_outcome",
+                "hyp_r_gross", "hyp_r_net", "cost_r", "exit_reason", "bars_held", "computed_at", "version")
+        sql = (f"INSERT INTO cf_shadow_outcomes ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
+               "ON CONFLICT (bot, shadow_id, method) DO NOTHING")
+        n = 0
+        try:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                for r in rows:
+                    n += self._db.execute(sql, [r[c] for c in cols]).rowcount
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        except sqlite3.Error as e:
+            raise CounterfactualError(f"depo yazma hatasi: {type(e).__name__}", "store_io") from e
+        return n
 
     def insert(self, rows: Iterable[Mapping]) -> int:
         """Idempotent: ayni (bot, decision_id, method) varsa dokunmaz. Doner: yeni eklenen satir sayisi."""
@@ -349,4 +398,113 @@ def outcomes(path, bot: str, *, now: datetime, days: int = 28, method: str = "ba
                 "ORDER BY decision_ts, decision_id", (bot, method, minv, since, until, until)).fetchall()
         except sqlite3.Error as e:
             raise CounterfactualError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+    return [dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------------------------------------ WP-3: golge adaylar (7)
+@dataclass
+class ShadowRunResult:
+    shadow_scanned: int = 0
+    shadow_computed: int = 0
+    shadow_pending: int = 0
+    shadow_rows_written: int = 0
+    shadow_holdout_skipped: int = 0
+
+
+def _shadow_rows_for(bot, d, method, res, start, end, now, why_override=None) -> dict:
+    base = {"bot": bot, "shadow_id": d.id, "method": method, "pair": d.pair, "side": d.side, "setup": d.setup,
+            "trigger_tf": d.trigger_tf, "block": d.block, "decision_ts": _fmt(d.bar_close_ts),
+            "planned_entry": d.planned_entry, "planned_stop": d.planned_stop, "planned_target": d.planned_target,
+            "window_start_ts": _fmt(start), "window_end_ts": _fmt(end), "computed_at": _fmt(now), "version": VERSION}
+    if res is None:
+        base.update(hyp_outcome=None, hyp_r_gross=None, hyp_r_net=None, cost_r=None, bars_held=None,
+                    exit_reason=why_override or "data_gap")
+    else:
+        base.update(hyp_outcome=res["outcome"], hyp_r_gross=res["r_gross"], hyp_r_net=res["r_net"], cost_r=res["cost_r"],
+                    bars_held=res["bars_held"], exit_reason=res["exit_reason"])
+    return base
+
+
+def run_shadow(*, bot: str, shadows: Sequence, market_path, store: CounterfactualStore, now: datetime,
+               horizon: int = HORIZON_BARS, dry_run: bool = False) -> ShadowRunResult:
+    """Golge satirlarin (`ledger.ShadowRecord` benzeri: id, pair, side, setup, trigger_tf, bar_close_ts, planned_*, block)
+    karsi-olgusu: hesap `run_once` ile AYNIDIR (barrier 72 + plan 48 mum, ufuk dolmadan hesap yok, `data_gap`, kilitli donemle
+    kesisen pencere okunmaz). `tf_15m` satirlari 1 saatlik izgarada oynatilir (yaklasik). Sonuc `cf_shadow_outcomes`'a
+    yazilir; `cf_outcomes`'a DOKUNULMAZ."""
+    now = _utc(now)
+    res = ShadowRunResult()
+    done = store.done_shadow_ids(bot)
+    mk = _Market(market_path)
+    try:
+        batch: list[dict] = []
+        for d in shadows:
+            res.shadow_scanned += 1
+            if d.id in done:
+                continue
+            start_ms = _ceil_hour_ms(_utc(d.bar_close_ts))
+            start = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
+            end = start + timedelta(milliseconds=horizon * BAR_MS)
+            if start < HOLDOUT_END and end > HOLDOUT_START:
+                res.shadow_holdout_skipped += 1
+                continue
+            if now < end:
+                res.shadow_pending += 1
+                continue
+            e, s_, tg = d.planned_entry, d.planned_stop, d.planned_target
+            ok_plan = all(isinstance(x, (int, float)) and math.isfinite(x) for x in (e, s_)) and e > 0 and e != s_ \
+                and d.side in ("long", "short") and ((s_ < e) if d.side == "long" else (s_ > e))
+            if not ok_plan:
+                for m in METHODS:
+                    batch.append(_shadow_rows_for(bot, d, m, None, start, end, now, "invalid_plan"))
+                res.shadow_computed += 1
+                continue
+            bars = mk.window(d.pair, start_ms, horizon)
+            expect = [start_ms + k * BAR_MS for k in range(horizon)]
+            if [b[0] for b in bars] != expect:
+                if now >= end + GAP_GRACE:
+                    for m in METHODS:
+                        batch.append(_shadow_rows_for(bot, d, m, None, start, end, now, "data_gap"))
+                    res.shadow_computed += 1
+                else:
+                    res.shadow_pending += 1
+                continue
+            hi, lo, cl = [b[1] for b in bars], [b[2] for b in bars], [b[3] for b in bars]
+            sgn = 1.0 if d.side == "long" else -1.0
+            up = e + sgn * TARGET_R * abs(e - s_)
+            plan_tg = tg if tg is not None and math.isfinite(tg) else None
+            batch.append(_shadow_rows_for(bot, d, "barrier", replay(hi, lo, cl, d.side, e, s_, up, horizon=horizon),
+                                          start, end, now))
+            if tg is not None and plan_tg is None:
+                batch.append(_shadow_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))
+            elif plan_tg is not None and not ((plan_tg > e) if d.side == "long" else (plan_tg < e)):
+                batch.append(_shadow_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))
+            else:
+                r_plan = replay(hi, lo, cl, d.side, e, s_, plan_tg, horizon=min(horizon, PLAN_HORIZON_BARS))
+                batch.append(_shadow_rows_for(bot, d, "plan", r_plan, start, end, now))
+            res.shadow_computed += 1
+        if batch and not dry_run:
+            res.shadow_rows_written = store.insert_shadow(batch)
+    finally:
+        mk.close()
+    return res
+
+
+def shadow_outcomes(path, bot: str, *, now: datetime, days: int | None = None, method: str = "barrier") -> list[dict]:
+    """Golge adaylarin hesaplanmis satirlari (salt okunur; ayri islev: `outcomes()`/`summary()` golge DONDURMEZ).
+    YALNIZ `now` itibariyla bilinen sonuclar (`window_end_ts <= now`); `days=None` -> hepsi. Tablo yoksa bos liste."""
+    if method not in METHODS:
+        raise CounterfactualError("gecersiz yontem", "bad_method")
+    until = _fmt(_utc(now))
+    where, args = ["bot=?", "method=?", "hyp_r_net IS NOT NULL", "window_end_ts<=?"], [bot, method, until]
+    if days is not None:
+        where.append("decision_ts>=?")
+        args.append(_fmt(_utc(now) - timedelta(days=days)))
+    with CounterfactualStore(path, read_only=True) as st:
+        try:
+            rows = st._db.execute(
+                "SELECT shadow_id, block, pair, side, setup, trigger_tf, decision_ts, hyp_outcome, hyp_r_net, "
+                "exit_reason, planned_entry, planned_stop, planned_target FROM cf_shadow_outcomes WHERE "
+                + " AND ".join(where) + " ORDER BY decision_ts, shadow_id", args).fetchall()
+        except sqlite3.Error:
+            return []                                              # tablo yok (gece isi henuz golge yazmadi)
     return [dict(r) for r in rows]

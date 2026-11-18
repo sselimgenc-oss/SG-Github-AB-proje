@@ -83,6 +83,7 @@ class StatusWriter:
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
             "dry_run": self.cfg.mode != "live", "wallet": f["wallet"], "equity": f["equity"], "day_start_equity": f["day_start_equity"],
             "open_positions": pos, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
+            **({"records": f["records"]} if f.get("records") is not None else {}),   # WP-3 9.3: yalniz kayit sayaclari
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),
             **({"risk_ladder": f["risk_ladder"]} if f.get("risk_ladder") is not None else {}),   # 12 §10
             **({"exchange": xb} if (xb := _exchange_block(engine, f, self.cfg.mode)) is not None else {}),

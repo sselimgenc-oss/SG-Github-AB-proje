@@ -166,6 +166,7 @@ class Fill:
     fee: float
     ts: datetime
     reason: Literal["market", "stop", "target", "liquidation"]
+    ref_price: float | None = None      # WP-3 (defter-ek-alanlar 3.1): benzetimde kayma oncesi taban (`bar.last_o`); yoksa None
 
 
 @dataclass(frozen=True)

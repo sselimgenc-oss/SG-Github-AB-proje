@@ -103,6 +103,16 @@ KEYS
 else
   CLONE_URL="$REPO_URL"
 fi
+# WP-3 (defter sema 4): sema goci YALNIZ motor sureciyle (yazar, premigrate yedegi) yapilir; okuyucular (saglik, ders, sapma,
+# karsi-olgu, telegram, pano) salt okunur acar ve gocu calistirmaz. Bu yuzden kod degistiyse calisan motorlar sonda yeniden
+# baslatilir. Eski kodun HEAD'i yeniden-calistirmada (exec) kaybolmasin diye ortamda tasinir.
+CODE_CHANGED=0
+if [ -d "$REPO_DIR/.git" ]; then
+  OLD_HEAD="${TRADER_OLD_HEAD:-$(as_trader git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)}"
+  export TRADER_OLD_HEAD="$OLD_HEAD"
+else
+  OLD_HEAD=""
+fi
 if [ -d "$REPO_DIR/.git" ]; then
   as_trader git -C "$REPO_DIR" fetch --quiet origin "$BRANCH"
   as_trader git -C "$REPO_DIR" checkout --quiet "$BRANCH" 2>/dev/null || as_trader git -C "$REPO_DIR" checkout --quiet -b "$BRANCH" "origin/$BRANCH"
@@ -112,6 +122,8 @@ else
     || fail "Depo indirilemedi. Depo ozelse deploy anahtari gerekir: bkz. trader/docs/sunucu-kurulum.md"
 fi
 [ -d "$TRADER_DIR/deploy" ] || fail "$TRADER_DIR/deploy yok; dal/depo adi yanlis olabilir."
+NEW_HEAD="$(as_trader git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" != "$NEW_HEAD" ]; then CODE_CHANGED=1; fi
 # Bash calisan betigi bellekte eski haliyle surdurur; depo guncellemesi install.sh'i degistirdiyse yeni surumle bastan calistir (bir kez).
 NEW_SELF="$TRADER_DIR/deploy/install.sh"
 if [ -z "${TRADER_INSTALL_REEXEC:-}" ] && [ -f "$NEW_SELF" ] && [ "$(sha256sum "$NEW_SELF" | cut -d" " -f1)" != "$SELF_SUM_AT_START" ]; then
@@ -246,6 +258,11 @@ has_value() { # dosyada ANAHTAR= bos degilse 0
   grep -Eq "^$2=[^[:space:]]+" "$1" 2>/dev/null
 }
 MISSING=()
+# kod degistiyse yeniden baslatilacak, su an CALISAN motor birimleri (enable_now'dan once alinir; yeni acilanlar zaten yeni kodla baslar)
+ACTIVE_ENGINES=""
+if [ "$CODE_CHANGED" -eq 1 ]; then
+  ACTIVE_ENGINES="$(systemctl list-units 'trader-engine@*.service' 'trader-engine-testnet.service' --state=active --no-legend --plain 2>/dev/null | awk '{print $1}' || true)"
+fi
 enable_now() { systemctl enable --now "$1" >/dev/null 2>&1 && echo "Etkin: $1" || echo "UYARI: $1 baslatilamadi (systemctl status $1)"; }
 
 enable_now trader-feed.service     # veri akisi once: motor kural + taze veri gormeden baslamaz (acilis kapisi)
@@ -264,6 +281,14 @@ enable_now trader-drift@learner.timer; drift_first_run learner   # gunluk sapma 
 enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23:10 UTC); defter/market salt okunur, var/<bot>/counterfactual.sqlite tek yazar
 if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-counterfactual@twin.timer; enable_now trader-drift@twin.timer; drift_first_run twin; fi
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
+
+# WP-3: motor (yazar) yeni kodla yeniden baslar => defter sema gocu motor icinde, premigrate yedegiyle olur
+if [ "$CODE_CHANGED" -eq 1 ] && [ -n "$ACTIVE_ENGINES" ]; then
+  say "Kod degisti: calisan motorlar yeniden baslatiliyor (defter sema gocu motor icinde yapilir)"
+  for u in $ACTIVE_ENGINES; do
+    systemctl restart "$u" >/dev/null 2>&1 && echo "Yeniden baslatildi: $u" || echo "UYARI: $u yeniden baslatilamadi (systemctl status $u)"
+  done
+fi
 
 TG_OK=0
 if has_value /etc/trader-telegram.env TELEGRAM_BOT_TOKEN && has_value /etc/trader-telegram.env TELEGRAM_CHAT_ID; then

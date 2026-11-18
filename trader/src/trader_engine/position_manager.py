@@ -8,6 +8,7 @@ from typing import Literal
 
 import numpy as np
 
+from trader_core import ledger as _ledger
 from trader_core import risk, signals
 
 from .bars import floor_tf
@@ -180,17 +181,75 @@ def close_position(pos: Position, closed: ClosedTrade) -> Position:
 
 
 # ---------------------------------------------------------------------- ledger yukleri
-def build_trade_entry(pos: Position) -> dict:
-    return {"trade_id": pos.trade_id, "decision_id": pos.decision_id, "entry_ts": iso_z(pos.entry_ts),
-            "entry_price": pos.entry_price, "qty": pos.qty, "leverage": pos.leverage, "fee_entry": pos.fee_entry}
+# WP-3 (defter-ek-alanlar 3.1/3.4): olcum alanlari. Yalniz kayit; hicbir karar bunlari okumaz.
+_EXEC_GROUPS = (("order_ts", "order_ack_ts"), ("order_ref_price", "order_ref_spread", "order_ref_src"),
+                ("decision_price",), ("exit_regime",))
 
 
-def build_trade_exit(pos: Position, closed: ClosedTrade, excursion_tf: str | None = None) -> dict:
+def exec_fields(role: str, meta: dict | None, fill: Fill | None, order_row) -> dict:
+    """Saf yardimci: dolum icin ham olcum alanlari (datetime'lar ham). `role` 'entry' | 'exit'.
+    `meta` bellekteki `exec_meta[client_id]` (yoksa None), `order_row` kalici emir satiri (yoksa None).
+    Dinlenen emirle (stop/hedef) ya da likidasyonla gelen cikista hicbir emir-ani alani yoktur."""
+    out: dict = {}
+    if fill is not None and role == "exit" and fill.reason != "market":
+        return out
+    ots = (meta or {}).get("order_ts")
+    if ots is None and order_row is not None:
+        ots = getattr(order_row, "created_ts", None)
+    if ots is not None:
+        out["order_ts"] = ots
+        ack = (meta or {}).get("order_ack_ts")
+        if ack is not None:
+            out["order_ack_ts"] = ack
+    m = meta or {}
+    if m.get("order_ref_price") is not None:
+        out["order_ref_price"] = m["order_ref_price"]
+        out["order_ref_src"] = m.get("order_ref_src", "book")
+        if m.get("order_ref_spread") is not None:
+            out["order_ref_spread"] = m["order_ref_spread"]
+    elif fill is not None and getattr(fill, "ref_price", None) is not None:
+        out["order_ref_price"] = fill.ref_price
+        out["order_ref_src"] = "sim_open"
+    return out
+
+
+def exec_payload(raw: dict | None) -> tuple[dict, int]:
+    """Ham alanlari `clean_exec_fields`'ten gecirir; JSON'a uygun (ISO-Z) yuk ve dusurulen grup sayisi dondurur.
+    Hicbir girdide istisna atmaz: hata = bos yuk (olcum NULL)."""
+    if not raw:
+        return {}, 0
+    try:
+        clean = _ledger.clean_exec_fields(raw)
+        dropped = sum(1 for g in _EXEC_GROUPS
+                      if any(raw.get(k) is not None for k in g) and all(clean[k] is None for k in g))
+        out = {}
+        for k, v in clean.items():
+            if v is None:
+                continue
+            out[k] = iso_z(v) if isinstance(v, datetime) else v
+        return out, dropped
+    except Exception:  # noqa: BLE001 - olcum kaydi hicbir zaman islemi durdurmaz
+        return {}, 1
+
+
+def build_trade_entry(pos: Position, ex: dict | None = None) -> dict:
+    d = {"trade_id": pos.trade_id, "decision_id": pos.decision_id, "entry_ts": iso_z(pos.entry_ts),
+         "entry_price": pos.entry_price, "qty": pos.qty, "leverage": pos.leverage, "fee_entry": pos.fee_entry}
+    if ex:
+        d.update(ex)
+    return d
+
+
+def build_trade_exit(pos: Position, closed: ClosedTrade, excursion_tf: str | None = None,
+                     ex: dict | None = None) -> dict:
     mfp, mapr = closed.max_favorable_price, closed.max_adverse_price
     tf = (excursion_tf or closed.excursion_tf) if (mfp is not None and mapr is not None) else None
     if tf is None:
         mfp = mapr = None
-    return {"trade_id": closed.trade_id, "exit_ts": iso_z(closed.exit_ts), "exit_price": closed.exit_price,
-            "exit_reason": closed.exit_reason, "planned_exit": closed.planned_exit, "fee_exit": closed.fee_exit,
-            "funding_paid": closed.funding_paid, "max_favorable_price": mfp, "max_adverse_price": mapr,
-            "excursion_tf": tf}
+    d = {"trade_id": closed.trade_id, "exit_ts": iso_z(closed.exit_ts), "exit_price": closed.exit_price,
+         "exit_reason": closed.exit_reason, "planned_exit": closed.planned_exit, "fee_exit": closed.fee_exit,
+         "funding_paid": closed.funding_paid, "max_favorable_price": mfp, "max_adverse_price": mapr,
+         "excursion_tf": tf}
+    if ex:
+        d.update(ex)
+    return d

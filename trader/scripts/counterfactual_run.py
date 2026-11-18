@@ -40,6 +40,30 @@ def _parse_since(s: str | None):
     return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
 
 
+def _read_v3_skipped(path: str, bot: str, since) -> list:
+    """Sema 3 dosya (goc henuz olmadi): `v_decisions` salt okunur ham SQL ile okunur. Baska surum ya da bozuk dosya
+    `LedgerSchemaError` olarak yukselir (bozulmus calisma)."""
+    import sqlite3
+    from urllib.parse import quote
+    try:
+        c = sqlite3.connect("file:" + quote(os.path.abspath(path)) + "?mode=ro", uri=True, timeout=5.0)
+        c.row_factory = sqlite3.Row
+        try:
+            if c.execute("PRAGMA user_version").fetchone()[0] != 3:
+                raise L.LedgerSchemaError("sema surumu 3 degil")
+            sql = "SELECT * FROM v_decisions WHERE bot=? AND final_action='skipped'"
+            args: list = [bot]
+            if since is not None:
+                sql += " AND bar_close_ts>=?"
+                args.append(L._fmt_ts(since))
+            sql += " ORDER BY bar_close_ts, id"
+            return [L.Ledger._decision_from(r) for r in c.execute(sql, args).fetchall()]
+        finally:
+            c.close()
+    except sqlite3.Error as e:
+        raise L.LedgerSchemaError(f"sema 3 defter okunamadi: {e}") from e
+
+
 def main(argv=None, *, now_fn=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--bot", required=True, choices=("learner", "twin"))
@@ -64,11 +88,16 @@ def main(argv=None, *, now_fn=None) -> int:
         print(json.dumps({"bot": args.bot, "status": "no_ledger"}))
         return EXIT_OK
     try:
-        led = L.open_ledger(ledger_path, args.bot, create=False, read_only=True, migrate=False)
+        shadows: list = []
         try:
-            decisions = led.list_decisions(since_ts=since, final_action="skipped")
-        finally:
-            led.close()
+            led = L.open_ledger(ledger_path, args.bot, create=False, read_only=True, migrate=False)
+            try:
+                decisions = led.list_decisions(since_ts=since, final_action="skipped")
+                shadows = led.list_shadow(since_ts=since)           # WP-3 7: sema 4; ayri tablo, ayri sonuc
+            finally:
+                led.close()
+        except L.LedgerSchemaError:
+            decisions = _read_v3_skipped(ledger_path, args.bot, since)   # gecis donemi: sema 3 defter okunur, golge adimi atlanir
         if args.dry_run:                                    # dry-run: depoya yazilmaz (yoksa bos bellek deposu)
             store = CF.CounterfactualStore(out_path, read_only=True) if os.path.exists(out_path) \
                 else CF.CounterfactualStore(":memory:")
@@ -77,13 +106,15 @@ def main(argv=None, *, now_fn=None) -> int:
         try:
             r = CF.run_once(bot=args.bot, decisions=decisions, market_path=market_path, store=store, now=now,
                             dry_run=args.dry_run)
+            sr = CF.run_shadow(bot=args.bot, shadows=shadows, market_path=market_path, store=store, now=now,
+                               dry_run=args.dry_run) if shadows else CF.ShadowRunResult()
         finally:
             store.close()
     except (CF.CounterfactualError, L.LedgerError) as e:
         log.error("bozulmus calisma: %s", getattr(e, "code", type(e).__name__))
         print(json.dumps({"bot": args.bot, "status": "degraded", "code": getattr(e, "code", type(e).__name__)}))
         return EXIT_DEGRADED
-    print(json.dumps({"bot": args.bot, "status": "ok", "dry_run": args.dry_run, **vars(r)}))
+    print(json.dumps({"bot": args.bot, "status": "ok", "dry_run": args.dry_run, **vars(r), **vars(sr)}))
     return EXIT_OK
 
 

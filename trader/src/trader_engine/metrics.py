@@ -155,3 +155,62 @@ def compute_metrics(trades: pd.DataFrame, *, wallet_start: float, slip_bps: floa
 
 def is_finite(x) -> bool:
     return isinstance(x, (int, float)) and math.isfinite(x)
+
+
+# ---------------------------------------------------------------------- WP-3: anlik degerli dusus (6.3)
+# Saf islevler; `max_drawdown` ve `compute_metrics` DOKUNULMAZ.
+def _dd_core(equity, low, start: float) -> dict:
+    eq = np.asarray(equity, dtype=float)
+    lw = np.asarray(low, dtype=float)
+    n = len(eq)
+    out = dict(max_dd_mtm_abs=0.0, max_dd_mtm_pct=0.0, max_dd_mtm_low_abs=0.0, max_dd_mtm_low_pct=0.0,
+               max_underwater_steps=0, _peak=0, _trough=0, _low_peak=0, _low_trough=0)
+    if n == 0:
+        return out
+    curve = np.concatenate([[float(start)], eq])
+    peak = np.maximum.accumulate(curve)
+    dd = peak - curve
+    k = int(np.argmax(dd))
+    if dd[k] > 0:
+        out["max_dd_mtm_abs"] = float(dd[k])
+        out["max_dd_mtm_pct"] = float(dd[k] / peak[k] * 100.0)
+        out["_peak"] = int(np.argmax(curve[:k + 1]))
+        out["_trough"] = k
+    ddl = peak[:n] - lw
+    i = int(np.argmax(ddl))
+    if ddl[i] > 0:
+        out["max_dd_mtm_low_abs"] = float(ddl[i])
+        out["max_dd_mtm_low_pct"] = float(ddl[i] / peak[i] * 100.0)
+        out["_low_peak"] = int(np.argmax(curve[:i + 1]))
+        out["_low_trough"] = i
+    run = best = 0
+    for under in (curve < peak):
+        run = run + 1 if under else 0
+        best = max(best, run)
+    out["max_underwater_steps"] = int(best)
+    return out
+
+
+def drawdown_stats(equity, low, start: float) -> dict:
+    """Oz varlik egrisi dususu. `equity[i]`, `low[i]` ayni uzunlukta; `curve = [start] + equity`.
+    Kapanis bazli: peak - curve; dip bazli: (i. aralik baslamadan onceki tepe) - low[i]; en uzun suda kalma."""
+    c = _dd_core(equity, low, start)
+    return {k: c[k] for k in ("max_dd_mtm_abs", "max_dd_mtm_pct", "max_dd_mtm_low_abs", "max_dd_mtm_low_pct",
+                              "max_underwater_steps")}
+
+
+def drawdown_locations(equity, low, start: float) -> dict:
+    """`drawdown_stats` ile ayni tanim; en kotu dususun tepe/dip indisleri (egri indisi: 0 = baslangic, j>0 = equity[j-1];
+    dip bazli dip indisi `low` aralik indisidir)."""
+    c = _dd_core(equity, low, start)
+    return {"peak_idx": c["_peak"], "trough_idx": c["_trough"], "low_peak_idx": c["_low_peak"],
+            "low_trough_idx": c["_low_trough"]}
+
+
+def max_consecutive_losses(realized_pnl_by_exit_order) -> int:
+    """`< 0` olan en uzun ardisik dizi (0 kayip degildir)."""
+    run = best = 0
+    for x in realized_pnl_by_exit_order:
+        run = run + 1 if x < 0 else 0
+        best = max(best, run)
+    return int(best)
