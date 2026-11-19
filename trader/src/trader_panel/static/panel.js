@@ -8,7 +8,7 @@
   'use strict';
   var TOP_MS = 10000, TAB_MS = 30000;                       // spec §10.8: ust serit 10 sn, gerisi 30 sn
   var TABS = [['ozet', 'ÖZET'], ['pozisyonlar', 'POZİSYONLAR'], ['islemler', 'İŞLEMLER'], ['butce', 'BÜTÇE'],
-              ['ders', 'DERS'], ['ogrenme', 'ÖĞRENME'], ['saglik', 'SAĞLIK']];
+              ['ders', 'DERS'], ['ogrenme', 'ÖĞRENME'], ['dogrulama', 'DOĞRULAMA'], ['saglik', 'SAĞLIK']];
   var BOT_AD = {learner: 'öğrenen'};
   var S = {bot: 'learner', tab: 'ozet', status: null, conn: true, gen: null, day: null, trades: null};
   var $ = function (i) { return document.getElementById(i); };
@@ -498,6 +498,45 @@
     });
   }
 
+  function tabDogrulama(root) {
+    clear(root);
+    var pt = panel('Tutarlılık (kâğıt – geri test, haftalık)', ''), pp = panel('PBO / Holdout', ''), ig = el('div', 'ig');
+    add(ig, pt, pp); add(root, ig);
+    get('/api/tutarlilik').then(function (t) {
+      clear(pt._body);
+      if (!t.ok) { add(pt._body, nodata(t.code)); return; }
+      if (!t.var) { add(pt._body, el('div', 'yok', 'rapor yok' + (t.neden ? ' (' + t.neden + ')' : ''))); return; }
+      pt._right.textContent = t.uyari ? 'UYARI' : 'uyarı yok';
+      var dn = t.donem || {};
+      add(pt._body, row('Dönem', (dn.bas ? tsi(dn.bas).slice(0, 10) : '—') + ' → ' + (dn.bit ? tsi(dn.bit).slice(0, 10) : '—')),
+        row('Üretim', tsi(t.uretim) + ' TSİ'));
+      if (t.uyari) add(pt._body, el('div', 'uyari', 'Tutarlılık sapması: ' + (t.uyari_nedenleri || []).join('; ')));
+      add(pt._body, table(['Kurulum', 'Eşleşme', 'Giriş kayma (bps)', 'Çıkış kayma (bps)', 'Kâğıt R', 'Geri test R', 'Uyarı'],
+        t.kurulumlar.map(function (k) {
+          return [k.ad, {t: pct(k.eslesme_orani, 1), v: k.eslesme_orani}, sgn(k.giris_kayma_bps_ort, 1), sgn(k.cikis_kayma_bps_ort, 1),
+                  sgn(k.kagit_R), sgn(k.bt_R), {t: k.uyari.length ? 'evet' : '—', c: k.uyari.length ? 'kotu' : ''}];
+        }), {right: [1, 2, 3, 4, 5]}));
+      if (t.not) add(pt._body, el('div', 'yok', t.not));
+    });
+    get('/api/pbo').then(function (r) {
+      clear(pp._body);
+      if (!r.ok) { add(pp._body, nodata(r.code)); return; }
+      var m = r.muhur || {}, p = r.pbo || {};
+      if (m.var) {
+        pp._right.textContent = m.acildi === true ? 'holdout AÇILDI' : (m.acildi === false ? 'holdout mühürlü' : 'mühür');
+        add(pp._body, row('Mühür tarihi', m.muhur_tarihi ? tsi(m.muhur_tarihi) + ' TSİ' : '—'),
+          row('Mühürlü dosya', m.dosya_sayisi === null ? '—' : String(m.dosya_sayisi)),
+          row('Açıldı', m.acildi === null ? '—' : (m.acildi ? 'evet' : 'hayır'), m.acildi ? 'kotu' : ''));
+        if (m.hash12) add(pp._body, row('Özet (ilk 12)', m.hash12));
+      } else add(pp._body, el('div', 'yok', 'mühür dosyası yok' + (m.neden ? ' (' + m.neden + ')' : '')));
+      if (!p.var) { add(pp._body, el('div', 'yok', 'PBO raporu yok' + (p.neden ? ' (' + p.neden + ')' : ''))); return; }
+      add(pp._body, table(['Aile', 'PBO', 'DSR', 'Yapılandırma', 'T', 'Durum'], p.aileler.map(function (a) {
+        return [a.aile, {t: f2(a.pbo, 3), v: a.pbo}, {t: f2(a.dsr, 3), v: a.dsr}, {t: a.n_yapilandirma === null ? '—' : String(a.n_yapilandirma), v: a.n_yapilandirma},
+                {t: a.T === null ? '—' : String(a.T), v: a.T}, a.yorum || a.durum];
+      }), {right: [1, 2, 3, 4]}));
+    });
+  }
+
   function tabSaglik(root) {
     clear(root);
     var p = panel('Sağlık', ''), ps = panel('Süreç / kaynak', ''), ig = el('div', 'ig');
@@ -524,7 +563,7 @@
     });
   }
 
-  var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, ogrenme: tabOgrenme, saglik: tabSaglik};
+  var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, ogrenme: tabOgrenme, dogrulama: tabDogrulama, saglik: tabSaglik};
 
   /* ---------- sekme rozetleri (2026-11-18): acik pozisyon, kapanan islem, bekleyen ders, acik uyari ---------- */
   function badge(t, n, kotu) {

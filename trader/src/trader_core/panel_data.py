@@ -577,3 +577,96 @@ def learning_view(ledger_path: str, budget_config: str, now: datetime, *, paper_
         out["budget"] = {"code": e.code}
     out["weekly_summary"] = _latest_weekly(ledger_path) if ledger_path else None
     return out
+
+
+# ---- tutarlilik (kagit-geri test) ve PBO / holdout muhru: salt okunur, eksik/bozuk dosya paneli bozmaz ----
+TUTARLILIK_MAX_AGE_DAYS = 8              # docs/motor/tutarlilik-raporu-spec.md: 8 gunden eski rapor = "rapor yok"
+_TUT_FIELDS = ("kagit_islem", "bt_islem", "eslesme_orani", "yalniz_kagit", "yalniz_bt", "giris_kayma_bps_ort",
+               "cikis_kayma_bps_ort", "kagit_R", "bt_R", "kagit_pnl", "bt_pnl")
+
+
+def _fnum(x: Any) -> float | int | None:
+    if isinstance(x, bool) or not isinstance(x, (int, float)):
+        return None
+    return x if math.isfinite(x) else None
+
+
+def _read_json_obj(path: str) -> tuple[dict | None, str | None]:
+    if not path:
+        return None, "yapilandirma_yok"
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "dosya_yok"
+    except OSError:
+        return None, "okunamadi"
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return None, "bozuk"
+    return (d, None) if isinstance(d, dict) else (None, "bozuk")
+
+
+def tutarlilik_view(path: str, now: datetime) -> dict:
+    """`var/durum/tutarlilik_v1.json` ozeti. Yok/bozuk/bayat -> {"var": False, "neden": kod}; asla SectionError atmaz."""
+    d, err = _read_json_obj(path)
+    if d is None:
+        return {"var": False, "neden": err}
+    if d.get("sema") != "ml.tutarlilik.v1":
+        return {"var": False, "neden": "sema_yanlis"}
+    made = parse_z(d.get("uretim"))
+    if made is None:
+        return {"var": False, "neden": "uretim_yok"}
+    age_s = (now - made).total_seconds()
+    if age_s > TUTARLILIK_MAX_AGE_DAYS * 86400:
+        return {"var": False, "neden": "bayat", "uretim": fmt_z(made), "yas_gun": round(age_s / 86400, 1)}
+    reasons = [str(x)[:200] for x in d.get("uyari_nedenleri") or [] if isinstance(x, (str, int, float))][:50] \
+        if isinstance(d.get("uyari_nedenleri"), list) else []
+    rows = []
+    for k in (d.get("kurulumlar") if isinstance(d.get("kurulumlar"), list) else [])[:100]:
+        if not isinstance(k, Mapping):
+            continue
+        ad = str(k.get("ad", "?"))[:40]
+        r = {"ad": ad, **{f: _fnum(k.get(f)) for f in _TUT_FIELDS}}
+        r["uyari"] = [x for x in reasons if ad in x]
+        rows.append(r)
+    donem = d.get("donem") if isinstance(d.get("donem"), Mapping) else {}
+    note = d.get("not")
+    return {"var": True, "uretim": fmt_z(made), "yas_gun": round(age_s / 86400, 1),
+            "donem": {"bas": str(donem.get("bas"))[:32] if donem.get("bas") else None,
+                      "bit": str(donem.get("bit"))[:32] if donem.get("bit") else None},
+            "kurulumlar": rows, "uyari": bool(d.get("uyari")), "uyari_nedenleri": reasons,
+            "not": note[:500] if isinstance(note, str) else None}
+
+
+def pbo_view(pbo_path: str, muhur_path: str) -> dict:
+    """`research/holdout/pbo_ozet.json` aile tablosu + `muhur.json` muhur durumu (hash en cok ilk 12 karakter)."""
+    out: dict = {"pbo": {"var": False}, "muhur": {"var": False}}
+    d, err = _read_json_obj(pbo_path)
+    if d is None:
+        out["pbo"]["neden"] = err
+    else:
+        fams = []
+        for a in (d.get("aileler") if isinstance(d.get("aileler"), list) else [])[:50]:
+            if not isinstance(a, Mapping):
+                continue
+            fams.append({"aile": str(a.get("aile", "?"))[:60], "tur": str(a.get("tur", ""))[:16],
+                         "pbo": _fnum(a.get("pbo")), "dsr": _fnum(a.get("dsr")),
+                         "n_yapilandirma": _fnum(a.get("n_yapilandirma")), "T": _fnum(a.get("T")),
+                         "durum": str(a.get("durum", ""))[:24], "yorum": str(a.get("yorum") or "")[:128]})
+        par = d.get("parametreler") if isinstance(d.get("parametreler"), Mapping) else {}
+        out["pbo"] = {"var": True, "aileler": fams,
+                      "holdout_oncesi_sinir": str(par.get("holdout_oncesi_sinir"))[:16] if par.get("holdout_oncesi_sinir") else None}
+    m, err = _read_json_obj(muhur_path)
+    if m is None:
+        out["muhur"]["neden"] = err
+    else:
+        ho = m.get("holdout") if isinstance(m.get("holdout"), Mapping) else {}
+        h = m.get("birlesik_sha256")
+        out["muhur"] = {"var": True, "muhur_tarihi": str(m.get("muhur_tarihi"))[:32] if m.get("muhur_tarihi") else None,
+                        "dosya_sayisi": _fnum(m.get("dosya_sayisi")),
+                        "acildi": bool(m.get("acildi")) if "acildi" in m else None,
+                        "baslangic": str(ho.get("baslangic"))[:16] if ho.get("baslangic") else None,
+                        "bitis": str(ho.get("bitis"))[:16] if ho.get("bitis") else None,
+                        "hash12": h[:12] if isinstance(h, str) else None}
+    return out
