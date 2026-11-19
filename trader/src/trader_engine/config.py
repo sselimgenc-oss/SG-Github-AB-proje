@@ -593,16 +593,52 @@ def absolutize_kill_file(cfg: EngineConfig, base_path: Any) -> EngineConfig:
     return absolutize_paths(cfg, base_path)
 
 
+UNIVERSE_FILE = Path("var") / "universe" / "paper_pairs.json"   # DD-12 WP-16: aylik evren kaplamasi (yalniz paper)
+
+
+def apply_universe_overlay(raw: Mapping[str, Any], universe_path: Any) -> dict[str, Any]:
+    """DD-12 WP-16 (D-T28): `universe_path` varsa VE mode == 'paper' ise pairs/optional_pairs yerine kaplama dosyasini koyar.
+    testnet/live/backtest bu dosyayi HIC okumaz. Dosya bozuk/gecersizse ConfigError (sessiz geri donus yok). Kaplama
+    cikarilan ciftleri kume uyelerinden ve cost_overrides'tan temizler; ml_pairs listesi korunur (dogrulama yakalar)."""
+    if universe_path is None or raw.get("mode") != "paper":
+        return dict(raw)
+    p = Path(universe_path)
+    if not p.is_file():
+        return dict(raw)
+    from trader_core.universe import validate_overlay
+    try:
+        ov = validate_overlay(json.loads(p.read_text(encoding="utf-8")))
+    except (OSError, ValueError) as e:
+        raise ConfigError(f"evren kaplamasi gecersiz ({p}): {e}") from e
+    out = dict(raw)
+    pairs = tuple(ov["pairs"])
+    out["pairs"] = list(pairs)
+    out["optional_pairs"] = list(ov["optional_pairs"])
+    if isinstance(raw.get("clusters"), Mapping):
+        cl = {}
+        for name, spec in raw["clusters"].items():
+            members = [x for x in spec.get("pairs", []) if x in pairs]
+            if members:
+                cl[name] = {**spec, "pairs": members}
+        out["clusters"] = cl
+    if isinstance(raw.get("cost_overrides"), Mapping):
+        out["cost_overrides"] = {k: v for k, v in raw["cost_overrides"].items() if k in pairs}
+    return out
+
+
 def load_engine_config(base_path: Any, bot_path: Any = None, *,
-                       env: Mapping[str, str] | None = None, overlay_path: Any = None) -> EngineConfig:
+                       env: Mapping[str, str] | None = None, overlay_path: Any = None,
+                       universe_path: Any = None) -> EngineConfig:
     """base (+ bot) (+ overlay) JSON birlestirir ve dogrular. LIVE_CONFIRM (11 §3.1) burada YALNIZ `env=` acikca
     verildiyse denetlenir; kosu yolu (cli run / build_engine) check_live_confirm'i kendisi cagirir
-    (kill/pause/init-ledger/reconcile/backtest live yapilandirmada LIVE_CONFIRM istemez)."""
+    (kill/pause/init-ledger/reconcile/backtest live yapilandirmada LIVE_CONFIRM istemez).
+    `universe_path` (WP-16): yalniz mode='paper' iken uygulanan evren kaplamasi."""
     merged = _read(base_path)
     if bot_path is not None:
         merged = deep_merge(merged, _read(bot_path))
     if overlay_path is not None:
         merged = deep_merge(merged, _read(overlay_path))
+    merged = apply_universe_overlay(merged, universe_path)
     cfg = _validate(merged)
     if env is not None:
         check_live_confirm(cfg, env)
@@ -631,5 +667,7 @@ def load_cli_config(config_dir: Any, bot: str = "learner", env: str | None = Non
     `smoke_live --live-overlay`) verilirse `engine.<env>.json` yerine o katman kullanilir."""
     d = Path(config_dir)
     overlay = overlay_path if overlay_path is not None else (d / f"engine.{env}.json" if env else None)
-    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay)
+    universe = d.parent / UNIVERSE_FILE if (d.name == "config") else d / UNIVERSE_FILE
+    cfg = load_engine_config(d / "engine.base.json", d / f"engine.{bot}.json", overlay_path=overlay,
+                             universe_path=universe)
     return absolutize_paths(cfg, d / "engine.base.json")

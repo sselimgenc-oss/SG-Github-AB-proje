@@ -130,7 +130,7 @@ def test_every_unit_handled_by_install():
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-telegram-report.service", "trader-engine@.service",
                         "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service",
-                        "trader-oi.service", "trader-drift@.service", "trader-notes.service", "trader-weekly-summary.service", "trader-ml-retrain.service",
+                        "trader-oi.service", "trader-drift@.service", "trader-notes.service", "trader-weekly-summary.service", "trader-ml-retrain.service", "trader-universe.service",
                         "trader-engine-live.service", "trader-engine-env-retry@.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil)
     for u in UNITS:
         if u.name == "trader-engine@.service":
