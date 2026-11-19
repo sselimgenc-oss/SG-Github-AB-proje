@@ -803,6 +803,23 @@ def exitcf_view(path: str, now: datetime, bekleyen: list[str] | None = None) -> 
             "son_kosu_v1": last["v1"], "son_kosu_v2": last["v2"]}
 
 
+def haber_sonuc_view(path: str) -> dict:
+    """`var/durum/haber_sonuc_v1.json` (`ml.haber_sonuc.v1`, haber_sonuc.py yazar): yalniz bicim, yeni hesap yok.
+    Yok/bozuk/sema yanlis/islem yok -> {"var": False, "neden": kod}; asla istisna atmaz."""
+    try:
+        d, err = _read_json_obj(path)
+        if d is None:
+            return {"var": False, "neden": err}
+        if d.get("sema") != "ml.haber_sonuc.v1" or not isinstance(d.get("tablolar"), dict) or not isinstance(d.get("tum_zamanlar"), dict):
+            return {"var": False, "neden": "sema_yanlis"}
+        if not any(d[k].get(a) for k in ("tablolar", "tum_zamanlar") for a in ("duygu", "haber_ton")):
+            return {"var": False, "neden": "kayit_yok"}
+        return {"var": True, "uretim": d.get("uretim"), "pencere_gun": d.get("pencere_gun"), "tablolar": d["tablolar"],
+                "tum_zamanlar": d["tum_zamanlar"], "notlar": d.get("notlar") if isinstance(d.get("notlar"), list) else []}
+    except Exception:  # noqa: BLE001
+        return {"var": False, "neden": "okunamadi"}
+
+
 def haber_view(path: str, now: datetime) -> dict:
     """`var/durum/haber_v1.json` onbellegi: Korku-Acgozluluk degeri + sinifi, en cok anilan <=3 coin ve tonu, onbellek yasi.
     Yok/bozuk/bayat -> {"var": False, "neden": kod}; asla istisna atmaz."""

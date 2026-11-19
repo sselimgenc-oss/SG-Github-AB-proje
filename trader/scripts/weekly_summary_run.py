@@ -22,6 +22,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import budget as _budget  # noqa: E402
+from trader_core import haber_sonuc as HS  # noqa: E402
 from trader_core import ledger as L  # noqa: E402
 from trader_core import lesson as LS  # noqa: E402
 
@@ -78,6 +79,25 @@ def tutarlilik_satiri(env, now: datetime, durum_path=None) -> str:
     return f"Tutarlılık: eşleşme {oran}, ΣR farkı {dr:+.1f}R; {uy}".replace(".", ",")
 
 
+def haber_sonuc_uret(env, lp: str, now: datetime, yol=None) -> str:
+    """Haber x sonuc raporunu yazar (`var/durum/haber_sonuc_v1.json`, atomik) ve haftalik 1 satiri doner. Yalniz bilgi: her hata yutulur
+    (ozeti/LLM'i asla engellemez); hata ya da yazma yetkisi yoksa satir 'henüz veri yok'."""
+    yok = "Haber×sonuç: henüz veri yok"
+    p = Path(yol) if yol else _data_root(env) / "var" / "durum" / HS.DOSYA
+    try:
+        led = L.open_ledger(lp, "learner", create=False, read_only=True, migrate=False)
+    except Exception:  # noqa: BLE001
+        return yok
+    try:
+        return HS.telegram_satiri(HS.yaz(led, now, p))
+    except Exception:  # noqa: BLE001
+        return yok
+    finally:
+        close = getattr(led, "close", None)
+        if close:
+            close()
+
+
 def build_input(ledger, since: str, until: str) -> tuple[dict, str]:
     notes = [n for n in ledger.list_trade_notes() if since <= n["note_date"] <= until]
     tags = Counter(t for n in notes for t in n["tags"])
@@ -129,10 +149,11 @@ def main(argv=None, *, llm=None, budget=None, now_fn=None, env=None) -> int:
         except Exception as e:  # noqa: BLE001
             log.warning("LLM istemcisi kurulamadi: %s", LS.scrub(e))
             llm = None
+    lp = _resolve(args.ledger or env.get("LEDGER_PATH") or "var/learner/ledger.sqlite")
+    hs_satir = haber_sonuc_uret(env, lp, now)          # LLM'den bagimsiz: JSON anahtarsiz da yazilir
     if llm is None:
         print(json.dumps({"status": "noop", "reason": "no_api_key"}))
         return 0
-    lp = _resolve(args.ledger or env.get("LEDGER_PATH") or "var/learner/ledger.sqlite")
     out_dir = Path(_resolve(args.out_dir) if args.out_dir else str(Path(lp).with_name("weekly_summaries")))
     out = out_dir / f"{week_key(day)}.md"
     if out.exists() and not args.force:
@@ -178,7 +199,7 @@ def main(argv=None, *, llm=None, budget=None, now_fn=None, env=None) -> int:
         satir = tutarlilik_satiri(env, now)
     except Exception:  # noqa: BLE001  (bilgi satiri ozeti asla bozmaz)
         satir = "Tutarlılık: rapor yok"
-    out.write_text(f"# Haftalik ozet {week_key(day)}\n\n{text}\n\n{satir}\n", encoding="utf-8")
+    out.write_text(f"# Haftalik ozet {week_key(day)}\n\n{text}\n\n{satir}\n{hs_satir}\n", encoding="utf-8")
     print(json.dumps({"status": "ok", "week": week_key(day), "file": str(out), "notes": stats["not_sayisi"]}))
     return 0
 

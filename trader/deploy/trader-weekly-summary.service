@@ -18,6 +18,6 @@ CPUQuota=30%
 Nice=10
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/trader/user_data -/opt/trader/var/learner -/opt/trader/var-live/learner
+ReadWritePaths=/opt/trader/user_data -/opt/trader/var/learner -/opt/trader/var-live/learner -/opt/trader/var/durum
 NoNewPrivileges=true
 PrivateTmp=true
