@@ -26,6 +26,12 @@ from trader_engine.types import MinuteBar, OrderRequest, SymbolRules
 ROOT = Path(__file__).resolve().parents[2]
 UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
+# 19 Kasim: r03 kagitta emekli (kullanici karari). r03 kod yolu (evren filtresi, uctan uca) eski paper ML anahtarlariyla
+# PAPER_R03 uzerinden test edilir; kagit yapilandirmasinin kendisi artik ML kapali.
+R03_PAIRS = ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "TRX/USDT",
+             "LINK/USDT", "AVAX/USDT")
+PAPER_R03 = apply_overrides(PAPER, ml_mode="active", ml_features="r03", ml_experimental=True, ml_pairs=R03_PAIRS,
+                            ml_model_path=str(ROOT / "models/ml1-r03.json"))
 
 
 # --------------------------------------------------------------------------- strateji
@@ -44,13 +50,14 @@ def test_registry_full_ml_info():
     s = get_strategy("price_action_v1_full_ml", mode="paper", ml_mode="active")
     assert s.info.name == "price_action_v1_full_ml" and s.info.paper_allowed
     assert s.info.setups == ("T1", "R1") and s.ml_mode == "active" and s.fail_open
-    assert PAPER.strategy == "price_action_lab_ml" and PAPER.ml_mode == "active"
+    assert PAPER.strategy == "price_action_lab_ml" and PAPER.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli
+    assert PAPER_R03.ml_mode == "active" and PAPER_R03.ml_features == "r03"
 
 
 def test_universe_filter_and_no_model_passthrough():
     s = make_v1_full_ml()
     s.set_ml_mode("active")
-    s.set_ml_universe(PAPER.ml_pairs)
+    s.set_ml_universe(PAPER_R03.ml_pairs)
     # evren ici, esik alti -> elenir
     r = s.post_filter(_row(p=0.1), _ctx("BTC/USDT"))
     assert not r["signal"] and r["skip_reason"] == "ml_filter"
@@ -274,7 +281,7 @@ def _cfg(tmp: Path, pairs):
                 "hisse": {"pairs": ["NVDA/USDT"], "max_positions": 5},
                 "hisse_teknoloji": {"pairs": ["NVDA/USDT"], "max_positions": 3}}
     return apply_overrides(
-        PAPER, pairs=tuple(pairs), optional_pairs=("NVDA/USDT",), ml_pairs=("BTC/USDT", "ETH/USDT"),
+        PAPER_R03, pairs=tuple(pairs), optional_pairs=("NVDA/USDT",), ml_pairs=("BTC/USDT", "ETH/USDT"),
         clusters=clusters, cost_overrides={"NVDA/USDT": PAPER.cost_overrides["NVDA/USDT"]},
         var_dir=str(tmp / "var"), kill_file=str(tmp / "KILL"), pause_file=str(tmp / "PAUSE"),
         veto_config=str(ROOT / "config/veto.live.json"), ml_model_path=str(ROOT / "models/ml1-r03.json"),

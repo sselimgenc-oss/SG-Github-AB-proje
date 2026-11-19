@@ -38,8 +38,11 @@ def test_paper_config_shape():
     assert c.mode == "paper" and c.bot == "learner" and len(c.pairs) == 44
     assert set(json.loads((CFG / "engine.base.json").read_text())["pairs"]) <= set(c.pairs)
     assert len(c.optional_pairs) == 25 and set(c.optional_pairs) <= set(c.pairs)
-    assert c.max_positions == 16 and c.ml_mode == "active" and c.ml_features == "r03" and c.shadow_blocks == ()
-    assert c.ml_experimental is True and len(c.ml_pairs) == 10
+    assert c.max_positions == 16 and c.ml_mode == "off" and c.shadow_blocks == ()
+    # 19 Kasim: r03 kagitta emekli (kullanici karari)
+    assert c.ml_features == "v1" and c.ml_experimental is False and c.ml_pairs == () and c.ml_model_path is None
+    raw_paper = json.loads((CFG / "engine.paper.json").read_text())
+    assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw_paper)
     assert [s.max_positions for s in c.clusters.values()] == [4, 6, 5, 3, 2, 2]
     assert [len(s.pairs) for s in c.clusters.values()] == [5, 15, 20, 12, 2, 2]
     assert c.flat_bar_guard is True and "TRADIFI_PERPETUAL" in c.contract_types

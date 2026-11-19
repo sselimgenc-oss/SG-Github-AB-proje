@@ -26,6 +26,11 @@ UTC = timezone.utc
 NOW = datetime(2026, 3, 5, tzinfo=UTC)
 R03_SRC = ROOT / "research" / "ml" / "r03" / "model_candidate.json"
 R03_DST = ROOT / "models" / "ml1-r03.json"
+# 19 Kasim: r03 kagitta emekli (kullanici karari). r03 kod yolu hala test edilir: eski paper ML anahtarlari gecici katmanda.
+R03_ML_PAIRS = ["BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "ADA/USDT", "TRX/USDT",
+                "LINK/USDT", "AVAX/USDT"]
+R03_PAPER_KEYS = {"ml_mode": "active", "ml_pairs": R03_ML_PAIRS, "ml_features": "r03",
+                  "ml_model_path": "models/ml1-r03.json", "ml_experimental": True}
 
 
 # ------------------------------------------------------------------------------------------------ yardimcilar
@@ -248,24 +253,29 @@ class TestG5Configs:
         cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json")
         assert cfg.ml_mode == "off" and cfg.ml_experimental is False and cfg.ml_model_path is None
 
-    def test_paper_ml_config(self):
-        """DD-12: paper-ml katmani engine.paper.json'a katildi (ml_mode active; dosya engine.paper-ml.json silindi)."""
+    def test_paper_ml_config(self, tmp_path):
+        """DD-12 r03 paper katmani (eski anahtarlar gecici katmanda); dosya engine.paper-ml.json silindi."""
         assert not (CFG / "engine.paper-ml.json").exists()
-        raw = json.loads((CFG / "engine.paper.json").read_text())
+        raw = json.loads(_r03_paper_overlay(tmp_path).read_text())
         assert raw["strategy"] == "price_action_lab_ml" and raw["ml_mode"] == "active" and raw["ml_experimental"] is True
         assert raw["ml_model_path"] == "models/ml1-r03.json" and raw["ml_features"] == "r03"
-        cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.paper.json")
+        cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json",
+                                 overlay_path=_r03_paper_overlay(tmp_path))
         assert (cfg.mode, cfg.bot, cfg.strategy, cfg.ml_mode, cfg.ml_experimental, cfg.ml_features) == \
                ("paper", "learner", "price_action_lab_ml", "active", True, "r03")
         assert cfg.ml_model_path == "models/ml1-r03.json"
 
-    def test_paper_ml_loads_via_cli_loader(self):
+    def test_paper_ml_loads_via_cli_loader(self, tmp_path):
+        import shutil
         from trader_engine.config import load_cli_config
-        cfg = load_cli_config(CFG, "learner", "paper")
+        d = tmp_path / "config"                          # 19 Kasim: gercek paper dosyasi degil, eski anahtarli kopya
+        shutil.copytree(CFG, d)
+        (d / "engine.paper.json").write_text(json.dumps({**json.loads((CFG / "engine.paper.json").read_text()), **R03_PAPER_KEYS}))
+        cfg = load_cli_config(d, "learner", "paper")
         assert cfg.mode == "paper" and cfg.ml_mode == "active" and cfg.ml_experimental is True and cfg.bot == "learner"
 
-    def test_paper_ml_features_match_r03_package(self):
-        key = json.loads((CFG / "engine.paper.json").read_text())["ml_features"]
+    def test_paper_ml_features_match_r03_package(self, tmp_path):
+        key = json.loads(_r03_paper_overlay(tmp_path).read_text())["ml_features"]
         assert key in RECIPE_NAMES
         meta = json.loads(R03_SRC.read_text())["meta"]
         assert list(RECIPE_NAMES[key]) == meta["features"]
@@ -289,14 +299,23 @@ class TestG5Configs:
             _stack(env)
 
 
+def _r03_paper_overlay(tmp_path, name="paper_r03.json"):
+    """19 Kasim: r03 kagit katmani kaldirildi; eski paper ML anahtarlari gecici dosyada yeniden kurulur."""
+    raw = json.loads((CFG / "engine.paper.json").read_text())
+    raw.update(R03_PAPER_KEYS)
+    p = tmp_path / name
+    p.write_text(json.dumps(raw))
+    return p
+
+
 def _stack(env):
     import tempfile
     d = Path(tempfile.mkdtemp())
     raw = json.loads((CFG / "engine.base.json").read_text())
     for n in ("learner", env):
         raw.update(json.loads((CFG / f"engine.{n}.json").read_text()))
-    paper = json.loads((CFG / "engine.paper.json").read_text())             # yalniz ML anahtarlari testnet/live uzerine binsin
-    raw.update({k: paper[k] for k in ("strategy", "ml_mode", "ml_features", "ml_model_path", "ml_experimental")})
+    paper = json.loads((CFG / "engine.paper.json").read_text())             # strategy paper'dan; ML anahtarlari eski r03 seti
+    raw.update({"strategy": paper["strategy"], **R03_PAPER_KEYS})          # ML anahtarlari testnet/live uzerine binsin
     (d / "x.json").write_text(json.dumps(raw))
     return load_engine_config(d / "x.json")
 

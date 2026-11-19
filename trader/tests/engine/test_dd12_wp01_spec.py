@@ -216,21 +216,21 @@ def test_dt2_paper_44_cift_taban_10_ust_kumesi():
     assert len(set(bases) - STOCKS20 - COMMODITY4) == 20          # 20 kripto
 
 
-def test_dt2_paper_ml_etkin_golgesiz_16_pozisyon():
+def test_dt2_paper_ml_kapali_golgesiz_16_pozisyon():
+    # 19 Kasim: r03 kagitta emekli (kullanici karari)
     cfg = _paper()
-    assert cfg.ml_mode == "active"
-    assert cfg.ml_features == "r03"
-    assert cfg.ml_experimental is True
+    assert cfg.ml_mode == "off"
+    assert cfg.ml_experimental is False and cfg.ml_model_path is None and cfg.ml_pairs == ()
     assert cfg.shadow_blocks == ()
-    assert cfg.ml_model_path
     assert cfg.max_positions == 16
     assert cfg.target_trade_risk == 0.01                           # islem basi %1
 
 
-def test_dt2_paper_ml_pairs_sabit_taban_10():
+def test_dt2_paper_ml_pairs_kaldirildi():
+    # 19 Kasim: r03 kagitta emekli (kullanici karari); paper katmaninda ml_pairs anahtari yok
     cfg = _paper()
-    assert {_base(p) for p in cfg.ml_pairs} == set(BASE10)
-    assert set(cfg.ml_pairs) <= set(cfg.pairs)
+    assert cfg.ml_pairs == ()
+    assert "ml_pairs" not in _paper_raw()
 
 
 def test_dt2_paper_optional_pairs_hisse_emtia_24():
@@ -275,11 +275,12 @@ def test_dt2_paper_flat_bar_ve_contract_types():
 
 def test_dt2_paper_yeni_anahtar_ham_json_listesi():
     raw = _paper_raw()
-    for k in ("pairs", "optional_pairs", "strategy", "ml_mode", "ml_pairs", "ml_features", "ml_model_path",
-              "ml_experimental", "shadow_blocks", "max_positions", "risk", "clusters", "flat_bar_guard",
-              "contract_types", "cost_overrides"):
+    for k in ("pairs", "optional_pairs", "strategy", "ml_mode", "shadow_blocks", "max_positions", "risk", "clusters",
+              "flat_bar_guard", "contract_types", "cost_overrides"):
         assert k in raw, k
-    assert raw["shadow_blocks"] == [] and raw["max_positions"] == 16 and raw["ml_mode"] == "active"
+    # 19 Kasim: r03 kagitta emekli (kullanici karari)
+    assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw)
+    assert raw["shadow_blocks"] == [] and raw["max_positions"] == 16 and raw["ml_mode"] == "off"
 
 
 # --------------------------------------------------------------------------- D-T2 (yalniz --env paper)
@@ -287,7 +288,7 @@ def test_dt2_paper_katmani_yalniz_env_paper_ile_uygulanir():
     plain = load_cli_config(CONFIG, "learner", None)
     paper = load_cli_config(CONFIG, "learner", "paper")
     assert len(plain.pairs) == 10 and len(paper.pairs) == 44
-    assert plain.ml_mode == "off" and paper.ml_mode == "active"
+    assert plain.ml_mode == "off" and paper.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert plain.shadow_blocks != () and paper.shadow_blocks == ()
     for env in ("testnet", "live"):
         c = load_cli_config(CONFIG, "learner", env)
@@ -348,7 +349,9 @@ def test_dt2_pairs_disi_cift_hata(tmp_path, which):
     if which == "cluster":
         _inject_cluster_pair(raw, ghost)
     else:
-        raw[which] = list(raw[which]) + [ghost]
+        # 19 Kasim: paper katmaninda ml_pairs kalmadi; dogrulama intenti icin kendi ml_pairs'ini kurar
+        base = raw.get(which, ["BTC/USDT"])
+        raw[which] = list(base) + [ghost]
     with pytest.raises(ConfigError):
         _load_overlay(_write(tmp_path, "bad.json", raw))
 

@@ -742,7 +742,7 @@ def test_dt8_no_model_candidate_passes_as_ml_no_model(tmp_path, mlworld, mlcands
 
 def test_dt8_paper_config_has_no_shadow_rows(mk):
     cfg = load_cli_config(CONFIG, "learner", "paper")
-    assert tuple(cfg.shadow_blocks) == () and cfg.ml_mode == "active"
+    assert tuple(cfg.shadow_blocks) == () and cfg.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli (kullanici karari)
     e = mk([BTC, ETH], D_OPEN - H)
     e.enter(BTC, D_OPEN)
     e.step(D_OPEN + M1)
