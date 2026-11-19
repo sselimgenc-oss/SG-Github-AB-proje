@@ -5,4 +5,4 @@ Parca 1 (standart kutuphane): kayit, notlar, ders. Parca 2: karne, drift (standa
 Parca 3: telegram_cekirdek (standart kutuphane).
 trader_core / trader_engine / trader_ml ICE AKTARILMAZ. Paket yalniz puan/rapor/etiket uretir; islem engellemez.
 """
-SURUM = "1.2.0"
+SURUM = "1.2.1"

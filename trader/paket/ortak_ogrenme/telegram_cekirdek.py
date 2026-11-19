@@ -151,8 +151,18 @@ class TelegramError(Exception):
         self.retry_after = retry_after
 
 
+def _urllib_timeout(timeout: Any) -> float | None:
+    """requests tarzi (baglanti, okuma) demeti -> urllib'in tek sayisi (en buyugu; okuma suresi kisalmasin). 1.2.1 duzeltmesi."""
+    if isinstance(timeout, (tuple, list)):
+        vals = [float(t) for t in timeout if t is not None]
+        return max(vals) if vals else None
+    return timeout
+
+
 def default_http_post(url: str, json: Any = None, timeout: Any = None, token: str | None = None):
-    """urllib ile JSON POST. -> (status, body_dict). Ag hatasi (0, {}). Istisna metni token icerirse maskelenir."""
+    """urllib ile JSON POST. -> (status, body_dict). Ag hatasi (0, {}). Istisna metni token icerirse maskelenir.
+    `timeout` tek sayi ya da requests tarzi (baglanti, okuma) demeti olabilir (urllib tek sayi ister)."""
+    timeout = _urllib_timeout(timeout)
     data = None if json is None else _json.dumps(json).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     try:

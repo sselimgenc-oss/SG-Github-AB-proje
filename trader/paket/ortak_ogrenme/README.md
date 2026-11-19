@@ -1,4 +1,4 @@
-# ortak_ogrenme (SURUM 1.2.0)
+# ortak_ogrenme (SURUM 1.2.1)
 
 Ortak öğrenme paketi: aday kaydı (`Aday`), kodla yazılan işlem notu (`notlar.not_yaz`) ve aday ders yaşam döngüsü
 (`ders`). Parça 1 yalnız Python 3.11+ standart kütüphane kullanır; parça 2'de yalnız `filtre.py` numpy ister. `trader_core` / `trader_engine` / `trader_ml` içe aktarılmaz.
@@ -7,7 +7,7 @@ Paket yalnız puan, rapor ve etiket üretir; hiçbir işlemi engellemez. Spec: `
 ## Kopyalama
 
 1. Bu klasörü (`trader/paket/ortak_ogrenme/`) alan projenin paket dizinine olduğu gibi kopyalayın.
-2. Kaynak yolu ve commit'i not edin, örnek: `Kaynak: trader/paket/ortak_ogrenme @ <commit>, SURUM 1.2.0`.
+2. Kaynak yolu ve commit'i not edin, örnek: `Kaynak: trader/paket/ortak_ogrenme @ <commit>, SURUM 1.2.1`.
 3. Paketi değiştirmeyin. Projeye özgü çeviri yalnız adaptörde yapılır.
 4. Adaptörünüzü yazın (aşağıdaki örnek) ve kendi testinizde ML/başka bir referansla eşdeğerliği doğrulayın.
    Referans testi: `tests/paket/test_ortak_ogrenme_parity.py`.
@@ -135,3 +135,6 @@ ok = onay.dogrula("/durdur", yanit.strip())           # yanit: kullanıcının m
 `TelegramClient` hata sınıfları, `Outbox` (kuyruk, hız sınırı, INFO yaşlanması, tekrar önleme) ve bildirici
 tekrar önleme/yeniden deneme davranışı ML ile aynı sahte HTTP ve sahte saatle karşılaştırılır. Onay kapısı,
 etiketleme ve denetim kaydı için ayrı testler vardır. Testler ağ kullanmaz.
+
+## Sürüm notları
+- 1.2.1: `telegram_cekirdek.default_http_post` requests tarzı `(bağlantı, okuma)` zaman aşımı demetini urllib'in tek sayısına çevirir (önceden her çağrı TypeError → `(0, {})` → "transient 0"; varsayılan istemciyle hiçbir çağrı çalışmıyordu).
