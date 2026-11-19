@@ -1,0 +1,4182 @@
+{
+  "parametreler": {
+    "n_splits": 16,
+    "max_combinations": 2000,
+    "seed": 0,
+    "esikler": [
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7
+    ],
+    "holdout_oncesi_sinir": "2026-05-01"
+  },
+  "aileler": [
+    {
+      "aile": "Kural R1",
+      "tur": "kural",
+      "kaynak": "var/backtests/*/trades.csv (5 defter, IS 2024-11-01..2025-10-31)",
+      "n_yapilandirma": 5,
+      "T": 365,
+      "n_kullanilan": 5,
+      "durum": "tamam",
+      "pbo": 0.5165,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5,
+      "prob_oos_kayip": 0.736,
+      "en_iyi_yapilandirma": "R1:15m_IS_f1_s0_compat",
+      "en_iyi_sr_yillik": 0.0632180041130384,
+      "dsr": 0.20922395573437969,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "Kural T1",
+      "tur": "kural",
+      "kaynak": "var/backtests/*/trades.csv (7 defter, IS 2024-11-01..2025-10-31)",
+      "n_yapilandirma": 7,
+      "T": 365,
+      "n_kullanilan": 7,
+      "durum": "tamam",
+      "pbo": 0.2505,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.75,
+      "prob_oos_kayip": 0.2555,
+      "en_iyi_yapilandirma": "T1:s2_base_v1b",
+      "en_iyi_sr_yillik": 0.8293004021660374,
+      "dsr": 0.31248414088473836,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "ML 19c",
+      "tur": "ml",
+      "kaynak": "research/ml/19c/oof_predictions.parquet (ml1-r01-v1b-native33 (19c); model x esik)",
+      "n_yapilandirma": 12,
+      "T": 240,
+      "n_kullanilan": 3,
+      "durum": "tamam",
+      "pbo": 0.3225,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.75,
+      "prob_oos_kayip": 0.456,
+      "en_iyi_yapilandirma": "p_lgbm@0.45",
+      "en_iyi_sr_yillik": 0.8012741400736564,
+      "dsr": 0.023646168438990083,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "ML r02",
+      "tur": "ml",
+      "kaynak": "research/ml/r02/oof_predictions.parquet (ml1-r02-long-ctx-1r; model x esik)",
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "n_kullanilan": 9,
+      "durum": "tamam",
+      "pbo": 0.5805,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5,
+      "prob_oos_kayip": 0.848,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": -0.12219690886894083,
+      "dsr": 0.08475821252711058,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "ML r03",
+      "tur": "ml",
+      "kaynak": "research/ml/r03/oof_predictions.parquet (ml1-r03-long-regime8; model x esik)",
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "n_kullanilan": 8,
+      "durum": "tamam",
+      "pbo": 0.6645,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.3333333333333333,
+      "prob_oos_kayip": 0.77,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": 0.2130324596312616,
+      "dsr": 0.3037151011744526,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "Kural B1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/B1.parquet (112 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 112,
+      "T": 1946,
+      "n_kullanilan": 112,
+      "durum": "tamam",
+      "pbo": 0.095,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.7168141592920354,
+      "prob_oos_kayip": 0.7965,
+      "en_iyi_yapilandirma": "B1@4h|TARGET_R=2.5|f1|s0",
+      "en_iyi_sr_yillik": 0.2021037948222955,
+      "dsr": 1.920757290573957e-65,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural F1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/F1.parquet (112 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 112,
+      "T": 1946,
+      "n_kullanilan": 112,
+      "durum": "tamam",
+      "pbo": 0.003,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.672566371681416,
+      "prob_oos_kayip": 0.7735,
+      "en_iyi_yapilandirma": "F1@1d|REJ_MIN=0.5|f1|s0",
+      "en_iyi_sr_yillik": 0.30785738981021893,
+      "dsr": 2.670058096976978e-132,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural H2 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/H2.parquet (112 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 112,
+      "T": 1946,
+      "n_kullanilan": 112,
+      "durum": "tamam",
+      "pbo": 0.051,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.7168141592920354,
+      "prob_oos_kayip": 0.334,
+      "en_iyi_yapilandirma": "H2@1d|trail_atr=3.5|f1|s0",
+      "en_iyi_sr_yillik": 0.7779122895508476,
+      "dsr": 5.295706779779459e-28,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "ML M1@1h (egitim-disi)",
+      "tur": "m1",
+      "kaynak": "research/arm_series/M1.parquet (12 kolon: esik carpani x maliyet; 2021-01-01..2024-01-15)",
+      "n_yapilandirma": 12,
+      "T": 1110,
+      "n_kullanilan": 12,
+      "durum": "tamam",
+      "pbo": 0.0025,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.7692307692307693,
+      "prob_oos_kayip": 0.6765,
+      "en_iyi_yapilandirma": "M1@1h|thr_x1|f1|s0",
+      "en_iyi_sr_yillik": 0.03482015741667691,
+      "dsr": 0.0043733150915791115,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural R1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/R1.parquet (56 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 56,
+      "T": 1946,
+      "n_kullanilan": 52,
+      "durum": "tamam",
+      "pbo": 0.1075,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.8490566037735849,
+      "prob_oos_kayip": 0.7475,
+      "en_iyi_yapilandirma": "R1@4h|stop_buffer_atr=0.5|f1|s0",
+      "en_iyi_sr_yillik": 0.06964741199705254,
+      "dsr": 0.06519098267106783,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural S1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/S1.parquet (112 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 112,
+      "T": 1946,
+      "n_kullanilan": 112,
+      "durum": "tamam",
+      "pbo": 0.1535,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.6814159292035398,
+      "prob_oos_kayip": 0.589,
+      "en_iyi_yapilandirma": "S1@4h|trail_atr=3.5|f1|s0",
+      "en_iyi_sr_yillik": 0.4080424597336099,
+      "dsr": 4.97564798135145e-39,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural T1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/T1.parquet (48 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 48,
+      "T": 1946,
+      "n_kullanilan": 48,
+      "durum": "tamam",
+      "pbo": 0.3245,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.7653061224489796,
+      "prob_oos_kayip": 0.1535,
+      "en_iyi_yapilandirma": "T1@1d|trail_atr=2.5|f1|s0",
+      "en_iyi_sr_yillik": 1.059232723014315,
+      "dsr": 0.755873295486851,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "Kural TF1 (harness)",
+      "tur": "kural_harness",
+      "kaynak": "research/arm_series/TF1.parquet (112 kolon: tf x parametre varyanti x maliyet; 2021-01-01..2026-04-30)",
+      "n_yapilandirma": 112,
+      "T": 1946,
+      "n_kullanilan": 112,
+      "durum": "tamam",
+      "pbo": 0.02,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.8053097345132744,
+      "prob_oos_kayip": 0.078,
+      "en_iyi_yapilandirma": "TF1@1d|trail_atr=3.5|f1|s0",
+      "en_iyi_sr_yillik": 1.1857421494992084,
+      "dsr": 1.198251010816452e-40,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "TUM KUME",
+      "tur": "tum",
+      "kaynak": "yukaridaki tum yapilandirmalar, ortak gun izgarasinda (etkin olmayan gun = 0 R)",
+      "n_yapilandirma": 724,
+      "T": 1946,
+      "n_kullanilan": 704,
+      "durum": "tamam",
+      "pbo": 0.1105,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.9127659574468086,
+      "prob_oos_kayip": 0.2065,
+      "en_iyi_yapilandirma": "h:TF1@1d|trail_atr=3.5|f1|s0",
+      "en_iyi_sr_yillik": 1.1857421494992084,
+      "dsr": 1.0149471436123044e-118,
+      "yorum": "asiri uyum riski dusuk-orta"
+    }
+  ],
+  "kurulumlar": [
+    {
+      "kurulum": "T1@15m",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "T1@1h",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "T1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "T1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "R1@15m",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "R1@1h",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "R1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "R1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "TF1@15m",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "TF1@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "TF1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "TF1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "B1@15m",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "B1@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "B1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "B1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "H2@15m",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "H2@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "H2@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "H2@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "S1@15m",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "S1@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "S1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "S1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "F1@15m",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "F1@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "F1@4h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "F1@1d",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "M1@1h",
+      "kayit": "harness"
+    },
+    {
+      "kurulum": "M1@4h",
+      "kayit": "yok",
+      "neden": "gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)"
+    },
+    {
+      "kurulum": "C1@1h",
+      "kayit": "yok",
+      "neden": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi"
+    },
+    {
+      "kurulum": "C1@4h",
+      "kayit": "yok",
+      "neden": "ayni neden"
+    }
+  ],
+  "atlanan_defterler": [
+    {
+      "kosu": "1h_WF_f1_s0_compat",
+      "neden": "donem 2025-11-01..2026-05-01 ortak IS penceresini kapsamiyor"
+    },
+    {
+      "kosu": "s2_explore_tmp",
+      "neden": "trades.csv/meta.json yok"
+    }
+  ],
+  "harness": {
+    "ciftler": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "XRP/USDT",
+      "DOGE/USDT",
+      "ADA/USDT",
+      "TRX/USDT",
+      "LINK/USDT",
+      "AVAX/USDT"
+    ],
+    "dislanan": {
+      "C1@1h": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi",
+      "C1@4h": "ayni neden",
+      "M1@4h": "gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)"
+    },
+    "gecmisi_olmayan_ciftler": [
+      "HYPE/USDT",
+      "BCH/USDT",
+      "XLM/USDT",
+      "SUI/USDT",
+      "HBAR/USDT",
+      "LTC/USDT",
+      "TON/USDT",
+      "1000SHIB/USDT",
+      "DOT/USDT",
+      "XMR/USDT",
+      "NVDA/USDT",
+      "MSFT/USDT",
+      "AAPL/USDT",
+      "GOOGL/USDT",
+      "AMZN/USDT",
+      "META/USDT",
+      "AVGO/USDT",
+      "TSLA/USDT",
+      "BRKB/USDT",
+      "JPM/USDT",
+      "LLY/USDT",
+      "WMT/USDT",
+      "V/USDT",
+      "ORCL/USDT",
+      "XOM/USDT",
+      "NFLX/USDT",
+      "PLTR/USDT",
+      "COST/USDT",
+      "AMD/USDT",
+      "HD/USDT",
+      "XAU/USDT",
+      "XAG/USDT",
+      "BZ/USDT",
+      "COPPER/USDT"
+    ],
+    "gun_izgarasi": [
+      "2021-01-01",
+      "2026-04-30"
+    ],
+    "izgara_sha256": "d81ca1e66ae65c5e8fc3a4d722c25246a7da1151167912ed12866673614bfd99",
+    "kolonlar": {
+      "B1@15m|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 4375,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 4375,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 4375,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 4375,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3148,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3148,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3148,
+        "tf": "15m"
+      },
+      "B1@15m|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3148,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=1.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3781,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=1.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3781,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=1.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3781,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=1.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3781,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=2.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3747,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=2.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3747,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=2.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3747,
+        "tf": "15m"
+      },
+      "B1@15m|TARGET_R=2.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3747,
+        "tf": "15m"
+      },
+      "B1@15m|def|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3760,
+        "tf": "15m"
+      },
+      "B1@15m|def|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3760,
+        "tf": "15m"
+      },
+      "B1@15m|def|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3760,
+        "tf": "15m"
+      },
+      "B1@15m|def|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3760,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3744,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3744,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3744,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3744,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 3702,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 3702,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 3702,
+        "tf": "15m"
+      },
+      "B1@15m|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 3702,
+        "tf": "15m"
+      },
+      "B1@1d|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 117,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 117,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 117,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 117,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 78,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 78,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 78,
+        "tf": "1d"
+      },
+      "B1@1d|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 78,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=1.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=1.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=1.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=1.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=2.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 97,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=2.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 97,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=2.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 97,
+        "tf": "1d"
+      },
+      "B1@1d|TARGET_R=2.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 97,
+        "tf": "1d"
+      },
+      "B1@1d|def|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|def|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|def|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|def|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 98,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 99,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 99,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 99,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 99,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 95,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 95,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 95,
+        "tf": "1d"
+      },
+      "B1@1d|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 95,
+        "tf": "1d"
+      },
+      "B1@1h|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1271,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1271,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1271,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1271,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 958,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 958,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 958,
+        "tf": "1h"
+      },
+      "B1@1h|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 958,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=1.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1112,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=1.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1112,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=1.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1112,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=1.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1112,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=2.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1102,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=2.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1102,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=2.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1102,
+        "tf": "1h"
+      },
+      "B1@1h|TARGET_R=2.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1102,
+        "tf": "1h"
+      },
+      "B1@1h|def|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|def|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|def|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|def|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1109,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 1097,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 1097,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 1097,
+        "tf": "1h"
+      },
+      "B1@1h|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 1097,
+        "tf": "1h"
+      },
+      "B1@4h|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 421,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 421,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 421,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 421,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 308,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 308,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 308,
+        "tf": "4h"
+      },
+      "B1@4h|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 308,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=1.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 378,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=1.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 378,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=1.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 378,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=1.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 378,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=2.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 369,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=2.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 369,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=2.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 369,
+        "tf": "4h"
+      },
+      "B1@4h|TARGET_R=2.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 369,
+        "tf": "4h"
+      },
+      "B1@4h|def|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 373,
+        "tf": "4h"
+      },
+      "B1@4h|def|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 373,
+        "tf": "4h"
+      },
+      "B1@4h|def|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 373,
+        "tf": "4h"
+      },
+      "B1@4h|def|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 373,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 372,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 372,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 372,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 372,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "B1",
+        "n_islem": 365,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "B1",
+        "n_islem": 365,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "B1",
+        "n_islem": 365,
+        "tf": "4h"
+      },
+      "B1@4h|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "B1",
+        "n_islem": 365,
+        "tf": "4h"
+      },
+      "F1@15m|REJ_MIN=0.5|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 17905,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.5|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 17905,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.5|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 17905,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.5|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 17905,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.7|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 13972,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.7|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 13972,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.7|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 13972,
+        "tf": "15m"
+      },
+      "F1@15m|REJ_MIN=0.7|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 13972,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.05|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 17592,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.05|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 17592,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.05|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 17592,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.05|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 17592,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.2|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 14034,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.2|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 14034,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.2|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 14034,
+        "tf": "15m"
+      },
+      "F1@15m|SWEEP_ATR=0.2|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 14034,
+        "tf": "15m"
+      },
+      "F1@15m|def|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 16312,
+        "tf": "15m"
+      },
+      "F1@15m|def|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 16312,
+        "tf": "15m"
+      },
+      "F1@15m|def|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 16312,
+        "tf": "15m"
+      },
+      "F1@15m|def|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 16312,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.25|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 17514,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.25|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 17514,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.25|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 17514,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.25|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 17514,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.75|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 14807,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.75|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 14807,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.75|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 14807,
+        "tf": "15m"
+      },
+      "F1@15m|rr_min=1.75|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 14807,
+        "tf": "15m"
+      },
+      "F1@1d|REJ_MIN=0.5|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 22,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.5|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 22,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.5|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 22,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.5|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 22,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.7|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.7|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.7|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|REJ_MIN=0.7|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.05|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 23,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.05|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 23,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.05|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 23,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.05|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 23,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.2|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 17,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.2|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 17,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.2|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 17,
+        "tf": "1d"
+      },
+      "F1@1d|SWEEP_ATR=0.2|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 17,
+        "tf": "1d"
+      },
+      "F1@1d|def|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|def|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|def|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|def|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.25|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 25,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.25|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 25,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.25|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 25,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.25|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 25,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.75|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.75|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.75|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1d|rr_min=1.75|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 19,
+        "tf": "1d"
+      },
+      "F1@1h|REJ_MIN=0.5|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3871,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.5|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3871,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.5|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3871,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.5|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3871,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.7|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3019,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.7|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3019,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.7|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3019,
+        "tf": "1h"
+      },
+      "F1@1h|REJ_MIN=0.7|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3019,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.05|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3806,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.05|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3806,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.05|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3806,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.05|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3806,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.2|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3017,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.2|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3017,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.2|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3017,
+        "tf": "1h"
+      },
+      "F1@1h|SWEEP_ATR=0.2|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3017,
+        "tf": "1h"
+      },
+      "F1@1h|def|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3538,
+        "tf": "1h"
+      },
+      "F1@1h|def|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3538,
+        "tf": "1h"
+      },
+      "F1@1h|def|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3538,
+        "tf": "1h"
+      },
+      "F1@1h|def|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3538,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.25|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3778,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.25|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3778,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.25|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3778,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.25|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3778,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.75|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 3260,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.75|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 3260,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.75|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 3260,
+        "tf": "1h"
+      },
+      "F1@1h|rr_min=1.75|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 3260,
+        "tf": "1h"
+      },
+      "F1@4h|REJ_MIN=0.5|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 278,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.5|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 278,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.5|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 278,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.5|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 278,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.7|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 199,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.7|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 199,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.7|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 199,
+        "tf": "4h"
+      },
+      "F1@4h|REJ_MIN=0.7|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 199,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.05|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.05|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.05|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.05|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.2|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 188,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.2|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 188,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.2|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 188,
+        "tf": "4h"
+      },
+      "F1@4h|SWEEP_ATR=0.2|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 188,
+        "tf": "4h"
+      },
+      "F1@4h|def|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 243,
+        "tf": "4h"
+      },
+      "F1@4h|def|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 243,
+        "tf": "4h"
+      },
+      "F1@4h|def|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 243,
+        "tf": "4h"
+      },
+      "F1@4h|def|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 243,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.25|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.25|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.25|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.25|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.75|f1|s0": {
+        "kurulum": "F1",
+        "n_islem": 221,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.75|f1|s5": {
+        "kurulum": "F1",
+        "n_islem": 221,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.75|f2|s0": {
+        "kurulum": "F1",
+        "n_islem": 221,
+        "tf": "4h"
+      },
+      "F1@4h|rr_min=1.75|f2|s5": {
+        "kurulum": "F1",
+        "n_islem": 221,
+        "tf": "4h"
+      },
+      "H2@15m|LEG_GAP_MAX=14|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 10282,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=14|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 10244,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=14|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 10282,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=14|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 10244,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=6|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 9991,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=6|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 9955,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=6|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 9991,
+        "tf": "15m"
+      },
+      "H2@15m|LEG_GAP_MAX=6|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 9955,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=0.75|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 10463,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=0.75|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 10425,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=0.75|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 10463,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=0.75|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 10425,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=1.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 9137,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=1.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 9108,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=1.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 9137,
+        "tf": "15m"
+      },
+      "H2@15m|PB_MIN_ATR=1.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 9108,
+        "tf": "15m"
+      },
+      "H2@15m|def|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 10278,
+        "tf": "15m"
+      },
+      "H2@15m|def|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 10240,
+        "tf": "15m"
+      },
+      "H2@15m|def|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 10278,
+        "tf": "15m"
+      },
+      "H2@15m|def|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 10240,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=2.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 10782,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=2.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 10722,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=2.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 10782,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=2.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 10722,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=3.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 9858,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=3.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 9831,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=3.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 9858,
+        "tf": "15m"
+      },
+      "H2@15m|trail_atr=3.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 9831,
+        "tf": "15m"
+      },
+      "H2@1d|LEG_GAP_MAX=14|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=14|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=14|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=14|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=6|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 207,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=6|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 207,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=6|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 207,
+        "tf": "1d"
+      },
+      "H2@1d|LEG_GAP_MAX=6|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 207,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=0.75|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 218,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=0.75|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 218,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=0.75|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 218,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=0.75|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 218,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=1.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 162,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=1.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 162,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=1.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 162,
+        "tf": "1d"
+      },
+      "H2@1d|PB_MIN_ATR=1.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 162,
+        "tf": "1d"
+      },
+      "H2@1d|def|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|def|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|def|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|def|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 211,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=2.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 215,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=2.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 215,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=2.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 215,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=2.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 215,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=3.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 203,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=3.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 203,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=3.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 203,
+        "tf": "1d"
+      },
+      "H2@1d|trail_atr=3.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 203,
+        "tf": "1d"
+      },
+      "H2@1h|LEG_GAP_MAX=14|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3449,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=14|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3445,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=14|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3449,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=14|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3445,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=6|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3341,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=6|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3337,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=6|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3341,
+        "tf": "1h"
+      },
+      "H2@1h|LEG_GAP_MAX=6|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3337,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=0.75|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3523,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=0.75|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3519,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=0.75|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3523,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=0.75|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3519,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=1.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3014,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=1.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3010,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=1.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3014,
+        "tf": "1h"
+      },
+      "H2@1h|PB_MIN_ATR=1.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3010,
+        "tf": "1h"
+      },
+      "H2@1h|def|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3448,
+        "tf": "1h"
+      },
+      "H2@1h|def|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3444,
+        "tf": "1h"
+      },
+      "H2@1h|def|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3448,
+        "tf": "1h"
+      },
+      "H2@1h|def|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3444,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=2.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3577,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=2.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3571,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=2.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3577,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=2.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3571,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=3.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 3321,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=3.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 3319,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=3.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 3321,
+        "tf": "1h"
+      },
+      "H2@1h|trail_atr=3.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 3319,
+        "tf": "1h"
+      },
+      "H2@4h|LEG_GAP_MAX=14|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=14|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=14|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=14|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=6|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1135,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=6|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1135,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=6|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1135,
+        "tf": "4h"
+      },
+      "H2@4h|LEG_GAP_MAX=6|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1135,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=0.75|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1195,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=0.75|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1195,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=0.75|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1195,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=0.75|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1195,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=1.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1013,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=1.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1013,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=1.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1013,
+        "tf": "4h"
+      },
+      "H2@4h|PB_MIN_ATR=1.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1013,
+        "tf": "4h"
+      },
+      "H2@4h|def|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|def|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|def|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|def|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1164,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=2.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1208,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=2.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1208,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=2.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1208,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=2.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1208,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=3.5|f1|s0": {
+        "kurulum": "H2",
+        "n_islem": 1122,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=3.5|f1|s5": {
+        "kurulum": "H2",
+        "n_islem": 1122,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=3.5|f2|s0": {
+        "kurulum": "H2",
+        "n_islem": 1122,
+        "tf": "4h"
+      },
+      "H2@4h|trail_atr=3.5|f2|s5": {
+        "kurulum": "H2",
+        "n_islem": 1122,
+        "tf": "4h"
+      },
+      "M1@1h|thr_x0.95|f1|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x0.95|f1|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x0.95|f2|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x0.95|f2|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1.05|f1|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1.05|f1|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1.05|f2|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1.05|f2|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1|f1|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1|f1|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1|f2|s0": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "M1@1h|thr_x1|f2|s5": {
+        "kurulum": "M1",
+        "n_islem": null,
+        "tf": "1h"
+      },
+      "R1@1d|def|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|def|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|def|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|def|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.6|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 1,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.6|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 1,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.6|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 1,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.6|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 1,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.9|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 8,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.9|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 8,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.9|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 8,
+        "tf": "1d"
+      },
+      "R1@1d|range_target_frac=0.9|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 8,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.25|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 7,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.25|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 7,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.25|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 7,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.25|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 7,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.75|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 2,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.75|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 2,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.75|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 2,
+        "tf": "1d"
+      },
+      "R1@1d|rr_min=1.75|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 2,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 3,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 0,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 0,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 0,
+        "tf": "1d"
+      },
+      "R1@1d|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 0,
+        "tf": "1d"
+      },
+      "R1@4h|def|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 227,
+        "tf": "4h"
+      },
+      "R1@4h|def|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 227,
+        "tf": "4h"
+      },
+      "R1@4h|def|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 227,
+        "tf": "4h"
+      },
+      "R1@4h|def|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 227,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.6|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 148,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.6|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 148,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.6|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 148,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.6|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 148,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.9|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.9|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.9|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "R1@4h|range_target_frac=0.9|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 270,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.25|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.25|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.25|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.25|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 261,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.75|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 186,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.75|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 186,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.75|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 186,
+        "tf": "4h"
+      },
+      "R1@4h|rr_min=1.75|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 186,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 238,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 238,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 238,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 238,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "R1",
+        "n_islem": 180,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "R1",
+        "n_islem": 180,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "R1",
+        "n_islem": 180,
+        "tf": "4h"
+      },
+      "R1@4h|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "R1",
+        "n_islem": 180,
+        "tf": "4h"
+      },
+      "S1@15m|BOX_W_ATR=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 18352,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 18173,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 18352,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 18173,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 18855,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 18671,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 18855,
+        "tf": "15m"
+      },
+      "S1@15m|BOX_W_ATR=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 18671,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.05|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 20243,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.05|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 20022,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.05|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 20243,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.05|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 20022,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.2|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 15775,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.2|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 15638,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.2|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 15775,
+        "tf": "15m"
+      },
+      "S1@15m|BRK_ATR=0.2|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 15638,
+        "tf": "15m"
+      },
+      "S1@15m|def|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 18820,
+        "tf": "15m"
+      },
+      "S1@15m|def|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 18635,
+        "tf": "15m"
+      },
+      "S1@15m|def|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 18820,
+        "tf": "15m"
+      },
+      "S1@15m|def|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 18635,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 19280,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 19066,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 19280,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 19066,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 18324,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 18166,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 18324,
+        "tf": "15m"
+      },
+      "S1@15m|trail_atr=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 18166,
+        "tf": "15m"
+      },
+      "S1@1d|BOX_W_ATR=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 341,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 341,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 341,
+        "tf": "1d"
+      },
+      "S1@1d|BOX_W_ATR=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 341,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.05|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 364,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.05|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 364,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.05|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 364,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.05|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 364,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.2|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 278,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.2|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 278,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.2|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 278,
+        "tf": "1d"
+      },
+      "S1@1d|BRK_ATR=0.2|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 278,
+        "tf": "1d"
+      },
+      "S1@1d|def|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 342,
+        "tf": "1d"
+      },
+      "S1@1d|def|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 342,
+        "tf": "1d"
+      },
+      "S1@1d|def|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 342,
+        "tf": "1d"
+      },
+      "S1@1d|def|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 342,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 347,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 347,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 347,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 347,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1d|trail_atr=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 337,
+        "tf": "1d"
+      },
+      "S1@1h|BOX_W_ATR=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4422,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4407,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4422,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4407,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4581,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4565,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4581,
+        "tf": "1h"
+      },
+      "S1@1h|BOX_W_ATR=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4565,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.05|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4897,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.05|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4878,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.05|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4897,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.05|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4878,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.2|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 3821,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.2|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 3808,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.2|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 3821,
+        "tf": "1h"
+      },
+      "S1@1h|BRK_ATR=0.2|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 3808,
+        "tf": "1h"
+      },
+      "S1@1h|def|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4567,
+        "tf": "1h"
+      },
+      "S1@1h|def|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4551,
+        "tf": "1h"
+      },
+      "S1@1h|def|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4567,
+        "tf": "1h"
+      },
+      "S1@1h|def|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4551,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4650,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4632,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4650,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4632,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 4466,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 4452,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 4466,
+        "tf": "1h"
+      },
+      "S1@1h|trail_atr=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 4452,
+        "tf": "1h"
+      },
+      "S1@4h|BOX_W_ATR=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1279,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1278,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1279,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1278,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1315,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1314,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1315,
+        "tf": "4h"
+      },
+      "S1@4h|BOX_W_ATR=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1314,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.05|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1413,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.05|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1412,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.05|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1413,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.05|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1412,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.2|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1098,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.2|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1097,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.2|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1098,
+        "tf": "4h"
+      },
+      "S1@4h|BRK_ATR=0.2|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1097,
+        "tf": "4h"
+      },
+      "S1@4h|def|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1314,
+        "tf": "4h"
+      },
+      "S1@4h|def|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1313,
+        "tf": "4h"
+      },
+      "S1@4h|def|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1314,
+        "tf": "4h"
+      },
+      "S1@4h|def|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1313,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=2.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1342,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=2.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1338,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=2.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1342,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=2.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1338,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=3.5|f1|s0": {
+        "kurulum": "S1",
+        "n_islem": 1289,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=3.5|f1|s5": {
+        "kurulum": "S1",
+        "n_islem": 1288,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=3.5|f2|s0": {
+        "kurulum": "S1",
+        "n_islem": 1289,
+        "tf": "4h"
+      },
+      "S1@4h|trail_atr=3.5|f2|s5": {
+        "kurulum": "S1",
+        "n_islem": 1288,
+        "tf": "4h"
+      },
+      "T1@1d|def|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|def|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|def|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|def|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|pullback_ema=20|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 173,
+        "tf": "1d"
+      },
+      "T1@1d|pullback_ema=20|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 173,
+        "tf": "1d"
+      },
+      "T1@1d|pullback_ema=20|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 173,
+        "tf": "1d"
+      },
+      "T1@1d|pullback_ema=20|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 173,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 145,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 145,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 145,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 145,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 105,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 105,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 105,
+        "tf": "1d"
+      },
+      "T1@1d|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 105,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=2.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 130,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=2.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 130,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=2.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 130,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=2.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 130,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=3.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=3.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=3.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@1d|trail_atr=3.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 129,
+        "tf": "1d"
+      },
+      "T1@4h|def|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 1054,
+        "tf": "4h"
+      },
+      "T1@4h|def|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 1054,
+        "tf": "4h"
+      },
+      "T1@4h|def|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 1054,
+        "tf": "4h"
+      },
+      "T1@4h|def|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 1054,
+        "tf": "4h"
+      },
+      "T1@4h|pullback_ema=20|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 2030,
+        "tf": "4h"
+      },
+      "T1@4h|pullback_ema=20|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 2026,
+        "tf": "4h"
+      },
+      "T1@4h|pullback_ema=20|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 2030,
+        "tf": "4h"
+      },
+      "T1@4h|pullback_ema=20|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 2026,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.2|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 1119,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.2|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 1118,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.2|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 1119,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.2|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 1118,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 876,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 873,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 876,
+        "tf": "4h"
+      },
+      "T1@4h|stop_buffer_atr=0.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 873,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=2.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 1080,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=2.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 1078,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=2.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 1080,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=2.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 1078,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=3.5|f1|s0": {
+        "kurulum": "T1",
+        "n_islem": 1023,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=3.5|f1|s5": {
+        "kurulum": "T1",
+        "n_islem": 1023,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=3.5|f2|s0": {
+        "kurulum": "T1",
+        "n_islem": 1023,
+        "tf": "4h"
+      },
+      "T1@4h|trail_atr=3.5|f2|s5": {
+        "kurulum": "T1",
+        "n_islem": 1023,
+        "tf": "4h"
+      },
+      "TF1@15m|BODY_MIN=0.4|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 11851,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.4|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 11800,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.4|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 11851,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.4|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 11800,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.6|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 8720,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.6|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 8697,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.6|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 8720,
+        "tf": "15m"
+      },
+      "TF1@15m|BODY_MIN=0.6|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 8697,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 11656,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 11615,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 11656,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 11615,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 9504,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 9467,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 9504,
+        "tf": "15m"
+      },
+      "TF1@15m|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 9467,
+        "tf": "15m"
+      },
+      "TF1@15m|def|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10594,
+        "tf": "15m"
+      },
+      "TF1@15m|def|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10554,
+        "tf": "15m"
+      },
+      "TF1@15m|def|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10594,
+        "tf": "15m"
+      },
+      "TF1@15m|def|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10554,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=2.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10811,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=2.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10748,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=2.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10811,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=2.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10748,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=3.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10344,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=3.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10327,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=3.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 10344,
+        "tf": "15m"
+      },
+      "TF1@15m|trail_atr=3.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 10327,
+        "tf": "15m"
+      },
+      "TF1@1d|BODY_MIN=0.4|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 539,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.4|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 539,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.4|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 539,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.4|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 539,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.6|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 401,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.6|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 401,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.6|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 401,
+        "tf": "1d"
+      },
+      "TF1@1d|BODY_MIN=0.6|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 401,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 497,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 497,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 497,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 497,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 471,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 471,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 471,
+        "tf": "1d"
+      },
+      "TF1@1d|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 471,
+        "tf": "1d"
+      },
+      "TF1@1d|def|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 482,
+        "tf": "1d"
+      },
+      "TF1@1d|def|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 482,
+        "tf": "1d"
+      },
+      "TF1@1d|def|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 482,
+        "tf": "1d"
+      },
+      "TF1@1d|def|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 482,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=2.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 499,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=2.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 499,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=2.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 499,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=2.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 499,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=3.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 470,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=3.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 470,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=3.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 470,
+        "tf": "1d"
+      },
+      "TF1@1d|trail_atr=3.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 470,
+        "tf": "1d"
+      },
+      "TF1@1h|BODY_MIN=0.4|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 3142,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.4|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 3140,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.4|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 3142,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.4|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 3140,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.6|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2194,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.6|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2192,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.6|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2194,
+        "tf": "1h"
+      },
+      "TF1@1h|BODY_MIN=0.6|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2192,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 3100,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 3099,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 3100,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 3099,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2402,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2401,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2402,
+        "tf": "1h"
+      },
+      "TF1@1h|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2401,
+        "tf": "1h"
+      },
+      "TF1@1h|def|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2748,
+        "tf": "1h"
+      },
+      "TF1@1h|def|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2746,
+        "tf": "1h"
+      },
+      "TF1@1h|def|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2748,
+        "tf": "1h"
+      },
+      "TF1@1h|def|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2746,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=2.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2794,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=2.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2791,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=2.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2794,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=2.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2791,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=3.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2710,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=3.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2709,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=3.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 2710,
+        "tf": "1h"
+      },
+      "TF1@1h|trail_atr=3.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 2709,
+        "tf": "1h"
+      },
+      "TF1@4h|BODY_MIN=0.4|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1422,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.4|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1421,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.4|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1422,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.4|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1421,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.6|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 960,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.6|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 959,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.6|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 960,
+        "tf": "4h"
+      },
+      "TF1@4h|BODY_MIN=0.6|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 959,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.1|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1368,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.1|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1366,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.1|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1368,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.1|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1366,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.3|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1082,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.3|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1081,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.3|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1082,
+        "tf": "4h"
+      },
+      "TF1@4h|BRK_ATR=0.3|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1081,
+        "tf": "4h"
+      },
+      "TF1@4h|def|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1222,
+        "tf": "4h"
+      },
+      "TF1@4h|def|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1221,
+        "tf": "4h"
+      },
+      "TF1@4h|def|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1222,
+        "tf": "4h"
+      },
+      "TF1@4h|def|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1221,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=2.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1245,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=2.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1243,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=2.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1245,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=2.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1243,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=3.5|f1|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1201,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=3.5|f1|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1200,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=3.5|f2|s0": {
+        "kurulum": "TF1",
+        "n_islem": 1201,
+        "tf": "4h"
+      },
+      "TF1@4h|trail_atr=3.5|f2|s5": {
+        "kurulum": "TF1",
+        "n_islem": 1200,
+        "tf": "4h"
+      }
+    },
+    "m1": {
+      "aday_sayilari": {
+        "ADA/USDT": {
+          "thr x0.95": 4130,
+          "thr x1": 582,
+          "thr x1.05": 65
+        },
+        "AVAX/USDT": {
+          "thr x0.95": 4023,
+          "thr x1": 610,
+          "thr x1.05": 84
+        },
+        "BNB/USDT": {
+          "thr x0.95": 4387,
+          "thr x1": 783,
+          "thr x1.05": 156
+        },
+        "BTC/USDT": {
+          "thr x0.95": 4776,
+          "thr x1": 1265,
+          "thr x1.05": 496
+        },
+        "DOGE/USDT": {
+          "thr x0.95": 4946,
+          "thr x1": 896,
+          "thr x1.05": 266
+        },
+        "ETH/USDT": {
+          "thr x0.95": 4294,
+          "thr x1": 874,
+          "thr x1.05": 211
+        },
+        "LINK/USDT": {
+          "thr x0.95": 3781,
+          "thr x1": 477,
+          "thr x1.05": 52
+        },
+        "SOL/USDT": {
+          "thr x0.95": 3954,
+          "thr x1": 616,
+          "thr x1.05": 105
+        },
+        "TRX/USDT": {
+          "thr x0.95": 4096,
+          "thr x1": 890,
+          "thr x1.05": 261
+        },
+        "XRP/USDT": {
+          "thr x0.95": 4424,
+          "thr x1": 733,
+          "thr x1.05": 196
+        }
+      },
+      "degerlendirme_gunleri": [
+        "2021-01-01",
+        "2024-01-15"
+      ],
+      "egitim_penceresi": {
+        "end": "2026-04-28T23:00:00+00:00",
+        "start": "2024-01-16T15:00:00+00:00"
+      },
+      "esik": 0.36997185713729147,
+      "son_sinyal_mumu": "2024-01-11 21:00:00+00:00"
+    },
+    "referans_cfg_maliyet": {
+      "B1@15m|cfg": {
+        "n_islem": 3760,
+        "ort_r_islem": -0.3397686113044231,
+        "toplam_r": -1277.529978504631
+      },
+      "B1@1d|cfg": {
+        "n_islem": 98,
+        "ort_r_islem": -0.14710854589103514,
+        "toplam_r": -14.416637497321444
+      },
+      "B1@1h|cfg": {
+        "n_islem": 1109,
+        "ort_r_islem": -0.15168991056269537,
+        "toplam_r": -168.22411081402916
+      },
+      "B1@4h|cfg": {
+        "n_islem": 373,
+        "ort_r_islem": -0.00016661101550001652,
+        "toplam_r": -0.062145908781506165
+      },
+      "F1@15m|cfg": {
+        "n_islem": 16312,
+        "ort_r_islem": -0.3560863272041177,
+        "toplam_r": -5808.480169353568
+      },
+      "F1@1d|cfg": {
+        "n_islem": 19,
+        "ort_r_islem": 0.15594435921696345,
+        "toplam_r": 2.9629428251223056
+      },
+      "F1@1h|cfg": {
+        "n_islem": 3538,
+        "ort_r_islem": -0.22116968166177015,
+        "toplam_r": -782.4983337193428
+      },
+      "F1@4h|cfg": {
+        "n_islem": 243,
+        "ort_r_islem": -0.01921564290690592,
+        "toplam_r": -4.669401226378138
+      },
+      "H2@15m|cfg": {
+        "n_islem": 10262,
+        "ort_r_islem": -0.18939821541252,
+        "toplam_r": -1943.6044865632803
+      },
+      "H2@1d|cfg": {
+        "n_islem": 211,
+        "ort_r_islem": 0.18852973038474172,
+        "toplam_r": 39.7797731111805
+      },
+      "H2@1h|cfg": {
+        "n_islem": 3446,
+        "ort_r_islem": -0.09414179159341539,
+        "toplam_r": -324.41261383090944
+      },
+      "H2@4h|cfg": {
+        "n_islem": 1164,
+        "ort_r_islem": 0.03027457671539505,
+        "toplam_r": 35.23960729671984
+      },
+      "R1@1d|cfg": {
+        "n_islem": 3,
+        "ort_r_islem": -1.042655278587678,
+        "toplam_r": -3.1279658357630336
+      },
+      "R1@4h|cfg": {
+        "n_islem": 227,
+        "ort_r_islem": -0.18211065702080134,
+        "toplam_r": -41.3391191437219
+      },
+      "S1@15m|cfg": {
+        "n_islem": 18745,
+        "ort_r_islem": -0.15785700481139658,
+        "toplam_r": -2959.029555189629
+      },
+      "S1@1d|cfg": {
+        "n_islem": 342,
+        "ort_r_islem": 0.049592954319157605,
+        "toplam_r": 16.960790377151902
+      },
+      "S1@1h|cfg": {
+        "n_islem": 4563,
+        "ort_r_islem": -0.04169475711465467,
+        "toplam_r": -190.25317671416923
+      },
+      "S1@4h|cfg": {
+        "n_islem": 1313,
+        "ort_r_islem": -0.03793311900555009,
+        "toplam_r": -49.80618525428727
+      },
+      "T1@1d|cfg": {
+        "n_islem": 129,
+        "ort_r_islem": 0.4579557481568862,
+        "toplam_r": 59.07629151223832
+      },
+      "T1@4h|cfg": {
+        "n_islem": 1054,
+        "ort_r_islem": 0.063324338099755,
+        "toplam_r": 66.74385235714178
+      },
+      "TF1@15m|cfg": {
+        "n_islem": 10582,
+        "ort_r_islem": -0.20141932664111267,
+        "toplam_r": -2131.4193145162544
+      },
+      "TF1@1d|cfg": {
+        "n_islem": 482,
+        "ort_r_islem": 0.2804648432868987,
+        "toplam_r": 135.18405446428517
+      },
+      "TF1@1h|cfg": {
+        "n_islem": 2748,
+        "ort_r_islem": -0.05836821716165732,
+        "toplam_r": -160.3958607602343
+      },
+      "TF1@4h|cfg": {
+        "n_islem": 1222,
+        "ort_r_islem": -0.0080429436395731,
+        "toplam_r": -9.828477127558328
+      }
+    },
+    "sure_sn": {
+      "B1": 53.5,
+      "F1": 72.9,
+      "H2": 57.9,
+      "M1": 7.1,
+      "R1": 7.6,
+      "S1": 32.9,
+      "T1": 6.0,
+      "TF1": 54.5
+    },
+    "toplam_sure_sn": 292.4,
+    "izgara": {
+      "M1": {
+        "esik_carpani": [
+          0.95,
+          1.0,
+          1.05
+        ],
+        "tf": "1h"
+      },
+      "costs_fee_mult_slip_bp": [
+        [
+          1.0,
+          0.0
+        ],
+        [
+          1.0,
+          5.0
+        ],
+        [
+          2.0,
+          0.0
+        ],
+        [
+          2.0,
+          5.0
+        ]
+      ],
+      "kurulumlar": {
+        "B1": {
+          "parametre_varyantlari": [
+            "def",
+            "BRK_ATR=0.1",
+            "BRK_ATR=0.3",
+            "TARGET_R=1.5",
+            "TARGET_R=2.5",
+            "stop_buffer_atr=0.2",
+            "stop_buffer_atr=0.5"
+          ],
+          "tfs": [
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ]
+        },
+        "F1": {
+          "parametre_varyantlari": [
+            "def",
+            "SWEEP_ATR=0.05",
+            "SWEEP_ATR=0.2",
+            "REJ_MIN=0.5",
+            "REJ_MIN=0.7",
+            "rr_min=1.25",
+            "rr_min=1.75"
+          ],
+          "tfs": [
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ]
+        },
+        "H2": {
+          "parametre_varyantlari": [
+            "def",
+            "PB_MIN_ATR=0.75",
+            "PB_MIN_ATR=1.5",
+            "LEG_GAP_MAX=6",
+            "LEG_GAP_MAX=14",
+            "trail_atr=2.5",
+            "trail_atr=3.5"
+          ],
+          "tfs": [
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ]
+        },
+        "R1": {
+          "parametre_varyantlari": [
+            "def",
+            "range_target_frac=0.6",
+            "range_target_frac=0.9",
+            "rr_min=1.25",
+            "rr_min=1.75",
+            "stop_buffer_atr=0.2",
+            "stop_buffer_atr=0.5"
+          ],
+          "tfs": [
+            "4h",
+            "1d"
+          ]
+        },
+        "S1": {
+          "parametre_varyantlari": [
+            "def",
+            "BOX_W_ATR=2.5",
+            "BOX_W_ATR=3.5",
+            "BRK_ATR=0.05",
+            "BRK_ATR=0.2",
+            "trail_atr=2.5",
+            "trail_atr=3.5"
+          ],
+          "tfs": [
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ]
+        },
+        "T1": {
+          "parametre_varyantlari": [
+            "def",
+            "pullback_ema=20",
+            "stop_buffer_atr=0.2",
+            "stop_buffer_atr=0.5",
+            "trail_atr=2.5",
+            "trail_atr=3.5"
+          ],
+          "tfs": [
+            "4h",
+            "1d"
+          ]
+        },
+        "TF1": {
+          "parametre_varyantlari": [
+            "def",
+            "BRK_ATR=0.1",
+            "BRK_ATR=0.3",
+            "BODY_MIN=0.4",
+            "BODY_MIN=0.6",
+            "trail_atr=2.5",
+            "trail_atr=3.5"
+          ],
+          "tfs": [
+            "15m",
+            "1h",
+            "4h",
+            "1d"
+          ]
+        }
+      }
+    }
+  }
+}

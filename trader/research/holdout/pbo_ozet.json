@@ -15,40 +15,6 @@
   },
   "aileler": [
     {
-      "aile": "Kural R1",
-      "tur": "kural",
-      "kaynak": "var/backtests/*/trades.csv (5 defter, IS 2024-11-01..2025-10-31)",
-      "n_yapilandirma": 5,
-      "T": 365,
-      "n_kullanilan": 5,
-      "durum": "tamam",
-      "pbo": 0.5165,
-      "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.5,
-      "prob_oos_kayip": 0.736,
-      "en_iyi_yapilandirma": "R1:15m_IS_f1_s0_compat",
-      "en_iyi_sr_yillik": 0.0632180041130384,
-      "dsr": 0.20922395573437969,
-      "yorum": "asiri uyum riski yuksek"
-    },
-    {
-      "aile": "Kural T1",
-      "tur": "kural",
-      "kaynak": "var/backtests/*/trades.csv (7 defter, IS 2024-11-01..2025-10-31)",
-      "n_yapilandirma": 7,
-      "T": 365,
-      "n_kullanilan": 7,
-      "durum": "tamam",
-      "pbo": 0.2505,
-      "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.75,
-      "prob_oos_kayip": 0.2555,
-      "en_iyi_yapilandirma": "T1:s2_base_v1b",
-      "en_iyi_sr_yillik": 0.8293004021660374,
-      "dsr": 0.31248414088473836,
-      "yorum": "asiri uyum riski dusuk-orta"
-    },
-    {
       "aile": "ML 19c",
       "tur": "ml",
       "kaynak": "research/ml/19c/oof_predictions.parquet (ml1-r01-v1b-native33 (19c); model x esik)",
@@ -107,13 +73,13 @@
       "T": 1946,
       "n_kullanilan": 112,
       "durum": "tamam",
-      "pbo": 0.095,
+      "pbo": 0.007,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.7168141592920354,
-      "prob_oos_kayip": 0.7965,
-      "en_iyi_yapilandirma": "B1@4h|TARGET_R=2.5|f1|s0",
-      "en_iyi_sr_yillik": 0.2021037948222955,
-      "dsr": 1.920757290573957e-65,
+      "medyan_oos_goreli_sira": 0.9292035398230089,
+      "prob_oos_kayip": 0.693,
+      "en_iyi_yapilandirma": "B1@4h|BRK_ATR=0.3|f1|s0",
+      "en_iyi_sr_yillik": 0.11178003588043083,
+      "dsr": 9.770199334900311e-94,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -124,13 +90,13 @@
       "T": 1946,
       "n_kullanilan": 112,
       "durum": "tamam",
-      "pbo": 0.003,
+      "pbo": 0.0,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.672566371681416,
-      "prob_oos_kayip": 0.7735,
-      "en_iyi_yapilandirma": "F1@1d|REJ_MIN=0.5|f1|s0",
-      "en_iyi_sr_yillik": 0.30785738981021893,
-      "dsr": 2.670058096976978e-132,
+      "medyan_oos_goreli_sira": 0.6637168141592921,
+      "prob_oos_kayip": 0.8215,
+      "en_iyi_yapilandirma": "F1@1d|REJ_MIN=0.7|f1|s0",
+      "en_iyi_sr_yillik": 0.05729242548559153,
+      "dsr": 7.955520573407131e-137,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -141,13 +107,13 @@
       "T": 1946,
       "n_kullanilan": 112,
       "durum": "tamam",
-      "pbo": 0.051,
+      "pbo": 0.0675,
       "n_kombinasyon": 2000,
       "medyan_oos_goreli_sira": 0.7168141592920354,
-      "prob_oos_kayip": 0.334,
-      "en_iyi_yapilandirma": "H2@1d|trail_atr=3.5|f1|s0",
-      "en_iyi_sr_yillik": 0.7779122895508476,
-      "dsr": 5.295706779779459e-28,
+      "prob_oos_kayip": 0.553,
+      "en_iyi_yapilandirma": "H2@4h|trail_atr=2.5|f1|s0",
+      "en_iyi_sr_yillik": 0.405541615343648,
+      "dsr": 2.52639863387818e-25,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -158,13 +124,13 @@
       "T": 1110,
       "n_kullanilan": 12,
       "durum": "tamam",
-      "pbo": 0.0025,
+      "pbo": 0.0045,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.7692307692307693,
-      "prob_oos_kayip": 0.6765,
+      "medyan_oos_goreli_sira": 0.8461538461538461,
+      "prob_oos_kayip": 0.7715,
       "en_iyi_yapilandirma": "M1@1h|thr_x1|f1|s0",
-      "en_iyi_sr_yillik": 0.03482015741667691,
-      "dsr": 0.0043733150915791115,
+      "en_iyi_sr_yillik": -0.2586875277227453,
+      "dsr": 0.0011391930018196897,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -175,13 +141,13 @@
       "T": 1946,
       "n_kullanilan": 52,
       "durum": "tamam",
-      "pbo": 0.1075,
+      "pbo": 0.388,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.8490566037735849,
-      "prob_oos_kayip": 0.7475,
-      "en_iyi_yapilandirma": "R1@4h|stop_buffer_atr=0.5|f1|s0",
-      "en_iyi_sr_yillik": 0.06964741199705254,
-      "dsr": 0.06519098267106783,
+      "medyan_oos_goreli_sira": 0.5283018867924528,
+      "prob_oos_kayip": 0.9215,
+      "en_iyi_yapilandirma": "R1@1d|range_target_frac=0.6|f2|s0",
+      "en_iyi_sr_yillik": -0.4330868669526059,
+      "dsr": 4.947836464309731e-10,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -192,13 +158,13 @@
       "T": 1946,
       "n_kullanilan": 112,
       "durum": "tamam",
-      "pbo": 0.1535,
+      "pbo": 0.177,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.6814159292035398,
-      "prob_oos_kayip": 0.589,
-      "en_iyi_yapilandirma": "S1@4h|trail_atr=3.5|f1|s0",
-      "en_iyi_sr_yillik": 0.4080424597336099,
-      "dsr": 4.97564798135145e-39,
+      "medyan_oos_goreli_sira": 0.6548672566371682,
+      "prob_oos_kayip": 0.888,
+      "en_iyi_yapilandirma": "S1@1d|trail_atr=3.5|f1|s0",
+      "en_iyi_sr_yillik": 0.13084428629514477,
+      "dsr": 5.4775801429691947e-45,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
@@ -209,14 +175,14 @@
       "T": 1946,
       "n_kullanilan": 48,
       "durum": "tamam",
-      "pbo": 0.3245,
+      "pbo": 0.514,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.7653061224489796,
-      "prob_oos_kayip": 0.1535,
+      "medyan_oos_goreli_sira": 0.4897959183673469,
+      "prob_oos_kayip": 0.1845,
       "en_iyi_yapilandirma": "T1@1d|trail_atr=2.5|f1|s0",
-      "en_iyi_sr_yillik": 1.059232723014315,
-      "dsr": 0.755873295486851,
-      "yorum": "asiri uyum riski dusuk-orta"
+      "en_iyi_sr_yillik": 0.9534429420451989,
+      "dsr": 0.5923338026460777,
+      "yorum": "asiri uyum riski yuksek"
     },
     {
       "aile": "Kural TF1 (harness)",
@@ -226,41 +192,41 @@
       "T": 1946,
       "n_kullanilan": 112,
       "durum": "tamam",
-      "pbo": 0.02,
+      "pbo": 0.0325,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.8053097345132744,
-      "prob_oos_kayip": 0.078,
+      "medyan_oos_goreli_sira": 0.831858407079646,
+      "prob_oos_kayip": 0.145,
       "en_iyi_yapilandirma": "TF1@1d|trail_atr=3.5|f1|s0",
-      "en_iyi_sr_yillik": 1.1857421494992084,
-      "dsr": 1.198251010816452e-40,
+      "en_iyi_sr_yillik": 1.0575750535899004,
+      "dsr": 4.7261877922579196e-52,
       "yorum": "asiri uyum riski dusuk-orta"
     },
     {
       "aile": "TUM KUME",
       "tur": "tum",
       "kaynak": "yukaridaki tum yapilandirmalar, ortak gun izgarasinda (etkin olmayan gun = 0 R)",
-      "n_yapilandirma": 724,
+      "n_yapilandirma": 712,
       "T": 1946,
-      "n_kullanilan": 704,
+      "n_kullanilan": 692,
       "durum": "tamam",
-      "pbo": 0.1105,
+      "pbo": 0.0845,
       "n_kombinasyon": 2000,
-      "medyan_oos_goreli_sira": 0.9127659574468086,
-      "prob_oos_kayip": 0.2065,
+      "medyan_oos_goreli_sira": 0.886002886002886,
+      "prob_oos_kayip": 0.2975,
       "en_iyi_yapilandirma": "h:TF1@1d|trail_atr=3.5|f1|s0",
-      "en_iyi_sr_yillik": 1.1857421494992084,
-      "dsr": 1.0149471436123044e-118,
+      "en_iyi_sr_yillik": 1.0575750535899004,
+      "dsr": 8.034702592519196e-130,
       "yorum": "asiri uyum riski dusuk-orta"
     }
   ],
   "kurulumlar": [
     {
       "kurulum": "T1@15m",
-      "kayit": "var"
+      "kayit": "yok"
     },
     {
       "kurulum": "T1@1h",
-      "kayit": "var"
+      "kayit": "yok"
     },
     {
       "kurulum": "T1@4h",
@@ -272,11 +238,11 @@
     },
     {
       "kurulum": "R1@15m",
-      "kayit": "var"
+      "kayit": "yok"
     },
     {
       "kurulum": "R1@1h",
-      "kayit": "var"
+      "kayit": "yok"
     },
     {
       "kurulum": "R1@4h",
@@ -386,16 +352,7 @@
       "neden": "ayni neden"
     }
   ],
-  "atlanan_defterler": [
-    {
-      "kosu": "1h_WF_f1_s0_compat",
-      "neden": "donem 2025-11-01..2026-05-01 ortak IS penceresini kapsamiyor"
-    },
-    {
-      "kosu": "s2_explore_tmp",
-      "neden": "trades.csv/meta.json yok"
-    }
-  ],
+  "atlanan_defterler": [],
   "harness": {
     "ciftler": [
       "BTC/USDT",
@@ -407,14 +364,7 @@
       "ADA/USDT",
       "TRX/USDT",
       "LINK/USDT",
-      "AVAX/USDT"
-    ],
-    "dislanan": {
-      "C1@1h": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi",
-      "C1@4h": "ayni neden",
-      "M1@4h": "gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)"
-    },
-    "gecmisi_olmayan_ciftler": [
+      "AVAX/USDT",
       "HYPE/USDT",
       "BCH/USDT",
       "XLM/USDT",
@@ -433,6 +383,18 @@
       "META/USDT",
       "AVGO/USDT",
       "TSLA/USDT",
+      "PLTR/USDT",
+      "XAU/USDT",
+      "XAG/USDT",
+      "BZ/USDT",
+      "COPPER/USDT"
+    ],
+    "dislanan": {
+      "C1@1h": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi",
+      "C1@4h": "ayni neden",
+      "M1@4h": "gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)"
+    },
+    "gecmisi_olmayan_ciftler": [
       "BRKB/USDT",
       "JPM/USDT",
       "LLY/USDT",
@@ -441,14 +403,9 @@
       "ORCL/USDT",
       "XOM/USDT",
       "NFLX/USDT",
-      "PLTR/USDT",
       "COST/USDT",
       "AMD/USDT",
-      "HD/USDT",
-      "XAU/USDT",
-      "XAG/USDT",
-      "BZ/USDT",
-      "COPPER/USDT"
+      "HD/USDT"
     ],
     "gun_izgarasi": [
       "2021-01-01",
@@ -458,1682 +415,1682 @@
     "kolonlar": {
       "B1@15m|BRK_ATR=0.1|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 4375,
+        "n_islem": 7923,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.1|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 4375,
+        "n_islem": 7923,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.1|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 4375,
+        "n_islem": 7923,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.1|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 4375,
+        "n_islem": 7923,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.3|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3148,
+        "n_islem": 5626,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.3|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3148,
+        "n_islem": 5626,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.3|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3148,
+        "n_islem": 5626,
         "tf": "15m"
       },
       "B1@15m|BRK_ATR=0.3|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3148,
+        "n_islem": 5626,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=1.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3781,
+        "n_islem": 6789,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=1.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3781,
+        "n_islem": 6789,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=1.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3781,
+        "n_islem": 6789,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=1.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3781,
+        "n_islem": 6789,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=2.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3747,
+        "n_islem": 6729,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=2.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3747,
+        "n_islem": 6729,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=2.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3747,
+        "n_islem": 6729,
         "tf": "15m"
       },
       "B1@15m|TARGET_R=2.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3747,
+        "n_islem": 6729,
         "tf": "15m"
       },
       "B1@15m|def|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3760,
+        "n_islem": 6751,
         "tf": "15m"
       },
       "B1@15m|def|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3760,
+        "n_islem": 6751,
         "tf": "15m"
       },
       "B1@15m|def|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3760,
+        "n_islem": 6751,
         "tf": "15m"
       },
       "B1@15m|def|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3760,
+        "n_islem": 6751,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3744,
+        "n_islem": 6725,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3744,
+        "n_islem": 6725,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3744,
+        "n_islem": 6725,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3744,
+        "n_islem": 6725,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 3702,
+        "n_islem": 6648,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 3702,
+        "n_islem": 6648,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 3702,
+        "n_islem": 6648,
         "tf": "15m"
       },
       "B1@15m|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 3702,
+        "n_islem": 6648,
         "tf": "15m"
       },
       "B1@1d|BRK_ATR=0.1|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 117,
+        "n_islem": 211,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.1|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 117,
+        "n_islem": 211,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.1|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 117,
+        "n_islem": 211,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.1|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 117,
+        "n_islem": 211,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.3|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 78,
+        "n_islem": 142,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.3|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 78,
+        "n_islem": 142,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.3|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 78,
+        "n_islem": 142,
         "tf": "1d"
       },
       "B1@1d|BRK_ATR=0.3|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 78,
+        "n_islem": 142,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=1.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=1.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=1.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=1.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=2.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 97,
+        "n_islem": 176,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=2.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 97,
+        "n_islem": 176,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=2.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 97,
+        "n_islem": 176,
         "tf": "1d"
       },
       "B1@1d|TARGET_R=2.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 97,
+        "n_islem": 176,
         "tf": "1d"
       },
       "B1@1d|def|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|def|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|def|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|def|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 98,
+        "n_islem": 177,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 99,
+        "n_islem": 179,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 99,
+        "n_islem": 179,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 99,
+        "n_islem": 179,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 99,
+        "n_islem": 179,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 95,
+        "n_islem": 172,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 95,
+        "n_islem": 172,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 95,
+        "n_islem": 172,
         "tf": "1d"
       },
       "B1@1d|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 95,
+        "n_islem": 172,
         "tf": "1d"
       },
       "B1@1h|BRK_ATR=0.1|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1271,
+        "n_islem": 2389,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.1|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1271,
+        "n_islem": 2389,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.1|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1271,
+        "n_islem": 2389,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.1|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1271,
+        "n_islem": 2389,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.3|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 958,
+        "n_islem": 1757,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.3|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 958,
+        "n_islem": 1757,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.3|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 958,
+        "n_islem": 1757,
         "tf": "1h"
       },
       "B1@1h|BRK_ATR=0.3|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 958,
+        "n_islem": 1757,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=1.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1112,
+        "n_islem": 2078,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=1.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1112,
+        "n_islem": 2078,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=1.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1112,
+        "n_islem": 2078,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=1.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1112,
+        "n_islem": 2078,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=2.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1102,
+        "n_islem": 2055,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=2.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1102,
+        "n_islem": 2055,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=2.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1102,
+        "n_islem": 2055,
         "tf": "1h"
       },
       "B1@1h|TARGET_R=2.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1102,
+        "n_islem": 2055,
         "tf": "1h"
       },
       "B1@1h|def|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2068,
         "tf": "1h"
       },
       "B1@1h|def|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2068,
         "tf": "1h"
       },
       "B1@1h|def|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2068,
         "tf": "1h"
       },
       "B1@1h|def|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2068,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2066,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2066,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2066,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1109,
+        "n_islem": 2066,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 1097,
+        "n_islem": 2035,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 1097,
+        "n_islem": 2035,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 1097,
+        "n_islem": 2035,
         "tf": "1h"
       },
       "B1@1h|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 1097,
+        "n_islem": 2035,
         "tf": "1h"
       },
       "B1@4h|BRK_ATR=0.1|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 421,
+        "n_islem": 784,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.1|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 421,
+        "n_islem": 784,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.1|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 421,
+        "n_islem": 784,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.1|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 421,
+        "n_islem": 784,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.3|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 308,
+        "n_islem": 580,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.3|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 308,
+        "n_islem": 580,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.3|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 308,
+        "n_islem": 580,
         "tf": "4h"
       },
       "B1@4h|BRK_ATR=0.3|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 308,
+        "n_islem": 580,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=1.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 378,
+        "n_islem": 692,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=1.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 378,
+        "n_islem": 692,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=1.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 378,
+        "n_islem": 692,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=1.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 378,
+        "n_islem": 692,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=2.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 369,
+        "n_islem": 683,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=2.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 369,
+        "n_islem": 683,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=2.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 369,
+        "n_islem": 683,
         "tf": "4h"
       },
       "B1@4h|TARGET_R=2.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 369,
+        "n_islem": 683,
         "tf": "4h"
       },
       "B1@4h|def|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 373,
+        "n_islem": 687,
         "tf": "4h"
       },
       "B1@4h|def|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 373,
+        "n_islem": 687,
         "tf": "4h"
       },
       "B1@4h|def|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 373,
+        "n_islem": 687,
         "tf": "4h"
       },
       "B1@4h|def|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 373,
+        "n_islem": 687,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 372,
+        "n_islem": 684,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 372,
+        "n_islem": 684,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 372,
+        "n_islem": 684,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 372,
+        "n_islem": 684,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "B1",
-        "n_islem": 365,
+        "n_islem": 673,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "B1",
-        "n_islem": 365,
+        "n_islem": 673,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "B1",
-        "n_islem": 365,
+        "n_islem": 673,
         "tf": "4h"
       },
       "B1@4h|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "B1",
-        "n_islem": 365,
+        "n_islem": 673,
         "tf": "4h"
       },
       "F1@15m|REJ_MIN=0.5|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 17905,
+        "n_islem": 33425,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.5|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 17905,
+        "n_islem": 33425,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.5|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 17905,
+        "n_islem": 33425,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.5|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 17905,
+        "n_islem": 33425,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.7|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 13972,
+        "n_islem": 26026,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.7|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 13972,
+        "n_islem": 26026,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.7|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 13972,
+        "n_islem": 26026,
         "tf": "15m"
       },
       "F1@15m|REJ_MIN=0.7|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 13972,
+        "n_islem": 26026,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.05|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 17592,
+        "n_islem": 32924,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.05|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 17592,
+        "n_islem": 32924,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.05|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 17592,
+        "n_islem": 32924,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.05|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 17592,
+        "n_islem": 32924,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.2|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 14034,
+        "n_islem": 25888,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.2|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 14034,
+        "n_islem": 25888,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.2|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 14034,
+        "n_islem": 25888,
         "tf": "15m"
       },
       "F1@15m|SWEEP_ATR=0.2|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 14034,
+        "n_islem": 25888,
         "tf": "15m"
       },
       "F1@15m|def|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 16312,
+        "n_islem": 30480,
         "tf": "15m"
       },
       "F1@15m|def|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 16312,
+        "n_islem": 30480,
         "tf": "15m"
       },
       "F1@15m|def|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 16312,
+        "n_islem": 30480,
         "tf": "15m"
       },
       "F1@15m|def|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 16312,
+        "n_islem": 30480,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.25|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 17514,
+        "n_islem": 32725,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.25|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 17514,
+        "n_islem": 32725,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.25|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 17514,
+        "n_islem": 32725,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.25|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 17514,
+        "n_islem": 32725,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.75|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 14807,
+        "n_islem": 27737,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.75|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 14807,
+        "n_islem": 27737,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.75|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 14807,
+        "n_islem": 27737,
         "tf": "15m"
       },
       "F1@15m|rr_min=1.75|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 14807,
+        "n_islem": 27737,
         "tf": "15m"
       },
       "F1@1d|REJ_MIN=0.5|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 22,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.5|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 22,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.5|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 22,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.5|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 22,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.7|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 34,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.7|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 34,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.7|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 34,
         "tf": "1d"
       },
       "F1@1d|REJ_MIN=0.7|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 34,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.05|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 23,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.05|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 23,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.05|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 23,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.05|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 23,
+        "n_islem": 48,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.2|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 17,
+        "n_islem": 33,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.2|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 17,
+        "n_islem": 33,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.2|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 17,
+        "n_islem": 33,
         "tf": "1d"
       },
       "F1@1d|SWEEP_ATR=0.2|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 17,
+        "n_islem": 33,
         "tf": "1d"
       },
       "F1@1d|def|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 43,
         "tf": "1d"
       },
       "F1@1d|def|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 43,
         "tf": "1d"
       },
       "F1@1d|def|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 43,
         "tf": "1d"
       },
       "F1@1d|def|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 43,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.25|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 25,
+        "n_islem": 51,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.25|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 25,
+        "n_islem": 51,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.25|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 25,
+        "n_islem": 51,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.25|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 25,
+        "n_islem": 51,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.75|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 42,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.75|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 42,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.75|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 42,
         "tf": "1d"
       },
       "F1@1d|rr_min=1.75|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 19,
+        "n_islem": 42,
         "tf": "1d"
       },
       "F1@1h|REJ_MIN=0.5|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3871,
+        "n_islem": 7251,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.5|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3871,
+        "n_islem": 7251,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.5|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3871,
+        "n_islem": 7251,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.5|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3871,
+        "n_islem": 7251,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.7|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3019,
+        "n_islem": 5616,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.7|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3019,
+        "n_islem": 5616,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.7|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3019,
+        "n_islem": 5616,
         "tf": "1h"
       },
       "F1@1h|REJ_MIN=0.7|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3019,
+        "n_islem": 5616,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.05|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3806,
+        "n_islem": 7132,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.05|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3806,
+        "n_islem": 7132,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.05|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3806,
+        "n_islem": 7132,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.05|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3806,
+        "n_islem": 7132,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.2|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3017,
+        "n_islem": 5601,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.2|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3017,
+        "n_islem": 5601,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.2|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3017,
+        "n_islem": 5601,
         "tf": "1h"
       },
       "F1@1h|SWEEP_ATR=0.2|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3017,
+        "n_islem": 5601,
         "tf": "1h"
       },
       "F1@1h|def|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3538,
+        "n_islem": 6618,
         "tf": "1h"
       },
       "F1@1h|def|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3538,
+        "n_islem": 6618,
         "tf": "1h"
       },
       "F1@1h|def|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3538,
+        "n_islem": 6618,
         "tf": "1h"
       },
       "F1@1h|def|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3538,
+        "n_islem": 6618,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.25|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3778,
+        "n_islem": 7077,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.25|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3778,
+        "n_islem": 7077,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.25|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3778,
+        "n_islem": 7077,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.25|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3778,
+        "n_islem": 7077,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.75|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 3260,
+        "n_islem": 6084,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.75|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 3260,
+        "n_islem": 6084,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.75|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 3260,
+        "n_islem": 6084,
         "tf": "1h"
       },
       "F1@1h|rr_min=1.75|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 3260,
+        "n_islem": 6084,
         "tf": "1h"
       },
       "F1@4h|REJ_MIN=0.5|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 278,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.5|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 278,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.5|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 278,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.5|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 278,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.7|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 199,
+        "n_islem": 388,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.7|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 199,
+        "n_islem": 388,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.7|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 199,
+        "n_islem": 388,
         "tf": "4h"
       },
       "F1@4h|REJ_MIN=0.7|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 199,
+        "n_islem": 388,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.05|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 261,
+        "n_islem": 510,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.05|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 261,
+        "n_islem": 510,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.05|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 261,
+        "n_islem": 510,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.05|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 261,
+        "n_islem": 510,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.2|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 188,
+        "n_islem": 371,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.2|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 188,
+        "n_islem": 371,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.2|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 188,
+        "n_islem": 371,
         "tf": "4h"
       },
       "F1@4h|SWEEP_ATR=0.2|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 188,
+        "n_islem": 371,
         "tf": "4h"
       },
       "F1@4h|def|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 243,
+        "n_islem": 472,
         "tf": "4h"
       },
       "F1@4h|def|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 243,
+        "n_islem": 472,
         "tf": "4h"
       },
       "F1@4h|def|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 243,
+        "n_islem": 472,
         "tf": "4h"
       },
       "F1@4h|def|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 243,
+        "n_islem": 472,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.25|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 270,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.25|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 270,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.25|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 270,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.25|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 270,
+        "n_islem": 535,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.75|f1|s0": {
         "kurulum": "F1",
-        "n_islem": 221,
+        "n_islem": 424,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.75|f1|s5": {
         "kurulum": "F1",
-        "n_islem": 221,
+        "n_islem": 424,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.75|f2|s0": {
         "kurulum": "F1",
-        "n_islem": 221,
+        "n_islem": 424,
         "tf": "4h"
       },
       "F1@4h|rr_min=1.75|f2|s5": {
         "kurulum": "F1",
-        "n_islem": 221,
+        "n_islem": 424,
         "tf": "4h"
       },
       "H2@15m|LEG_GAP_MAX=14|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 10282,
+        "n_islem": 18238,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=14|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 10244,
+        "n_islem": 18178,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=14|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 10282,
+        "n_islem": 18238,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=14|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 10244,
+        "n_islem": 18178,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=6|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 9991,
+        "n_islem": 17682,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=6|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 9955,
+        "n_islem": 17627,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=6|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 9991,
+        "n_islem": 17682,
         "tf": "15m"
       },
       "H2@15m|LEG_GAP_MAX=6|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 9955,
+        "n_islem": 17627,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=0.75|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 10463,
+        "n_islem": 18600,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=0.75|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 10425,
+        "n_islem": 18540,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=0.75|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 10463,
+        "n_islem": 18600,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=0.75|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 10425,
+        "n_islem": 18540,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=1.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 9137,
+        "n_islem": 16176,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=1.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 9108,
+        "n_islem": 16128,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=1.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 9137,
+        "n_islem": 16176,
         "tf": "15m"
       },
       "H2@15m|PB_MIN_ATR=1.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 9108,
+        "n_islem": 16128,
         "tf": "15m"
       },
       "H2@15m|def|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 10278,
+        "n_islem": 18232,
         "tf": "15m"
       },
       "H2@15m|def|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 10240,
+        "n_islem": 18172,
         "tf": "15m"
       },
       "H2@15m|def|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 10278,
+        "n_islem": 18232,
         "tf": "15m"
       },
       "H2@15m|def|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 10240,
+        "n_islem": 18172,
         "tf": "15m"
       },
       "H2@15m|trail_atr=2.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 10782,
+        "n_islem": 19124,
         "tf": "15m"
       },
       "H2@15m|trail_atr=2.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 10722,
+        "n_islem": 19028,
         "tf": "15m"
       },
       "H2@15m|trail_atr=2.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 10782,
+        "n_islem": 19124,
         "tf": "15m"
       },
       "H2@15m|trail_atr=2.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 10722,
+        "n_islem": 19028,
         "tf": "15m"
       },
       "H2@15m|trail_atr=3.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 9858,
+        "n_islem": 17503,
         "tf": "15m"
       },
       "H2@15m|trail_atr=3.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 9831,
+        "n_islem": 17464,
         "tf": "15m"
       },
       "H2@15m|trail_atr=3.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 9858,
+        "n_islem": 17503,
         "tf": "15m"
       },
       "H2@15m|trail_atr=3.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 9831,
+        "n_islem": 17464,
         "tf": "15m"
       },
       "H2@1d|LEG_GAP_MAX=14|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=14|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=14|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=14|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=6|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 207,
+        "n_islem": 365,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=6|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 207,
+        "n_islem": 365,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=6|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 207,
+        "n_islem": 365,
         "tf": "1d"
       },
       "H2@1d|LEG_GAP_MAX=6|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 207,
+        "n_islem": 365,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=0.75|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 218,
+        "n_islem": 388,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=0.75|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 218,
+        "n_islem": 388,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=0.75|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 218,
+        "n_islem": 388,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=0.75|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 218,
+        "n_islem": 388,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=1.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 162,
+        "n_islem": 287,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=1.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 162,
+        "n_islem": 287,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=1.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 162,
+        "n_islem": 287,
         "tf": "1d"
       },
       "H2@1d|PB_MIN_ATR=1.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 162,
+        "n_islem": 287,
         "tf": "1d"
       },
       "H2@1d|def|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|def|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|def|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|def|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 211,
+        "n_islem": 371,
         "tf": "1d"
       },
       "H2@1d|trail_atr=2.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 215,
+        "n_islem": 378,
         "tf": "1d"
       },
       "H2@1d|trail_atr=2.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 215,
+        "n_islem": 378,
         "tf": "1d"
       },
       "H2@1d|trail_atr=2.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 215,
+        "n_islem": 378,
         "tf": "1d"
       },
       "H2@1d|trail_atr=2.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 215,
+        "n_islem": 378,
         "tf": "1d"
       },
       "H2@1d|trail_atr=3.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 203,
+        "n_islem": 360,
         "tf": "1d"
       },
       "H2@1d|trail_atr=3.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 203,
+        "n_islem": 360,
         "tf": "1d"
       },
       "H2@1d|trail_atr=3.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 203,
+        "n_islem": 360,
         "tf": "1d"
       },
       "H2@1d|trail_atr=3.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 203,
+        "n_islem": 360,
         "tf": "1d"
       },
       "H2@1h|LEG_GAP_MAX=14|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3449,
+        "n_islem": 6207,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=14|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3445,
+        "n_islem": 6200,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=14|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3449,
+        "n_islem": 6207,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=14|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3445,
+        "n_islem": 6200,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=6|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3341,
+        "n_islem": 6006,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=6|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3337,
+        "n_islem": 5999,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=6|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3341,
+        "n_islem": 6006,
         "tf": "1h"
       },
       "H2@1h|LEG_GAP_MAX=6|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3337,
+        "n_islem": 5999,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=0.75|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3523,
+        "n_islem": 6328,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=0.75|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3519,
+        "n_islem": 6321,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=0.75|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3523,
+        "n_islem": 6328,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=0.75|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3519,
+        "n_islem": 6321,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=1.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3014,
+        "n_islem": 5433,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=1.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3010,
+        "n_islem": 5427,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=1.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3014,
+        "n_islem": 5433,
         "tf": "1h"
       },
       "H2@1h|PB_MIN_ATR=1.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3010,
+        "n_islem": 5427,
         "tf": "1h"
       },
       "H2@1h|def|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3448,
+        "n_islem": 6200,
         "tf": "1h"
       },
       "H2@1h|def|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3444,
+        "n_islem": 6193,
         "tf": "1h"
       },
       "H2@1h|def|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3448,
+        "n_islem": 6200,
         "tf": "1h"
       },
       "H2@1h|def|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3444,
+        "n_islem": 6193,
         "tf": "1h"
       },
       "H2@1h|trail_atr=2.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3577,
+        "n_islem": 6440,
         "tf": "1h"
       },
       "H2@1h|trail_atr=2.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3571,
+        "n_islem": 6428,
         "tf": "1h"
       },
       "H2@1h|trail_atr=2.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3577,
+        "n_islem": 6440,
         "tf": "1h"
       },
       "H2@1h|trail_atr=2.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3571,
+        "n_islem": 6428,
         "tf": "1h"
       },
       "H2@1h|trail_atr=3.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 3321,
+        "n_islem": 5972,
         "tf": "1h"
       },
       "H2@1h|trail_atr=3.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 3319,
+        "n_islem": 5969,
         "tf": "1h"
       },
       "H2@1h|trail_atr=3.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 3321,
+        "n_islem": 5972,
         "tf": "1h"
       },
       "H2@1h|trail_atr=3.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 3319,
+        "n_islem": 5969,
         "tf": "1h"
       },
       "H2@4h|LEG_GAP_MAX=14|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1999,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=14|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1999,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=14|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1999,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=14|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1999,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=6|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1135,
+        "n_islem": 1943,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=6|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1135,
+        "n_islem": 1943,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=6|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1135,
+        "n_islem": 1943,
         "tf": "4h"
       },
       "H2@4h|LEG_GAP_MAX=6|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1135,
+        "n_islem": 1943,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=0.75|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1195,
+        "n_islem": 2045,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=0.75|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1195,
+        "n_islem": 2045,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=0.75|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1195,
+        "n_islem": 2045,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=0.75|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1195,
+        "n_islem": 2045,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=1.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1013,
+        "n_islem": 1747,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=1.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1013,
+        "n_islem": 1747,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=1.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1013,
+        "n_islem": 1747,
         "tf": "4h"
       },
       "H2@4h|PB_MIN_ATR=1.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1013,
+        "n_islem": 1747,
         "tf": "4h"
       },
       "H2@4h|def|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1998,
         "tf": "4h"
       },
       "H2@4h|def|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1998,
         "tf": "4h"
       },
       "H2@4h|def|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1998,
         "tf": "4h"
       },
       "H2@4h|def|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1164,
+        "n_islem": 1998,
         "tf": "4h"
       },
       "H2@4h|trail_atr=2.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1208,
+        "n_islem": 2070,
         "tf": "4h"
       },
       "H2@4h|trail_atr=2.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1208,
+        "n_islem": 2069,
         "tf": "4h"
       },
       "H2@4h|trail_atr=2.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1208,
+        "n_islem": 2070,
         "tf": "4h"
       },
       "H2@4h|trail_atr=2.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1208,
+        "n_islem": 2069,
         "tf": "4h"
       },
       "H2@4h|trail_atr=3.5|f1|s0": {
         "kurulum": "H2",
-        "n_islem": 1122,
+        "n_islem": 1924,
         "tf": "4h"
       },
       "H2@4h|trail_atr=3.5|f1|s5": {
         "kurulum": "H2",
-        "n_islem": 1122,
+        "n_islem": 1924,
         "tf": "4h"
       },
       "H2@4h|trail_atr=3.5|f2|s0": {
         "kurulum": "H2",
-        "n_islem": 1122,
+        "n_islem": 1924,
         "tf": "4h"
       },
       "H2@4h|trail_atr=3.5|f2|s5": {
         "kurulum": "H2",
-        "n_islem": 1122,
+        "n_islem": 1924,
         "tf": "4h"
       },
       "M1@1h|thr_x0.95|f1|s0": {
@@ -2198,22 +2155,22 @@
       },
       "R1@1d|def|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 4,
         "tf": "1d"
       },
       "R1@1d|def|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 4,
         "tf": "1d"
       },
       "R1@1d|def|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 4,
         "tf": "1d"
       },
       "R1@1d|def|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 4,
         "tf": "1d"
       },
       "R1@1d|range_target_frac=0.6|f1|s0": {
@@ -2238,82 +2195,82 @@
       },
       "R1@1d|range_target_frac=0.9|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 8,
+        "n_islem": 15,
         "tf": "1d"
       },
       "R1@1d|range_target_frac=0.9|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 8,
+        "n_islem": 15,
         "tf": "1d"
       },
       "R1@1d|range_target_frac=0.9|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 8,
+        "n_islem": 15,
         "tf": "1d"
       },
       "R1@1d|range_target_frac=0.9|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 8,
+        "n_islem": 15,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.25|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 7,
+        "n_islem": 14,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.25|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 7,
+        "n_islem": 14,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.25|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 7,
+        "n_islem": 14,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.25|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 7,
+        "n_islem": 14,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.75|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 2,
+        "n_islem": 3,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.75|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 2,
+        "n_islem": 3,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.75|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 2,
+        "n_islem": 3,
         "tf": "1d"
       },
       "R1@1d|rr_min=1.75|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 2,
+        "n_islem": 3,
         "tf": "1d"
       },
       "R1@1d|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 5,
         "tf": "1d"
       },
       "R1@1d|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 5,
         "tf": "1d"
       },
       "R1@1d|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 5,
         "tf": "1d"
       },
       "R1@1d|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 3,
+        "n_islem": 5,
         "tf": "1d"
       },
       "R1@1d|stop_buffer_atr=0.5|f1|s0": {
@@ -2338,1516 +2295,1541 @@
       },
       "R1@4h|def|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 227,
+        "n_islem": 466,
         "tf": "4h"
       },
       "R1@4h|def|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 227,
+        "n_islem": 466,
         "tf": "4h"
       },
       "R1@4h|def|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 227,
+        "n_islem": 466,
         "tf": "4h"
       },
       "R1@4h|def|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 227,
+        "n_islem": 466,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.6|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 148,
+        "n_islem": 320,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.6|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 148,
+        "n_islem": 320,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.6|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 148,
+        "n_islem": 320,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.6|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 148,
+        "n_islem": 320,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.9|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 270,
+        "n_islem": 549,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.9|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 270,
+        "n_islem": 549,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.9|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 270,
+        "n_islem": 549,
         "tf": "4h"
       },
       "R1@4h|range_target_frac=0.9|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 270,
+        "n_islem": 549,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.25|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 261,
+        "n_islem": 535,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.25|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 261,
+        "n_islem": 535,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.25|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 261,
+        "n_islem": 535,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.25|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 261,
+        "n_islem": 535,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.75|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 186,
+        "n_islem": 392,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.75|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 186,
+        "n_islem": 392,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.75|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 186,
+        "n_islem": 392,
         "tf": "4h"
       },
       "R1@4h|rr_min=1.75|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 186,
+        "n_islem": 392,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 238,
+        "n_islem": 489,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 238,
+        "n_islem": 489,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 238,
+        "n_islem": 489,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 238,
+        "n_islem": 489,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "R1",
-        "n_islem": 180,
+        "n_islem": 375,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "R1",
-        "n_islem": 180,
+        "n_islem": 375,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "R1",
-        "n_islem": 180,
+        "n_islem": 375,
         "tf": "4h"
       },
       "R1@4h|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "R1",
-        "n_islem": 180,
+        "n_islem": 375,
         "tf": "4h"
       },
       "S1@15m|BOX_W_ATR=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 18352,
+        "n_islem": 33379,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 18173,
+        "n_islem": 33063,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 18352,
+        "n_islem": 33379,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 18173,
+        "n_islem": 33063,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 18855,
+        "n_islem": 34395,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 18671,
+        "n_islem": 34060,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 18855,
+        "n_islem": 34395,
         "tf": "15m"
       },
       "S1@15m|BOX_W_ATR=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 18671,
+        "n_islem": 34060,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.05|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 20243,
+        "n_islem": 36912,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.05|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 20022,
+        "n_islem": 36512,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.05|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 20243,
+        "n_islem": 36912,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.05|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 20022,
+        "n_islem": 36512,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.2|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 15775,
+        "n_islem": 28749,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.2|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 15638,
+        "n_islem": 28513,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.2|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 15775,
+        "n_islem": 28749,
         "tf": "15m"
       },
       "S1@15m|BRK_ATR=0.2|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 15638,
+        "n_islem": 28513,
         "tf": "15m"
       },
       "S1@15m|def|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 18820,
+        "n_islem": 34314,
         "tf": "15m"
       },
       "S1@15m|def|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 18635,
+        "n_islem": 33979,
         "tf": "15m"
       },
       "S1@15m|def|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 18820,
+        "n_islem": 34314,
         "tf": "15m"
       },
       "S1@15m|def|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 18635,
+        "n_islem": 33979,
         "tf": "15m"
       },
       "S1@15m|trail_atr=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 19280,
+        "n_islem": 35131,
         "tf": "15m"
       },
       "S1@15m|trail_atr=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 19066,
+        "n_islem": 34751,
         "tf": "15m"
       },
       "S1@15m|trail_atr=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 19280,
+        "n_islem": 35131,
         "tf": "15m"
       },
       "S1@15m|trail_atr=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 19066,
+        "n_islem": 34751,
         "tf": "15m"
       },
       "S1@15m|trail_atr=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 18324,
+        "n_islem": 33427,
         "tf": "15m"
       },
       "S1@15m|trail_atr=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 18166,
+        "n_islem": 33149,
         "tf": "15m"
       },
       "S1@15m|trail_atr=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 18324,
+        "n_islem": 33427,
         "tf": "15m"
       },
       "S1@15m|trail_atr=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 18166,
+        "n_islem": 33149,
         "tf": "15m"
       },
       "S1@1d|BOX_W_ATR=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 556,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 556,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 556,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 556,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 341,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 341,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 341,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|BOX_W_ATR=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 341,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.05|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 364,
+        "n_islem": 606,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.05|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 364,
+        "n_islem": 606,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.05|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 364,
+        "n_islem": 606,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.05|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 364,
+        "n_islem": 606,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.2|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 278,
+        "n_islem": 468,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.2|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 278,
+        "n_islem": 468,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.2|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 278,
+        "n_islem": 468,
         "tf": "1d"
       },
       "S1@1d|BRK_ATR=0.2|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 278,
+        "n_islem": 468,
         "tf": "1d"
       },
       "S1@1d|def|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 342,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|def|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 342,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|def|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 342,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|def|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 342,
+        "n_islem": 569,
         "tf": "1d"
       },
       "S1@1d|trail_atr=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 347,
+        "n_islem": 576,
         "tf": "1d"
       },
       "S1@1d|trail_atr=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 347,
+        "n_islem": 576,
         "tf": "1d"
       },
       "S1@1d|trail_atr=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 347,
+        "n_islem": 576,
         "tf": "1d"
       },
       "S1@1d|trail_atr=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 347,
+        "n_islem": 576,
         "tf": "1d"
       },
       "S1@1d|trail_atr=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 562,
         "tf": "1d"
       },
       "S1@1d|trail_atr=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 562,
         "tf": "1d"
       },
       "S1@1d|trail_atr=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 562,
         "tf": "1d"
       },
       "S1@1d|trail_atr=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 337,
+        "n_islem": 562,
         "tf": "1d"
       },
       "S1@1h|BOX_W_ATR=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4422,
+        "n_islem": 7986,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4407,
+        "n_islem": 7950,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4422,
+        "n_islem": 7986,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4407,
+        "n_islem": 7950,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4581,
+        "n_islem": 8257,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4565,
+        "n_islem": 8221,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4581,
+        "n_islem": 8257,
         "tf": "1h"
       },
       "S1@1h|BOX_W_ATR=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4565,
+        "n_islem": 8221,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.05|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4897,
+        "n_islem": 8873,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.05|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4878,
+        "n_islem": 8832,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.05|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4897,
+        "n_islem": 8873,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.05|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4878,
+        "n_islem": 8832,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.2|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 3821,
+        "n_islem": 6899,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.2|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 3808,
+        "n_islem": 6875,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.2|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 3821,
+        "n_islem": 6899,
         "tf": "1h"
       },
       "S1@1h|BRK_ATR=0.2|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 3808,
+        "n_islem": 6875,
         "tf": "1h"
       },
       "S1@1h|def|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4567,
+        "n_islem": 8234,
         "tf": "1h"
       },
       "S1@1h|def|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4551,
+        "n_islem": 8198,
         "tf": "1h"
       },
       "S1@1h|def|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4567,
+        "n_islem": 8234,
         "tf": "1h"
       },
       "S1@1h|def|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4551,
+        "n_islem": 8198,
         "tf": "1h"
       },
       "S1@1h|trail_atr=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4650,
+        "n_islem": 8374,
         "tf": "1h"
       },
       "S1@1h|trail_atr=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4632,
+        "n_islem": 8335,
         "tf": "1h"
       },
       "S1@1h|trail_atr=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4650,
+        "n_islem": 8374,
         "tf": "1h"
       },
       "S1@1h|trail_atr=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4632,
+        "n_islem": 8335,
         "tf": "1h"
       },
       "S1@1h|trail_atr=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 4466,
+        "n_islem": 8046,
         "tf": "1h"
       },
       "S1@1h|trail_atr=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 4452,
+        "n_islem": 8018,
         "tf": "1h"
       },
       "S1@1h|trail_atr=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 4466,
+        "n_islem": 8046,
         "tf": "1h"
       },
       "S1@1h|trail_atr=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 4452,
+        "n_islem": 8018,
         "tf": "1h"
       },
       "S1@4h|BOX_W_ATR=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1279,
+        "n_islem": 2273,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1278,
+        "n_islem": 2272,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1279,
+        "n_islem": 2273,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1278,
+        "n_islem": 2272,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1315,
+        "n_islem": 2337,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1314,
+        "n_islem": 2336,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1315,
+        "n_islem": 2337,
         "tf": "4h"
       },
       "S1@4h|BOX_W_ATR=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1314,
+        "n_islem": 2336,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.05|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1413,
+        "n_islem": 2529,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.05|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1412,
+        "n_islem": 2528,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.05|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1413,
+        "n_islem": 2529,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.05|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1412,
+        "n_islem": 2528,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.2|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1098,
+        "n_islem": 1957,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.2|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1097,
+        "n_islem": 1956,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.2|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1098,
+        "n_islem": 1957,
         "tf": "4h"
       },
       "S1@4h|BRK_ATR=0.2|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1097,
+        "n_islem": 1956,
         "tf": "4h"
       },
       "S1@4h|def|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1314,
+        "n_islem": 2331,
         "tf": "4h"
       },
       "S1@4h|def|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1313,
+        "n_islem": 2330,
         "tf": "4h"
       },
       "S1@4h|def|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1314,
+        "n_islem": 2331,
         "tf": "4h"
       },
       "S1@4h|def|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1313,
+        "n_islem": 2330,
         "tf": "4h"
       },
       "S1@4h|trail_atr=2.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1342,
+        "n_islem": 2375,
         "tf": "4h"
       },
       "S1@4h|trail_atr=2.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1338,
+        "n_islem": 2369,
         "tf": "4h"
       },
       "S1@4h|trail_atr=2.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1342,
+        "n_islem": 2375,
         "tf": "4h"
       },
       "S1@4h|trail_atr=2.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1338,
+        "n_islem": 2369,
         "tf": "4h"
       },
       "S1@4h|trail_atr=3.5|f1|s0": {
         "kurulum": "S1",
-        "n_islem": 1289,
+        "n_islem": 2179,
         "tf": "4h"
       },
       "S1@4h|trail_atr=3.5|f1|s5": {
         "kurulum": "S1",
-        "n_islem": 1288,
+        "n_islem": 2178,
         "tf": "4h"
       },
       "S1@4h|trail_atr=3.5|f2|s0": {
         "kurulum": "S1",
-        "n_islem": 1289,
+        "n_islem": 2179,
         "tf": "4h"
       },
       "S1@4h|trail_atr=3.5|f2|s5": {
         "kurulum": "S1",
-        "n_islem": 1288,
+        "n_islem": 2178,
         "tf": "4h"
       },
       "T1@1d|def|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|def|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|def|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|def|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|pullback_ema=20|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 173,
+        "n_islem": 308,
         "tf": "1d"
       },
       "T1@1d|pullback_ema=20|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 173,
+        "n_islem": 308,
         "tf": "1d"
       },
       "T1@1d|pullback_ema=20|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 173,
+        "n_islem": 308,
         "tf": "1d"
       },
       "T1@1d|pullback_ema=20|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 173,
+        "n_islem": 308,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 145,
+        "n_islem": 243,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 145,
+        "n_islem": 243,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 145,
+        "n_islem": 243,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 145,
+        "n_islem": 243,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 105,
+        "n_islem": 176,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 105,
+        "n_islem": 176,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 105,
+        "n_islem": 176,
         "tf": "1d"
       },
       "T1@1d|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 105,
+        "n_islem": 176,
         "tf": "1d"
       },
       "T1@1d|trail_atr=2.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 130,
+        "n_islem": 223,
         "tf": "1d"
       },
       "T1@1d|trail_atr=2.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 130,
+        "n_islem": 223,
         "tf": "1d"
       },
       "T1@1d|trail_atr=2.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 130,
+        "n_islem": 223,
         "tf": "1d"
       },
       "T1@1d|trail_atr=2.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 130,
+        "n_islem": 223,
         "tf": "1d"
       },
       "T1@1d|trail_atr=3.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|trail_atr=3.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|trail_atr=3.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@1d|trail_atr=3.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 129,
+        "n_islem": 214,
         "tf": "1d"
       },
       "T1@4h|def|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 1054,
+        "n_islem": 1871,
         "tf": "4h"
       },
       "T1@4h|def|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 1054,
+        "n_islem": 1871,
         "tf": "4h"
       },
       "T1@4h|def|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 1054,
+        "n_islem": 1871,
         "tf": "4h"
       },
       "T1@4h|def|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 1054,
+        "n_islem": 1871,
         "tf": "4h"
       },
       "T1@4h|pullback_ema=20|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 2030,
+        "n_islem": 3716,
         "tf": "4h"
       },
       "T1@4h|pullback_ema=20|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 2026,
+        "n_islem": 3712,
         "tf": "4h"
       },
       "T1@4h|pullback_ema=20|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 2030,
+        "n_islem": 3716,
         "tf": "4h"
       },
       "T1@4h|pullback_ema=20|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 2026,
+        "n_islem": 3712,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.2|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 1119,
+        "n_islem": 1997,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.2|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 1118,
+        "n_islem": 1996,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.2|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 1119,
+        "n_islem": 1997,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.2|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 1118,
+        "n_islem": 1996,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 876,
+        "n_islem": 1559,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 873,
+        "n_islem": 1556,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 876,
+        "n_islem": 1559,
         "tf": "4h"
       },
       "T1@4h|stop_buffer_atr=0.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 873,
+        "n_islem": 1556,
         "tf": "4h"
       },
       "T1@4h|trail_atr=2.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 1080,
+        "n_islem": 1923,
         "tf": "4h"
       },
       "T1@4h|trail_atr=2.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 1078,
+        "n_islem": 1920,
         "tf": "4h"
       },
       "T1@4h|trail_atr=2.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 1080,
+        "n_islem": 1923,
         "tf": "4h"
       },
       "T1@4h|trail_atr=2.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 1078,
+        "n_islem": 1920,
         "tf": "4h"
       },
       "T1@4h|trail_atr=3.5|f1|s0": {
         "kurulum": "T1",
-        "n_islem": 1023,
+        "n_islem": 1812,
         "tf": "4h"
       },
       "T1@4h|trail_atr=3.5|f1|s5": {
         "kurulum": "T1",
-        "n_islem": 1023,
+        "n_islem": 1812,
         "tf": "4h"
       },
       "T1@4h|trail_atr=3.5|f2|s0": {
         "kurulum": "T1",
-        "n_islem": 1023,
+        "n_islem": 1812,
         "tf": "4h"
       },
       "T1@4h|trail_atr=3.5|f2|s5": {
         "kurulum": "T1",
-        "n_islem": 1023,
+        "n_islem": 1812,
         "tf": "4h"
       },
       "TF1@15m|BODY_MIN=0.4|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 11851,
+        "n_islem": 22111,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.4|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 11800,
+        "n_islem": 22024,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.4|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 11851,
+        "n_islem": 22111,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.4|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 11800,
+        "n_islem": 22024,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.6|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 8720,
+        "n_islem": 16419,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.6|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 8697,
+        "n_islem": 16372,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.6|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 8720,
+        "n_islem": 16419,
         "tf": "15m"
       },
       "TF1@15m|BODY_MIN=0.6|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 8697,
+        "n_islem": 16372,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.1|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 11656,
+        "n_islem": 21834,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.1|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 11615,
+        "n_islem": 21760,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.1|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 11656,
+        "n_islem": 21834,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.1|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 11615,
+        "n_islem": 21760,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.3|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 9504,
+        "n_islem": 17722,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.3|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 9467,
+        "n_islem": 17659,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.3|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 9504,
+        "n_islem": 17722,
         "tf": "15m"
       },
       "TF1@15m|BRK_ATR=0.3|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 9467,
+        "n_islem": 17659,
         "tf": "15m"
       },
       "TF1@15m|def|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 10594,
+        "n_islem": 19784,
         "tf": "15m"
       },
       "TF1@15m|def|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 10554,
+        "n_islem": 19714,
         "tf": "15m"
       },
       "TF1@15m|def|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 10594,
+        "n_islem": 19784,
         "tf": "15m"
       },
       "TF1@15m|def|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 10554,
+        "n_islem": 19714,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=2.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 10811,
+        "n_islem": 20197,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=2.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 10748,
+        "n_islem": 20076,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=2.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 10811,
+        "n_islem": 20197,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=2.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 10748,
+        "n_islem": 20076,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=3.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 10344,
+        "n_islem": 19324,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=3.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 10327,
+        "n_islem": 19290,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=3.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 10344,
+        "n_islem": 19324,
         "tf": "15m"
       },
       "TF1@15m|trail_atr=3.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 10327,
+        "n_islem": 19290,
         "tf": "15m"
       },
       "TF1@1d|BODY_MIN=0.4|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 539,
+        "n_islem": 849,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.4|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 539,
+        "n_islem": 849,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.4|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 539,
+        "n_islem": 849,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.4|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 539,
+        "n_islem": 849,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.6|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 401,
+        "n_islem": 616,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.6|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 401,
+        "n_islem": 616,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.6|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 401,
+        "n_islem": 616,
         "tf": "1d"
       },
       "TF1@1d|BODY_MIN=0.6|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 401,
+        "n_islem": 616,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.1|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 497,
+        "n_islem": 773,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.1|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 497,
+        "n_islem": 773,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.1|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 497,
+        "n_islem": 773,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.1|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 497,
+        "n_islem": 773,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.3|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 471,
+        "n_islem": 729,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.3|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 471,
+        "n_islem": 729,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.3|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 471,
+        "n_islem": 729,
         "tf": "1d"
       },
       "TF1@1d|BRK_ATR=0.3|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 471,
+        "n_islem": 729,
         "tf": "1d"
       },
       "TF1@1d|def|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 482,
+        "n_islem": 750,
         "tf": "1d"
       },
       "TF1@1d|def|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 482,
+        "n_islem": 750,
         "tf": "1d"
       },
       "TF1@1d|def|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 482,
+        "n_islem": 750,
         "tf": "1d"
       },
       "TF1@1d|def|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 482,
+        "n_islem": 750,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=2.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 499,
+        "n_islem": 774,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=2.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 499,
+        "n_islem": 774,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=2.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 499,
+        "n_islem": 774,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=2.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 499,
+        "n_islem": 774,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=3.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 470,
+        "n_islem": 732,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=3.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 470,
+        "n_islem": 732,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=3.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 470,
+        "n_islem": 732,
         "tf": "1d"
       },
       "TF1@1d|trail_atr=3.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 470,
+        "n_islem": 732,
         "tf": "1d"
       },
       "TF1@1h|BODY_MIN=0.4|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 3142,
+        "n_islem": 5976,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.4|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 3140,
+        "n_islem": 5970,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.4|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 3142,
+        "n_islem": 5976,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.4|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 3140,
+        "n_islem": 5970,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.6|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 2194,
+        "n_islem": 4252,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.6|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 2192,
+        "n_islem": 4248,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.6|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 2194,
+        "n_islem": 4252,
         "tf": "1h"
       },
       "TF1@1h|BODY_MIN=0.6|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 2192,
+        "n_islem": 4248,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.1|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 3100,
+        "n_islem": 5893,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.1|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 3099,
+        "n_islem": 5889,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.1|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 3100,
+        "n_islem": 5893,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.1|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 3099,
+        "n_islem": 5889,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.3|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 2402,
+        "n_islem": 4586,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.3|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 2401,
+        "n_islem": 4583,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.3|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 2402,
+        "n_islem": 4586,
         "tf": "1h"
       },
       "TF1@1h|BRK_ATR=0.3|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 2401,
+        "n_islem": 4583,
         "tf": "1h"
       },
       "TF1@1h|def|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 2748,
+        "n_islem": 5242,
         "tf": "1h"
       },
       "TF1@1h|def|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 2746,
+        "n_islem": 5237,
         "tf": "1h"
       },
       "TF1@1h|def|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 2748,
+        "n_islem": 5242,
         "tf": "1h"
       },
       "TF1@1h|def|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 2746,
+        "n_islem": 5237,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=2.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 2794,
+        "n_islem": 5336,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=2.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 2791,
+        "n_islem": 5329,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=2.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 2794,
+        "n_islem": 5336,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=2.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 2791,
+        "n_islem": 5329,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=3.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 2710,
+        "n_islem": 5147,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=3.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 2709,
+        "n_islem": 5146,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=3.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 2710,
+        "n_islem": 5147,
         "tf": "1h"
       },
       "TF1@1h|trail_atr=3.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 2709,
+        "n_islem": 5146,
         "tf": "1h"
       },
       "TF1@4h|BODY_MIN=0.4|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1422,
+        "n_islem": 2661,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.4|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1421,
+        "n_islem": 2660,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.4|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1422,
+        "n_islem": 2661,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.4|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1421,
+        "n_islem": 2660,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.6|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 960,
+        "n_islem": 1825,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.6|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 959,
+        "n_islem": 1824,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.6|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 960,
+        "n_islem": 1825,
         "tf": "4h"
       },
       "TF1@4h|BODY_MIN=0.6|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 959,
+        "n_islem": 1824,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.1|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1368,
+        "n_islem": 2571,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.1|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1366,
+        "n_islem": 2569,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.1|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1368,
+        "n_islem": 2571,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.1|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1366,
+        "n_islem": 2569,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.3|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1082,
+        "n_islem": 2037,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.3|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1081,
+        "n_islem": 2036,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.3|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1082,
+        "n_islem": 2037,
         "tf": "4h"
       },
       "TF1@4h|BRK_ATR=0.3|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1081,
+        "n_islem": 2036,
         "tf": "4h"
       },
       "TF1@4h|def|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1222,
+        "n_islem": 2304,
         "tf": "4h"
       },
       "TF1@4h|def|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1221,
+        "n_islem": 2303,
         "tf": "4h"
       },
       "TF1@4h|def|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1222,
+        "n_islem": 2304,
         "tf": "4h"
       },
       "TF1@4h|def|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1221,
+        "n_islem": 2303,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=2.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1245,
+        "n_islem": 2343,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=2.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1243,
+        "n_islem": 2341,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=2.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1245,
+        "n_islem": 2343,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=2.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1243,
+        "n_islem": 2341,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=3.5|f1|s0": {
         "kurulum": "TF1",
-        "n_islem": 1201,
+        "n_islem": 2160,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=3.5|f1|s5": {
         "kurulum": "TF1",
-        "n_islem": 1200,
+        "n_islem": 2159,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=3.5|f2|s0": {
         "kurulum": "TF1",
-        "n_islem": 1201,
+        "n_islem": 2160,
         "tf": "4h"
       },
       "TF1@4h|trail_atr=3.5|f2|s5": {
         "kurulum": "TF1",
-        "n_islem": 1200,
+        "n_islem": 2159,
         "tf": "4h"
       }
     },
     "m1": {
       "aday_sayilari": {
+        "1000SHIB/USDT": {
+          "thr x0.95": 4229,
+          "thr x1": 638,
+          "thr x1.05": 91
+        },
+        "AAPL/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
         "ADA/USDT": {
           "thr x0.95": 4130,
           "thr x1": 582,
           "thr x1.05": 65
         },
+        "AMZN/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
         "AVAX/USDT": {
           "thr x0.95": 4023,
           "thr x1": 610,
           "thr x1.05": 84
+        },
+        "AVGO/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "BCH/USDT": {
+          "thr x0.95": 4476,
+          "thr x1": 748,
+          "thr x1.05": 123
         },
         "BNB/USDT": {
           "thr x0.95": 4387,
@@ -3859,30 +3841,120 @@
           "thr x1": 1265,
           "thr x1.05": 496
         },
+        "BZ/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "COPPER/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
         "DOGE/USDT": {
           "thr x0.95": 4946,
           "thr x1": 896,
           "thr x1.05": 266
+        },
+        "DOT/USDT": {
+          "thr x0.95": 3852,
+          "thr x1": 513,
+          "thr x1.05": 79
         },
         "ETH/USDT": {
           "thr x0.95": 4294,
           "thr x1": 874,
           "thr x1.05": 211
         },
+        "GOOGL/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "HBAR/USDT": {
+          "thr x0.95": 3839,
+          "thr x1": 503,
+          "thr x1.05": 56
+        },
+        "HYPE/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
         "LINK/USDT": {
           "thr x0.95": 3781,
           "thr x1": 477,
           "thr x1.05": 52
+        },
+        "LTC/USDT": {
+          "thr x0.95": 4108,
+          "thr x1": 591,
+          "thr x1.05": 115
+        },
+        "META/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "MSFT/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "NVDA/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "PLTR/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
         },
         "SOL/USDT": {
           "thr x0.95": 3954,
           "thr x1": 616,
           "thr x1.05": 105
         },
+        "SUI/USDT": {
+          "thr x0.95": 796,
+          "thr x1": 98,
+          "thr x1.05": 14
+        },
+        "TON/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
         "TRX/USDT": {
           "thr x0.95": 4096,
           "thr x1": 890,
           "thr x1.05": 261
+        },
+        "TSLA/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "XAG/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "XAU/USDT": {
+          "thr x0.95": 0,
+          "thr x1": 0,
+          "thr x1.05": 0
+        },
+        "XLM/USDT": {
+          "thr x0.95": 4133,
+          "thr x1": 657,
+          "thr x1.05": 167
+        },
+        "XMR/USDT": {
+          "thr x0.95": 3379,
+          "thr x1": 373,
+          "thr x1.05": 25
         },
         "XRP/USDT": {
           "thr x0.95": 4424,
@@ -3903,137 +3975,137 @@
     },
     "referans_cfg_maliyet": {
       "B1@15m|cfg": {
-        "n_islem": 3760,
-        "ort_r_islem": -0.3397686113044231,
-        "toplam_r": -1277.529978504631
+        "n_islem": 6751,
+        "ort_r_islem": -0.326997501941233,
+        "toplam_r": -2207.560135605264
       },
       "B1@1d|cfg": {
-        "n_islem": 98,
-        "ort_r_islem": -0.14710854589103514,
-        "toplam_r": -14.416637497321444
+        "n_islem": 177,
+        "ort_r_islem": -0.1929282815259171,
+        "toplam_r": -34.148305830087324
       },
       "B1@1h|cfg": {
-        "n_islem": 1109,
-        "ort_r_islem": -0.15168991056269537,
-        "toplam_r": -168.22411081402916
+        "n_islem": 2068,
+        "ort_r_islem": -0.1601416277861702,
+        "toplam_r": -331.17288626179993
       },
       "B1@4h|cfg": {
-        "n_islem": 373,
-        "ort_r_islem": -0.00016661101550001652,
-        "toplam_r": -0.062145908781506165
+        "n_islem": 687,
+        "ort_r_islem": -0.011983808344387708,
+        "toplam_r": -8.232876332594355
       },
       "F1@15m|cfg": {
-        "n_islem": 16312,
-        "ort_r_islem": -0.3560863272041177,
-        "toplam_r": -5808.480169353568
+        "n_islem": 30480,
+        "ort_r_islem": -0.3280816595285982,
+        "toplam_r": -9999.928982431673
       },
       "F1@1d|cfg": {
-        "n_islem": 19,
-        "ort_r_islem": 0.15594435921696345,
-        "toplam_r": 2.9629428251223056
+        "n_islem": 43,
+        "ort_r_islem": -0.07086302894865731,
+        "toplam_r": -3.0471102447922647
       },
       "F1@1h|cfg": {
-        "n_islem": 3538,
-        "ort_r_islem": -0.22116968166177015,
-        "toplam_r": -782.4983337193428
+        "n_islem": 6618,
+        "ort_r_islem": -0.22593490670534058,
+        "toplam_r": -1495.2372125759439
       },
       "F1@4h|cfg": {
-        "n_islem": 243,
-        "ort_r_islem": -0.01921564290690592,
-        "toplam_r": -4.669401226378138
+        "n_islem": 472,
+        "ort_r_islem": -0.0282561931574528,
+        "toplam_r": -13.336923170317721
       },
       "H2@15m|cfg": {
-        "n_islem": 10262,
-        "ort_r_islem": -0.18939821541252,
-        "toplam_r": -1943.6044865632803
+        "n_islem": 18208,
+        "ort_r_islem": -0.19026404437599462,
+        "toplam_r": -3464.32771999811
       },
       "H2@1d|cfg": {
-        "n_islem": 211,
-        "ort_r_islem": 0.18852973038474172,
-        "toplam_r": 39.7797731111805
+        "n_islem": 371,
+        "ort_r_islem": 0.03999768966153636,
+        "toplam_r": 14.839142864429991
       },
       "H2@1h|cfg": {
-        "n_islem": 3446,
-        "ort_r_islem": -0.09414179159341539,
-        "toplam_r": -324.41261383090944
+        "n_islem": 6197,
+        "ort_r_islem": -0.09942576768974065,
+        "toplam_r": -616.1414823733228
       },
       "H2@4h|cfg": {
-        "n_islem": 1164,
-        "ort_r_islem": 0.03027457671539505,
-        "toplam_r": 35.23960729671984
+        "n_islem": 1998,
+        "ort_r_islem": 0.009326190936363695,
+        "toplam_r": 18.633729490854662
       },
       "R1@1d|cfg": {
-        "n_islem": 3,
-        "ort_r_islem": -1.042655278587678,
-        "toplam_r": -3.1279658357630336
+        "n_islem": 4,
+        "ort_r_islem": -1.0550495117005476,
+        "toplam_r": -4.2201980468021905
       },
       "R1@4h|cfg": {
-        "n_islem": 227,
-        "ort_r_islem": -0.18211065702080134,
-        "toplam_r": -41.3391191437219
+        "n_islem": 466,
+        "ort_r_islem": -0.192502817728142,
+        "toplam_r": -89.70631306131418
       },
       "S1@15m|cfg": {
-        "n_islem": 18745,
-        "ort_r_islem": -0.15785700481139658,
-        "toplam_r": -2959.029555189629
+        "n_islem": 34190,
+        "ort_r_islem": -0.1612633674742024,
+        "toplam_r": -5513.59453394298
       },
       "S1@1d|cfg": {
-        "n_islem": 342,
-        "ort_r_islem": 0.049592954319157605,
-        "toplam_r": 16.960790377151902
+        "n_islem": 569,
+        "ort_r_islem": 0.008515290895554617,
+        "toplam_r": 4.845200519570577
       },
       "S1@1h|cfg": {
-        "n_islem": 4563,
-        "ort_r_islem": -0.04169475711465467,
-        "toplam_r": -190.25317671416923
+        "n_islem": 8217,
+        "ort_r_islem": -0.04115355714957006,
+        "toplam_r": -338.1587790980172
       },
       "S1@4h|cfg": {
-        "n_islem": 1313,
-        "ort_r_islem": -0.03793311900555009,
-        "toplam_r": -49.80618525428727
+        "n_islem": 2330,
+        "ort_r_islem": -0.06590294647887304,
+        "toplam_r": -153.5538652957742
       },
       "T1@1d|cfg": {
-        "n_islem": 129,
-        "ort_r_islem": 0.4579557481568862,
-        "toplam_r": 59.07629151223832
+        "n_islem": 214,
+        "ort_r_islem": 0.2762554564543825,
+        "toplam_r": 59.11866768123785
       },
       "T1@4h|cfg": {
-        "n_islem": 1054,
-        "ort_r_islem": 0.063324338099755,
-        "toplam_r": 66.74385235714178
+        "n_islem": 1871,
+        "ort_r_islem": 0.05844047266447572,
+        "toplam_r": 109.34212435523406
       },
       "TF1@15m|cfg": {
-        "n_islem": 10582,
-        "ort_r_islem": -0.20141932664111267,
-        "toplam_r": -2131.4193145162544
+        "n_islem": 19763,
+        "ort_r_islem": -0.22486233093768535,
+        "toplam_r": -4443.954246321476
       },
       "TF1@1d|cfg": {
-        "n_islem": 482,
-        "ort_r_islem": 0.2804648432868987,
-        "toplam_r": 135.18405446428517
+        "n_islem": 750,
+        "ort_r_islem": 0.17052284229812636,
+        "toplam_r": 127.89213172359477
       },
       "TF1@1h|cfg": {
-        "n_islem": 2748,
-        "ort_r_islem": -0.05836821716165732,
-        "toplam_r": -160.3958607602343
+        "n_islem": 5242,
+        "ort_r_islem": -0.052185264061183095,
+        "toplam_r": -273.5551542087218
       },
       "TF1@4h|cfg": {
-        "n_islem": 1222,
-        "ort_r_islem": -0.0080429436395731,
-        "toplam_r": -9.828477127558328
+        "n_islem": 2304,
+        "ort_r_islem": -0.03419165550521038,
+        "toplam_r": -78.77757428400471
       }
     },
     "sure_sn": {
-      "B1": 53.5,
-      "F1": 72.9,
-      "H2": 57.9,
-      "M1": 7.1,
-      "R1": 7.6,
-      "S1": 32.9,
-      "T1": 6.0,
-      "TF1": 54.5
+      "B1": 88.2,
+      "F1": 128.2,
+      "H2": 97.2,
+      "M1": 12.3,
+      "R1": 12.8,
+      "S1": 51.5,
+      "T1": 8.8,
+      "TF1": 89.3
     },
-    "toplam_sure_sn": 292.4,
+    "toplam_sure_sn": 488.2,
     "izgara": {
       "M1": {
         "esik_carpani": [

@@ -221,6 +221,23 @@ def COSTS_DECLARED(H: dict):
     return [tuple(c) for c in H.get("izgara", {}).get("costs_fee_mult_slip_bp", [])]
 
 
+def _onceki_karsilastirma(res: dict) -> list[str]:
+    """Kapsam genisletmesi oncesi (10 cift) ozetiyle yan yana PBO/DSR; anlik goruntu `research/holdout/pbo_ozet_10cift.json`."""
+    snap = OUT_JSON.parent / "pbo_ozet_10cift.json"
+    if not snap.exists():
+        return []
+    old = json.loads(snap.read_text(encoding="utf-8"))
+    oa = {f["aile"]: f for f in old["aileler"] if f.get("durum") == "tamam" and f["tur"] in ("kural_harness", "m1", "tum")}
+    L = ["", "### Kapsam genisletmesi: onceki (" + f"{len(old['harness']['ciftler'])} cift) ve yeni ({len(res['harness']['ciftler'])} cift) yan yana", "",
+         "| Aile | Onceki PBO | Yeni PBO | Onceki DSR | Yeni DSR | Onceki T | Yeni T | Yeni en iyi yapilandirma |", "|---|---|---|---|---|---|---|---|"]
+    for f in res["aileler"]:
+        o = oa.get(f["aile"])
+        if o is None or f.get("durum") != "tamam":
+            continue
+        L.append(f"| {f['aile']} | {_f(o['pbo'])} | {_f(f['pbo'])} | {_f(o['dsr'])} | {_f(f['dsr'])} | {o['T']} | {f['T']} | `{str(f['en_iyi_yapilandirma']).replace('|', '/')}` |")
+    return L
+
+
 def render_md(res: dict) -> str:
     P = res["parametreler"]
     L = ["# PBO raporu (holdout oncesi, yalniz rapor)", "",
@@ -277,8 +294,9 @@ def render_md(res: dict) -> str:
               "Sinyal mantigi yeniden yazilmadi; simulator `trader_core.signals` yardimcilarini (`regime_flip_exit`, `TRAIL_START_R`, `TIME_STOP_BARS`) kullanir, "
               "hedef modu `trader_core.counterfactual.replay` ile (maliyetsiz) ve iz-stop `signals.trail_stop_path` ile testte karsilastirilir.", "",
               f"- Veri: `var/history` feather, okuma aninda `date < {P['holdout_oncesi_sinir']}` suzgeci; gun izgarasi {H['gun_izgarasi'][0]}..{H['gun_izgarasi'][1]}; "
-              f"{len(H['ciftler'])} cift ({', '.join(H['ciftler'])}). `config/engine.paper.json` icindeki {len(H.get('gecmisi_olmayan_ciftler', []))} cift icin tarihsel mum "
-              "dosyasi yok (hisse/emtia/diger kripto) ve kapsam disidir.",
+              f"{len(H['ciftler'])} cift ({', '.join(H['ciftler'])}); `var/history` (muhurlu) disindaki ciftler `var/history_pre`den (`research/pbo_veri_indir.py`, data.binance.vision, "
+              f"holdout satiri yok). `config/engine.paper.json` icindeki {len(H.get('gecmisi_olmayan_ciftler', []))} cift icin tarihsel mum bulunamadi ve kapsam disidir"
+              + (f" ({', '.join(H.get('gecmisi_olmayan_ciftler', []))}; neden: data.binance.vision USDS-M arsivinde sembol yok)." if H.get('gecmisi_olmayan_ciftler') else "."),
               "- Simulator: giris = karar mumunu izleyen mumun acilisi (taraf aleyhine kayma); ayni barda stop ve hedef ikisi de degerse STOP once; acilis stop'u asmissa "
               "dolum acilista; `target` kipi: hedef + 48 mum zaman durdurma; `trail` kipi: 1R'de silahlanan iz-stop (`trail_atr` x ATR), rejim donusu ve iz-stop "
               "capraz cikisi sonraki barin acilisinda; kurulum+cift basina tek pozisyon, ayni-mum yeniden giris yasagi; cozulmemis islemler dusurulur.",
@@ -310,6 +328,7 @@ def render_md(res: dict) -> str:
                   "pencere + ufuk + 2 bar once: etiket/ozellik ortusmesi yok). Paket esigi " + _f(m["esik"], 4) + ". "
                   "Uyari: ozellik/etiket tasarimi (1,5 ATR stop, 3 ATR hedef, 48 bar) ve esik niceligi tum tarihsel veri goruldukten sonra secilmis olabilir; "
                   "bu donem model-uyumu acisindan temizdir, tasarim-secimi acisindan tam bagimsiz sayilmaz."]
+        L += _onceki_karsilastirma(res)
         L += ["", "### Disarida birakilanlar", ""]
         L += [f"- `{k}`: {v}" for k, v in sorted(H.get("dislanan", {}).items())]
         L += ["", f"Calisma suresi: toplam {H.get('toplam_sure_sn', '-')} sn (4 cekirdek; kurulum basina: "
