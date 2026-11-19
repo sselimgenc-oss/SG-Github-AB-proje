@@ -598,6 +598,16 @@ if has_value /etc/trader-testnet.env BINANCE_API_KEY && has_value /etc/trader-te
 else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRET (Binance Futures TESTNET anahtari; testnet golge motoru, ikisi de dolu olmadan acilmaz)"); fi
 
 # ---- 11. ozet ---------------------------------------------------------------------
+# DD-12 WP-18: kâgit kapanis denetimi (yalniz UYARI; kurulumu durdurmaz). DD-12 zamanlayicilari etkin olmali; veto ve ikiz
+# birimleri kalmamali (kaldirma yukarida yapildi; eski bir kopya kaldiysa burada gorunur).
+say "DD-12 zamanlayici denetimi"
+for t in trader-notes.timer trader-weekly-summary.timer trader-ml-retrain.timer trader-universe.timer \
+         trader-counterfactual@learner.timer; do
+  if systemctl is-enabled --quiet "$t" 2>/dev/null; then echo "  etkin: $t"; else echo "UYARI: $t etkin degil (systemctl enable --now $t)"; fi
+done
+for u in trader-veto.service trader-veto.timer trader-engine@twin.service trader-engine-retry@twin.timer; do
+  if [ -e "${UNIT_DIR}/$u" ]; then echo "UYARI: eski birim duruyor: $u (install.sh'i yeniden calistirin veya elle kaldirin)"; fi
+done
 say "OZET"
 echo "Calisan Trader birimleri:"
 systemctl list-units 'trader-*' --no-legend --plain 2>/dev/null | awk '{print "  " $1 "  " $3 "/" $4}' || true

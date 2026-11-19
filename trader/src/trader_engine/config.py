@@ -105,6 +105,7 @@ class EngineConfig:
     mtm_marks: bool = True                                    # WP-3 6.2: oz varlik isaretleri (yalniz kayit)
     # --- DD-12 WP-01 (yalniz mode="paper"; varsayilanlar = onceki davranis) ---
     optional_pairs: tuple[str, ...] = ()                      # hisse/emtia: kural/veri gelmezse yalniz o cift bekler (pairs icinde)
+    retired_pairs: tuple[str, ...] = ()                       # DD-12 WP-18: evrenden cikmis, acik pozisyonu tutulan ciftler (pairs icinde); yeni giris YOK
     ml_pairs: tuple[str, ...] = ()                            # ML suzgecinin puanladigi evren (pairs icinde); bos = kisit yok
     max_positions: int | None = None                          # hesap geneli eszamanli pozisyon tavani (None = tavan yok)
     risk: Mapping[str, float] = dataclasses.field(default_factory=dict)          # 4.1 paper: target_trade_risk/max_open_risk/max_same_dir_risk/daily_max_loss
@@ -150,7 +151,7 @@ _NUM = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "minute_wa
 _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
                   "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks",
-                  "optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
+                  "optional_pairs", "retired_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
                   "cost_overrides", "arms", "arm_max_positions"}
 _PAPER_ONLY_KEYS = ("optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
                     "cost_overrides", "arms", "arm_max_positions")
@@ -488,6 +489,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     # --- DD-12 WP-01 yeni anahtarlar: yalniz paper ---
     pairs_set = pairs
     optional_pairs = _pair_subset("optional_pairs", raw.get("optional_pairs", ()), pairs_set)
+    retired_pairs = _pair_subset("retired_pairs", raw.get("retired_pairs", ()), pairs_set)
     ml_pairs = _pair_subset("ml_pairs", raw.get("ml_pairs", ()), pairs_set)
     max_positions = raw.get("max_positions")
     if max_positions is not None:
@@ -557,7 +559,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         ml_experimental=ml_experimental,
         startup_wait_s=startup_wait, pause_file=pause_file, leverage=lev, live=live, ladder_follow=ladder_follow,
         shadow_blocks=shadow_blocks, mtm_marks=mtm_marks,
-        optional_pairs=optional_pairs, ml_pairs=ml_pairs, max_positions=max_positions, risk=risk_raw, clusters=clusters,
+        optional_pairs=optional_pairs, retired_pairs=retired_pairs, ml_pairs=ml_pairs, max_positions=max_positions,
+        risk=risk_raw, clusters=clusters,
         flat_bar_guard=flat_bar_guard, contract_types=contract_types, cost_overrides=cost_overrides,
         arms=arms, arm_max_positions=arm_caps,
         **{n: raw[n] for n in _STR},
@@ -614,6 +617,7 @@ def apply_universe_overlay(raw: Mapping[str, Any], universe_path: Any) -> dict[s
     pairs = tuple(ov["pairs"])
     out["pairs"] = list(pairs)
     out["optional_pairs"] = list(ov["optional_pairs"])
+    out["retired_pairs"] = list(ov["retired_pairs"])     # DD-12 WP-18: yeni giris kapali (acik pozisyon yonetilir)
     if isinstance(raw.get("clusters"), Mapping):
         cl = {}
         for name, spec in raw["clusters"].items():

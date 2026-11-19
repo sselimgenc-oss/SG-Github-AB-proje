@@ -108,7 +108,7 @@ def build(config_dir: Path, var_dir: Path, marketcap: Path | None, now: datetime
     if not_trading_comm:
         notes.append(f"emtia TRADING degil (listede kalir, o cift bekler): {not_trading_comm}")
     doc = U.overlay_document(composed["pairs"], composed["optional_pairs"], generated_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                             source=source, notes=notes)
+                             source=source, notes=notes, retired=held)
     d = U.diff_pairs(effective_old, composed["pairs"])
     report = {"source": source, "pairs_count": len(doc["pairs"]), "added": d["added"], "removed": d["removed"],
               "crypto": crypto, "stocks": stocks, "notes": notes}

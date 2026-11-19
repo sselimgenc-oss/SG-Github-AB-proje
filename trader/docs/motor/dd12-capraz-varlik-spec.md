@@ -376,3 +376,29 @@ Hedef tarihler (tahmin, kayarsa kullanıcıya bildirilir; sıra korunur): Yayın
 ## Ek (18 Kasım 2026, kullanıcı kararı) — LLM rolü daraldı
 - İşlem notu (WP-09) **kodla** yazılır: sabit şablon + sayısal alanlar (`trade_notes.model = "code"`, `cost_usd = 0`); LLM çağrısı yok.
 - LLM yalnız **haftalık özet** yazar (sahibin okuması için), mevcut 10 USD kredi bitene kadar; bütçe: aylık tavan bugünkü 10 USD, yeni kredi yok. `L1` (LLM aday önerisi) ve **WP-15 iptal**; WP-06b bütçe paylaşımı: yalnız "haftalık özet" payı (veto payı kalkar). WP-17'deki LLM harcama satırı haftalık özet harcamasını gösterir.
+
+## Kapasite ölçümü (19 Kasım 2026, WP-18)
+
+**Ölçüm betiği:** `scripts/capacity_probe.py` (gerçek `load_cli_config(config,'learner','paper')`: 44 çift, 30 kol incl. `M1@1h`/`M1@4h`, `models/pa_proposer` paketleri yüklü). Veri: sentetik feather, pencereler üretim boyutunda (15dk 5000, 1s 1500, 4s 1500; 1g 4s'ten). Motor ayrı alt süreçte koşar; `ru_maxrss` yalnız motoru ölçer. 96 karar adımı (24 saat: 72 × 15dk, 18 × saat başı, 5 × 4s, 1 × 1g). Kaynak: `scratchpad/capacity_96.json`. Olcum makinesi: 4 çekirdek, 16 GB (sunucu değil).
+
+| Ölçüm | Sonuç | §8 eşiği |
+|---|---|---|
+| Tepe RSS (motor süreci) | **160,8 MB** (açılış 123 MB, ithalat 116 MB) | öğrenen < 550 MB (D-T20), birim MemoryHigh 600M / MemoryMax 750M: **aşım yok** |
+| 15dk adımı (n=72) | medyan **11,8 s**, en kötü 13,0 s | < 120 s: **uygun** |
+| Saat başı adımı (n=18) | medyan **17,1 s**, en kötü **18,6 s** | < 120 s: **uygun** |
+| 4s adımı (n=5) | medyan 23,3 s, en kötü 23,7 s | < 120 s: **uygun** |
+| 1g adımı (n=1, ilk adım) | 24,8 s | < 120 s: **uygun** |
+| Toplam 96 adım | 1302 s (ortalama ~13,6 s/adım) | — |
+
+**Karşılaştırma (§8):** tahmini öğrenen tepe 450–520 MB'nin çok altında kaldı; 1100M slice ve 600M/750M birim tavanları sağlanıyor. Saat başı adımı 120 sn sınırının yaklaşık altıda biri. **Önerilen kısıntı yok** (§8 "sığmazsa" yolu tetiklenmedi).
+
+**Sınırlar (dürüst not):** Veri kaynağı canlıda `StoreSource` (`market.sqlite`, 1 dk bar) iken ölçümde `HistoricalSource` (feather, 15dk) kullanıldı; bellek alt-üst değil ama farklı olabilir. Kâğıt kayıt defteri boştu (ilk adımlar). Kurulum süzgeci paketleri (`models/setup_filter`) motora yüklenmedi (küçük, §8 "< 20 MB"). Tarih 30 Nisan 2026 (kilit öncesi; sentetik kural gereği).
+
+### Gece M1 eğitimi (WP-18 b) ölçümü
+
+`scripts/ml_retrain_run.py --once` (kurulum süzgeci + `M1@1h` + `M1@4h`), gerçek `var/history` (10 kripto, 1s/4s), kilit öncesi, ciftbasi kuyruk: tepe RSS **263,6 MB**, süre ~6 s. Önceki sürüm (tüm geçmiş etiketlenip 400k satır) 768 MB verdi; bu yüzden ciftbasi kuyruk ve 50 000 satır tavanı (spec §5.2) uygulandı. Pandas, dondurulmuş `trader_core/indicators.py` üzerinden gelir (~100 MB); bu nedenle pyarrow ile okumak tek başına yetmez.
+
+**Birim kararı:** `deploy/trader-ml-retrain.service`: `MemoryHigh=250M` korundu (ölçüm 263 MB, yumuşak sınır birkaç saniye kısar); `MemoryMax` **300M → 350M** (sert tavan; ölçülen tepe ile marj). Yumuşak tavan toplamı (200+600+250+250 = 1300) değişmedi (D-T14). §8 tablosundaki "250M/300M" satırı bu nedenle 250M/350M olarak okunur.
+
+### Önerilen kısıntı (uygulanmadı)
+Yok. Ölçüm §8 eşiklerinin içinde. Gerçek sunucuda `systemctl show trader-engine@learner trader-ml-retrain -p MemoryPeak` ile ilk 48 saat doğrulanmalı (§8 "İzlenecek").

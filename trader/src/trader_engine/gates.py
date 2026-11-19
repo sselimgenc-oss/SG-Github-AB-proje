@@ -277,6 +277,9 @@ class EntryGate:
             if aid in self._arms_off():                                                  # WP-13: ders kapatti (kayit surer)
                 return self._skip(row, tf, "arm_disabled", skip_reason="arm_disabled",
                                   veto_reason=f"gate:arm_disabled:{aid}", **tk)
+            if pair in self.cfg.retired_pairs:                                           # WP-18: evrenden cikmis, yeni giris yok
+                return self._skip(row, tf, "arm_disabled", skip_reason="arm_disabled",
+                                  veto_reason=f"gate:universe_retired:{pair}", **tk)
             if self.cfg.flat_bar_guard and frame.trigger_bar is not None and AG.is_flat_bar(
                     frame.trigger_bar[0], frame.trigger_bar[1], frame.trigger_bar[2]):
                 return self._skip(row, tf, "flat_bar", skip_reason="flat_bar", veto_reason="gate:flat_bar", **tk)

@@ -53,7 +53,7 @@ def test_service_limits_and_oneshot():
     cp = _unit("trader-ml-retrain.service")
     s = cp["Service"]
     assert s.get("Type") == "oneshot"
-    assert s.get("MemoryHigh") == "250M" and s.get("MemoryMax") == "300M"
+    assert s.get("MemoryHigh") == "250M" and s.get("MemoryMax") == "350M"   # WP-18: M1 olcumu (tepe ~263 MB) ile MemoryMax 300M -> 350M
     assert s.get("CPUQuota") == "50%" and s.get("Nice") == "10"
     assert "ml_retrain_run" in s.get("ExecStart", "")
 
@@ -416,7 +416,8 @@ def _mk_ledger(path, n=6, start=datetime(2026, 11, 2, 6, tzinfo=UTC)):
 
 
 def _run_script(mod, ledger, models_dir, csv_path, cf=None):
-    argv = ["--once", "--ledger", str(ledger), "--models-dir", str(models_dir), "--paper-models-csv", str(csv_path)]
+    argv = ["--once", "--ledger", str(ledger), "--models-dir", str(models_dir), "--paper-models-csv", str(csv_path),
+            "--m1-models-dir", str(Path(models_dir).parent / "pa_proposer")]   # WP-18: M1 depoya yazmasin (gecici dizin)
     if cf:
         argv += ["--cf", str(cf)]
     return mod.main(argv, now_fn=lambda: NOW)

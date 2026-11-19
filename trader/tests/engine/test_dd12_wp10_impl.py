@@ -161,7 +161,7 @@ def test_script_end_to_end_with_real_ledger(tmp_path):
     from trader_core import ledger as L
     lp = tmp_path / "ledger.sqlite"
     L.open_ledger(lp, "learner", create=True, migrate=True).close()
-    rc = R.main(["--once", "--ledger", str(lp), "--models-dir", str(tmp_path / "m"),
+    rc = R.main(["--once", "--ledger", str(lp), "--models-dir", str(tmp_path / "m"), "--no-m1",
                  "--paper-models-csv", str(tmp_path / "pm.csv")], now_fn=lambda: NOW, env={})
     assert rc == 0 and (tmp_path / "pm.csv").read_text().splitlines().__len__() == 2
     assert R.main(["--once", "--ledger", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW, env={}) == 3

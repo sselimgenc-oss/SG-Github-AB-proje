@@ -96,13 +96,25 @@ def validate_overlay(obj: Any) -> dict[str, list[str]]:
     stray = [p for p in optional if p not in pairs]
     if stray:
         raise ValueError(f"optional_pairs pairs disinda cift iceriyor: {stray}")
-    return {"pairs": list(pairs), "optional_pairs": list(optional)}
+    # WP-18: evrenden cikmis ama acik pozisyonu tutulan ciftler (yeni giris yok). Eski kaplamalarda anahtar yok = bos.
+    retired = obj.get("retired_pairs", [])
+    if not isinstance(retired, list):
+        raise ValueError("retired_pairs liste olmali")
+    for p in retired:
+        if not isinstance(p, str) or not _PAIR_RE.match(p):
+            raise ValueError(f"retired_pairs gecersiz cift: {p!r}")
+    if len(set(retired)) != len(retired):
+        raise ValueError("retired_pairs yinelenen oge iceriyor")
+    stray = [p for p in retired if p not in pairs]
+    if stray:
+        raise ValueError(f"retired_pairs pairs disinda cift iceriyor: {stray}")
+    return {"pairs": list(pairs), "optional_pairs": list(optional), "retired_pairs": list(retired)}
 
 
 def overlay_document(pairs: Sequence[str], optional: Sequence[str], *, generated_at: str, source: str,
-                     notes: Sequence[str] = ()) -> dict[str, Any]:
+                     notes: Sequence[str] = (), retired: Sequence[str] = ()) -> dict[str, Any]:
     doc = {"schema": SCHEMA, "generated_at": generated_at, "source": source,
-           "pairs": list(pairs), "optional_pairs": list(optional), "notes": list(notes)}
+           "pairs": list(pairs), "optional_pairs": list(optional), "retired_pairs": list(retired), "notes": list(notes)}
     validate_overlay(doc)
     return doc
 
