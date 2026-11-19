@@ -192,8 +192,11 @@ def test_OPEN_health_is_not_crit_in_learner_only_deployment(tmp_path, capsys):
 
 
 # ------------------------------------------------------------------ 5.2 feed olur -> data_stale -> health CRIT
-def test_drill_feed_killed_midrun_engine_data_stale_and_health_crit(tmp_path, capsys):
+def test_drill_feed_killed_midrun_engine_data_stale_and_health_crit(tmp_path, capsys, monkeypatch):
     from trader_core import health as H
+    import shutil
+    # Disk uyarisi bu tatbikatin konusu degil: test makinesinin gercek disk dolulugu sonucu etkilemesin.
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: shutil._ntuple_diskusage(100, 10, 90))
     cfgd, clock, sess, engines = _bring_up(tmp_path)                  # feed calisti, sonra 'oldu' (artik yazan yok)
     eng = engines["learner"]
     sess.dead_at_ms = to_ms(clock.now())

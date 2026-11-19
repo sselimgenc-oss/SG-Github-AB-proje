@@ -738,9 +738,10 @@ def disk_alerts(env: dict, now: datetime, var_dir: str | None = None, usage_fn=N
         u = (usage_fn or shutil.disk_usage)(str(d))
     except OSError:
         return []
-    if not u.total:
+    dolu = u.used + u.free                         # df "Use%" ile ayni: used / (used + avail); kok payi haric
+    if not dolu:
         return []
-    oran = (u.total - u.free) / u.total          # df ile ayni olcu degil (kok payi yok) ama bilgi amacli yeterli
+    oran = u.used / dolu
     pct = int(oran * 100)
     out = []
     if oran >= DISK_UYARI_ORAN:
