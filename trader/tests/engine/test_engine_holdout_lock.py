@@ -26,6 +26,7 @@ def _engine(mode: str) -> Engine:
     e.cfg = SimpleNamespace(mode=mode)
     e.view = _FailingView()
     e.tf = "1h"
+    e.step_tf = "1h"                       # DD-12 WP-11: karar adimi tf (tekli stratejide tf ile ayni)
     return e
 
 

@@ -141,6 +141,9 @@ def test_engine_two_pass_score_equals_training_score(world, cand_bars, recipe, n
         ).rows[expect_cands[0][0].split(":")[0]]["f_same_bar_signals"] == float(len(expect_cands))
 
 
+_WP11_FIELDS = ("arm_id", "tf")   # DD-12 WP-11: SignalRow'a eklenen alanlar (tekli stratejide None); eski ozetle karsilastirmada disarida
+
+
 def _flag_off_digest(mod, px, fund, cand_bars, mode):
     """Bayrak kapali (ml_v2 yok) cikti ozeti: ilk 25 aday mumu x 10 cift; `mod` = strategy_runner modulu (eski/yeni)."""
     import hashlib
@@ -157,7 +160,8 @@ def _flag_off_digest(mod, px, fund, cand_bars, mode):
         for p in PAIRS_E:
             fr = src.frame(p, D.to_pydatetime(), PARAMS, 1)
             out.append((p, str(D), fr.status, fr.detail,
-                        None if fr.last is None else tuple((k, repr(v)) for k, v in sorted(vars(fr.last).items()))))
+                        None if fr.last is None else tuple((k, repr(v)) for k, v in sorted(vars(fr.last).items())
+                                                              if k not in _WP11_FIELDS)))
     return hashlib.sha256(repr(out).encode()).hexdigest()[:16], sum(1 for o in out if o[4] and dict(o[4]).get("signal") == "True"), view.calls
 
 
