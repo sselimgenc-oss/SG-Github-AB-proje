@@ -167,6 +167,8 @@ def test_dt1_dt13_config_dosyalari_degismedi(name):
     head = _git_show(f"config/{name}")
     if name == "engine.base.json":      # DD-12 WP-06a: config/veto.json -> config/veto.live.json (testnet/canli veto yapilandirmasi); baska fark yok
         head = head.replace(b'"config/veto.json"', b'"config/veto.live.json"')
+    if name == "engine.testnet.json":   # DD-12 QC: LLM veto kaldirildi, testnet veto_mode "off"; baska fark yok
+        head = head.replace(b'  "mode": "testnet",\n', b'  "mode": "testnet",\n  "veto_mode": "off",\n', 1)
     assert p.read_bytes() == head
 
 
