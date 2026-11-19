@@ -1375,7 +1375,8 @@ ATLAMA_TR = {
 PARAM_TR = {"rr_min": "en düşük kazanç/risk oranı", "range_width_atr": "aralık genişliği sınırı",
             "vol_ratio_max": "oynaklık üst sınırı", "edge_zone_atr": "kenar bölgesi genişliği",
             "pullback_ema": "geri çekilme ortalaması", "stop_buffer_atr": "stop payı", "trail_atr": "iz süren stop mesafesi",
-            "range_target_frac": "hedef oranı", "trigger_tf": "zaman dilimi"}
+            "range_target_frac": "hedef oranı", "trigger_tf": "zaman dilimi",
+            "exit_breakeven": "başa-baş stop kipi (0 kapalı, 1 açık)", "exit_partial": "kısmi kâr alma kipi (0 kapalı, 1 açık)"}
 
 
 def tr_sayi(x: float, ondalik: int = 2) -> str:
@@ -1710,6 +1711,9 @@ def section_lesson(cfg: TelegramConfig, now: datetime) -> str:
                     lines.append("  " + LS.counterfactual_line(snap.counterfactual))
                 if snap is not None:                       # Revizyon 6: cikis karsi-olgusu (kanit yoksa "henuz hesaplanmadi")
                     lines.append("  " + LS.exit_cf_line(snap.cf_exit))
+                    mline = LS.exit_modes_cf_line(snap.cf_exit)         # Revizyon 7: yalniz kip kaniti varken
+                    if mline:
+                        lines.append("  " + mline)
         return "\n" + "\n".join(lines)
     except SectionError:
         raise

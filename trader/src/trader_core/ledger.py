@@ -89,6 +89,9 @@ PARAM_KEYS = tuple(PARAM_SPECS)
 OPTIONAL_PARAM_SPECS: dict[str, dict[str, Any]] = {
     "session_off": dict(kind="int", lo=0, hi=3, lesson=True, step=1, scope=("T1", "R1"), bounds=(0, 3), default=0),
     "post_stop_wait": dict(kind="int", lo=0, hi=3, lesson=True, step=1, scope=("T1", "R1"), bounds=(0, 3), default=0),
+    # Revizyon 7 (docs/cikis-kipleri-spec.md): cikis kipleri (0 kapali, 1 acik); yalniz kanit-yalniz ders girdisiyle (kullanici onayi) acilir
+    "exit_breakeven": dict(kind="int", lo=0, hi=1, lesson=True, step=1, scope=("T1",), bounds=(0, 1), default=0),
+    "exit_partial": dict(kind="int", lo=0, hi=1, lesson=True, step=1, scope=("T1",), bounds=(0, 1), default=0),
 }
 OPTIONAL_PARAM_KEYS = tuple(OPTIONAL_PARAM_SPECS)
 _ALL_SPECS: dict[str, dict[str, Any]] = {**PARAM_SPECS, **OPTIONAL_PARAM_SPECS}

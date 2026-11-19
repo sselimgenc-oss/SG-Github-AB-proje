@@ -184,6 +184,7 @@ class BacktestSpec:
     env: str | None = None                      # tutarlilik raporu: "paper" -> kagit katmani (arms/kume/maliyet) + cok kurullu kaynak; None = eski yol
     wallet_start: float | None = None           # yalniz env ile: ozsermaye baslangici (kagit defterinden turetilir)
     flags: dict = field(default_factory=dict)
+    exit_modes: dict | None = None              # cikis kipleri (basa-bas/kismi; docs/cikis-kipleri-spec.md); None = kapali (eski davranis bayt bayt ayni)
 
 
 @dataclass
@@ -344,6 +345,8 @@ class BacktestRunner:
             kw["market_db"] = s.market_db
         if s.history_dir:
             kw["history_dir"] = s.history_dir
+        if s.exit_modes is not None:
+            kw["exit_modes"] = s.exit_modes
         return apply_overrides(cfg, **kw)
 
     def _build_env_config(self, d: Path, out_dir: Path | None) -> EngineConfig:
@@ -364,6 +367,8 @@ class BacktestRunner:
             kw["history_dir"] = s.history_dir
         if s.pairs:
             kw["pairs"] = tuple(canon_pair(p) for p in s.pairs)
+        if s.exit_modes is not None:
+            kw["exit_modes"] = s.exit_modes
         if out_dir is not None:
             o = str(Path(out_dir).resolve())
             kw.update(var_dir=o, kill_file=f"{o}/KILL.never", pause_file=f"{o}/PAUSE.never")
@@ -536,6 +541,8 @@ class BacktestRunner:
             veto=s.veto, record_filtered=bool(s.record_filtered), skip_flat=bool(s.skip_flat),
             compat_label=("uyum calismasi, yerel sonuc degildir" if cfg.cost.fill_model == "legacy_compat" else None),
             paranoid=paranoid_report, no_paper_record=getattr(veto, "no_paper_record", [])[:200])
+        if cfg.exit_modes:                                  # kip kapaliyken meta bayt bayt ayni
+            meta["exit_modes"] = {k: {kk: vv for kk, vv in v.items() if vv is not None} for k, v in cfg.exit_modes.items()}
         slip = (s.slip_bps or 0.0) if cfg.cost.fill_model == "legacy_compat" else None
         met = M.compute_metrics(tdf, wallet_start=cfg.wallet_start, slip_bps=slip, fill_model=cfg.cost.fill_model,
                                 period=(f"{s.start:%Y-%m-%d %H:%M:%S}", f"{end:%Y-%m-%d %H:%M:%S}"),
@@ -835,6 +842,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out-root", default=None, help="varsayilan: <var_dir>/backtests")
     ap.add_argument("--config-dir", default="config")
     ap.add_argument("--pairs", default=None, help="virgullu kanonik ciftler (BTC/USDT,ETH/USDT)")
+    ap.add_argument("--exit-modes", default=None,
+                    help='cikis kipleri JSON: {"default":{"breakeven":true,"partial":{"trigger_r":1.5,"frac":0.5}}}; verilmezse kapali')
     return ap
 
 
@@ -855,6 +864,10 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
     if a.fill_model == "legacy_compat" and a.granularity not in (None, "15m"):
         raise BacktestArgError("bad_args", "legacy_compat: --granularity 15m zorunlu")
     trunc = parse_end_prime(a.truncate_check) if a.truncate_check else None
+    try:
+        exit_modes = json.loads(a.exit_modes) if getattr(a, "exit_modes", None) else None
+    except json.JSONDecodeError as e:
+        raise BacktestArgError("bad_args", f"--exit-modes JSON degil: {e}") from e
     if a.wallet_start is not None and not a.env:
         raise BacktestArgError("bad_args", "--wallet-start yalniz --env ile")
     return BacktestSpec(
@@ -865,7 +878,7 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         truncate_check=trunc, from_paper_ledger=a.from_paper_ledger, out_root=a.out_root, config_dir=a.config_dir,
         pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None,
         target_trade_risk=a.target_trade_risk, record_shadow=bool(a.record_shadow),
-        env=a.env, wallet_start=a.wallet_start, flags=dict(argv=list(argv)))
+        env=a.env, wallet_start=a.wallet_start, flags=dict(argv=list(argv)), exit_modes=exit_modes)
 
 
 def run_spec(spec: BacktestSpec) -> BacktestResult:

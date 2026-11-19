@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, fields, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from trader_core import exit_modes as XM
 from trader_core import ledger as L
 from trader_core import risk as K
 from trader_core import veto
@@ -30,10 +31,11 @@ from .pause import EntryPause
 from . import shadow as SH
 from .marketdata.sources import MarketView, MinuteStep
 from .mtm import MtmRecorder
+from .numeric import round_tight
 from .order_manager import EXIT_RETRY_LIMIT, OrderManager, make_client_id
-from .position_manager import (apply_entry_fill, apply_exit_fill, apply_funding, build_trade_entry,
+from .position_manager import (apply_entry_fill, apply_exit_fill, apply_exit_modes, apply_funding, build_trade_entry,
                                build_trade_exit, close_position, evaluate_exit, exec_fields, exec_payload,
-                               fill_risk_violation, update_excursion)
+                               fill_risk_violation, partial_due, update_excursion)
 from .reconcile import Reconciler, ReconcileReport
 from .state import StateStore, iso_z
 from .status import StatusWriter
@@ -41,7 +43,7 @@ from .strategies.base import Strategy, StrategyError
 from .strategies.price_action_v1_ml import load_engine_model
 from .strategies.registry import check_param_keys, get_strategy, make_label, parse_label
 from .strategy_runner import MultiArmSignalSource, SignalFrame, SignalSource, WindowedSignalSource
-from .types import BrokerEvent, Fill, Intent, Position
+from .types import BrokerEvent, Fill, Intent, OrderRequest, Position, order_side_for
 
 log = logging.getLogger("engine")
 
@@ -163,6 +165,7 @@ class Engine:
         if self._multi_tf and getattr(signals, "position_fn", False) is None:
             signals.position_fn = self._position_for_arms       # type: ignore[attr-defined]
         self._params_map: dict | None = None
+        self._mode_flags: dict[str, int] = {}                  # etkin defter surumunun cikis kipi bayraklari (exit_breakeven/exit_partial)
         self._act_id: int | None = None
         self._version_id = 0
         self._params_ok = False
@@ -621,7 +624,9 @@ class Engine:
             ap = self.ledger.get_active_params()
             if self._params_map is None or ap.activation_id != self._act_id:
                 m = dict(ap.params)
+                flags = {k: int(m.pop(k)) for k in XM.MODE_PARAMS if k in m}     # cikis kipi bayraklari strateji parametresi degildir
                 self.strategy.validate_params(m)
+                self._mode_flags = flags
                 self._params_map = m
                 self._act_id = ap.activation_id
                 log.info("parametre surumu %s etkin", ap.version_id)
@@ -1162,7 +1167,12 @@ class Engine:
             self._c["unexpected_fills"] += 1
             log.critical("beklenmeyen cikis dolumu %s", e.pair)
             return
+        pk = self.state.kv_get(f"partial:{pos.trade_id}")
+        if isinstance(pk, dict) and self._partial_fill(pos, fill, pk):
+            return                                              # kismi kar alma dolumu: pozisyon acik kalir
         closed = apply_exit_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
+        if isinstance(pk, dict):
+            closed = self._blend_closed(pos, closed)
         if e.detail == "foreign_close":                          # 11 §5.5 madde 3: bizim olmayan kapanis
             closed = replace(closed, exit_reason="manual")
             log.critical("yabanci kapanis %s trade %s: exit_reason=manual", e.pair, pos.trade_id)
@@ -1432,6 +1442,9 @@ class Engine:
                     self._c["exit_data_gap"] += 1
                     continue
                 dec = policy.evaluate(pos, ctx) if policy is not None else evaluate_exit(pos, ctx)
+                modes = self._exit_modes(pos)
+                if modes is not None:                           # cikis kipleri: kapaliyken bu dal hic calismaz (bayt bayt ayni)
+                    dec = apply_exit_modes(pos, ctx, dec, modes)
                 dec = self._vet(pos, dec)
                 if dec.kind == "exit":
                     self._remember_dec_price(pos, D, getattr(ctx, "last_close", None))
@@ -1445,6 +1458,10 @@ class Engine:
                             self._submit_exit(cur, "trail_stop", D, quote=True)
                     elif out.ok and not self.is_paper:
                         self._register(pos.trade_id)
+                if modes is not None and modes.partial and dec.kind != "exit":
+                    cur = self.state.get_position(pos.trade_id)
+                    if cur is not None and cur.status == "open":
+                        self._maybe_partial(cur, ctx, modes, D)
             except StateError:
                 raise
             except Exception as e:  # noqa: BLE001
@@ -1452,6 +1469,92 @@ class Engine:
                     raise
                 self._c["callback_errors"] += 1
                 log.critical("cikis degerlendirmesi hatasi trade %s: %r", pos.trade_id, e, exc_info=True)
+
+    # ------------------------------------------------------------------ cikis kipleri (basa-bas / kismi kar alma)
+    def _exit_modes(self, pos: Position):
+        """Pozisyonun cikis kipleri (yapilandirma + ders bayraklari; docs/cikis-kipleri-spec.md). Kip yoksa None."""
+        if not self.is_paper or (not self.cfg.exit_modes and not self._mode_flags):
+            return None                                         # kipler yalniz benzetimli broker (kagit/geri test); testnet/canli: kapali
+        return XM.resolve(self.cfg.exit_modes, pos.setup, pos.trigger_tf, self._mode_flags)
+
+    def _maybe_partial(self, pos: Position, ctx, modes, D: datetime) -> None:
+        """Kismi kar alma: tetik gerceklesince BIR kez pozisyonun `pt_frac` kadari piyasada kapanir (yalniz benzetimli broker;
+        testnet/canlida kismi kapanis yoktur). Durum `partial:<trade_id>` anahtarinda (pending | done | skipped)."""
+        if not self.is_paper or self.state.kv_get(f"partial:{pos.trade_id}") is not None:
+            return
+        if not partial_due(pos, ctx, modes):
+            return
+        rules = self.broker.rules(pos.pair)
+        q = XM.partial_qty(float(pos.qty), modes.pt_frac, rules.step, rules.min_qty, rules.min_notional,
+                           float(getattr(ctx, "last_close", 0.0) or 0.0))
+        if q is None:
+            with self.state.tx():
+                self.state.kv_set(f"partial:{pos.trade_id}", {"state": "skipped", "why": "min_qty"})
+            self._c["partial_skipped"] += 1
+            return
+        cid = make_client_id(self.cfg.bot, "exit", pos.pair, pos.side, D, 1)
+        req = OrderRequest(client_id=cid, pair=pos.pair, role="exit", order_side=order_side_for(pos.side, "exit"), qty=q,
+                           trigger_price=None, reduce_only=True, leverage=None, signal_bar_close_ts=D,
+                           created_ts=self.clock.now())
+        with self.state.tx():
+            self.state.kv_set(f"partial:{pos.trade_id}", {"state": "pending", "cid": cid, "qty": q})
+        res = self.broker.market_order(req)
+        if res.status == "rejected":
+            with self.state.tx():
+                self.state.kv_set(f"partial:{pos.trade_id}", {"state": "skipped", "why": f"rejected:{res.reason}"})
+            self._c["partial_skipped"] += 1
+        else:
+            self._c["partial_submitted"] += 1
+
+    def _partial_fill(self, pos: Position, fill, pk: dict) -> bool:
+        """Kismi cikis dolumu: pozisyon acik kalir (adet/marjin azalir), dolum `partial:<id>`'e yazilir, stop kalan adede
+        gore yeniden kurulur. Defter tek cikis satiri yazar (kapanista karma fiyat; bkz. `_blend_closed`)."""
+        if pk.get("state") != "pending" or fill.client_id != pk.get("cid"):
+            return False
+        rest = float(pos.qty) - float(fill.qty)
+        if not rest > 0:
+            return False                                         # tam kapanis: normal yol
+        with self.state.tx():
+            self.state.kv_set(f"partial:{pos.trade_id}", {"state": "done", "cid": pk.get("cid"), "qty": float(fill.qty),
+                                                          "price": float(fill.price), "fee": float(fill.fee),
+                                                          "ts": iso_z(fill.ts)})
+            self.state.update_position(pos.trade_id, qty=rest,
+                                       margin=float(pos.margin) * rest / float(pos.qty))
+        self._c["partial_fills"] += 1
+        cur = self.state.get_position(pos.trade_id)
+        if cur is not None and cur.status == "open":
+            self._resize_stop(cur)
+        return True
+
+    def _resize_stop(self, pos: Position) -> None:
+        """Kalan adede gore yeni stop (ayni fiyat, yeni seq); eskisi iptal. would_trigger/red: eski stop durur (paperda
+        min(stop.qty, pos.qty) dolar) ve mutabakat adet farkini giderir."""
+        om = self.orders
+        price = round_tight(pos.current_stop, pos.side, om.stop_tick(pos))
+        seq = pos.stop_seq + 1
+        old = pos.stop_client_id
+        om._pupd(pos.trade_id, stop_seq=seq)                      # noqa: SLF001
+        out = om._submit(om._stop_request(pos, price, seq), seq, pos.trade_id)   # noqa: SLF001
+        if not out.ok:
+            self._c["partial_stop_resize_failed"] += 1
+            return
+        om._pupd(pos.trade_id, stop_client_id=out.order.client_id)   # noqa: SLF001
+        if old and old != out.order.client_id:
+            try:
+                self.broker.cancel(pos.pair, old)
+            except StateError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.warning("eski stop iptal edilemedi %s: %r", old, e)
+
+    def _blend_closed(self, pos: Position, closed):
+        """Kismi cikis yapilmis pozisyonun kapanisi: defter TEK cikis satiri tutar; cikis fiyati iki parcanin adet agirlikli
+        ortalamasi, cikis ucreti toplam (brut PnL = tam adet * (karma - giris) birebir). Kismi yoksa `closed` aynen doner."""
+        pk = self.state.kv_get(f"partial:{pos.trade_id}")
+        if not (isinstance(pk, dict) and pk.get("state") == "done"):
+            return closed
+        px = XM.blend_exit(float(pk["qty"]), float(pk["price"]), float(pos.qty), float(closed.exit_price))
+        return replace(closed, exit_price=px, fee_exit=float(closed.fee_exit) + float(pk["fee"]))
 
     # ------------------------------------------------------------------ girisler (kapili)
     def _entries(self, D: datetime, frames: Mapping[str, SignalFrame]) -> None:

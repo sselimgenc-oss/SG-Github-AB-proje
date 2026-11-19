@@ -255,7 +255,8 @@ class TestOpenSchema:
     def test_constants(self):
         assert tuple(L.LESSON_PARAMS) == ("vol_ratio_max", "stop_buffer_atr",
                                           "trail_atr", "range_target_frac", "rr_min",
-                                          "session_off", "post_stop_wait")   # DD-12 WP-08 genisletmesi
+                                          "session_off", "post_stop_wait",   # DD-12 WP-08 genisletmesi
+                                          "exit_breakeven", "exit_partial")   # cikis kipleri (docs/cikis-kipleri-spec.md)
         assert L.LESSON_MIN_INTERVAL_DAYS == 7
         for k, v in {"vol_ratio_max": 0.25, "stop_buffer_atr": 0.1, "trail_atr": 0.5,
                      "range_target_frac": 0.125, "rr_min": 0.25}.items():

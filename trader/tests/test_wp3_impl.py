@@ -779,7 +779,10 @@ def test_only_engine_and_backtest_may_migrate_ledgers():
     import re
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    allowed = {"src/trader_engine/engine.py", "src/trader_engine/backtest.py"}
+    allowed = {"src/trader_engine/engine.py", "src/trader_engine/backtest.py",
+               # 1a (cikis karsi-olgusu, YALNIZ gelistirme makinesi `--runs`): eski semali backtest kosu defteri ASLA yerinde gocmez;
+               # gecici KOPYADA gocurulur (kosu dizini degismez). Gece birimi bu yolu kullanmaz.
+               "scripts/exit_counterfactual_run.py"}
     bad = []
     for d in ("src", "scripts", "research"):
         for f in (root / d).rglob("*.py"):

@@ -8,6 +8,7 @@ from typing import Literal
 
 import numpy as np
 
+from trader_core import exit_modes as _xm
 from trader_core import ledger as _ledger
 from trader_core import risk, signals
 
@@ -107,6 +108,34 @@ def evaluate_exit(pos: Position, ctx: ExitContext | None) -> ExitDecision:
     if tighter:
         return ExitDecision("stop_update", None, stop, None)
     return _NONE
+
+
+# ---------------------------------------------------------------------- cikis kipleri (docs/cikis-kipleri-spec.md)
+def apply_exit_modes(pos: Position, ctx: ExitContext | None, dec: ExitDecision, modes) -> ExitDecision:
+    """Basa-bas kipi: karar zaten cikis ise dokunmaz; aksi halde en iyi uc `be_trigger_r` R'ye ulastiysa stop girise (+maliyet)
+    sikilastirilir (iz suren stopla siki olan kazanir). Kip yoksa/kapaliysa `dec` ayni nesne doner (bayt bayt ayni davranis)."""
+    if modes is None or not modes.breakeven or ctx is None or dec.kind == "exit" or ctx.n_closed == 0:
+        return dec
+    if not (_fin(pos.entry_price) and _fin(pos.initial_stop)):
+        return dec
+    best = _xm.best_extreme(pos.side, ctx.highs, ctx.lows)
+    be = _xm.be_stop(pos.side, float(pos.entry_price), float(pos.initial_stop), best, modes)
+    if be is None:
+        return dec
+    cur = dec.new_stop if (dec.kind == "stop_update" and dec.new_stop is not None) else pos.current_stop
+    if _xm.tighter(pos.side, be, cur):
+        return ExitDecision("stop_update", None, be, None)
+    return dec
+
+
+def partial_due(pos: Position, ctx: ExitContext | None, modes) -> bool:
+    """Kismi kar alma tetigi (bir kez; cagiran `partial:<trade>` durumunu denetler)."""
+    if modes is None or not modes.partial or ctx is None or ctx.n_closed == 0:
+        return False
+    if not (_fin(pos.entry_price) and _fin(pos.initial_stop)):
+        return False
+    best = _xm.best_extreme(pos.side, ctx.highs, ctx.lows)
+    return _xm.partial_due(pos.side, float(pos.entry_price), float(pos.initial_stop), best, modes)
 
 
 # ---------------------------------------------------------------------- MFE / MAE

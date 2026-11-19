@@ -294,7 +294,9 @@ def test_up_never_auto_capable_calibration_and_proxy(rr_env, cfpath):
         if m.menu_id != "trail_atr:up":
             assert m.evidence_class != "exit_cf_only"
     # baska hicbir parametre/yon icin kanit-yalniz girdi yok
-    assert [r.menu_id for r in LS.RULES_V1 if r.evidence_class == "exit_cf_only"] == ["trail_atr:up"]
+    # Revizyon 7 (docs/cikis-kipleri-spec.md 7): kanit-yalniz kalip yalniz iki cikis kipi girdisiyle genisletildi
+    assert [r.menu_id for r in LS.RULES_V1 if r.evidence_class == "exit_cf_only"] == [
+        "trail_atr:up", "exit:breakeven", "exit:partial"]
 
 
 def test_classify_route_forces_needs_user_with_exit_cf_evidence(rr_env, cfpath):
@@ -386,8 +388,11 @@ def test_line_phrases():
 
 
 def test_no_new_live_exit_modes_no_blocking():
-    """1a kapsami: yalniz kanit; canli cikis kipi eklenmedi (breakeven/kismi kar alma 1b)."""
+    """1a kapsami (v1 yolu): yalniz kanit; v1 oynatimi/gece isi cikis kipi acmaz. Kipler (1b, Revizyon 7) ayri `run_modes_once` /
+    `ecf_modes` yolunda ve `replay_trail(modes=None)` varsayilaniyla kapalidir."""
     import inspect
-    src = inspect.getsource(EC)
-    for word in ("breakeven", "partial", "take_profit"):
-        assert word not in src.lower()
+    for fn in (EC.run_once, EC._compute_trade, EC.deltas, EC.parity_stats):
+        src = inspect.getsource(fn).lower()
+        for word in ("breakeven", "partial", "take_profit"):
+            assert word not in src, (fn.__name__, word)
+    assert inspect.signature(EC.replay_trail).parameters["modes"].default is None

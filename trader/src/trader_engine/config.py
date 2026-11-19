@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+from trader_core import exit_modes as _xm
 from trader_core.config_loader import deep_merge
 from trader_core.risk import LOCKED_CFG, PAPER_KEYS, RiskConfig, paper_config, tightened
 
@@ -116,6 +117,7 @@ class EngineConfig:
     # --- DD-12 WP-11 (yalniz mode="paper"; varsayilan bos = onceki davranis) ---
     arms: tuple[str, ...] = ()                                # bilesik strateji kurulumlari: arm_id ("T1@1h") listesi; bos = stratejinin varsayilani
     arm_max_positions: Mapping[str, int] = dataclasses.field(default_factory=dict)  # kurulum tavani: {"default": 4, "M1": 3, "T1@15m": 2}; bos = tavan yok
+    exit_modes: Mapping[str, Mapping] = dataclasses.field(default_factory=dict)      # cikis kipleri (basa-bas / kismi kar); anahtar default|KURULUM|arm_id; bos = kapali (docs/cikis-kipleri-spec.md)
 
     @functools.cached_property
     def risk_config(self) -> RiskConfig:
@@ -152,7 +154,7 @@ _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
                   "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks",
                   "optional_pairs", "retired_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
-                  "cost_overrides", "arms", "arm_max_positions"}
+                  "cost_overrides", "arms", "arm_max_positions", "exit_modes"}
 _PAPER_ONLY_KEYS = ("optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
                     "cost_overrides", "arms", "arm_max_positions")
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
@@ -514,6 +516,12 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     cost_overrides = _build_cost_overrides(raw.get("cost_overrides", {}), pairs_set)
     arms = _build_arms(raw.get("arms", ()))
     arm_caps = _build_arm_caps(raw.get("arm_max_positions", {}))
+    try:
+        exit_modes = _xm.build_config(raw.get("exit_modes", {}))
+    except _xm.ExitModeError as e:
+        raise ConfigError(str(e)) from e
+    if mode not in ("paper", "backtest") and exit_modes:
+        raise ConfigError(f"exit_modes yalniz mode='paper'/'backtest' ile verilebilir (mode={mode!r})")
     if mode != "paper":
         given = {"optional_pairs": optional_pairs, "ml_pairs": ml_pairs, "max_positions": max_positions, "risk": risk_raw,
                  "clusters": clusters, "flat_bar_guard": flat_bar_guard, "cost_overrides": cost_overrides,
@@ -562,7 +570,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         optional_pairs=optional_pairs, retired_pairs=retired_pairs, ml_pairs=ml_pairs, max_positions=max_positions,
         risk=risk_raw, clusters=clusters,
         flat_bar_guard=flat_bar_guard, contract_types=contract_types, cost_overrides=cost_overrides,
-        arms=arms, arm_max_positions=arm_caps,
+        arms=arms, arm_max_positions=arm_caps, exit_modes=exit_modes,
         **{n: raw[n] for n in _STR},
     )
 

@@ -22,13 +22,19 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+from trader_core import exit_modes as XM
+
 __all__ = ["REGISTRY_ID", "VERSION", "PARAM", "ROLES", "RunResult", "ExitCfError", "TradeInput", "ExitCfStore", "MarketSource",
-           "replay_trail", "prepare_h1", "price_result", "run_once", "deltas", "parity_stats", "summary", "holdout_hit",
+           "replay_trail", "run_modes_once", "deltas_modes", "ModesRunResult", "MODES_REGISTRY_ID", "prepare_h1", "price_result", "run_once", "deltas", "parity_stats", "summary", "holdout_hit",
            "funding_grid_times", "funding_payment", "registry_row", "EXCLUDED_EXIT_REASONS", "SOURCES_VERDICT"]
 
 REGISTRY_ID = "exitcf-v1"            # on kayit kimligi (research/trial_registry.csv); CLI --registry-id bu sabite esit degilse calismaz
 VERSION = 1                          # kural surumu: sabit/formul degisirse artar; ders yalniz en yuksek surumu okur
 PARAM = "trail_atr"
+MODES_REGISTRY_ID = "exitcf-v2"      # cikis kipleri (basa-bas / kismi) on kaydi; v1 satiri/sabitleri degismez (docs/cikis-kipleri-spec.md 6)
+MODES_VERSION = 1                    # ecf_modes tablosu kural surumu (v1 tablosundan bagimsiz)
+MODE_NAMES = ("breakeven", "partial")
+MODE_VARIANTS = ("off",) + MODE_NAMES
 ROLES = ("base", "up", "down", "own")
 SOURCES = ("paper", "testnet", "live", "backtest")
 SOURCES_VERDICT = ("paper", "testnet")           # hukum yalniz kendi bot defterinden (live: gercek para askida; spec 6)
@@ -150,6 +156,7 @@ class TradeInput:
     own_value: float | None            # islemin kendi surumundeki trail_atr (yoksa None)
     source: str = "paper"
     run_id: str = ""
+    own_modes: XM.ExitModes | None = None   # islemin kendi surumunde acik cikis kipleri (v1 oynatimlari bunlarla; yoksa None = kapali)
 
 
 def _fin(x) -> bool:
@@ -184,6 +191,9 @@ class ReplayResult:
     censored: int = 0
     gap_ms: int | None = None           # eksik mumun acilisi (status=gap) ya da beklenen bar (pending)
     gap_kind: str | None = None         # bars15 | bars1h
+    partial_ms: int | None = None       # kismi kar alma (yalniz kip aciksa): dolum zamani / karma fiyat / pozisyon payi
+    partial_price: float | None = None
+    partial_frac: float | None = None
 
 
 def _slip(price: float, side: str, bps: float) -> float:
@@ -194,7 +204,7 @@ def _slip(price: float, side: str, bps: float) -> float:
 
 def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms: int, trail_atr: float, h1: H1Series,
                  m15: Mapping[int, tuple], now_ms: int, slip_exit_bps: float, slip_stop_bps: float,
-                 max_bars: int | None = None) -> ReplayResult:
+                 max_bars: int | None = None, modes: XM.ExitModes | None = None) -> ReplayResult:
     """T1 cikisini (position_manager.evaluate_exit sirasi) 1h kapanislarinda + 15 dk stop vurusuyla oynatir.
 
     `h1`: ms/o/h/l/c/atr/regime (acilis zamani sirali, bosluksuz olmali); `m15`: {acilis_ms: (o,h,l,c)} tetik serisi.
@@ -202,7 +212,10 @@ def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms
     ve stop D kapanisinda gecildiyse -> trail_stop piyasa cikisi; (c) stop sikilastiysa yeni stop D'den sonraki ilk 15 dk
     mumundan itibaren gecerli; o mumun ACILISI zaten asmissa (would_trigger) -> trail_stop piyasa cikisi. 15 dk mumunda stop
     vurusu: long low<=stop / short high>=stop; ayni mumda her sey stop once; bosluk -> dolum mum acilisi; sonra stop kaymasi.
-    Veri sonu (now) -> pending; veri deligi -> gap (gap_ms)."""
+    Veri sonu (now) -> pending; veri deligi -> gap (gap_ms).
+    `modes` (docs/cikis-kipleri-spec.md; varsayilan None = kapali, davranis bayt bayt eski): basa-bas -> stop = iz stopu ile
+    `exit_modes.be_stop`un siki olani (1h kapanista, motorla ayni islev); kismi -> 1h kapanista tetik varsa D'den sonraki ilk
+    15 dk acilisinda `pt_frac` kadari piyasada kapanir (bir kez; cikis karari verilmediyse), kalan surer."""
     from trader_core import signals as S          # tembel: pandas yalniz oynatimda yuklenir
     max_bars = MAX_BARS if max_bars is None else max_bars
 
@@ -237,13 +250,21 @@ def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms
     best = entry_price
     first_bar_ms = entry_ms - entry_ms % M15_MS
     fresh_ms: int | None = None          # yeni stopun gecerli oldugu ilk 15 dk mumunun acilisi (would_trigger denetimi)
+    part_at: int | None = None           # kismi kapanisin dolacagi 15 dk mumunun acilisi (bekleyen)
+    part_done: tuple[int, float, float] | None = None
+    best_h1 = -math.inf if side == "long" else math.inf     # kapanmis 1h mumlarin en iyi ucu (giris mumu dahil; motor ctx ile ayni)
 
     def mfe_r() -> float | None:
         return abs(best - entry_price) / r_price if r_price > 0 else None
 
+    def fin(res: ReplayResult) -> ReplayResult:
+        if part_done is not None:
+            res.partial_ms, res.partial_price, res.partial_frac = part_done
+        return res
+
     def market(bar_ms, k, reason) -> ReplayResult:
         o = m15[bar_ms][0]
-        return ReplayResult("ok", reason, bar_ms, _slip(o, side, slip_exit_bps), k + 1, mfe_r())
+        return fin(ReplayResult("ok", reason, bar_ms, _slip(o, side, slip_exit_bps), k + 1, mfe_r()))
 
     for k in range(max_bars):
         h_k = h_entry + k * HR_MS
@@ -255,19 +276,22 @@ def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms
             if bar is None:
                 return ReplayResult("pending" if b > last_closed_15 else "gap", gap_ms=b, gap_kind="bars15")
             o, hi, lo, _c = bar
+            if part_at == b:                                  # kismi kar alma: bu mumun acilisinda piyasa dolumu (stoptan once)
+                part_done = (b, _slip(o, side, slip_exit_bps), float(modes.pt_frac))
+                part_at = None
             if fresh_ms == b:
                 fresh_ms = None
                 beyond = o <= cur if side == "long" else o >= cur
                 if beyond:                                    # would_trigger: yeni stop acilista zaten asilmis
                     best = max(best, hi) if side == "long" else min(best, lo)
-                    return ReplayResult("ok", "trail_stop", b, _slip(o, side, slip_exit_bps), k + 1, mfe_r())
+                    return fin(ReplayResult("ok", "trail_stop", b, _slip(o, side, slip_exit_bps), k + 1, mfe_r()))
             best = max(best, hi) if side == "long" else min(best, lo)
             hit = (lo <= cur) if side == "long" else (hi >= cur)
             if hit:
                 gap = (o <= cur) if side == "long" else (o >= cur)
                 base = o if gap else cur
                 reason = "trail_stop" if cur != initial_stop else "stop"
-                return ReplayResult("ok", reason, b, _slip(base, side, slip_stop_bps), k + 1, mfe_r())
+                return fin(ReplayResult("ok", reason, b, _slip(base, side, slip_stop_bps), k + 1, mfe_r()))
             b += M15_MS
         # ---- (2) 1h kapanisi D: motor siralamasi
         if k >= n_av:
@@ -277,6 +301,14 @@ def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms
                 return ReplayResult("pending" if d_k > last_closed_15 else "gap", gap_ms=d_k, gap_kind="bars15")
             return market(d_k, k, "regime_flip")
         stop = float(path[k])
+        if modes is not None:
+            hk, lk = h1.h[idx0 + k], h1.l[idx0 + k]
+            if side == "long":
+                best_h1 = max(best_h1, hk) if hk == hk else best_h1
+            else:
+                best_h1 = min(best_h1, lk) if lk == lk else best_h1
+            bh = best_h1 if math.isfinite(best_h1) else None
+            stop = XM.merge_stop(side, stop, XM.be_stop(side, entry_price, initial_stop, bh, modes))
         armed = stop != initial_stop
         close = h1.c[idx0 + k]
         if armed and ((stop >= close) if side == "long" else (stop <= close)):
@@ -287,9 +319,14 @@ def replay_trail(*, side: str, entry_price: float, initial_stop: float, entry_ms
         if tighter:
             cur = stop
             fresh_ms = d_k
+        if (modes is not None and modes.partial and part_done is None and part_at is None
+                and XM.partial_due(side, entry_price, initial_stop, bh, modes)):
+            if d_k not in m15:
+                return ReplayResult("pending" if d_k > last_closed_15 else "gap", gap_ms=d_k, gap_kind="bars15")
+            part_at = d_k
         if k == max_bars - 1:                                  # ufuk: piyasaya gore degerle (dislanmaz; censored)
             px = _slip(close, side, slip_exit_bps)
-            return ReplayResult("ok", "horizon", d_k, px, max_bars, mfe_r(), censored=1)
+            return fin(ReplayResult("ok", "horizon", d_k, px, max_bars, mfe_r(), censored=1))
     return ReplayResult("pending")                              # pragma: no cover (dongu horizon'da doner)
 
 
@@ -323,8 +360,18 @@ def price_result(res: ReplayResult, tr: TradeInput, *, taker_fee: float,
     fund, miss = funding_of(entry_ms, res.exit_ms)
     if miss is not None:
         return {"status": "gap", "gap_ms": miss, "gap_kind": "funding"}
-    gross = sgn * (res.exit_price - tr.entry_price) * tr.qty
-    fee_exit = tr.qty * res.exit_price * taker_fee
+    if res.partial_ms is not None and res.partial_price is not None and res.partial_frac:
+        # kismi kar alma (docs/cikis-kipleri-spec.md): iki parca; funding adetle dogrusal (kalan parca tum sure, kapanan parca partial_ms'e dek)
+        f = float(res.partial_frac)
+        fund_p, miss_p = funding_of(entry_ms, res.partial_ms)
+        if miss_p is not None:
+            return {"status": "gap", "gap_ms": miss_p, "gap_kind": "funding"}
+        fund = f * fund_p + (1.0 - f) * fund
+        gross = sgn * (f * (res.partial_price - tr.entry_price) + (1.0 - f) * (res.exit_price - tr.entry_price)) * tr.qty
+        fee_exit = tr.qty * (f * res.partial_price + (1.0 - f) * res.exit_price) * taker_fee
+    else:
+        gross = sgn * (res.exit_price - tr.entry_price) * tr.qty
+        fee_exit = tr.qty * res.exit_price * taker_fee
     risk = tr.planned_risk
     return {"status": "ok", "gross_r": gross / risk, "fee_r": (tr.fee_entry + fee_exit) / risk, "funding_r": fund / risk,
             "net_r": (gross - tr.fee_entry - fee_exit - fund) / risk}
@@ -350,7 +397,29 @@ CREATE TABLE IF NOT EXISTS ecf_outcomes (
   computed_at TEXT NOT NULL, version INTEGER NOT NULL, registry_id TEXT NOT NULL,
   PRIMARY KEY (bot, source, run_id, trade_id, param, value));
 CREATE INDEX IF NOT EXISTS ix_ecf_entry ON ecf_outcomes (bot, source, entry_ts);
+CREATE TABLE IF NOT EXISTS ecf_modes (
+  bot TEXT NOT NULL CHECK (bot IN ('learner','twin')),
+  source TEXT NOT NULL CHECK (source IN ('paper','testnet','live','backtest')),
+  run_id TEXT NOT NULL DEFAULT '',
+  trade_id INTEGER NOT NULL,
+  pair TEXT NOT NULL, side TEXT NOT NULL, setup TEXT, trigger_tf TEXT,
+  entry_ts TEXT NOT NULL, exit_ts_actual TEXT, actual_exit_reason TEXT, actual_net_r REAL, param_version_id INTEGER,
+  trail_atr REAL NOT NULL,
+  variant TEXT NOT NULL CHECK (variant IN ('off','breakeven','partial')),
+  exit_reason_sim TEXT NOT NULL CHECK (exit_reason_sim IN ('stop','trail_stop','regime_flip','horizon','data_gap','no_data')),
+  exit_ts_sim TEXT, bars_held_sim INTEGER,
+  gross_r REAL, fee_r REAL, funding_r REAL, net_r REAL, censored INTEGER, mfe_r_sim REAL,
+  partial_ts_sim TEXT, partial_price REAL, partial_frac REAL,
+  trigger_source TEXT, grid_min INTEGER, cost_json TEXT, window_start_ts TEXT, window_end_ts TEXT,
+  computed_at TEXT NOT NULL, version INTEGER NOT NULL, registry_id TEXT NOT NULL,
+  PRIMARY KEY (bot, source, run_id, trade_id, variant));
+CREATE INDEX IF NOT EXISTS ix_ecfm_entry ON ecf_modes (bot, source, entry_ts);
 """
+_MCOLS = ("bot", "source", "run_id", "trade_id", "pair", "side", "setup", "trigger_tf", "entry_ts", "exit_ts_actual",
+          "actual_exit_reason", "actual_net_r", "param_version_id", "trail_atr", "variant", "exit_reason_sim", "exit_ts_sim",
+          "bars_held_sim", "gross_r", "fee_r", "funding_r", "net_r", "censored", "mfe_r_sim", "partial_ts_sim", "partial_price",
+          "partial_frac", "trigger_source", "grid_min", "cost_json", "window_start_ts", "window_end_ts", "computed_at", "version",
+          "registry_id")
 _COLS = ("bot", "source", "run_id", "trade_id", "pair", "side", "setup", "trigger_tf", "entry_ts", "exit_ts_actual",
          "actual_exit_reason", "actual_net_r", "param_version_id", "param", "value", "role", "exit_reason_sim", "exit_ts_sim",
          "bars_held_sim", "gross_r", "fee_r", "funding_r", "net_r", "censored", "mfe_r_sim", "parity_gap_r", "reason_match",
@@ -422,6 +491,38 @@ class ExitCfStore:
             try:
                 for r in rows:
                     n += self._db.execute(sql, [r.get(c) for c in _COLS]).rowcount
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        except sqlite3.Error as e:
+            raise ExitCfError(f"depo yazma hatasi: {type(e).__name__}", "store_io") from e
+        return n
+
+
+    def have_modes(self, bot: str, source: str, run_id: str) -> dict[int, set]:
+        """trade_id -> yazilmis `variant` kumesi (ecf_modes)."""
+        out: dict[int, set] = {}
+        try:
+            for r in self._db.execute("SELECT trade_id, variant FROM ecf_modes WHERE bot=? AND source=? AND run_id=? AND version=?",
+                                      (bot, source, run_id, MODES_VERSION)):
+                out.setdefault(r[0], set()).add(r[1])
+        except sqlite3.Error as e:
+            raise ExitCfError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+        return out
+
+    def insert_modes(self, rows: Iterable[Mapping]) -> int:
+        """Idempotent (ecf_modes): ayni anahtar varsa dokunmaz. Doner: yeni eklenen satir sayisi."""
+        if self.read_only:
+            raise ExitCfError("depo salt okunur", "read_only")
+        sql = (f"INSERT INTO ecf_modes ({','.join(_MCOLS)}) VALUES ({','.join('?' * len(_MCOLS))}) "
+               "ON CONFLICT (bot, source, run_id, trade_id, variant) DO NOTHING")
+        n = 0
+        try:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                for r in rows:
+                    n += self._db.execute(sql, [r.get(c) for c in _MCOLS]).rowcount
                 self._db.execute("COMMIT")
             except BaseException:
                 self._db.execute("ROLLBACK")
@@ -673,7 +774,7 @@ def _compute_trade(tr: TradeInput, missing: list, *, own, market, now_ms, cost, 
     for role, v in missing:
         rr = replay_trail(side=tr.side, entry_price=tr.entry_price, initial_stop=tr.initial_stop, entry_ms=entry_ms,
                           trail_atr=v, h1=h1, m15=m15, now_ms=now_ms, slip_exit_bps=float(cost.get("slip_exit_bps", 2.0)),
-                          slip_stop_bps=float(cost.get("slip_stop_bps", 5.0)))
+                          slip_stop_bps=float(cost.get("slip_stop_bps", 5.0)), modes=tr.own_modes)
         if rr.status == "ok":
             sim = price_result(rr, tr, taker_fee=taker, funding_of=fund)
             if sim["status"] == "ok":
@@ -688,6 +789,206 @@ def _compute_trade(tr: TradeInput, missing: list, *, own, market, now_ms, cost, 
         flags.add(reason)
         rows.append(_row(tr, bot, role, v, now, trigger_source, cost, w_start, gap_ms, None, reason, None, own))
     return finalize(rows)
+
+
+# ------------------------------------------------------------------------------------------------ cikis kipleri (exitcf-v2)
+@dataclass
+class ModesRunResult:
+    scanned: int = 0
+    already: int = 0
+    computed: int = 0
+    pending: int = 0
+    no_data: int = 0
+    data_gap: int = 0
+    censored: int = 0
+    holdout_skipped: int = 0
+    skipped_15m: int = 0
+    excluded_exit_reason: int = 0
+    rows_written: int = 0
+    partial_fired: int = 0
+
+
+def _mrow(tr: TradeInput, bot: str, variant: str, trail: float, now: datetime, trigger_source: str, cost: Mapping, w_start: int,
+          w_end_ms: int | None, sim: dict | None, reason: str, rr: ReplayResult | None) -> dict:
+    row = {"bot": bot, "source": tr.source, "run_id": tr.run_id, "trade_id": tr.trade_id, "pair": tr.pair, "side": tr.side,
+           "setup": tr.setup, "trigger_tf": tr.trigger_tf, "entry_ts": _fmt(tr.entry_ts),
+           "exit_ts_actual": _fmt(tr.exit_ts) if tr.exit_ts else None, "actual_exit_reason": tr.exit_reason,
+           "actual_net_r": tr.actual_net_r, "param_version_id": tr.param_version_id, "trail_atr": _vkey(trail),
+           "variant": variant, "exit_reason_sim": reason, "exit_ts_sim": None, "bars_held_sim": None, "gross_r": None,
+           "fee_r": None, "funding_r": None, "net_r": None, "censored": None, "mfe_r_sim": None, "partial_ts_sim": None,
+           "partial_price": None, "partial_frac": None, "trigger_source": trigger_source, "grid_min": GRID_MIN,
+           "cost_json": json.dumps(dict(cost), sort_keys=True), "window_start_ts": fmt_ms(w_start),
+           "window_end_ts": fmt_ms(w_end_ms) if w_end_ms is not None else None, "computed_at": _fmt(now),
+           "version": MODES_VERSION, "registry_id": MODES_REGISTRY_ID}
+    if sim is not None and rr is not None:
+        row.update(exit_ts_sim=fmt_ms(rr.exit_ms), bars_held_sim=rr.bars_held, gross_r=sim["gross_r"], fee_r=sim["fee_r"],
+                   funding_r=sim["funding_r"], net_r=sim["net_r"], censored=rr.censored, mfe_r_sim=rr.mfe_r)
+        if rr.partial_ms is not None:
+            row.update(partial_ts_sim=fmt_ms(rr.partial_ms), partial_price=rr.partial_price, partial_frac=rr.partial_frac)
+    return row
+
+
+def _modes_for_variant(variant: str) -> XM.ExitModes | None:
+    """`off`: kip yok; `breakeven` / `partial`: yalniz o kip, varsayilan sayilarla (spec 3; on kayitli, degismez)."""
+    if variant == "off":
+        return None
+    return XM.from_flags(variant == "breakeven", variant == "partial")
+
+
+def _compute_modes_trade(tr: TradeInput, missing: list[str], *, trail: float, market, now_ms, cost, signal_params,
+                         trigger_source, bot, now, w_start, w_end):
+    """-> (satirlar, bayraklar) ya da None (pending). v1 `_compute_trade` ile ayni veri/oynatim; fark yalniz `modes`."""
+    pair = tr.pair
+    entry_ms = to_ms(tr.entry_ts)
+    kind = "mark" if trigger_source == "mark" else "last"
+    flags: set[str] = set()
+
+    def nodata(reason="no_data"):
+        flags.add(reason)
+        return [_mrow(tr, bot, v, trail, now, trigger_source, cost, w_start, w_end, None, reason, None) for v in missing], flags
+    try:
+        m15_rows = market.bars(pair, "15m", entry_ms - entry_ms % M15_MS, w_end, kind)
+        h1_rows = market.bars(pair, "1h", w_start, w_end, "last")
+        h4_rows = market.bars(pair, "4h", w_start - H4_MS, w_end, "last")
+        f_pts = market.funding(pair, entry_ms - H8_MS, w_end + H8_MS)
+    except ExitCfError:
+        raise
+    except Exception:                                               # noqa: BLE001
+        return nodata()
+    if not m15_rows or not h1_rows or len(h4_rows) < 120:
+        return nodata()
+    h1 = prepare_h1(h1_rows, h4_rows, signal_params)
+    m15 = {r[0]: r[1:5] for r in m15_rows}
+    fund = _funding_fn(f_pts, now_ms, tr.side, tr.qty, tr.entry_price)
+    taker = float(cost.get("taker_fee", 0.0005))
+    rows: list[dict] = []
+    for v in missing:
+        rr = replay_trail(side=tr.side, entry_price=tr.entry_price, initial_stop=tr.initial_stop, entry_ms=entry_ms,
+                          trail_atr=trail, h1=h1, m15=m15, now_ms=now_ms, slip_exit_bps=float(cost.get("slip_exit_bps", 2.0)),
+                          slip_stop_bps=float(cost.get("slip_stop_bps", 5.0)), modes=_modes_for_variant(v))
+        if rr.status == "ok":
+            sim = price_result(rr, tr, taker_fee=taker, funding_of=fund)
+            if sim["status"] == "ok":
+                rows.append(_mrow(tr, bot, v, trail, now, trigger_source, cost, w_start, rr.exit_ms, sim, rr.reason, rr))
+                continue
+            gap_ms, gkind = sim["gap_ms"], "funding"
+        else:
+            gap_ms, gkind = rr.gap_ms, rr.gap_kind
+        if rr.status == "pending" or gap_ms is None or now_ms < gap_ms + int(GAP_GRACE.total_seconds() * 1000):
+            return None
+        reason = "no_data" if gkind == "funding" else "data_gap"
+        flags.add(reason)
+        rows.append(_mrow(tr, bot, v, trail, now, trigger_source, cost, w_start, gap_ms, None, reason, None))
+    return rows, flags
+
+
+def run_modes_once(*, bot: str, trades: Sequence[TradeInput], market, store: ExitCfStore, now: datetime, active_value: float,
+                   cost_for: Callable[[TradeInput], Mapping], signal_params_for: Callable[[TradeInput], object | None] = lambda t: None,
+                   trigger_source: str = "last", holdout: tuple[datetime, datetime] | None = None, dry_run: bool = False,
+                   max_trades: int = MAX_TRADES_PER_RUN) -> ModesRunResult:
+    """Kapanmis T1 islemlerini cikis kipleriyle de oynatir: her islem icin `off` (kip yok), `breakeven` (yalniz basa-bas),
+    `partial` (yalniz kismi) -- hepsi AKTIF `trail_atr` ile, ayni gece birlikte. Uygunluk/kilitli donem/ufuk/pending kurallari v1 ile
+    ayni (spec 2-4)."""
+    now = _utc(now)
+    now_ms = to_ms(now)
+    res = ModesRunResult()
+    have_cache: dict[tuple[str, str], dict[int, set]] = {}
+    batch: list[dict] = []
+    done_this_run = 0
+    for tr in sorted(trades, key=lambda t: (to_ms(t.entry_ts), t.trade_id)):
+        if tr.setup != "T1":
+            continue
+        res.scanned += 1
+        if tr.trigger_tf != "1h":
+            res.skipped_15m += 1
+            continue
+        if tr.exit_reason in EXCLUDED_EXIT_REASONS:
+            res.excluded_exit_reason += 1
+            continue
+        if tr.exit_ts is None or to_ms(tr.exit_ts) > now_ms:
+            continue
+        if not _valid_trade(tr):
+            res.no_data += 1
+            continue
+        entry_ms = to_ms(tr.entry_ts)
+        w_start = entry_ms - WARMUP_DAYS * DAY_MS
+        w_end = min(entry_ms + MAX_BARS * HR_MS + 2 * HR_MS, now_ms)
+        if holdout_hit(w_start, w_end, holdout):
+            res.holdout_skipped += 1
+            continue
+        key = (tr.source, tr.run_id)
+        if key not in have_cache:
+            have_cache[key] = store.have_modes(bot, tr.source, tr.run_id)
+        have = have_cache[key].get(tr.trade_id, set())
+        missing = [v for v in MODE_VARIANTS if v not in have]
+        if not missing:
+            res.already += 1
+            continue
+        if done_this_run >= max_trades:
+            res.pending += 1
+            continue
+        out = _compute_modes_trade(tr, missing, trail=_vkey(active_value), market=market, now_ms=now_ms, cost=cost_for(tr),
+                                   signal_params=signal_params_for(tr), trigger_source=trigger_source, bot=bot, now=now,
+                                   w_start=w_start, w_end=w_end)
+        if out is None:
+            res.pending += 1
+            continue
+        rows, flags = out
+        done_this_run += 1
+        batch += rows
+        res.computed += 1
+        res.no_data += int("no_data" in flags)
+        res.data_gap += int("data_gap" in flags)
+        res.censored += sum(1 for r in rows if r.get("censored") == 1)
+        res.partial_fired += sum(1 for r in rows if r.get("partial_ts_sim"))
+    if not dry_run and batch:
+        res.rows_written = store.insert_modes(batch)
+    return res
+
+
+def deltas_modes(path, bot: str, *, now: datetime, days: int = 120, mode: str, sources: Sequence[str] = SOURCES_VERDICT,
+                 run_id: str | None = None) -> list[dict]:
+    """Her islem icin Delta_r = net_r(mode acik) - net_r(kapali) (yalniz window_end_ts <= now; ikisi de sayisal; en yuksek
+    `version`). Tablo/dosya yoksa [] (kanit yok). Doner: [{source, run_id, trade_id, entry_ts, delta_r, censored,
+    partial_fired}]. Salt okunur; depo bozuksa ExitCfError."""
+    if mode not in MODE_NAMES:
+        raise ExitCfError("mode breakeven|partial olmali", "bad_args")
+    now = _utc(now)
+    lo, hi = _fmt(now - timedelta(days=days)), _fmt(now)
+    with _open_ro(path) as st:
+        try:
+            ver = st._db.execute("SELECT MAX(version) FROM ecf_modes WHERE bot=?", (bot,)).fetchone()[0]
+        except sqlite3.OperationalError:
+            return []                                              # eski depo: tablo yok (kanit yok)
+        except sqlite3.Error as e:
+            raise ExitCfError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+        if ver is None:
+            return []
+        try:
+            qs = ",".join("?" * len(sources))
+            args: list = [bot, ver, *sources, lo, hi, hi]
+            sql = ("SELECT source, run_id, trade_id, entry_ts, variant, net_r, censored, partial_ts_sim FROM ecf_modes "
+                   f"WHERE bot=? AND version=? AND source IN ({qs}) AND entry_ts>=? AND entry_ts<? AND window_end_ts<=? "
+                   "AND net_r IS NOT NULL")
+            if run_id is not None:
+                sql += " AND run_id=?"
+                args.append(run_id)
+            rows = st._db.execute(sql, args).fetchall()
+        except sqlite3.Error as e:
+            raise ExitCfError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+    by_trade: dict[tuple, dict] = {}
+    for r in rows:
+        by_trade.setdefault((r["source"], r["run_id"], r["trade_id"]), {})[r["variant"]] = r
+    out = []
+    for (src, rid, tid), vs in sorted(by_trade.items(), key=lambda kv: ((kv[1].get("off") or next(iter(kv[1].values())))["entry_ts"], kv[0][2])):
+        off, on = vs.get("off"), vs.get(mode)
+        if off is None or on is None:
+            continue
+        out.append({"source": src, "run_id": rid, "trade_id": tid, "entry_ts": off["entry_ts"],
+                    "delta_r": float(on["net_r"]) - float(off["net_r"]),
+                    "censored": int(bool(off["censored"]) or bool(on["censored"])),
+                    "partial_fired": int(bool(on["partial_ts_sim"]))})
+    return out
 
 
 # ------------------------------------------------------------------------------------------------ okuma (ders / rapor)
@@ -795,18 +1096,28 @@ def summary(path, bot: str, *, now: datetime, days: int = 120) -> dict:
 
 
 # ------------------------------------------------------------------------------------------------ kayit denetimi
-def registry_check(csv_path) -> tuple[bool, str]:
+def registry_check(csv_path, registry_id: str | None = None) -> tuple[bool, str]:
     """research/trial_registry.csv (yalniz gelistirme makinesinde var) icinde on kayit satiri var mi? Sunucuda CSV yoktur:
-    cagiran dosya yoksa denetimi atlar (spec 0)."""
+    cagiran dosya yoksa denetimi atlar (spec 0). `registry_id` verilmezse v1 (`REGISTRY_ID`)."""
     import csv
+    rid = registry_id or REGISTRY_ID
     try:
         with open(csv_path, newline="", encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                if (row.get("id") or "").strip() == REGISTRY_ID or (row.get("id") or "").strip().startswith(REGISTRY_ID + "_"):
+                if (row.get("id") or "").strip() == rid or (row.get("id") or "").strip().startswith(rid + "_"):
                     return True, "ok"
     except OSError as e:
         return False, f"kayit dosyasi okunamadi: {type(e).__name__}"
-    return False, f"{REGISTRY_ID} satiri yok"
+    return False, f"{rid} satiri yok"
+
+
+def modes_registry_row() -> dict:
+    """exitcf-v2 on kayit satiri (docs/cikis-kipleri-spec.md 6): 2 alternatif (breakeven, partial) => n_trials katkisi 2."""
+    return {"id": MODES_REGISTRY_ID, "strategy": "TraderV1b",
+            "params": json.dumps({"modes": list(MODE_NAMES), "breakeven": {"trigger_r": XM.BE_TRIGGER_R, "offset_bps": XM.BE_OFFSET_BPS},
+                                  "partial": {"trigger_r": XM.PT_TRIGGER_R, "frac": XM.PT_FRAC}},
+                                 ensure_ascii=False, separators=(",", ":")),
+            "n_trials": 2, "version": MODES_VERSION}
 
 
 # ------------------------------------------------------------------------------------------------ backtest kaynagi (YALNIZ gelistirme)

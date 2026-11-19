@@ -91,6 +91,11 @@ class _Versions:
     def __init__(self, led):
         self.led = led
         self._c: dict[int, tuple] = {}
+        self._modes: dict[int, object] = {}            # param_version_id -> ExitModes | None (surumun acik cikis kipleri)
+
+    def modes(self, vid: int):
+        self.get(vid)
+        return self._modes.get(vid)
 
     def get(self, vid: int):
         if vid not in self._c:
@@ -100,6 +105,8 @@ class _Versions:
                 self._c[vid] = (None, None)
                 return self._c[vid]
             tv = params.get(EC.PARAM)
+            self._modes[vid] = EC.XM.from_flags(int(params.get(EC.XM.PARAM_BREAKEVEN, 0) or 0) == 1,
+                                                 int(params.get(EC.XM.PARAM_PARTIAL, 0) or 0) == 1)
             sp = None
             try:
                 from trader_core import signals as S
@@ -117,7 +124,8 @@ def _to_inputs(trades, vers: _Versions, source: str, run_id: str = "") -> list:
             trade_id=t.trade_id, pair=t.pair, side=t.side, setup=t.setup, trigger_tf=_tf_of(t), entry_ts=t.entry_ts,
             exit_ts=t.exit_ts, entry_price=t.entry_price, qty=t.qty, planned_risk=t.planned_risk, initial_stop=t.planned_stop,
             fee_entry=t.fee_entry, exit_reason=t.exit_reason, exit_price=t.exit_price, actual_net_r=t.r_multiple,
-            param_version_id=t.param_version_id, own_value=vers.get(t.param_version_id)[0], source=source, run_id=run_id))
+            param_version_id=t.param_version_id, own_value=vers.get(t.param_version_id)[0], source=source, run_id=run_id,
+            own_modes=vers.modes(t.param_version_id)))
     return out
 
 
@@ -134,7 +142,7 @@ def _load_tf(led, trades) -> None:
         _TF_CACHE[d.id] = d.trigger_tf
 
 
-def _paper_block(args, now, store, source, since):
+def _paper_block(args, now, store, source, since, modes_registered=True):
     led = L.open_ledger(_resolve(args.ledger or f"var/{args.bot}/ledger.sqlite"), args.bot, create=False, read_only=True,
                         migrate=False)
     try:
@@ -152,10 +160,15 @@ def _paper_block(args, now, store, source, since):
     cost_for, trig = _paper_cfg(_resolve(args.base_config), _resolve(args.paper_config))
     market = EC.MarketSource(_resolve(args.market), holdout=HOLDOUT)
     try:
-        return EC.run_once(bot=args.bot, trades=inputs, market=market, store=store, now=now, active_value=active,
-                           step=float(L.LESSON_STEP[EC.PARAM]), bounds=bounds, cost_for=cost_for,
-                           signal_params_for=lambda t: vers.get(t.param_version_id)[1], trigger_source=trig,
-                           holdout=HOLDOUT, dry_run=args.dry_run)
+        r = EC.run_once(bot=args.bot, trades=inputs, market=market, store=store, now=now, active_value=active,
+                        step=float(L.LESSON_STEP[EC.PARAM]), bounds=bounds, cost_for=cost_for,
+                        signal_params_for=lambda t: vers.get(t.param_version_id)[1], trigger_source=trig,
+                        holdout=HOLDOUT, dry_run=args.dry_run)
+        # exitcf-v2: cikis kipleri (basa-bas / kismi) "acik olsaydi"; v1 sonucundan bagimsiz, ayni gece
+        mr = EC.ModesRunResult() if not modes_registered else EC.run_modes_once(bot=args.bot, trades=inputs, market=market, store=store, now=now, active_value=active,
+                               cost_for=cost_for, signal_params_for=lambda t: vers.get(t.param_version_id)[1],
+                               trigger_source=trig, holdout=HOLDOUT, dry_run=args.dry_run)
+        return r, mr
     finally:
         market.close()
 
@@ -240,6 +253,11 @@ def main(argv=None, *, now_fn=None) -> int:
             log.error("on kayit denetimi: %s", why)
             print(json.dumps({"bot": args.bot, "status": "unregistered", "registry_id": EC.REGISTRY_ID, "detail": why}))
             return EXIT_CONFIG
+    modes_registered = True                                      # exitcf-v2 (cikis kipleri): CSV varsa satir yoksa yalniz kip gecisi calismaz
+    if os.path.exists(csv_path):
+        modes_registered = EC.registry_check(csv_path, EC.MODES_REGISTRY_ID)[0]
+        if not modes_registered:
+            log.warning("exitcf-v2 on kayit satiri yok: cikis kipleri gecisi atlandi (v1 etkilenmez)")
     since = _parse_since(args.since)
     runs = [r.strip() for r in (args.runs or "").split(",") if r.strip()]
     now = (now_fn or (lambda: datetime.now(timezone.utc)))()
@@ -255,7 +273,7 @@ def main(argv=None, *, now_fn=None) -> int:
         else:
             store = EC.ExitCfStore(out_path)
         try:
-            r = _paper_block(args, now, store, args.source, since) if os.path.exists(ledger_path) else EC.RunResult()
+            r, mr = _paper_block(args, now, store, args.source, since, modes_registered) if os.path.exists(ledger_path) else (EC.RunResult(), EC.ModesRunResult())
             bt_skipped = 0
             if runs:
                 bt, bt_skipped = _backtest_block(args, now, store, runs)
@@ -277,7 +295,9 @@ def main(argv=None, *, now_fn=None) -> int:
     out = {"bot": args.bot, "status": "ok", "dry_run": args.dry_run, "registry_id": EC.REGISTRY_ID, "version": EC.VERSION, **vars(r),
            "base_parity_median_abs_r": par["median_abs_r"] if par else None, "parity_mean_r": par["mean_r"] if par else None,
            "reason_match_rate": par["reason_match_rate"] if par else None, "parity_n": par["n"] if par else 0,
-           "parity_status": par["status"] if par else "parity_unknown"}
+           "parity_status": par["status"] if par else "parity_unknown",
+           "modes": {"registry_id": EC.MODES_REGISTRY_ID, "version": EC.MODES_VERSION,
+                     "status": "ok" if modes_registered else "unregistered", **vars(mr)}}
     if runs:
         out["backtest_runs_skipped_holdout"] = bt_skipped
         out["backtest_parity"] = bt_par
