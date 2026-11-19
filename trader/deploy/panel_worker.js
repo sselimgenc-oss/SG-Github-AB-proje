@@ -3,7 +3,7 @@
 // Kullanıcı adı sabit "trader"; parola Worker secret'ı PANEL_SIFRE. Secret yoksa/boşsa HER İSTEK 401 (fail-closed).
 // Parolasız yayın seçeneği/bayrağı YOKTUR.
 // Oturum çerezi: doğru Basic Auth sonrası 30 gün geçerli, PANEL_SIFRE ile HMAC imzalı çerez (telefonlar Basic Auth'u
-// hatırlamadığı için). Parola değişince tüm çerezler geçersiz olur. Çerez HttpOnly + Secure + SameSite=Strict.
+// hatırlamadığı için). Parola değişince tüm çerezler geçersiz olur. Çerez HttpOnly + Secure + SameSite=None; Partitioned (kapı iframe'i için; pano salt okunur).
 const KULLANICI = "trader";
 const CEREZ = "pano_oturum";
 const OTURUM_S = 30 * 24 * 3600;
@@ -27,7 +27,7 @@ async function cerezGecerli(istek, sifre) {
 
 async function cerezYap(sifre) {
   const bitis = String(Math.floor(Date.now() / 1000) + OTURUM_S);
-  return `${CEREZ}=${bitis}.${await imza(sifre, "v1|" + bitis)}; Max-Age=${OTURUM_S}; Path=/; HttpOnly; Secure; SameSite=Strict`;
+  return `${CEREZ}=${bitis}.${await imza(sifre, "v1|" + bitis)}; Max-Age=${OTURUM_S}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`;   // 19 Kasim: kapi iframe'inde de calissin (pano salt okunur; durum degistiren istek yok)
 }
 
 async function ozet(metin) {
@@ -49,10 +49,10 @@ function baslikEkle(yanit) {
   h.set("X-Robots-Tag", "noindex");
   h.set("X-Content-Type-Options", "nosniff");
   h.set("Referrer-Policy", "no-referrer");
-  h.set("X-Frame-Options", "DENY");
+  h.delete("X-Frame-Options");   // 19 Kasim: orkestra kapisi iframe'i (CSP frame-ancestors yeterli)
   h.set("Strict-Transport-Security", "max-age=31536000");
   h.set("Content-Security-Policy",
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev");
   return new Response(yanit.body, { status: yanit.status, statusText: yanit.statusText, headers: h });
 }
 

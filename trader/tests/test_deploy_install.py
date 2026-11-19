@@ -303,8 +303,11 @@ def test_worker_js_static():
     assert "PANEL_SIFRE" in t and "typeof sifre !== \"string\" || sifre.length === 0) return red()" in t   # fail-closed
     assert "crypto.subtle.digest" in t and "fark |=" in t                                                  # sabit zamanli
     assert re.search(r'"Cache-Control", "no-store"', t)
-    for h in ("X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy", "X-Frame-Options"):
+    for h in ("X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy"):
         assert h in t
+    # 19 Kasim: yalniz orkestra kapisi cerceveleyebilir (X-Frame-Options yerine CSP frame-ancestors)
+    assert "frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev" in t
+    assert "frame-ancestors 'none'" not in t and 'h.set("X-Frame-Options"' not in t
     assert not re.search(r"KILITSIZ|UNLOCK|unlock|kilitsiz", t, re.I)
     assert "pano_worker.js" in t       # kaynak notu
     n = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
