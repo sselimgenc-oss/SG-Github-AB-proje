@@ -5174,3 +5174,87 @@ def calibrate(replay_ledger, twin_replay, cfg: LessonConfig, seed: int = 0, *, B
         details={"guc_50_60": r4(g50_60), "FPR_kural_by_rule": {k: r4(v) for k, v in per_rule.items()},
                  "guc_75_60_by_rule": {r.menu_id: r4(v) for r, v in zip(_CAL_RULES, pw_rules)},
                  "mean_r": r4(mean(rs_all)), "twin_pool": len(twin_pool), "span_days": span})
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DD-12 WP-13 (D-T22, spec 6.4): kurulum (arm) dersi - kurulum ac/kapa. Esik owner kararidir: minimum aday/islem sarti
+# YOK; karar sonumlu ortalamayla (`damped_mean`, `shrink_n` varsayilan 0) verilir; tek degisikligin geri alinmasi
+# `damped_effect` ile `cfg.rollback_effect_r` (3 R) esigine gore yapilir. Pencere: en fazla son 40 aday (ust sinir, alt sinir
+# degil). Saf islevler: durum ve dosya okuma/yazma dosyanin sahibinde (`write_arms_state`); motor okuyucusu arm_guard.
+# ---------------------------------------------------------------------------------------------------------------------
+ARM_CLOSE_R = -0.15                   # sonumlu ortalama <= bu: kurulum kapanir (kayit surer)
+ARM_REOPEN_R = 0.05                   # sonumlu ortalama >= bu: kapali kurulum yeniden acilir
+ARM_WINDOW_MAX = 40                   # pencere ust siniri (alt siniri yok)
+ARM_STATE_SCHEMA = 1
+
+
+def _arm_dt(s) -> datetime | None:
+    if s is None:
+        return None
+    if isinstance(s, datetime):
+        return _aware(s)
+    return _aware(datetime.fromisoformat(str(s).replace("Z", "+00:00")))
+
+
+def arm_lifecycle_step(prev: Mapping | None, cands: Sequence[tuple[datetime, float, bool]], now: datetime, *,
+                       shrink_n: int = 0, rollback_r: float = 3.0,
+                       close_r: float = ARM_CLOSE_R, reopen_r: float = ARM_REOPEN_R,
+                       window_max: int = ARM_WINDOW_MAX) -> tuple[dict, str | None]:
+    """Bir kurulumun bir gecelik adimi. `prev`: {"state": open|closed, "epoch_start": iso|None, "closed_at": iso|None}
+    ya da None (acik, yeni). `cands`: (karar_ts, R, alindi_mi) — yalniz COZULMUS adaylar (alinan: gercek R; alinmayan:
+    "alinsaydi" R). Donus: (yeni durum, olay) olay: None | closed | reopened | rolled_back.
+
+    Kurallar (her biri ayni pencereyi kullanir: son `window_max` aday, yalniz `epoch_start` sonrasi):
+      - acik: n > 0 ve sonumlu ortalama <= close_r  -> kapali (epoch = closed_at = now)
+      - kapali, geri alma: kapanistan sonraki adaylarda sonumlu etki = -sumR (n) <= -rollback_r -> acik (epoch = now)
+      - kapali, yeniden acma: sonumlu ortalama >= reopen_r -> acik (epoch = now)
+    Geri alma kapanis kararini degerlendirir (kapanmis kurulum kaybettirdiyse, kapanis 3 R'yi asan kayip olarak geri
+    alinir); yeniden acma karari yalniz ortalamaya bakar. Olaydan sonra yeni epoch baslar: eski adaylar sayilmaz."""
+    st = dict(prev or {})
+    state = st.get("state") if st.get("state") in ("open", "closed") else "open"
+    epoch = _arm_dt(st.get("epoch_start"))
+    closed_at = _arm_dt(st.get("closed_at"))
+    cs = sorted(((_aware(t), float(r), bool(tk)) for t, r, tk in cands), key=lambda c: c[0])
+    win = [c for c in cs if epoch is None or c[0] >= epoch][-window_max:]
+    n = len(win)
+    m = damped_mean(math.fsum(c[1] for c in win), n, shrink_n)
+    now = _aware(now)
+    event = None
+    if state == "open":
+        if n > 0 and m <= close_r + _EPS:
+            state, epoch, closed_at, event = "closed", now, now, "closed"
+    else:
+        eff = damped_effect(-math.fsum(c[1] for c in win), n, shrink_n)
+        if n > 0 and eff <= -rollback_r + _EPS:
+            state, epoch, closed_at, event = "open", now, None, "rolled_back"
+        elif n > 0 and m >= reopen_r - _EPS:
+            state, epoch, closed_at, event = "open", now, None, "reopened"
+    new = {"state": state, "epoch_start": epoch.isoformat() if epoch else None,
+           "closed_at": closed_at.isoformat() if closed_at else None, "n": n,
+           "mean_r": round(m, 4) if n else None, "last_event": event or st.get("last_event")}
+    return new, event
+
+
+def write_arms_state(path, arms: Mapping[str, Mapping], now: datetime) -> None:
+    """`var/<bot>/arms_off.json` atomik yazimi (tmp + replace). Motor `arm_guard.load_arms_off` ile okur:
+    {"schema": 1, "updated_at": iso, "arms": {arm_id: {state, epoch_start, closed_at, n, mean_r, last_event}}}."""
+    doc = {"schema": ARM_STATE_SCHEMA, "updated_at": _aware(now).isoformat(),
+           "arms": {k: dict(v) for k, v in sorted(arms.items())}}
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=1, sort_keys=True)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, p)
+
+
+def read_arms_state(path) -> dict[str, dict]:
+    """Son yazilmis kurulum durumu ({arm_id: durum}); dosya yoksa ya da bozuksa {} (acik varsayilir)."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+        arms = doc.get("arms") if isinstance(doc, dict) else None
+        return {str(k): dict(v) for k, v in arms.items()} if isinstance(arms, dict) else {}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return {}

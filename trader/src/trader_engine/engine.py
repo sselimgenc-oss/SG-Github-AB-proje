@@ -21,7 +21,7 @@ from .bars import arm_is_tf_close, arm_tf_delta, floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
-from .arm_guard import asset_class, session_tag
+from .arm_guard import asset_class, load_arms_off, session_tag
 from .errors import ClockError, ConfigError, DataError, EngineExit, FailClosed, StateError
 from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, _tf_of, entry_leverage
@@ -144,6 +144,9 @@ class Engine:
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
         self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause, ladder)
+        if cfg.mode == "paper":                  # DD-12 WP-13: ders kapattigi kurulumlar (salt okunur dosya; yoksa hepsi acik)
+            _arms_path = Path(cfg.ledger_path).parent / "arms_off.json"
+            self.gate.arms_off = lambda: load_arms_off(_arms_path)
         self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]

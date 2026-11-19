@@ -159,6 +159,7 @@ class EntryGate:
         self.entry_ref_fn = entry_ref_fn
         self.counters: Counter = Counter()
         self.session_off: Mapping[str, Collection[str]] | Callable[[], Mapping[str, Collection[str]]] | None = None  # DD-12 D-T7: dersin kapattigi seanslar (sinif|cift -> etiketler); yok = hepsi acik
+        self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
     # ------------------------------------------------------------------ cift-bagimsiz kapilar (4-8)
@@ -225,6 +226,10 @@ class EntryGate:
         so = self.session_off
         return so() if callable(so) else so
 
+    def _arms_off(self) -> Collection[str]:
+        ao = self.arms_off
+        return (ao() if callable(ao) else ao) or ()
+
     def conflict(self, frame: SignalFrame, winner: SignalRow) -> EntryOutcome:
         """DD-12 WP-11 (D-T16): ayni cift/adimda birden cok kurulum sinyal verdi; buyuk zaman dilimi kazandi, kaybeden
         `arm_conflict` ile yazilir (kagit; veto yok; `mark_decided` yok - kazananin karari isaretler)."""
@@ -268,6 +273,10 @@ class EntryGate:
             return self._skip(row, tf, "rules_missing", skip_reason="other", veto_reason="gate:rules_missing", **tk)
         now = self.clock.now()
         if paper:                                                                       # 9a-9c (DD-12 WP-04); veto adimi YOK
+            aid = row.arm_id or AG.arm_id_of(row.setup, tf)
+            if aid in self._arms_off():                                                  # WP-13: ders kapatti (kayit surer)
+                return self._skip(row, tf, "arm_disabled", skip_reason="arm_disabled",
+                                  veto_reason=f"gate:arm_disabled:{aid}", **tk)
             if self.cfg.flat_bar_guard and frame.trigger_bar is not None and AG.is_flat_bar(
                     frame.trigger_bar[0], frame.trigger_bar[1], frame.trigger_bar[2]):
                 return self._skip(row, tf, "flat_bar", skip_reason="flat_bar", veto_reason="gate:flat_bar", **tk)

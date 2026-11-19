@@ -3,7 +3,8 @@
 Atlanan her karar (`final_action='skipped'`, her `skip_reason`), karar mumunun kapanisindan sonraki 1 saatlik mumlarda
 yeniden oynatilir: (a) `barrier` = ML etiketiyle AYNI uclu bariyer (trader_ml.labels.label_candidates; -1R stop, +2R hedef,
 72 mum zaman), (b) `plan` = defterdeki planned_stop/planned_target, 48 mumluk ufukta. Sonuc `counterfactual.sqlite`'e
-(var/<bot>/, bu isin TEK yazari) yazilir. Defter ve market.sqlite yalnizca `mode=ro` acilir. Saf standart kutuphane:
+(var/<bot>/, bu isin TEK yazari) yazilir. Defter ve market.sqlite yalnizca `mode=ro` acilir. WP-13: kurulum zaman dilimleri (15dk/1s/4s/1g; 1g = 6 x 4s), kayma seansa gore (cost_overrides; yoksa taban 5 bp).
+Bagimlilik: trader_engine.bars (arm_*) ve trader_engine.arm_guard (saf islevler). Ayrica pandas ve trader_ml ice aktarilmaz;
 trader_engine / trader_ml / pandas ice aktarilmaz (formul trader_ml.labels'ten kopyadir; esitlik tests/test_counterfactual.py).
 
 Sizinti kurali: bir karar ancak ufku (72 mum) TAMAMEN dolduktan ve pencere mumlari kapanis sonrasi yazilmis, eksiksiz
@@ -19,9 +20,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
+from trader_engine import arm_guard as AG
+from trader_engine.bars import ARM_TFS, arm_tf_delta
+
 __all__ = ["VERSION", "HORIZON_BARS", "PLAN_HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
            "run_once", "summary", "outcomes", "RunResult", "CounterfactualError",
-           "run_shadow", "shadow_outcomes", "ShadowRunResult"]
+           "run_shadow", "shadow_outcomes", "ShadowRunResult",
+           "ARM_TF_MS", "BASE_SLIP", "arm_rows", "arm_candidates", "arm_scorecard"]
 
 VERSION = 2                          # 2: plan ufku 48 mum; target yanlis tarafta -> invalid_plan
 # --- trader_ml.config'in KOPYASI (parite testi esitligi kilitler); ML etiketi degisirse VERSION artar
@@ -36,7 +41,12 @@ GAP_GRACE = timedelta(hours=24)       # ufuk dolduktan sonra bu kadar bekleyip h
 BAR_MS = 3_600_000
 METHODS = ("barrier", "plan")
 MARKET_SCHEMA_VERSION = 1             # trader_engine.marketdata.store.SCHEMA_VERSION'in kopyasi (salt okunur dogrulama)
-STORE_SCHEMA_VERSION = 1
+STORE_SCHEMA_VERSION = 2              # 2: cf_outcomes += arm_id, session_tag, asset_class (WP-13); 1 -> 2 kolon ekleme
+ARM_TF_MS = {tf: int(arm_tf_delta(tf).total_seconds() * 1000) for tf in ARM_TFS}   # 15m, 1h, 4h, 1d
+DAY_MS = ARM_TF_MS["1d"]
+H4_MS = ARM_TF_MS["4h"]
+# Taban kayma (oran, taraf basina): kripto ve `cost_overrides`'ta olmayan cift/seans. 5 bp = SLIPPAGE_RATE (legacy taban).
+BASE_SLIP = (SLIPPAGE_RATE, SLIPPAGE_RATE, SLIPPAGE_RATE)            # (giris, cikis, stop)
 
 
 class CounterfactualError(Exception):
@@ -99,6 +109,7 @@ CREATE TABLE IF NOT EXISTS cf_outcomes (
   bars_held INTEGER,
   computed_at TEXT NOT NULL,
   version INTEGER NOT NULL,
+  arm_id TEXT, session_tag TEXT, asset_class TEXT,
   PRIMARY KEY (bot, decision_id, method));
 CREATE INDEX IF NOT EXISTS ix_cf_ts ON cf_outcomes (bot, decision_ts);
 CREATE TABLE IF NOT EXISTS cf_shadow_outcomes (
@@ -146,7 +157,7 @@ class CounterfactualStore:
                                            timeout=5.0, isolation_level=None)
                 self._db.execute("PRAGMA busy_timeout=5000")
                 ver = self._db.execute("PRAGMA user_version").fetchone()[0]
-                if ver != STORE_SCHEMA_VERSION:
+                if ver not in (1, STORE_SCHEMA_VERSION):
                     raise CounterfactualError(f"depo sema surumu {ver}", "store_schema")
             else:
                 self._db = sqlite3.connect(self.path, timeout=5.0, isolation_level=None)
@@ -154,13 +165,21 @@ class CounterfactualStore:
                 self._db.execute("PRAGMA journal_mode=DELETE")
                 self._db.execute("PRAGMA synchronous=FULL")
                 ver = self._db.execute("PRAGMA user_version").fetchone()[0]
-                if ver not in (0, STORE_SCHEMA_VERSION):
+                if ver not in (0, 1, STORE_SCHEMA_VERSION):
                     raise CounterfactualError(f"depo sema surumu {ver}, beklenen {STORE_SCHEMA_VERSION}", "store_schema")
                 self._db.executescript(_DDL)
+                self._ensure_arm_columns()
                 self._db.execute(f"PRAGMA user_version={STORE_SCHEMA_VERSION}")
         except sqlite3.Error as e:
             raise CounterfactualError(f"depo acilamadi: {type(e).__name__}", "store_io") from e
         self._db.row_factory = sqlite3.Row
+
+    def _ensure_arm_columns(self) -> None:
+        """Sema 1 -> 2 gocu: eksik kurulum kolonlarini ekler (idempotent; veri silinmez)."""
+        have = {r[1] for r in self._db.execute("PRAGMA table_info(cf_outcomes)").fetchall()}
+        for col in ("arm_id", "session_tag", "asset_class"):
+            if col not in have:
+                self._db.execute(f"ALTER TABLE cf_outcomes ADD COLUMN {col} TEXT")
 
     def close(self) -> None:
         try:
@@ -217,7 +236,8 @@ class CounterfactualStore:
             raise CounterfactualError("depo salt okunur", "read_only")
         cols = ("bot", "decision_id", "method", "pair", "side", "setup", "trigger_tf", "skip_reason", "decision_ts",
                 "planned_entry", "planned_stop", "planned_target", "window_start_ts", "window_end_ts", "hyp_outcome",
-                "hyp_r_gross", "hyp_r_net", "cost_r", "exit_reason", "bars_held", "computed_at", "version")
+                "hyp_r_gross", "hyp_r_net", "cost_r", "exit_reason", "bars_held", "computed_at", "version",
+                "arm_id", "session_tag", "asset_class")
         sql = (f"INSERT INTO cf_outcomes ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
                "ON CONFLICT (bot, decision_id, method) DO NOTHING")
         n = 0
@@ -225,7 +245,7 @@ class CounterfactualStore:
             self._db.execute("BEGIN IMMEDIATE")
             try:
                 for r in rows:
-                    n += self._db.execute(sql, [r[c] for c in cols]).rowcount
+                    n += self._db.execute(sql, [r.get(c) for c in cols]).rowcount
                 self._db.execute("COMMIT")
             except BaseException:
                 self._db.execute("ROLLBACK")
@@ -254,14 +274,38 @@ class _Market:
     def close(self):
         self._db.close()
 
-    def window(self, pair: str, start_ms: int, n: int) -> list[tuple]:
-        """[start, start+n*1h) araligindaki 1h 'last' mumlari; yalniz kapanistan SONRA yazilmis olanlar."""
+    def window(self, pair: str, start_ms: int, n: int, tf: str = "1h") -> list[tuple]:
+        """[start, start+n*tf) araligindaki `tf` 'last' mumlari; yalniz kapanistan SONRA yazilmis olanlar. `1d` 4s'lerden
+        kurulur: yalniz TAM 6 x 4s barli UTC gunu (motor kurali; eksik gun atlanir -> cagiran veri bosluğu sayar)."""
+        if tf == "1d":
+            return self._window_1d(pair, start_ms, n)
+        tf_ms = ARM_TF_MS[tf]
         try:
             return self._db.execute(
-                "SELECT open_ms,h,l,c FROM bars WHERE kind='last' AND pair=? AND tf='1h' AND open_ms>=? AND open_ms<? "
-                "AND written_ms>=open_ms+? ORDER BY open_ms", (pair, start_ms, start_ms + n * BAR_MS, BAR_MS)).fetchall()
+                "SELECT open_ms,h,l,c FROM bars WHERE kind='last' AND pair=? AND tf=? AND open_ms>=? AND open_ms<? "
+                "AND written_ms>=open_ms+? ORDER BY open_ms", (pair, tf, start_ms, start_ms + n * tf_ms, tf_ms)).fetchall()
         except sqlite3.Error as e:
             raise CounterfactualError(f"market okuma hatasi: {type(e).__name__}", "market_unreadable") from e
+
+    def _window_1d(self, pair: str, start_ms: int, n: int) -> list[tuple]:
+        try:
+            rows = self._db.execute(
+                "SELECT open_ms,h,l,c,written_ms FROM bars WHERE kind='last' AND pair=? AND tf='4h' AND open_ms>=? AND open_ms<? "
+                "ORDER BY open_ms", (pair, start_ms, start_ms + n * DAY_MS)).fetchall()
+        except sqlite3.Error as e:
+            raise CounterfactualError(f"market okuma hatasi: {type(e).__name__}", "market_unreadable") from e
+        days: dict[int, list[tuple]] = {}
+        for o, h, l, c, w in rows:
+            if w < o + H4_MS:                                  # kapanistan once yazilmis: yok say
+                continue
+            days.setdefault(o - o % DAY_MS, []).append((o, h, l, c))
+        out = []
+        for day in sorted(days):
+            bs = sorted(days[day])
+            if [b[0] for b in bs] != [day + k * H4_MS for k in range(6)]:
+                continue                                       # eksik 4s: gun bari yok
+            out.append((day, max(b[1] for b in bs), min(b[2] for b in bs), bs[-1][3]))
+        return out
 
 
 # ------------------------------------------------------------------------------------------------ is
@@ -281,11 +325,37 @@ def _ceil_hour_ms(dt: datetime) -> int:
     return -(-ms // BAR_MS) * BAR_MS
 
 
-def _rows_for(bot, d, method, res, start, end, now, why_override=None) -> dict:
+def _ceil_ms(dt: datetime, tf_ms: int) -> int:
+    ms = int(dt.timestamp() * 1000)
+    return -(-ms // tf_ms) * tf_ms
+
+
+def _session_slip(cost_table, pair: str, session: str | None) -> tuple[float, float, float]:
+    """Seansa gore kayma (oran): (giris, cikis, stop). `cost_overrides` bps degerleri; yoksa taban (BASE_SLIP)."""
+    row = ((cost_table or {}).get(pair) or {}).get(session or "open")
+    if not row:
+        return BASE_SLIP
+    return (float(row.get("slip_entry_bps", 0.0)) * 1e-4, float(row.get("slip_exit_bps", 0.0)) * 1e-4,
+            float(row.get("slip_stop_bps", 0.0)) * 1e-4)
+
+
+def _priced(res, e: float, s: float, slip: tuple[float, float, float], fee_rate: float = FEE_RATE) -> dict | None:
+    """Brut R sonucuna maliyeti ekler: cost_R = giris * (2 fee + s_giris + s_cikis|stop) / |giris - stop|.
+    Taban (5 bp) ile eski `cost_in_r` ayni sonucu verir."""
+    if res is None:
+        return None
+    s_in, s_out, s_stop = slip
+    s_x = s_stop if res["exit_reason"] == "stop" else s_out
+    cost = e * (2.0 * fee_rate + s_in + s_x) / abs(e - s)
+    return {**res, "r_net": res["r_gross"] - cost, "cost_r": cost}
+
+
+def _rows_for(bot, d, method, res, start, end, now, why_override=None, meta=None) -> dict:
     base = {"bot": bot, "decision_id": d.id, "method": method, "pair": d.pair, "side": d.side, "setup": d.setup,
             "trigger_tf": d.trigger_tf, "skip_reason": d.skip_reason, "decision_ts": _fmt(d.bar_close_ts),
             "planned_entry": d.planned_entry, "planned_stop": d.planned_stop, "planned_target": d.planned_target,
-            "window_start_ts": _fmt(start), "window_end_ts": _fmt(end), "computed_at": _fmt(now), "version": VERSION}
+            "window_start_ts": _fmt(start), "window_end_ts": _fmt(end), "computed_at": _fmt(now), "version": VERSION,
+            "arm_id": None, "session_tag": None, "asset_class": None, **(meta or {})}
     if res is None:
         base.update(hyp_outcome=None, hyp_r_gross=None, hyp_r_net=None, cost_r=None, bars_held=None,
                     exit_reason=why_override or "data_gap")
@@ -296,13 +366,17 @@ def _rows_for(bot, d, method, res, start, end, now, why_override=None) -> dict:
 
 
 def run_once(*, bot: str, decisions: Sequence, market_path, store: CounterfactualStore, now: datetime,
-             horizon: int = HORIZON_BARS, dry_run: bool = False) -> RunResult:
+             horizon: int = HORIZON_BARS, dry_run: bool = False, cost_table: Mapping | None = None,
+             asset_class_of=None) -> RunResult:
     """`decisions`: atlanmis DecisionRecord benzeri nesneler (id, pair, side, setup, trigger_tf, bar_close_ts, planned_*,
-    skip_reason, final_action). `now` enjekte edilir (test/lookahead). Ufku dolmamis karar HIC islenmez."""
+    skip_reason, final_action; ops. arm_id, session_tag). `now` enjekte edilir (test/lookahead). Ufku dolmamis karar HIC
+    islenmez. `cost_table`: `cost_overrides` ({cift: {seans: {slip_*_bps}}}); `asset_class_of(pair)` -> kripto|hisse|emtia
+    (yoksa hepsi kripto). Her satir `arm_id`, `session_tag`, `asset_class` tasir."""
     now = _utc(now)
     res = RunResult()
     done = store.done_ids(bot)
     mk = _Market(market_path)
+    cls_of = asset_class_of or (lambda pair: AG.CLASS_CRYPTO)
     try:
         batch: list[dict] = []
         for d in decisions:
@@ -312,9 +386,22 @@ def run_once(*, bot: str, decisions: Sequence, market_path, store: Counterfactua
             if d.id in done:
                 res.already += 1
                 continue
-            start_ms = _ceil_hour_ms(_utc(d.bar_close_ts))
+            tf = d.trigger_tf
+            cls = cls_of(d.pair)
+            bar_close = _utc(d.bar_close_ts)
+            sess = getattr(d, "session_tag", None) or AG.session_tag(cls, bar_close)
+            meta = {"arm_id": getattr(d, "arm_id", None) or AG.arm_id_of(d.setup, tf), "session_tag": sess,
+                    "asset_class": cls}
+            if tf not in ARM_TF_MS:                               # bilinmeyen kurulum zaman dilimi: hesap yok
+                start = end = bar_close
+                for m in METHODS:
+                    batch.append(_rows_for(bot, d, m, None, start, end, now, "invalid_plan", meta))
+                res.computed += 1
+                continue
+            tf_ms = ARM_TF_MS[tf]
+            start_ms = _ceil_ms(bar_close, tf_ms)
             start = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc)
-            end = start + timedelta(milliseconds=horizon * BAR_MS)
+            end = start + timedelta(milliseconds=horizon * tf_ms)
             if start < HOLDOUT_END and end > HOLDOUT_START:           # kilitli donem: asla okunmaz
                 res.holdout_skipped += 1
                 continue
@@ -326,33 +413,36 @@ def run_once(*, bot: str, decisions: Sequence, market_path, store: Counterfactua
                 and d.side in ("long", "short") and ((s < e) if d.side == "long" else (s > e))
             if not ok_plan:
                 for m in METHODS:
-                    batch.append(_rows_for(bot, d, m, None, start, end, now, "invalid_plan"))
+                    batch.append(_rows_for(bot, d, m, None, start, end, now, "invalid_plan", meta))
                 res.computed += 1
                 continue
-            bars = mk.window(d.pair, start_ms, horizon)
-            expect = [start_ms + k * BAR_MS for k in range(horizon)]
+            bars = mk.window(d.pair, start_ms, horizon, tf)
+            expect = [start_ms + k * tf_ms for k in range(horizon)]
             if [b[0] for b in bars] != expect:
                 if now >= end + GAP_GRACE:                             # veri bosluğu kalici sayilir
                     for m in METHODS:
-                        batch.append(_rows_for(bot, d, m, None, start, end, now, "data_gap"))
+                        batch.append(_rows_for(bot, d, m, None, start, end, now, "data_gap", meta))
                     res.computed += 1
                     res.gap += 1
                 else:
                     res.pending += 1
                 continue
             hi, lo, cl = [b[1] for b in bars], [b[2] for b in bars], [b[3] for b in bars]
+            slip = _session_slip(cost_table, d.pair, sess)
             sgn = 1.0 if d.side == "long" else -1.0
             up = e + sgn * TARGET_R * abs(e - s)
             plan_tg = tg if tg is not None and math.isfinite(tg) else None
-            r_bar = replay(hi, lo, cl, d.side, e, s, up, horizon=horizon)
-            batch.append(_rows_for(bot, d, "barrier", r_bar, start, end, now))
+            r_bar = _priced(replay(hi, lo, cl, d.side, e, s, up, horizon=horizon, fee_rate=0.0, slippage_rate=0.0),
+                            e, s, slip)
+            batch.append(_rows_for(bot, d, "barrier", r_bar, start, end, now, meta=meta))
             if tg is not None and plan_tg is None:                     # hedef sonlu degil -> gecersiz plan
-                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))
+                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan", meta))
             elif plan_tg is not None and not ((plan_tg > e) if d.side == "long" else (plan_tg < e)):
-                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan"))   # hedef kar tarafinda degil
+                batch.append(_rows_for(bot, d, "plan", None, start, end, now, "invalid_plan", meta))   # hedef kar tarafinda degil
             else:
-                r_plan = replay(hi, lo, cl, d.side, e, s, plan_tg, horizon=min(horizon, PLAN_HORIZON_BARS))
-                batch.append(_rows_for(bot, d, "plan", r_plan, start, end, now))
+                r_plan = _priced(replay(hi, lo, cl, d.side, e, s, plan_tg, horizon=min(horizon, PLAN_HORIZON_BARS),
+                                        fee_rate=0.0, slippage_rate=0.0), e, s, slip)
+                batch.append(_rows_for(bot, d, "plan", r_plan, start, end, now, meta=meta))
             res.computed += 1
         if batch and not dry_run:
             res.rows_written = store.insert(batch)
@@ -508,3 +598,74 @@ def shadow_outcomes(path, bot: str, *, now: datetime, days: int | None = None, m
         except sqlite3.Error:
             return []                                              # tablo yok (gece isi henuz golge yazmadi)
     return [dict(r) for r in rows]
+
+
+# ------------------------------------------------------------------------------------------------ WP-13: kurulum karnesi
+def arm_rows(path, bot: str, *, method: str = "barrier") -> list[dict]:
+    """Hesaplanmis karsi-olgu satirlari (kurulum bazinda; `arm_id` yoksa setup@trigger_tf). Salt okunur; depo yoksa []."""
+    if method not in METHODS:
+        raise CounterfactualError("gecersiz yontem", "bad_method")
+    if not os.path.exists(os.fspath(path)):
+        return []
+    minv = 2 if method == "plan" else 1
+    with CounterfactualStore(path, read_only=True) as st:
+        try:
+            rows = st._db.execute(
+                "SELECT decision_id, COALESCE(arm_id, setup || '@' || trigger_tf) AS arm_id, "
+                "COALESCE(asset_class, 'kripto') AS asset_class, session_tag, skip_reason, decision_ts, hyp_r_net "
+                "FROM cf_outcomes WHERE bot=? AND method=? AND version>=? AND hyp_r_net IS NOT NULL "
+                "ORDER BY decision_ts, decision_id", (bot, method, minv)).fetchall()
+        except sqlite3.Error as e:
+            raise CounterfactualError(f"depo okuma hatasi: {type(e).__name__}", "store_io") from e
+    return [dict(r) for r in rows]
+
+
+def arm_candidates(*, decisions, trades, cf_rows, asset_class_of) -> list[dict]:
+    """Kurulum adaylari (alinan + alinmayan) tek biçimde: {arm_id, asset_class, taken, ts, r, decision_id}.
+    `r`: alinan icin gercek kapanmis islem R'si (`r_multiple`), alinmayan icin "alinsaydi" R'si (`hyp_r_net`); sonuc
+    yoksa None (cozulmemis aday). Yalniz `entered` ve gerekceli `skipped` kararlar aday sayilir."""
+    r_taken = {t.decision_id: t.r_multiple for t in trades if t.r_multiple is not None}
+    r_cf = {row["decision_id"]: row["hyp_r_net"] for row in cf_rows}
+    out: list[dict] = []
+    for d in decisions:
+        if d.final_action == "entered":
+            taken, r = True, r_taken.get(d.id)
+        elif d.final_action == "skipped" and d.skip_reason:
+            taken, r = False, r_cf.get(d.id)
+        else:
+            continue
+        arm = getattr(d, "arm_id", None) or AG.arm_id_of(d.setup, d.trigger_tf)
+        out.append({"arm_id": arm, "asset_class": asset_class_of(d.pair), "taken": taken,
+                    "ts": _utc(d.bar_close_ts), "r": None if r is None else float(r), "decision_id": d.id})
+    return out
+
+
+def _mean_or_none(vals) -> float | None:
+    v = [x for x in vals if x is not None]
+    return math.fsum(v) / len(v) if v else None
+
+
+def _arm_block(cs: list[dict]) -> dict:
+    return {"candidates": len(cs), "taken": sum(1 for c in cs if c["taken"]),
+            "resolved": sum(1 for c in cs if c["r"] is not None),
+            "mean_r_taken": _mean_or_none(c["r"] for c in cs if c["taken"]),
+            "mean_r_taken_cf": _mean_or_none(c["r"] for c in cs)}
+
+
+def arm_scorecard(candidates, *, arms=(), closed=None) -> dict:
+    """Kurulum karnesi: arm_id -> {candidates, taken, resolved, mean_r_taken (yalniz alinan), mean_r_taken_cf (alinan +
+    alinmayan 'alinsaydi'), by_class: {kripto|hisse|emtia: ayni alanlar}, state: open|closed}. `arms`: yapilandirilmis
+    kurulumlar (aday yoksa da satiri vardir). `closed`: kapali kurulum kimlikleri (arms_off)."""
+    closed = set(closed or ())
+    groups: dict[str, list[dict]] = {}
+    for c in candidates:
+        groups.setdefault(c["arm_id"], []).append(c)
+    out: dict[str, dict] = {}
+    for arm in dict.fromkeys([*arms, *groups]):
+        cs = groups.get(arm, [])
+        block = _arm_block(cs)
+        block["by_class"] = {cls: _arm_block([c for c in cs if c["asset_class"] == cls])
+                             for cls in sorted({c["asset_class"] for c in cs})}
+        block["state"] = "closed" if arm in closed else "open"
+        out[arm] = block
+    return out

@@ -3,6 +3,7 @@ Girdi/cikti yalniz deger; G/C, saat, durum yok. Seans yuzunden giris ENGELLENMEZ
 `session_closed` ancak dersin kapattigi seans icindir (gates.py)."""
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Collection, Mapping, Sequence
 from datetime import datetime, time, timezone
@@ -75,6 +76,20 @@ def is_flat_bar(high: float | None, low: float | None, volume: float | None) -> 
     if ok(volume) and float(volume) == 0.0:
         return True
     return ok(high) and ok(low) and float(high) == float(low)
+
+
+def load_arms_off(path) -> frozenset[str]:
+    """DD-12 WP-13 (D-T22): ders kapattigi kurulumlar (`var/<bot>/arms_off.json`, yazan: lesson.write_arms_state). Salt
+    okuma; dosya yoksa ya da bozuksa bos kume (hepsi acik). Kayit yapisi: {"arms": {arm_id: {"state": "closed", ...}}}."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+        arms = doc.get("arms") if isinstance(doc, dict) else None
+        if not isinstance(arms, dict):
+            return frozenset()
+        return frozenset(str(k) for k, v in arms.items() if isinstance(v, dict) and v.get("state") == "closed")
+    except (OSError, ValueError):
+        return frozenset()
 
 
 def session_closed_by_lesson(session_off: Mapping[str, Collection[str]] | None, cls: str, pair: str, tag: str) -> bool:
