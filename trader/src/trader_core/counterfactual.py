@@ -609,9 +609,14 @@ def arm_rows(path, bot: str, *, method: str = "barrier") -> list[dict]:
     minv = 2 if method == "plan" else 1
     with CounterfactualStore(path, read_only=True) as st:
         try:
+            # sema 1 depo (gece isi henuz gocurmedi): kurulum kolonlari yok -> NULL kabul edilir (salt okunur, goc yok)
+            have = {r[1] for r in st._db.execute("PRAGMA table_info(cf_outcomes)").fetchall()}
+            arm = "arm_id" if "arm_id" in have else "NULL"
+            acl = "asset_class" if "asset_class" in have else "NULL"
+            ses = "session_tag" if "session_tag" in have else "NULL"
             rows = st._db.execute(
-                "SELECT decision_id, COALESCE(arm_id, setup || '@' || trigger_tf) AS arm_id, "
-                "COALESCE(asset_class, 'kripto') AS asset_class, session_tag, skip_reason, decision_ts, hyp_r_net "
+                f"SELECT decision_id, COALESCE({arm}, setup || '@' || trigger_tf) AS arm_id, "
+                f"COALESCE({acl}, 'kripto') AS asset_class, {ses} AS session_tag, skip_reason, decision_ts, hyp_r_net "
                 "FROM cf_outcomes WHERE bot=? AND method=? AND version>=? AND hyp_r_net IS NOT NULL "
                 "ORDER BY decision_ts, decision_id", (bot, method, minv)).fetchall()
         except sqlite3.Error as e:

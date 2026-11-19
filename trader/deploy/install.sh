@@ -347,6 +347,8 @@ install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADE
   "$TRADER_DIR/var-live" "$TRADER_DIR/shared/live"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
 # gece egitimi calisma zamani ciktilari (git-izli models/ ve research/ yazilmaz): var/learner/models/{setup_filter,pa_proposer}
+safe_tree_path "$TRADER_DIR/var/learner" "$TRADER_DIR/var/learner/models" \
+  "$TRADER_DIR/var/learner/models/setup_filter" "$TRADER_DIR/var/learner/models/pa_proposer"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/learner" "$TRADER_DIR/var/learner/models" \
   "$TRADER_DIR/var/learner/models/setup_filter" "$TRADER_DIR/var/learner/models/pa_proposer"
 install -d -m 0750 -o root -g root /var/backups/trader
@@ -567,6 +569,7 @@ else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON ve Telegram 
 enable_now trader-notes.timer
 enable_now trader-ml-retrain.timer
 # DD-12 WP-16: unit ReadWritePaths (namespace) icin dizin ilk kurulumda olussun; birim ilk calismadan once vardir
+safe_tree_path "$TRADER_DIR/var/universe"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/universe"
 enable_now trader-universe.timer   # DD-12 WP-16: aylik kagit evreni (1. gun 00:30 UTC; var/universe/paper_pairs.json, ag yok)
 enable_now trader-weekly-summary.timer
