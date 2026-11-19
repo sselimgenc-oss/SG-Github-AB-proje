@@ -192,7 +192,11 @@ def test_report_budget_line_threshold(tmp_path):
     guard = B.BudgetGuard(B.load_config(tmp_path / "config" / "budget.json"))
     guard.authorize("haftalik_ozet", 0.01)                                   # depo başlar, harcama %50'nin çok altında
     assert T.rapor_butce(cfg) == ""
-    assert "Yapay zekâ" not in T.build_report(cfg, NOW, DAY, T.default_sections(cfg, NOW, DAY))
+    # DD-12 WP-17 (koordinatör kararı): harcama satırı günlük raporda her zaman görünür (spec §7); eşik kuralı
+    # yalnız "Yapay zekâ bütçesi:" uyarı satırı için geçerli.
+    rep = T.build_report(cfg, NOW, DAY, T.default_sections(cfg, NOW, DAY))
+    assert "Yapay zekâ bütçesi:" not in rep
+    assert "🤖 Yapay zekâ harcaması (ay): 0,01 $ / 10 $" in rep
     import dataclasses
     from trader_core import budget as B2
     st = B2.BudgetGuard(B2.load_config(tmp_path / "config" / "budget.json")).status()

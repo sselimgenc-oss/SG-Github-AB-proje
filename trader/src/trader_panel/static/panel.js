@@ -8,7 +8,7 @@
   'use strict';
   var TOP_MS = 10000, TAB_MS = 30000;                       // spec §10.8: ust serit 10 sn, gerisi 30 sn
   var TABS = [['ozet', 'ÖZET'], ['pozisyonlar', 'POZİSYONLAR'], ['islemler', 'İŞLEMLER'], ['butce', 'BÜTÇE'],
-              ['ders', 'DERS'], ['saglik', 'SAĞLIK']];
+              ['ders', 'DERS'], ['ogrenme', 'ÖĞRENME'], ['saglik', 'SAĞLIK']];
   var BOT_AD = {learner: 'öğrenen'};
   var S = {bot: 'learner', tab: 'ozet', status: null, conn: true, gen: null, day: null, trades: null};
   var $ = function (i) { return document.getElementById(i); };
@@ -434,6 +434,69 @@
     });
   }
 
+  var OGR_SINIF = {kripto: 'kripto', hisse: 'hisse senedi', emtia: 'metal / enerji'};
+  var OGR_SEANS = {open: 'açık', closed: 'kapalı', weekend: 'hafta sonu'};
+
+  function tabOgrenme(root) {
+    clear(root);
+    var pk = panel('Kurulum karnesi', ''), pd = panel('Ders', ''), pm = panel('Makine öğrenmesi', ''),
+        ps = panel('Seans ve varlık sınıfı (ort. R, alınan)', ''), po = panel('Açık pozisyonlar', ''),
+        pw = panel('Haftalık özet ve harcama', '');
+    add(root, add(el('div', 'ig'), pk, pd, pm, ps, po, pw));
+    var all = [pk, pd, pm, ps, po, pw];
+    get('/api/learning').then(function (L) {
+      all.forEach(function (p) { clear(p._body); });
+      if (!L.ok) { all.forEach(function (p) { add(p._body, nodata(L.code)); }); return; }
+      if (L.ledger_error) { [pk, pd, pm, ps, po].forEach(function (p) { add(p._body, nodata(L.ledger_error)); }); }
+      else {
+      // kurulum karnesi
+      var arms = (L.scorecard || []).filter(function (c) { return c.candidates > 0; });
+      if (arms.length) add(pk._body, table(['Kurulum', 'Aday', 'Alınan', 'Ort. R (alınan)', 'Ort. R (alınan + alınsaydı)', 'Durum'],
+        arms.map(function (c) { return [c.arm, String(c.candidates), String(c.taken), sgn(c.mean_r_taken), sgn(c.mean_r_taken_cf),
+          c.state === 'closed' ? 'kapalı' : 'açık']; }), {right: [1, 2, 3, 4]}));
+      else add(pk._body, el('div', 'yok', 'Henüz aday yok.'));
+      // ders
+      var ds = L.lesson || {};
+      pd._right.textContent = ds.brake_active ? 'fren aktif' : '';
+      add(pd._body, row('Uygulanan değişiklik', String(ds.applied || 0)), row('Geri alınan', String(ds.rollbacks || 0)),
+        row('−10 R freni', ds.brake_active ? 'AKTİF: referans sürüme dönüldü' : 'yok', ds.brake_active ? 'kotu' : 'iyi'),
+        row('Kapalı kurulumlar', (ds.closed_arms || []).length ? ds.closed_arms.join(', ') : 'yok'));
+      if ((ds.events || []).length) add(pd._body, table(['Zaman (TSİ)', 'Olay', 'Neden'], ds.events.map(function (e) {
+        return [tsi(e.at), e.kind, e.reason || '—'];
+      })));
+      // makine öğrenmesi
+      var ml = L.ml || {};
+      add(pm._body, row('Süzgeçte elenen', String(ml.eliminated || 0)), row('Süzgeçten geçen', String(ml.passed || 0)),
+        row('Alınsaydı etkisi', ml.effect_r === null || ml.effect_r === undefined ? '—' : sgn(ml.effect_r) + ' R'),
+        row('M1 aday / giriş', (ml.m1_candidates || 0) + ' / ' + (ml.m1_taken || 0)));
+      // seans ve varlık sınıfı
+      var srows = [];
+      ['open', 'closed', 'weekend'].forEach(function (s) {
+        var cs = (L.sessions || {})[s] || {};
+        Object.keys(cs).forEach(function (k) { srows.push([OGR_SEANS[s], OGR_SINIF[k] || k, String(cs[k].taken), sgn(cs[k].mean_r_taken)]); });
+      });
+      if (srows.length) add(ps._body, table(['Seans', 'Varlık', 'Alınan', 'Ort. R (alınan)'], srows, {right: [2, 3]}));
+      else add(ps._body, el('div', 'yok', 'Henüz işlem yok.'));
+      var crows = Object.keys(L.asset_class || {}).map(function (k) { return [OGR_SINIF[k] || k, String(L.asset_class[k].taken), sgn(L.asset_class[k].mean_r_taken)]; });
+      if (crows.length) add(ps._body, el('h4', '', 'Varlık sınıfı'), table(['Varlık', 'Alınan', 'Ort. R (alınan)'], crows, {right: [1, 2]}));
+      // açık pozisyonlar
+      var op = L.open || {};
+      po._right.textContent = String(op.total || 0);
+      add(po._body, row('Toplam açık', String(op.total || 0)));
+      var kc = Object.keys(op.by_cluster || {}), ka = Object.keys(op.by_arm || {});
+      if (kc.length) add(po._body, el('h4', '', 'Küme'), table(['Küme', 'Açık'], kc.map(function (k) { return [k, String(op.by_cluster[k])]; }), {right: [1]}));
+      if (ka.length) add(po._body, el('h4', '', 'Kurulum'), table(['Kurulum', 'Açık'], ka.map(function (k) { return [k, String(op.by_arm[k])]; }), {right: [1]}));
+      }
+      // haftalık özet ve harcama
+      var b = L.budget;
+      if (b && !b.code) add(pw._body, row('Yapay zekâ (ay)', usd(b.month_used_usd) + ' / ' + usd(b.monthly_cap_usd)));
+      else add(pw._body, row('Yapay zekâ (ay)', b && b.code ? 'okunamadı: ' + b.code : '—'));
+      if (L.weekly_summary) {
+        add(pw._body, el('h4', '', 'Haftalık özet (' + L.weekly_summary.week + ')'), el('pre', 'hozet', L.weekly_summary.text));
+      } else add(pw._body, el('div', 'yok', 'Haftalık özet henüz yok.'));
+    });
+  }
+
   function tabSaglik(root) {
     clear(root);
     var p = panel('Sağlık', ''), ps = panel('Süreç / kaynak', ''), ig = el('div', 'ig');
@@ -460,7 +523,7 @@
     });
   }
 
-  var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, saglik: tabSaglik};
+  var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, ogrenme: tabOgrenme, saglik: tabSaglik};
 
   /* ---------- sekme rozetleri (2026-11-18): acik pozisyon, kapanan islem, bekleyen ders, acik uyari ---------- */
   function badge(t, n, kotu) {
@@ -481,6 +544,9 @@
       badge('islemler', r.closed.length);
     });
     get('/api/lesson').then(function (r) { badge('ders', r.ok ? r.open_count || 0 : null); });
+    get('/api/learning').then(function (r) {
+      badge('ogrenme', r.ok ? (r.lesson.closed_arms || []).length : null, !!(r.ok && r.lesson.brake_active));
+    });
     get('/api/health').then(function (h) { badge('saglik', h.ok ? h.alerts.length : null, true); });
   }
 

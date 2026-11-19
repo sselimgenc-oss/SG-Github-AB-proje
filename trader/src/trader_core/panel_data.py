@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
 import os
 import re
 from collections.abc import Mapping
@@ -22,6 +23,7 @@ from . import budget as B
 from . import ledger as L
 from . import lesson as LS
 from .health import DEFAULT_CFG as HEALTH_CFG
+from .arm_time import arm_id_of
 from .risk import LOCKED_CFG
 
 UTC = timezone.utc
@@ -418,3 +420,160 @@ def system_view(disk_path: str) -> dict:
             "swap_level": lvl(ratio >= c.swap_warn_ratio, ratio >= c.swap_crit_ratio),
             "disk_free": free, "disk_total": dtot,
             "disk_level": None if free is None else lvl(free < c.disk_warn_bytes, free < c.disk_crit_bytes)}
+
+
+# ---- DD-12 WP-17: öğrenme görünümü (kurulum karnesi, ders, ML, seans/varlık kırılımı, haftalık özet, harcama) ----
+LEARNER_BOT = "learner"
+PAPER_CONFIG = Path(__file__).resolve().parents[2] / "config" / "engine.paper.json"   # kâğıt yapılandırması (kümeler, kurulumlar)
+WEEKLY_DIR = "weekly_summaries"
+WEEKLY_RE = re.compile(r"^\d{4}-W\d{2}\.md$")
+WEEKLY_MAX_CHARS = 3000
+_ARM_CLASS_TR = {"kripto": "kripto", "hisse": "hisse senedi", "emtia": "metal / enerji"}
+_COMMODITY_CLUSTERS = ("metal", "enerji_sanayi")
+
+
+def paper_maps(path=None) -> tuple[list[str], Any]:
+    """(kurulum listesi, varlık sınıfı fonksiyonu) config/engine.paper.json'dan. Okunamazsa: boş liste, hepsi kripto."""
+    from .arm_time import CLASS_COMMODITY, CLASS_CRYPTO, CLASS_EQUITY
+    try:
+        raw = json.loads(Path(path or PAPER_CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        raw = {}
+    clusters = {k: list((v or {}).get("pairs") or []) for k, v in (raw.get("clusters") or {}).items() if isinstance(v, dict)}
+    arms_raw = raw.get("arms") or []
+    if isinstance(arms_raw, dict):
+        arms = [f"{k}@{tf}" for k, tfs in arms_raw.items() for tf in tfs]
+    else:
+        arms = [str(a) for a in arms_raw] if isinstance(arms_raw, list) else []
+
+    def asset_of(pair: str) -> str:
+        names = [n for n, ps in clusters.items() if pair in ps]
+        if "hisse" in names:
+            return CLASS_EQUITY
+        if any(n in _COMMODITY_CLUSTERS for n in names):
+            return CLASS_COMMODITY
+        return CLASS_CRYPTO
+    return arms, asset_of
+
+
+def clusters_of_pair(pair: str, path=None) -> list[str]:
+    try:
+        raw = json.loads(Path(path or PAPER_CONFIG).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    return [k for k, v in (raw.get("clusters") or {}).items() if isinstance(v, dict) and pair in (v.get("pairs") or [])]
+
+
+def _latest_weekly(ledger_path: str) -> dict | None:
+    d = Path(ledger_path).parent / WEEKLY_DIR
+    try:
+        names = sorted(p.name for p in d.iterdir() if WEEKLY_RE.match(p.name))
+    except OSError:
+        return None
+    if not names:
+        return None
+    try:
+        text = (d / names[-1]).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return {"week": names[-1][:-3], "text": text[:WEEKLY_MAX_CHARS]}
+
+
+def _ledger_learning(ledger_path: str, now: datetime, paper_config=None) -> dict:
+    """Defterden öğrenme özeti (salt okunur). Okunamazsa SectionError; çağıran bölümü tek satırla bildirir."""
+    from . import counterfactual as CF
+    from . import lesson as LS
+    arms, asset_of = paper_maps(paper_config)
+    base = Path(ledger_path).parent
+    led = open_ledger_ro(ledger_path, LEARNER_BOT)
+    try:
+        decisions = led.list_decisions()
+        trades = led.list_closed_trades(limit=10000)
+        open_trades = led.list_open_trades()
+        acts = led.list_activations()
+        brake = LS.brake_active(led)
+        try:                                                  # ders etkisi: referanstan beri (ölçüm yalnız okur)
+            bv = LS.evaluate_brake(led, LS.load_config(), now)
+            eff = bv.effect
+            effect = None if eff is None else {"damped_r": round(eff.damped, 4), "n": eff.n,
+                                              "n_unresolved": eff.n_unresolved}
+        except Exception:  # noqa: BLE001 - etki okunamazsa sayılar yine gösterilir
+            effect = None
+    except SectionError:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise SectionError(getattr(e, "code", None) or type(e).__name__) from None
+    finally:
+        led.close()
+    cf_path = base / "counterfactual.sqlite"
+    try:
+        cf_rows = CF.arm_rows(cf_path, LEARNER_BOT) if cf_path.exists() else []
+    except CF.CounterfactualError as e:
+        raise SectionError(e.code) from None
+    closed = {a for a, s in LS.read_arms_state(base / "arms_off.json").items() if s.get("state") == "closed"}
+    cands = CF.arm_candidates(decisions=decisions, trades=trades, cf_rows=cf_rows, asset_class_of=asset_of)
+    by_id = {d.id: d for d in decisions}
+    for c in cands:
+        d = by_id.get(c["decision_id"])
+        c["session"] = (d.session_tag if d is not None else None) or "open"
+        c["skip_reason"] = d.skip_reason if d is not None else None
+        c["ml_score"] = d.ml_score if d is not None else None
+    sc = CF.arm_scorecard(cands, arms=arms, closed=closed)
+    scorecard = [{"arm": a, "candidates": b["candidates"], "taken": b["taken"], "resolved": b["resolved"],
+                  "mean_r_taken": b["mean_r_taken"], "mean_r_taken_cf": b["mean_r_taken_cf"], "state": b["state"],
+                  "by_class": b["by_class"]} for a, b in sc.items()]
+    les = [a for a in acts if a.actor == "lesson"]
+    brake_ev = [a for a in les if a.kind == "rollback" and str(a.reason or "").startswith(LS.BRAKE_REASON_PREFIX)]
+    lesson = {"applied": sum(1 for a in les if a.kind == "apply"),
+              "rollbacks": sum(1 for a in les if a.kind == "rollback" and a not in brake_ev),
+              "brake_events": len(brake_ev), "brake_active": bool(brake), "effect": effect,
+              "closed_arms": sorted(closed),
+              "events": [{"at": fmt_z(a.activated_at), "kind": a.kind, "reason": a.reason} for a in les[:10]]}
+    ml_elim = [c for c in cands if c["skip_reason"] == "ml_filter"]
+    ml_pass = [c for c in cands if c["ml_score"] is not None and c["skip_reason"] != "ml_filter"]
+    m1 = [c for c in cands if str(c["arm_id"]).startswith("M1@")]
+    ml_r = [c["r"] for c in ml_elim if c["r"] is not None]
+    ml = {"eliminated": len(ml_elim), "passed": len(ml_pass),
+          "effect_r": round(-math.fsum(ml_r), 4) if ml_r else None,
+          "m1_candidates": len(m1), "m1_taken": sum(1 for c in m1 if c["taken"])}
+    sessions: dict[str, dict] = {}
+    for s_ in ("open", "closed", "weekend"):
+        cs_s = [c for c in cands if c["session"] == s_]
+        sessions[s_] = {k: CF._arm_block([c for c in cs_s if c["asset_class"] == k]) for k in _ARM_CLASS_TR
+                        if any(c["asset_class"] == k for c in cs_s)}
+    asset_cls = {k: CF._arm_block([c for c in cands if c["asset_class"] == k]) for k in _ARM_CLASS_TR
+                 if any(c["asset_class"] == k for c in cands)}
+    arm_of = {d.id: (getattr(d, "arm_id", None) or arm_id_of(d.setup, d.trigger_tf)) for d in decisions}
+    open_arm: dict[str, int] = {}
+    open_cluster: dict[str, int] = {}
+    for t in open_trades:
+        a = arm_of.get(t.decision_id, "?")
+        open_arm[a] = open_arm.get(a, 0) + 1
+        for k in clusters_of_pair(t.pair, paper_config):
+            open_cluster[k] = open_cluster.get(k, 0) + 1
+    return {"scorecard": scorecard, "lesson": lesson, "ml": ml, "sessions": sessions, "asset_class": asset_cls,
+            "open": {"total": len(open_trades), "by_arm": dict(sorted(open_arm.items())),
+                     "by_cluster": dict(sorted(open_cluster.items()))},
+            "trades_closed": len(trades), "decisions": len(decisions)}
+
+
+def learning_view(ledger_path: str, budget_config: str, now: datetime, *, paper_config=None) -> dict:
+    """Öğrenme sekmesi ve günlük rapor için tek kaynak (salt okunur). Her bölüm bağımsız: defter okunamazsa
+    `ledger_error` kodu döner, harcama ve haftalık özet yine gelir (sayılar yok, çökme yok)."""
+    out: dict[str, Any] = {"ledger_error": None}
+    empty = {"scorecard": [], "lesson": {"applied": 0, "rollbacks": 0, "brake_events": 0, "brake_active": False,
+                                         "effect": None, "closed_arms": [], "events": []},
+             "ml": {"eliminated": 0, "passed": 0, "effect_r": None, "m1_candidates": 0, "m1_taken": 0},
+             "sessions": {}, "asset_class": {}, "open": {"total": 0, "by_arm": {}, "by_cluster": {}},
+             "trades_closed": 0, "decisions": 0}
+    try:
+        out.update(_ledger_learning(ledger_path, now, paper_config))
+    except SectionError as e:
+        out.update(empty)
+        out["ledger_error"] = e.code
+    try:
+        out["budget"] = budget_view(budget_config) if budget_config else {"code": "yapilandirma_yok"}
+    except SectionError as e:
+        out["budget"] = {"code": e.code}
+    out["weekly_summary"] = _latest_weekly(ledger_path) if ledger_path else None
+    return out

@@ -196,6 +196,10 @@ class PanelData:
     def lesson(self) -> dict:
         return self._wrap(lambda: P.lesson_view(self.cfg.lesson_store, self.now(), self.cfg.ledger_path))
 
+    def learning(self) -> dict:
+        """DD-12 WP-17: öğrenme sekmesi (kurulum karnesi, ders, ML, seans/varlık kırılımı, açık pozisyonlar, harcama)."""
+        return self._wrap(lambda: P.learning_view(self.cfg.ledger_path, self.cfg.budget_config, self.now()))
+
     def health(self) -> dict:
         return self._wrap(lambda: P.health_view(self.cfg.health_state, self.now(), self.cfg.health_stale_s))
 

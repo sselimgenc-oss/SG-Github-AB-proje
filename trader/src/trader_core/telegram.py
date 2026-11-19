@@ -55,8 +55,19 @@ def atomic_write_json(path, data: dict) -> Path:
     return path
 
 
+_TS_Z_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d{1,6})?Z$")
+
+
 def parse_ts_z(s: str) -> datetime:
-    return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    """UTC 'YYYY-MM-DDTHH:MM:SSZ' ya da kesirli saniyeli ('.000Z', '.123456Z') zaman. Saat dilimsiz ya da UTC dışı
+    (ofsetli) girdi ValueError: motorun ve panelin yazdığı iki biçim de (fileio.fmt_ts, lesson/panel '.%03dZ') kabul edilir."""
+    m = _TS_Z_RE.match(s) if isinstance(s, str) else None
+    if m is None:
+        raise ValueError("zaman UTC 'Z' biçiminde olmalı")
+    base = datetime.strptime(m.group(1), "%Y-%m-%dT%H:%M:%S")
+    frac = m.group(2)
+    us = int((frac[1:] + "000000")[:6]) if frac else 0
+    return base.replace(microsecond=us, tzinfo=UTC)
 
 log = logging.getLogger("trader.telegram")
 UTC = timezone.utc
@@ -493,7 +504,7 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-HELP = ("/durum  /rapor  /hepsini_kapat  /durdur  /devam  /kademe  /kademe_devam  /onayla <id>  /reddet <id>  /yardim\n"
+HELP = ("/durum  /rapor  /kurulumlar  /ders  /hepsini_kapat  /durdur  /devam  /kademe  /kademe_devam  /onayla <id>  /reddet <id>  /yardim\n"
         "/durdur: yeni girisleri durdurur, pozisyonlar acik kalir (tam kapatma icin /hepsini_kapat)")
 PAUSE_USER = "user_cmd"
 
@@ -782,6 +793,10 @@ class TelegramDaemon:
                 return "noreport"
             self._reply(self.report_fn() + "\n(manuel)", "INFO")
             return "ok"
+        if cmd == "/kurulumlar":
+            return self._cmd_info(lambda: kurulumlar_metni(self.cfg, self.now()))
+        if cmd == "/ders":
+            return self._cmd_info(lambda: ders_durum_metni(self.cfg, self.now()))
         if cmd == "/hepsini_kapat":
             return self._cmd_kill_start()
         if cmd == "/devam":
@@ -796,6 +811,16 @@ class TelegramDaemon:
             return self._lesson(arg, cmd == "/onayla")
         self._reply("bilinmeyen komut. " + HELP)
         return "unknown"
+
+    def _cmd_info(self, fn) -> str:
+        """Salt okunur bilgi komutu (/kurulumlar, /ders): okunamayan veri tek satırla bildirilir."""
+        try:
+            text = fn()
+        except SectionError as e:
+            self._reply(f"okunamadı: {e.code}", "INFO")
+            return "unreadable"
+        self._reply(text, "INFO")
+        return "ok"
 
     # -- durum --------------------------------------------------------------
     def _cmd_status(self) -> str:
@@ -1456,6 +1481,10 @@ def _kasa_satiri(eq: Any, dse: Any) -> str | None:
     return f"💰 Kasa: {tr_sayi(eq)} $" + (f" (gün başı {tr_sayi(dse)} $)" if _num_ok(dse) else "")
 
 
+_BOLUM_SIRASI = ("Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Öğrenme", "Kurulum karnesi",
+                 "Alınmayan sinyaller (son 7 gün)")
+
+
 def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping[str, Callable[[], str]] | None = None
                  ) -> str:
     """Günlük rapor: sade Türkçe, ham sözlük/kod/istisna adı yok. Okunamayan bölümler tek genel satırla bildirilir."""
@@ -1500,11 +1529,11 @@ def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping
         out += risk
     elif got.get("Duraklatma"):
         out.append(got["Duraklatma"])
-    for name in ("Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)"):
+    for name in _BOLUM_SIRASI:
         if got.get(name):
             out.append(got[name])
     for name, text in got.items():                         # tanınmayan (dışarıdan verilen) bölümler
-        if name not in ("Defter", "Duraklatma", "Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Alınmayan sinyaller (son 7 gün)") and text:
+        if name not in ("Defter", "Duraklatma", *_BOLUM_SIRASI) and text:
             out.append(f"{name}: {text}")
     if cfg.health_state:
         try:
@@ -1910,6 +1939,140 @@ def rapor_davranis(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, Lad
         return DAVRANIS_YOK
 
 
+# ---- DD-12 WP-17: öğrenme (kurulum karnesi, ders, ML, seans/varlık kırılımı, harcama) ----
+_OGR_SINIF = {"kripto": "kripto", "hisse": "hisse senedi", "emtia": "metal / enerji"}
+
+
+def _ogr_view(cfg: TelegramConfig, now: datetime) -> dict:
+    """Öğrenme görünümü; defter okunamazsa `ledger_error` ile döner (bölüm kendi satırını yazar)."""
+    from . import panel_data as PD  # noqa: PLC0415
+    try:
+        return PD.learning_view(cfg.ledger_path, cfg.budget_config, now)
+    except PD.SectionError as e:
+        raise SectionError(e.code) from None
+
+
+def _ogr_defter(cfg: TelegramConfig, now: datetime) -> dict:
+    """Komutlar için: defter hatası varsa SectionError (komut 'okunamadı' yazar)."""
+    lv = _ogr_view(cfg, now)
+    if lv.get("ledger_error"):
+        raise SectionError(lv["ledger_error"])
+    return lv
+
+
+def _r_or_dash(x: Any) -> str:
+    return tr_isaretli(x) + " R" if _num_ok(x) else "—"
+
+
+def _karne_satirlari(lv: Mapping[str, Any]) -> list[str]:
+    out = []
+    for row in lv.get("scorecard") or []:
+        if not row.get("candidates"):
+            continue
+        durum = "KAPALI" if row.get("state") == "closed" else "açık"
+        out.append(f"{row['arm']}: aday {row['candidates']} · alınan {row['taken']} · ort. R (alınan) "
+                   f"{_r_or_dash(row.get('mean_r_taken'))} · alınsaydı {_r_or_dash(row.get('mean_r_taken_cf'))} · {durum}")
+    return out
+
+
+def _harcama_satiri(lv: Mapping[str, Any]) -> str:
+    bt = lv.get("budget") or {}
+    if "month_used_usd" in bt:
+        return f"🤖 Yapay zekâ harcaması (ay): {tr_sayi(bt['month_used_usd'])} $ / {_usd(bt['monthly_cap_usd'])} $"
+    return "🤖 Yapay zekâ harcaması: okunamadı"
+
+
+def kurulumlar_metni(cfg: TelegramConfig, now: datetime) -> str:
+    """/kurulumlar: kurulum karnesi (tam); aday yoksa tek satır."""
+    lv = _ogr_defter(cfg, now)
+    satirlar = _karne_satirlari(lv)
+    if not satirlar:
+        return "🧪 Kurulum karnesi\nHenüz aday yok."
+    return "🧪 Kurulum karnesi\n" + "\n".join(satirlar)
+
+
+def rapor_kurulum_karnesi(cfg: TelegramConfig, now: datetime) -> str:
+    lv = _ogr_view(cfg, now)
+    if lv.get("ledger_error"):
+        return ""
+    satirlar = _karne_satirlari(lv)
+    return ("🧪 Kurulum karnesi (haftalık ayrıntı için /kurulumlar)\n" + "\n".join(satirlar)) if satirlar else ""
+
+
+def _seans_satiri(lv: Mapping[str, Any]) -> str:
+    parcalar = []
+    for s, ad in (("open", "açık"), ("closed", "kapalı"), ("weekend", "hafta sonu")):
+        siniflar = lv.get("sessions", {}).get(s) or {}
+        ops = [f"{_OGR_SINIF.get(k, k)} {_r_or_dash(b.get('mean_r_taken'))} ({b.get('taken', 0)} işlem)"
+               for k, b in siniflar.items() if b.get("taken")]
+        if ops:
+            parcalar.append(f"{ad}: " + ", ".join(ops))
+    return "🕒 Seans (ort. R, alınan): " + ("; ".join(parcalar) if parcalar else "henüz işlem yok")
+
+
+def _ders_etki_satiri(ders: Mapping[str, Any]) -> str:
+    e = ders.get("effect")
+    if not e:
+        return "Ders etkisi (referanstan beri): ölçülemedi"
+    return f"Ders etkisi (referanstan beri): {tr_isaretli(e['damped_r'])} R ({e['n']} aday)"
+
+
+def ders_durum_metni(cfg: TelegramConfig, now: datetime) -> str:
+    """/ders: ders durumu (uygulanan, geri alma, fren, etki, kapalı kurulumlar), bekleyen öneri, harcama."""
+    lv = _ogr_defter(cfg, now)
+    ders = lv["lesson"]
+    satirlar = ["🎓 Ders durumu",
+                f"Uygulanan değişiklik: {ders['applied']} · geri alınan: {ders['rollbacks']} · "
+                f"−10 R freni: {'AKTİF (referans sürüme dönüldü, otomatik uygulama durdu)' if ders['brake_active'] else 'yok'}",
+                _ders_etki_satiri(ders)]
+    kapali = ders.get("closed_arms") or []
+    satirlar.append("Kapalı kurulumlar: " + (", ".join(kapali) if kapali else "yok"))
+    for e in ders.get("events") or []:
+        satirlar.append(f"  {fmt_tsi_tr(e['at'])} {e['kind']}" + (f" ({e['reason']})" if e.get("reason") else ""))
+    bekleyen = rapor_ders(cfg, now)
+    if bekleyen:
+        satirlar.append(bekleyen)
+    satirlar.append(_harcama_satiri(lv))
+    return "\n".join(satirlar)
+
+
+def fmt_tsi_tr(iso: str | None) -> str:
+    try:
+        return parse_ts_z(str(iso)).astimezone(TR).strftime("%d.%m %H:%M")
+    except (TypeError, ValueError):
+        return "?"
+
+
+def rapor_ogrenme(cfg: TelegramConfig, now: datetime) -> str:
+    """Günlük rapor: ders etkisi, ML etkisi, M1, seans kırılımı, açık pozisyonlar, harcama (her zaman), haftalık özet."""
+    lv = _ogr_view(cfg, now)
+    out: list[str] = []
+    if lv.get("ledger_error"):
+        pass                                  # defter yoksa Defter bölümü genel uyarıyı zaten yazar; yalnız harcama kalır
+    else:
+        ders, ml, op = lv["lesson"], lv["ml"], lv["open"]
+        out.append("📚 Ders: uygulanan " + str(ders["applied"]) + " · geri alınan " + str(ders["rollbacks"])
+                   + (" · −10 R freni AKTİF" if ders["brake_active"] else "") + " · " + _ders_etki_satiri(ders))
+        etki = "" if ml["effect_r"] is None else f" (alınsaydı etkisi {tr_isaretli(ml['effect_r'])} R)"
+        out.append(f"🤖 Model: elenen {ml['eliminated']} · geçen {ml['passed']}{etki} · M1 aday {ml['m1_candidates']}, "
+                   f"giriş {ml['m1_taken']}")
+        out.append(_seans_satiri(lv))
+        sinif = [f"{_OGR_SINIF.get(k, k)} {_r_or_dash(b.get('mean_r_taken'))}" for k, b in (lv.get("asset_class") or {}).items()
+                 if b.get("taken")]
+        if sinif:
+            out.append("🧭 Varlık sınıfı (ort. R, alınan): " + ", ".join(sinif))
+        if op.get("total"):
+            kume = ", ".join(f"{k} {v}" for k, v in op["by_cluster"].items()) or "—"
+            kurulum = ", ".join(f"{k} {v}" for k, v in op["by_arm"].items()) or "—"
+            out.append(f"📂 Açık pozisyon: {op['total']} · küme: {kume} · kurulum: {kurulum}")
+    out.append(_harcama_satiri(lv))
+    ws = lv.get("weekly_summary")
+    if ws:
+        satir = next((x.strip() for x in ws["text"].splitlines() if x.strip() and not x.startswith("#")), "")
+        out.append(f"🗓 Haftalık özet ({ws['week']}): {satir[:300]}")
+    return "\n".join(out)
+
+
 def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None,
                      ladders: Mapping[str, LadderFiles] | None = None) -> dict[str, Callable[[], str]]:
     out: dict[str, Callable[[], str]] = {}
@@ -1921,7 +2084,8 @@ def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mappi
     out["Model"] = lambda: rapor_model(cfg, now, ladders)
     out["Davranış"] = lambda: rapor_davranis(cfg, now, ladders)
     out.update({"Defter": lambda: rapor_defter(cfg, day), "Bütçe": lambda: rapor_butce(cfg),
-                "Ders": lambda: rapor_ders(cfg, now),
+                "Ders": lambda: rapor_ders(cfg, now), "Öğrenme": lambda: rapor_ogrenme(cfg, now),
+                "Kurulum karnesi": lambda: rapor_kurulum_karnesi(cfg, now),
                 "Alınmayan sinyaller (son 7 gün)": lambda: rapor_kacirilan(cfg, now)})
     return out
 
