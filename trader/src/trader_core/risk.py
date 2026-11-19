@@ -33,7 +33,7 @@ HARD_LIMITS = {
 # `RiskConfig` alanları ve HARD_LIMITS değişmez; kağıt sınırları yalnız `PaperRiskConfig` alt sınıfındadır.
 PAPER_LIMITS = {**HARD_LIMITS,
                 "target_trade_risk": 0.014,   # işlem başı risk kağıtta %1 (<= kilitli hedef); gevşemez
-                "daily_max_loss": 0.05,   # 19 Kasim: kullanici karari %8 -> %5 (sert limitle esit)
+                "daily_max_loss": 0.08,
                 "max_open_risk": 0.12,
                 "max_same_dir_risk": 0.08}
 

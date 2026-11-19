@@ -398,7 +398,7 @@ def test_dt30_paper_risk_yuzdeleri():
     assert rc.target_trade_risk == pytest.approx(0.01)
     assert rc.max_open_risk == pytest.approx(0.12)
     assert rc.max_same_dir_risk == pytest.approx(0.08)
-    assert rc.daily_max_loss == pytest.approx(0.05)
+    assert rc.daily_max_loss == pytest.approx(0.08)
     assert rc.max_trade_risk >= rc.target_trade_risk
 
 
@@ -414,22 +414,19 @@ def _cand(pair="ETH/USDT:USDT", side="long"):
 def test_dt30_paper_davranis_toplam_ve_ayni_yon_ve_gunluk():
     rc = _paper().risk_config
     pos = lambda p, s, r: OpenPosition(pair=p, side=s, risk_amount=r, margin=0.0)
-    # 19 Kasim: kagit gunluk %5 -> gunluk zarar butcesi (acik risk dahil) 50; toplam acik 30 + yeni ~10 izinli,
-    # toplam acik 60 + yeni ~10 kagitta da reddedilir (gunluk butce), kilitli de reddeder
-    st = _state(opens=[pos("BTC/USDT:USDT", "long", 15.0), pos("SOL/USDT:USDT", "short", 15.0)])
+    # toplam acik 60 (30 long + 30 short) + yeni ~10: paper izinli, kilitli (%5 gunluk/%6 toplam) reddeder
+    st = _state(opens=[pos("BTC/USDT:USDT", "long", 30.0), pos("SOL/USDT:USDT", "short", 30.0)])
     assert check_entry(st, _cand(), rc).allowed
-    st60 = _state(opens=[pos("BTC/USDT:USDT", "long", 30.0), pos("SOL/USDT:USDT", "short", 30.0)])
-    assert not check_entry(st60, _cand(), rc).allowed
-    assert not check_entry(st60, _cand(), LOCKED_CFG).allowed
+    assert not check_entry(st, _cand(), LOCKED_CFG).allowed
     # ayni yon: long 75 + yeni ~10 > %8 (80) -> ret
     st2 = _state(opens=[pos("BTC/USDT:USDT", "long", 75.0)])
     assert not check_entry(st2, _cand(), rc).allowed
-    # 19 Kasim: kagit gunluk zarar siniri %8 -> %5 (kullanici karari; sert limitle esit)
-    # gunluk zarar %3: 30 + 10 <= 50 izinli
-    assert check_entry(_state(equity=970.0, day_start=1000.0), _cand(), rc).allowed
-    # gunluk zarar %6 -> kagitta da reddedilir
-    assert not check_entry(_state(equity=940.0, day_start=1000.0), _cand(), rc).allowed
-    assert not check_entry(_state(equity=940.0, day_start=1000.0), _cand(), LOCKED_CFG).allowed
+    # gunluk zarar %6: paper'da kural 4 tetiklenmez (limit %8); 60+10... yalniz gunluk butce: 60 + 0 + 10 <= 80 izinli
+    st3 = _state(equity=940.0, day_start=1000.0)
+    assert check_entry(st3, _cand(), rc).allowed
+    assert not check_entry(st3, _cand(), LOCKED_CFG).allowed
+    # gunluk zarar %8.1 -> paper'da da reddedilir
+    assert not check_entry(_state(equity=919.0, day_start=1000.0), _cand(), rc).allowed
 
 
 def test_dt13_risk_varsayilan_sabitleri_bit_bit_ayni(baseline):

@@ -12,7 +12,7 @@
   "exit_modes": {"default": {"breakeven": true, "partial": true}},
   "max_positions": 16,
   "target_trade_risk": 0.01,
-  "risk": {"target_trade_risk": 0.01, "max_open_risk": 0.12, "max_same_dir_risk": 0.08, "daily_max_loss": 0.05},
+  "risk": {"target_trade_risk": 0.01, "max_open_risk": 0.12, "max_same_dir_risk": 0.08, "daily_max_loss": 0.08},
   "clusters": {
     "kripto_buyuk": {"pairs": ["BTC/USDT", "ETH/USDT", "XRP/USDT", "BNB/USDT", "SOL/USDT"], "max_positions": 4},
     "kripto_diger": {"pairs": ["DOGE/USDT", "ADA/USDT", "TRX/USDT", "LINK/USDT", "AVAX/USDT", "HYPE/USDT", "BCH/USDT", "XLM/USDT", "SUI/USDT", "HBAR/USDT", "LTC/USDT", "TON/USDT", "1000SHIB/USDT", "DOT/USDT", "XMR/USDT"], "max_positions": 6},

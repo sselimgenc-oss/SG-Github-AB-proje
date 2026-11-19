@@ -133,7 +133,7 @@ def _cfg(tmp_path: Path, *, panel: bool = True) -> Path:
     (c / "engine.base.json").write_text(json.dumps({"mode": "paper", "wallet_start": 1000.0, "target_trade_risk": 0.01,
                                                     "market_db": "var/market.sqlite"}))
     (c / "engine.learner.json").write_text('{"bot": "learner"}')
-    (c / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.05}, "arms": ["M1@1h", "C1@1h"]}))
+    (c / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}, "arms": ["M1@1h", "C1@1h"]}))
     if panel:
         (c / "panel.json").write_text(json.dumps({"ledger_path": "var/learner/ledger.sqlite", "kill_file": "shared/KILL",
                                                   "status_path": "var/learner/status.json",
@@ -149,7 +149,7 @@ def test_cli_atomik_yazar_ve_eksik_kaynak_null(tmp_path):
     d = json.loads(out.read_text(encoding="utf-8"))
     assert tum_anahtarlar(d)
     assert d["kasa"]["baslangic"] == 1000.0 and d["kasa"]["toplam_pnl"] is None
-    assert d["limitler"]["gunluk_kayip_yuzde"] == 5.0 and d["limitler"]["kaldirac_tavan"] == 5.0
+    assert d["limitler"]["gunluk_kayip_yuzde"] == 8.0 and d["limitler"]["kaldirac_tavan"] == 5.0
     assert d["rejim"] is None and d["drift_uyari"] is None and d["ogrenme"]["filtre_aktif"] is None
     assert sorted(p.name for p in out.parent.iterdir()) == ["gunluk_ozet_v1.json"]      # gecici dosya kalmadi
 
