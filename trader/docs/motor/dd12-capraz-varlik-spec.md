@@ -402,3 +402,9 @@ Hedef tarihler (tahmin, kayarsa kullanıcıya bildirilir; sıra korunur): Yayın
 
 ### Önerilen kısıntı (uygulanmadı)
 Yok. Ölçüm §8 eşiklerinin içinde. Gerçek sunucuda `systemctl show trader-engine@learner trader-ml-retrain -p MemoryPeak` ile ilk 48 saat doğrulanmalı (§8 "İzlenecek").
+
+## Ek (19 Kasım 2026) — Hiçbir şey kapanmaz, ML engellemez (sahip kararı)
+- **Kurulum kapatma yok:** `arm_lifecycle_step` ve `arms_off.json` yalnız karne/rapor bilgisidir. Kapı (`gates.py`) ders kararıyla
+  `arm_disabled` atlaması YAPMAZ; yalnız `arm_would_close` sayacı artar. Evrenden çıkmış çiftlerin (`retired_pairs`) giriş engeli sürer.
+- **ML yalnız puan yazar:** `price_action_lab_ml` içinde r03 süzgeci `ml_block=False`; eşik altı aday ELENMEZ, gerekçeye `ml:below`
+  eklenir (`ml_below_noblock` sayacı). M1 kendi adaylarını önermeye devam eder. Testnet/canlı stratejileri (`price_action_v1_ml`) değişmez.

@@ -593,7 +593,7 @@ def test_neutrality_testnet_live_configs_unchanged_and_veto_required():
             c = lc(CONFIG, "learner", env)
         except Exception as ex:  # noqa: BLE001 - canli onay/anahtar gibi nedenlerle yuklenemeyebilir
             pytest.skip(f"{env} yuklenemedi: {ex}")
-        assert c.veto_mode == "required"
+        assert c.veto_mode == ("off" if env == "testnet" else "required")   # DD-12 QC: LLM veto kaldirildi, testnet veto'suz; canli degismez
         assert not c.clusters and c.max_positions is None and c.flat_bar_guard is False
 
 

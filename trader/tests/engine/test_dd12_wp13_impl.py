@@ -195,14 +195,14 @@ def test_scorecard_taken_and_counterfactual_means():
 
 
 # ---- motor kapisi ------------------------------------------------------------------------------------------------
-def test_gate_skips_closed_arm_as_arm_disabled(env):
+def test_gate_never_blocks_closed_arm(env):
+    """19 Kasim (sahip karari): ders kurulum kapatmaz; arms_off'taki kurulum yine girer, yalniz sayac artar."""
     row = _row(pair=PAIR)
     aid = row.arm_id or AG.arm_id_of(row.setup, getattr(row, "trigger_tf", "1h"))
     env.g.arms_off = lambda: frozenset({aid})
     out = _go(env)
-    assert out.code == "arm_disabled" and out.event.skip_reason == "arm_disabled"
-    env.g.arms_off = None
-    assert _go(env).action == "enter"
+    assert out.action == "enter" and out.code != "arm_disabled"
+    assert env.g.counters["arm_would_close"] >= 1
 
 
 # ---- yapilandirma koprusu ------------------------------------------------------------------------------------------

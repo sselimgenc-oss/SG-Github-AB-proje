@@ -274,9 +274,9 @@ class EntryGate:
         now = self.clock.now()
         if paper:                                                                       # 9a-9c (DD-12 WP-04); veto adimi YOK
             aid = row.arm_id or AG.arm_id_of(row.setup, tf)
-            if aid in self._arms_off():                                                  # WP-13: ders kapatti (kayit surer)
-                return self._skip(row, tf, "arm_disabled", skip_reason="arm_disabled",
-                                  veto_reason=f"gate:arm_disabled:{aid}", **tk)
+            # 19 Kasim (sahip karari): ders kurulum KAPATMAZ; arms_off yalniz karne/rapor bilgisidir, giris engellenmez.
+            if aid in self._arms_off():
+                self.counters["arm_would_close"] += 1
             if pair in self.cfg.retired_pairs:                                           # WP-18: evrenden cikmis, yeni giris yok
                 return self._skip(row, tf, "arm_disabled", skip_reason="arm_disabled",
                                   veto_reason=f"gate:universe_retired:{pair}", **tk)

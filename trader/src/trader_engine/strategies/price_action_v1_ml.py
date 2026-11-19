@@ -62,6 +62,7 @@ class PriceActionV1Ml:
         # (`ml_no_model`/`ml_expired`/`ml_unscored`); esik alti puan yine eler (`ml_filter`). Eski strateji: fail_open=False (fail-closed).
         self.ml_universe: frozenset[str] | None = None
         self.fail_open = bool(fail_open)
+        self.ml_block = True                                # 19 Kasim: False => esik alti puan ELEMEZ, yalniz `ml:below` etiketi (kagit lab)
         self.score_history = False                          # True: tablodaki TUM aday satirlari puanlanir (onhesapli backtest)
         self.counters = inner.counters                      # ayni Counter: shadow_r1/shadow_reentry + ml_* tek yerde
         self.info = dataclasses.replace(inner.info, name=name, version=version)
@@ -163,6 +164,11 @@ class PriceActionV1Ml:
         if p is None:
             return self._decide(row, "unscored")
         if self.ml_mode == "active" and p < model.threshold:
+            if not self.ml_block:                           # sahip karari: ML yalniz puan yazar, adayi elemez
+                self.counters["ml_below_noblock"] += 1
+                r = row.copy()
+                r["reasons"] = "ml:below|" + str(row["reasons"])
+                return r
             return self._decide(row, "filter")
         self.counters["ml_pass" if self.ml_mode == "active" else "ml_shadow_scored"] += 1
         return row

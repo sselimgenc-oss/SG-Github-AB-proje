@@ -80,6 +80,7 @@ class PriceActionLab:
         self.info = self._make_info(())
         self._inner = _CoreInner(self)
         self._ml = PriceActionV1Ml(self._inner, name=NAME, version=VERSION, fail_open=True)
+        self._ml.ml_block = False                           # 19 Kasim (sahip karari): kagitta ML hicbir adayi elemez, yalniz puanlar
         self.set_arms(arms)
 
     # ------------------------------------------------------------------ kurulum kumesi
