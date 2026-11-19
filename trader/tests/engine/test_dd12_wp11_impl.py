@@ -28,7 +28,7 @@ from trader_engine.strategy_runner import MultiArmSignalSource
 ROOT = Path(__file__).resolve().parents[2]
 UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
-ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1 eklendi
+ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1", "H2", "S1", "F1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1; WP-12b: H2/S1/F1
 
 
 # --------------------------------------------------------------------------- arms paketi

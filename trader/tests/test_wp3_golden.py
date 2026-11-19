@@ -56,7 +56,8 @@ def test_K1_K2_golden_backtest_equal_to_base(tmp_path, extra):
     assert mb == mn
     q = lambda p, s: [tuple(r) for r in sqlite3.connect(f"file:{p}?mode=ro", uri=True).execute(s)]  # noqa: E731
     lb, ln = b / "ledger.sqlite", n / "ledger.sqlite"
-    assert q(lb, "SELECT * FROM v_decisions ORDER BY id") == q(ln, "SELECT * FROM v_decisions ORDER BY id")
+    dcols = ",".join(table_cols(lb, "v_decisions"))   # DD-12 v5/v6: yeni sutunlar (arm_id, session_tag, lesson_ids, source) tabanda yok
+    assert q(lb, f"SELECT {dcols} FROM v_decisions ORDER BY id") == q(ln, f"SELECT {dcols} FROM v_decisions ORDER BY id")
     cols = ",".join(table_cols(lb, "v_trades"))
     assert q(lb, f"SELECT {cols} FROM v_trades ORDER BY trade_id") == q(ln, f"SELECT {cols} FROM v_trades ORDER BY trade_id")
     for t in ("param_versions", "param_activations"):
