@@ -30,6 +30,7 @@ UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
 ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1", "H2", "S1", "F1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1; WP-12b: H2/S1/F1
 PAPER_ARMS = ALL_ARMS + ("M1@1h", "M1@4h")   # DD-12 WP-14: M1 (ML'in kendi adayi) config/engine.paper.json'a eklendi
+PAPER_ARMS = PAPER_ARMS + ("C1@1h", "C1@4h")   # 19 Kasim: C1 (CT kadro) eklendi
 
 
 # --------------------------------------------------------------------------- arms paketi
@@ -126,7 +127,7 @@ def test_arm_tf_helpers_and_old_contract_untouched():
 # --------------------------------------------------------------------------- yapilandirma
 def test_config_arms_and_caps():
     assert PAPER.strategy == NAME and PAPER.arms == PAPER_ARMS
-    assert PAPER.arm_max_positions == {"default": 4, "M1": 3, "L1": 3}
+    assert PAPER.arm_max_positions == {"default": 4, "M1": 3, "L1": 3, "C1": 3}   # 19 Kasim: C1 (CT kadro) eklendi
     c = apply_overrides(PAPER, arms={"T1": ["1h", "4h"]}, arm_max_positions=2)
     assert c.arms == ("T1@1h", "T1@4h") and c.arm_max_positions == {"default": 2}
     for kw in ({"arms": ["T1@5m"]}, {"arms": ["T1@1h", "T1@1h"]}, {"arms": "T1@1h"}, {"arm_max_positions": 0},

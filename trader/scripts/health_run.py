@@ -677,6 +677,31 @@ def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) 
                     "pa_proposer|stale", now)]
 
 
+CT_KADRO_BAYAT_DK = 45   # C1 (19 Kasim: CT kadro eklendi): son basarili okuma bu sureden eskiyse C1 aday uretmez
+
+
+def ct_kadro_alerts(env: dict, now: datetime, var_dir: str | None = None) -> list:
+    """C1 CT kadro okuyucu: var/ct/durum.json `son_basari` 45 dk'dan eski ya da hic yok -> WARN. Motor etkilenmez (C1 aday
+    uretmez); yalniz bilgi amacli uyari. durum.json hic yazilmadiysa (birim henuz calismadi) uyari yok: bayatlik olculemez."""
+    d = Path(var_dir) if var_dir else data_root(env) / "var" / "ct"   # var_dir: ct dizini (durum.json burada)
+    try:
+        raw = (d / "durum.json").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    except OSError:
+        raw = None
+    try:
+        son = _parse_dt_utc(json.loads(raw).get("son_basari")) if raw is not None else None
+    except (ValueError, AttributeError, TypeError):
+        son = None
+    if son is not None and (now - son) <= timedelta(minutes=CT_KADRO_BAYAT_DK):
+        return []
+    detail = "henuz basarili okuma yok" if son is None else f"son basarili okuma {(now - son).total_seconds() / 60:.0f} dk once"
+    return [H.Alert(H.Status.WARN, "ct_kadro_bayat", "CT verisi bayat",
+                    f"CT verisi bayat; C1 aday uretmiyor ({detail}). trader-ct-kadro.timer ve var/ct/durum.json'a bakin.",
+                    "ct_kadro|bayat", now)]
+
+
 def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
     """Opt-in (15 kalibi: yapilandirma varligi): bir bot icin model paketi yolu (ML_MODEL_PATH_<BOT> ya da
     engine config `ml_model_path`) VAR ya da status.json `ml` blogu dict ve mode != "off" ise acik; aksi None -> ml_package kontrolu uretilmez. Durum yazimi `run_once` icinde."""
@@ -860,6 +885,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
             maint = None
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
     alerts.extend(pa_proposer_alerts(env, now))
+    alerts.extend(ct_kadro_alerts(env, now))
     if reset:
         alerts.append(H.Alert(H.Status.WARN, "state_reset", "Saglik durum dosyasi sifirlandi",
                               "state.json yok ya da bozuktu; sayaclar sifirdan basladi.", "state|state_reset", now))

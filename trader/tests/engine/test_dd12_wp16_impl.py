@@ -153,7 +153,7 @@ def test_volume_fallback_ranks_by_quote_volume(env):
     _market(var, _all_trading(), vols)
     doc, rep = UR.build(cfg, var, None, NOW)
     assert rep["source"] == "volume_fallback"
-    assert "XMR/USDT" in rep["crypto"] and "BTC/USDT" in rep["crypto"]   # BTC: ml_pairs sabit; XMR: en yuksek hacim
+    assert "XMR/USDT" in rep["crypto"]   # XMR: en yuksek hacim (19 Kasim: r03 emekli, ml_pairs bos => BTC artik sabit degil)
     assert len(rep["crypto"]) == 20
 
 

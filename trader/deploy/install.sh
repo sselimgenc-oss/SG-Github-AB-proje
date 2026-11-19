@@ -572,6 +572,10 @@ enable_now trader-ml-retrain.timer
 safe_tree_path "$TRADER_DIR/var/universe"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/universe"
 enable_now trader-universe.timer   # DD-12 WP-16: aylik kagit evreni (1. gun 00:30 UTC; var/universe/paper_pairs.json, ag yok)
+# 19 Kasim: C1 (CT kadro) eklendi: CT kadro okuyucu (5 dk; yalniz https okuma, anahtar yok); var/ct/kadro_yon.json + durum.json
+safe_tree_path "$TRADER_DIR/var/ct"
+install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/ct"
+enable_now trader-ct-kadro.timer
 enable_now trader-weekly-summary.timer
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
