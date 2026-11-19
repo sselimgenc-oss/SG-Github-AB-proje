@@ -38,7 +38,7 @@ def test_paper_config_shape():
     assert c.mode == "paper" and c.bot == "learner" and len(c.pairs) == 44
     assert set(json.loads((CFG / "engine.base.json").read_text())["pairs"]) <= set(c.pairs)
     assert len(c.optional_pairs) == 25 and set(c.optional_pairs) <= set(c.pairs)
-    assert c.max_positions == 16 and c.ml_mode == "active" and c.shadow_blocks == ()
+    assert c.max_positions == 16 and c.ml_mode == "active" and c.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert c.ml_features == "v1" and c.ml_experimental is False and c.ml_pairs == () and c.ml_model_path is None
     raw_paper = json.loads((CFG / "engine.paper.json").read_text())

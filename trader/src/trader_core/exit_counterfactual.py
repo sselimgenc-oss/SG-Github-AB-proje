@@ -968,8 +968,9 @@ def run_modes_once(*, bot: str, trades: Sequence[TradeInput], market, store: Exi
 
 
 def deltas_modes(path, bot: str, *, now: datetime, days: int = 120, mode: str, sources: Sequence[str] = SOURCES_VERDICT,
-                 run_id: str | None = None) -> list[dict]:
-    """Her islem icin Delta_r = net_r(mode acik) - net_r(kapali) (yalniz window_end_ts <= now; ikisi de sayisal; en yuksek
+                 run_id: str | None = None, with_r: bool = False) -> list[dict]:
+    """(`with_r=True`: her satira `on_r`/`off_r` eklenir; otomatik geri alma olcutu icin.)
+    Her islem icin Delta_r = net_r(mode acik) - net_r(kapali) (yalniz window_end_ts <= now; ikisi de sayisal; en yuksek
     `version`). Tablo/dosya yoksa [] (kanit yok). Doner: [{source, run_id, trade_id, entry_ts, delta_r, censored,
     partial_fired}]. Salt okunur; depo bozuksa ExitCfError."""
     if mode not in MODE_NAMES:
@@ -1008,7 +1009,8 @@ def deltas_modes(path, bot: str, *, now: datetime, days: int = 120, mode: str, s
         out.append({"source": src, "run_id": rid, "trade_id": tid, "entry_ts": off["entry_ts"],
                     "delta_r": float(on["net_r"]) - float(off["net_r"]),
                     "censored": int(bool(off["censored"]) or bool(on["censored"])),
-                    "partial_fired": int(bool(on["partial_ts_sim"]))})
+                    "partial_fired": int(bool(on["partial_ts_sim"])),
+                    **({"on_r": float(on["net_r"]), "off_r": float(off["net_r"])} if with_r else {})})
     return out
 
 

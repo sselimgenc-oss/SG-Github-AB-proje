@@ -740,14 +740,14 @@ def test_dt8_no_model_candidate_passes_as_ml_no_model(tmp_path, mlworld, mlcands
     eng.ledger.close()
 
 
-def test_dt8_paper_config_has_no_shadow_rows(mk):
+def test_dt8_paper_config_has_shadow_rows_open(mk):
     cfg = load_cli_config(CONFIG, "learner", "paper")
-    assert tuple(cfg.shadow_blocks) == () and cfg.ml_mode == "active"      # 19.11 kullanici karari: ML kagitta aktif (kurulum filtresi); r03 emekli
+    assert tuple(cfg.shadow_blocks) == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m") and cfg.ml_mode == "active"      # 19.11: ML kagitta aktif; golge satirlar acik
     e = mk([BTC, ETH], D_OPEN - H)
     e.enter(BTC, D_OPEN)
     e.step(D_OPEN + M1)
     e.step(D_OPEN + 2 * M1)
-    assert e.led.list_shadow() == [], "kagit yapilandirmasinda golge satir 0"
+    assert e.led.list_shadow() == [], "(mk motoru kendi yapilandirmasiyla kurulur) golge satir 0"
 
 
 def test_dt8_non_paper_ml_active_without_model_stays_fail_closed():
