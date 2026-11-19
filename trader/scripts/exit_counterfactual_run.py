@@ -141,6 +141,21 @@ def _load_tf(led, trades) -> None:
         _TF_CACHE[d.id] = d.trigger_tf
 
 
+def _lot_rules(market):
+    """Motorun kismi adet yuvarlamasi icin (adim, min adet, min notional): market.sqlite `rules` tablosundan; yoksa None (tam oran)."""
+    def fn(pair):
+        raw = market.rules_json(pair)
+        if raw is None:
+            return None
+        try:
+            from trader_engine.exchange.rules import spec_from_json, to_symbol_rules
+            r = to_symbol_rules(pair, spec_from_json(raw))
+            return float(r.step), float(r.min_qty), float(r.min_notional)
+        except Exception:                                    # noqa: BLE001
+            return None
+    return fn
+
+
 def _paper_block(args, now, store, source, since, modes_registered=True):
     led = L.open_ledger(_resolve(args.ledger or f"var/{args.bot}/ledger.sqlite"), args.bot, create=False, read_only=True,
                         migrate=False)
@@ -166,7 +181,7 @@ def _paper_block(args, now, store, source, since, modes_registered=True):
         # exitcf-v2: cikis kipleri (basa-bas / kismi) "acik olsaydi"; v1 sonucundan bagimsiz, ayni gece
         mr = EC.ModesRunResult() if not modes_registered else EC.run_modes_once(bot=args.bot, trades=inputs, market=market, store=store, now=now, active_value=active,
                                cost_for=cost_for, signal_params_for=lambda t: vers.get(t.param_version_id)[1],
-                               trigger_source=trig, holdout=HOLDOUT, dry_run=args.dry_run)
+                               trigger_source=trig, holdout=HOLDOUT, dry_run=args.dry_run, rules_for=_lot_rules(market))
         return r, mr
     finally:
         market.close()
