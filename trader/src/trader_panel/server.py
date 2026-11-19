@@ -36,6 +36,8 @@ def build_api(data: PanelData) -> dict:
            "/api/learning": lambda q: data.cached(("learning",), data.learning),
            "/api/tutarlilik": lambda q: data.cached(("tutarlilik",), data.tutarlilik),
            "/api/pbo": lambda q: data.cached(("pbo",), data.pbo),
+           "/api/ciktikaniti": lambda q: data.cached(("ciktikaniti",), data.ciktikaniti),
+           "/api/haber": lambda q: data.cached(("haber",), data.haber),
            "/api/health": lambda q: data.cached(("health",), data.health),
            "/api/system": lambda q: data.cached(("system",), data.system),
            "/healthz": lambda q: {"ok": True}}

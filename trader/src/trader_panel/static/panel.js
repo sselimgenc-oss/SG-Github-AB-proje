@@ -501,7 +501,36 @@
   function tabDogrulama(root) {
     clear(root);
     var pt = panel('Tutarlılık (kâğıt – geri test, haftalık)', ''), pp = panel('PBO / Holdout', ''), ig = el('div', 'ig');
-    add(ig, pt, pp); add(root, ig);
+    var pc = panel('Çıkış kanıtı (başka çıkış olsaydı ne olurdu?)', ''), ph = panel('Haber / duygu', '');
+    add(ig, pt, pp, pc, ph); add(root, ig);
+    function rTr(x) { return num(x) ? (x > 0 ? '+' : '') + x.toFixed(2).replace('.', ',') + 'R' : '—'; }
+    function kanit(o) { return o && o.n ? {t: rTr(o.delta_r) + ' (' + o.n + ' işlem)', v: o.delta_r, c: num(o.delta_r) ? (o.delta_r > 0 ? 'iyi' : (o.delta_r < 0 ? 'kotu' : '')) : ''} : {t: 'veri yok', v: ''}; }
+    get('/api/ciktikaniti').then(function (c) {
+      clear(pc._body);
+      if (!c.ok) { add(pc._body, nodata(c.code)); return; }
+      if (!c.var) { add(pc._body, el('div', 'yok', 'veri yok' + (c.neden ? ' (' + c.neden + ')' : ''))); return; }
+      pc._right.textContent = (c.bekleyen || []).length ? 'öneri bekliyor' : 'son ' + c.pencere_gun + ' gün';
+      add(pc._body, el('div', 'yok', 'Artı değer, o çıkış açık olsaydı mevcut çıkıştan daha çok kazanılacaktı demektir. Yalnız bilgi: hiçbir şey kendiliğinden değişmez.'));
+      add(pc._body, row('Son hesap (iz sürme)', c.son_kosu_v1 ? tsi(c.son_kosu_v1) + ' TSİ' : 'veri yok'),
+        row('Son hesap (başa-baş / kısmi)', c.son_kosu_v2 ? tsi(c.son_kosu_v2) + ' TSİ' : 'veri yok'));
+      add(pc._body, table(['Kurulum', 'İşlem', 'İz sürme yukarı', 'İz sürme aşağı', 'Başa-baş açık olsaydı', 'Kısmi kâr açık olsaydı', 'Öneri'],
+        c.kurulumlar.map(function (k) {
+          return [k.kurulum, {t: String(k.islem), v: k.islem}, kanit(k.trail_yukari), kanit(k.trail_asagi), kanit(k.basabas), kanit(k.kismi),
+                  {t: k.bekleyen.length ? 'öneri bekliyor' : '—', c: k.bekleyen.length ? 'uyarir' : ''}];
+        }), {right: [1, 2, 3, 4, 5]}));
+    });
+    get('/api/haber').then(function (h) {
+      clear(ph._body);
+      if (!h.ok) { add(ph._body, nodata(h.code)); return; }
+      if (!h.var) { add(ph._body, el('div', 'yok', 'veri yok' + (h.neden ? ' (' + h.neden + ')' : ''))); return; }
+      var yas = num(h.yas_dk) ? (h.yas_dk < 90 ? Math.max(h.yas_dk, 0) + ' dk' : (h.yas_dk / 60).toFixed(1).replace('.', ',') + ' saat') : '—';
+      ph._right.textContent = 'önbellek ' + yas;
+      add(ph._body, row('Korku-Açgözlülük', h.duygu ? h.duygu.deger + ' / 100 — ' + h.duygu.sinif_tr : 'veri yok'));
+      var TON = {pozitif: 'olumlu', negatif: 'olumsuz', notr: 'nötr'};
+      add(ph._body, row('En çok anılan coinler (24 saat)', (h.coinler || []).length ? h.coinler.map(function (x) {
+        return x.coin + ' (' + x.adet_24s + ' haber, ' + (TON[x.ton] || 'ton yok') + ')'; }).join(', ') : 'veri yok'));
+      add(ph._body, row('Önbellek yaşı', yas));
+    });
     get('/api/tutarlilik').then(function (t) {
       clear(pt._body);
       if (!t.ok) { add(pt._body, nodata(t.code)); return; }

@@ -670,3 +670,165 @@ def pbo_view(pbo_path: str, muhur_path: str) -> dict:
                         "bitis": str(ho.get("bitis"))[:16] if ho.get("bitis") else None,
                         "hash12": h[:12] if isinstance(h, str) else None}
     return out
+
+
+# ---- cikis kaniti (cikis karsi-olgusu gece isi) ve haber/duygu satiri: salt okunur, eksik/bozuk kaynak paneli bozmaz ----
+EXITCF_DAYS = 4 * 30                       # ders kanit penceresi ile ayni (exit_counterfactual.deltas varsayilani)
+_EXITCF_SOURCES = ("paper", "testnet")   # hukum yalniz kendi bot defterinden (exit_counterfactual.SOURCES_VERDICT)
+_PEND_PARAMS = {"exit_breakeven": "exit:breakeven", "exit_partial": "exit:partial"}
+
+
+def exitcf_bekleyen(lesson: Mapping | None) -> list[str]:
+    """Ders gorunumunden (`lesson_view` ciktisi) bekleyen cikis onerileri: trail_atr:up / exit:breakeven / exit:partial."""
+    out: set[str] = set()
+    try:
+        for r in (lesson or {}).get("open_requests") or []:
+            p = r.get("param")
+            if p in _PEND_PARAMS:
+                out.add(_PEND_PARAMS[p])
+            elif p == "trail_atr" and _fnum(r.get("from")) is not None and _fnum(r.get("to")) is not None and r["to"] > r["from"]:
+                out.add("trail_atr:up")
+        props = (lesson or {}).get("proposals")
+        for pr in props if isinstance(props, list) else []:
+            ch = pr.get("changes") if isinstance(pr, Mapping) else None
+            for k, v in (ch.items() if isinstance(ch, Mapping) else []):
+                if k in _PEND_PARAMS:
+                    out.add(_PEND_PARAMS[k])
+                elif k == "trail_atr":
+                    out.add("trail_atr:up")          # yon bilgisi yoksa ders menusu yalniz yukari yonu kanit-yalniz acar
+    except Exception:  # noqa: BLE001
+        pass
+    return sorted(out)
+
+
+def _ro_connect(path: str):
+    import sqlite3
+    from urllib.parse import quote
+    return sqlite3.connect("file:" + quote(os.path.abspath(path)) + "?mode=ro", uri=True, timeout=2.0)
+
+
+def exitcf_view(path: str, now: datetime, bekleyen: list[str] | None = None) -> dict:
+    """`var/<bot>/exit_counterfactual.sqlite` ozeti (ecf_outcomes = exitcf-v1, ecf_modes = exitcf-v2), kurulum (setup) basina.
+    Yok/bozuk/bos -> {"var": False, "neden": kod}; asla istisna atmaz. Delta = alternatif net R - mevcut cikis (ayni yol, ayni maliyet)."""
+    import sqlite3
+    bekleyen = list(bekleyen or [])
+    if not path:
+        return {"var": False, "neden": "yapilandirma_yok"}
+    if not os.path.exists(path):
+        return {"var": False, "neden": "dosya_yok"}
+    lo = (now - timedelta(days=EXITCF_DAYS)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    hi = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    qs = ",".join("?" * len(_EXITCF_SOURCES))
+    try:
+        db = _ro_connect(path)
+    except Exception:  # noqa: BLE001
+        return {"var": False, "neden": "okunamadi"}
+    groups: dict[str, dict] = {}
+    last = {"v1": None, "v2": None}
+    try:
+        try:
+            ver = db.execute("SELECT MAX(version) FROM ecf_outcomes WHERE bot='learner'").fetchone()[0]
+            if ver is not None:
+                rows = db.execute(
+                    "SELECT source, run_id, trade_id, setup, role, value, net_r, computed_at FROM ecf_outcomes WHERE bot='learner' "
+                    f"AND version=? AND source IN ({qs}) AND entry_ts>=? AND entry_ts<? AND window_end_ts<=? AND net_r IS NOT NULL",
+                    [ver, *_EXITCF_SOURCES, lo, hi, hi]).fetchall()
+                last["v1"] = db.execute("SELECT MAX(computed_at) FROM ecf_outcomes WHERE bot='learner'").fetchone()[0]
+                by: dict[tuple, list] = {}
+                for r in rows:
+                    by.setdefault((r[0], r[1], r[2]), []).append(r)
+                for rs in by.values():
+                    bases = [r for r in rs if r[4] == "base" and _fnum(r[6]) is not None]
+                    if not bases:
+                        continue
+                    b = max(bases, key=lambda r: (str(r[7]), r[5]))
+                    g = groups.setdefault(str(b[3] or "?")[:16], {})
+                    g["islem_v1"] = g.get("islem_v1", 0) + 1
+                    for role in ("up", "down"):
+                        c = [r for r in rs if r[4] == role and _fnum(r[6]) is not None
+                             and (r[5] > b[5] if role == "up" else r[5] < b[5])]
+                        if c:
+                            a = min(c, key=lambda r: abs(r[5] - b[5]))
+                            k = g.setdefault(role, [0, 0.0])
+                            k[0] += 1
+                            k[1] += float(a[6]) - float(b[6])
+        except sqlite3.OperationalError:
+            pass                                                   # tablo yok: v1 kaniti yok
+        try:
+            ver = db.execute("SELECT MAX(version) FROM ecf_modes WHERE bot='learner'").fetchone()[0]
+            if ver is not None:
+                rows = db.execute(
+                    "SELECT source, run_id, trade_id, setup, variant, net_r FROM ecf_modes WHERE bot='learner' "
+                    f"AND version=? AND source IN ({qs}) AND entry_ts>=? AND entry_ts<? AND window_end_ts<=? AND net_r IS NOT NULL",
+                    [ver, *_EXITCF_SOURCES, lo, hi, hi]).fetchall()
+                last["v2"] = db.execute("SELECT MAX(computed_at) FROM ecf_modes WHERE bot='learner'").fetchone()[0]
+                by = {}
+                for r in rows:
+                    by.setdefault((r[0], r[1], r[2]), {})[r[4]] = r
+                for vs in by.values():
+                    off = vs.get("off")
+                    if off is None or _fnum(off[5]) is None:
+                        continue
+                    g = groups.setdefault(str(off[3] or "?")[:16], {})
+                    g["islem_v2"] = g.get("islem_v2", 0) + 1
+                    for mode in ("breakeven", "partial"):
+                        on = vs.get(mode)
+                        if on is not None and _fnum(on[5]) is not None:
+                            k = g.setdefault(mode, [0, 0.0])
+                            k[0] += 1
+                            k[1] += float(on[5]) - float(off[5])
+        except sqlite3.OperationalError:
+            pass
+    except sqlite3.Error:
+        return {"var": False, "neden": "bozuk"}
+    finally:
+        db.close()
+    if not groups:
+        return {"var": False, "neden": "kayit_yok"}
+    pend_for = {"up": "trail_atr:up", "breakeven": "exit:breakeven", "partial": "exit:partial"}
+
+    def part(g: dict, key: str) -> dict:
+        n, s = g.get(key, [0, None])
+        return {"n": n, "delta_r": round(s, 4) if s is not None and math.isfinite(s) else None}
+
+    kurulumlar = []
+    for ad in sorted(groups):
+        g = groups[ad]
+        r = {"kurulum": ad, "islem": max(g.get("islem_v1", 0), g.get("islem_v2", 0)),
+             "trail_yukari": part(g, "up"), "trail_asagi": part(g, "down"),
+             "basabas": part(g, "breakeven"), "kismi": part(g, "partial")}
+        r["bekleyen"] = [pend_for[k] for k in ("up", "breakeven", "partial") if g.get(k) and pend_for[k] in bekleyen]
+        kurulumlar.append(r)
+    return {"var": True, "pencere_gun": EXITCF_DAYS, "kurulumlar": kurulumlar, "bekleyen": [b for b in bekleyen if b in pend_for.values()],
+            "son_kosu_v1": last["v1"], "son_kosu_v2": last["v2"]}
+
+
+def haber_view(path: str, now: datetime) -> dict:
+    """`var/durum/haber_v1.json` onbellegi: Korku-Acgozluluk degeri + sinifi, en cok anilan <=3 coin ve tonu, onbellek yasi.
+    Yok/bozuk/bayat -> {"var": False, "neden": kod}; asla istisna atmaz."""
+    try:
+        from . import haber as H
+        d, err = _read_json_obj(path)
+        if d is None:
+            return {"var": False, "neden": err}
+        anlik = H.belge_coz(d)
+        if anlik is None:
+            return {"var": False, "neden": "sema_yanlis"}
+        made = parse_z(d.get("uretim"))
+        now_ms = int(now.timestamp() * 1000)
+        duygu = H.duygu_ozet(anlik, now_ms)
+        coins = []
+        for c in H.ISIMLER:
+            hb = H.coin_haber(anlik, c, now_ms)
+            e = (hb or {}).get(c)
+            if e and e["adet_24s"] > 0:
+                coins.append({"coin": c, "adet_24s": e["adet_24s"], "ton": e["ton"]})
+        coins.sort(key=lambda x: (-x["adet_24s"], x["coin"]))
+        if duygu is None and not coins:
+            return {"var": False, "neden": "bayat" if made else "uretim_yok",
+                    "yas_dk": round((now - made).total_seconds() / 60) if made else None}
+        return {"var": True, "uretim": fmt_z(made), "yas_dk": round((now - made).total_seconds() / 60) if made else None,
+                "duygu": {"deger": duygu["deger"], "sinif": duygu["sinif"], "sinif_tr": H.duygu_siniflari_tr(duygu["sinif"])} if duygu else None,
+                "coinler": coins[:3]}
+    except Exception:  # noqa: BLE001
+        return {"var": False, "neden": "okunamadi"}

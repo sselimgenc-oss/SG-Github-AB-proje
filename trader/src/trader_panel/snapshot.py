@@ -20,7 +20,7 @@ SNAP_CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-i
 
 
 def _paths() -> list[str]:
-    p = ["/api/status", "/api/budget", "/api/lesson", "/api/learning", "/api/tutarlilik", "/api/pbo", "/api/health", "/api/system"]
+    p = ["/api/status", "/api/budget", "/api/lesson", "/api/learning", "/api/tutarlilik", "/api/pbo", "/api/ciktikaniti", "/api/haber", "/api/health", "/api/system"]
     for b in BOTS:
         p += [f"/api/ledger?bot={b}", f"/api/curve?bot={b}", f"/api/risk?bot={b}"]
     return p

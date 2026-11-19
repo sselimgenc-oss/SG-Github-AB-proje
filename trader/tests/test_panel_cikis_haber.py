@@ -1,0 +1,183 @@
+"""Panel: cikis kaniti ve haber/duygu kartlari (salt okunur; kaynak yok/bozuk/bayat paneli bozmaz). Sentetik veri, kilitli donem disinda."""
+import json
+import sqlite3
+from datetime import timedelta
+
+import pytest
+
+from panel_support import NOW, Env, Running, z
+from trader_core import exit_counterfactual as X
+from trader_core import panel_data as P
+from trader_panel import snapshot as SN
+from trader_panel.data import PanelData, load_config
+
+
+@pytest.fixture()
+def env(tmp_path):
+    e = Env(tmp_path)
+    yield e
+    e.close()
+
+
+def pd_(env):
+    return PanelData(load_config(env.cfg_path), clock=lambda: NOW)
+
+
+def mk_store(path, outcomes=(), modes=()):
+    """Gercek DDL ile bos depo, sonra sentetik satirlar (kapanmis; pencere NOW'dan once)."""
+    st = X.ExitCfStore(str(path))
+    st.close()
+    db = sqlite3.connect(str(path))
+    ent = z(NOW - timedelta(days=10))
+    wend = z(NOW - timedelta(days=9))
+    for tid, setup, role, val, net in outcomes:
+        db.execute("INSERT INTO ecf_outcomes (bot,source,run_id,trade_id,pair,side,setup,entry_ts,param,value,role,exit_reason_sim,net_r,"
+                   "censored,window_end_ts,computed_at,version,registry_id) VALUES ('learner','paper','',?,'ETH/USDT','long',?,?,"
+                   "'trail_atr',?,?,'stop',?,0,?,?,1,'exitcf-v1')", (tid, setup, ent, val, role, net, wend, z(NOW - timedelta(hours=3))))
+    for tid, setup, variant, net in modes:
+        db.execute("INSERT INTO ecf_modes (bot,source,run_id,trade_id,pair,side,setup,entry_ts,trail_atr,variant,exit_reason_sim,net_r,"
+                   "censored,window_end_ts,computed_at,version,registry_id) VALUES ('learner','paper','',?,'ETH/USDT','long',?,?,3.0,?,"
+                   "'stop',?,0,?,?,1,'exitcf-v2')", (tid, setup, ent, variant, net, wend, z(NOW - timedelta(hours=2))))
+    db.commit()
+    db.close()
+
+
+def put(env, rel, text):
+    p = env.root / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+
+
+def haber_doc(**kw):
+    ms = int(NOW.timestamp() * 1000)
+    d = {"sema": "ml.haber.v1", "uretim": z(NOW - timedelta(minutes=20)),
+         "duygu": {"deger": 28, "sinif": "Fear", "ms": ms - 3600_000},
+         "basliklar": [{"t": ms - 600_000, "b": "Bitcoin surges past record", "ton": "pozitif"},
+                       {"t": ms - 700_000, "b": "BTC rally continues", "ton": "pozitif"},
+                       {"t": ms - 800_000, "b": "Ethereum hack fears", "ton": "negatif"},
+                       {"t": ms - 900_000, "b": "Solana update", "ton": "notr"}],
+         "haber_ms": ms - 600_000}
+    d.update(kw)
+    return d
+
+
+def test_exitcf_ok_per_setup(env):
+    mk_store(env.root / "var/learner/exit_counterfactual.sqlite",
+             outcomes=[(1, "T1", "base", 3.0, 1.0), (1, "T1", "up", 3.25, 1.5), (1, "T1", "down", 2.75, 0.5),
+                       (2, "T1", "base", 3.0, -1.0), (2, "T1", "up", 3.25, -0.5),
+                       (3, "R1", "base", 3.0, 0.2), (3, "R1", "up", 3.25, 0.1)],
+             modes=[(1, "T1", "off", 1.0), (1, "T1", "breakeven", 2.2), (1, "T1", "partial", 0.9),
+                    (2, "T1", "off", -1.0), (2, "T1", "breakeven", 0.0)])
+    r = pd_(env).ciktikaniti()
+    assert r["ok"] and r["var"]
+    t1 = next(k for k in r["kurulumlar"] if k["kurulum"] == "T1")
+    assert t1["islem"] == 2
+    assert t1["trail_yukari"] == {"n": 2, "delta_r": 1.0} and t1["trail_asagi"] == {"n": 1, "delta_r": -0.5}
+    assert t1["basabas"] == {"n": 2, "delta_r": 2.2} and t1["kismi"] == {"n": 1, "delta_r": -0.1}
+    r1 = next(k for k in r["kurulumlar"] if k["kurulum"] == "R1")
+    assert r1["basabas"]["n"] == 0 and r1["basabas"]["delta_r"] is None
+    assert r["son_kosu_v1"] and r["son_kosu_v2"] and r["bekleyen"] == []
+    json.dumps(r, allow_nan=False)
+
+
+def test_exitcf_pending_label_from_lesson(env):
+    mk_store(env.root / "var/learner/exit_counterfactual.sqlite",
+             modes=[(1, "T1", "off", 1.0), (1, "T1", "breakeven", 2.0)])
+    bek = P.exitcf_bekleyen({"open_requests": [{"param": "exit_breakeven", "from": 0, "to": 1},
+                                               {"param": "trail_atr", "from": 3.0, "to": 3.25},
+                                               {"param": "rr_min", "from": 1.5, "to": 1.25}],
+                             "proposals": [{"changes": {"exit_partial": 1}}]})
+    assert bek == ["exit:breakeven", "exit:partial", "trail_atr:up"]
+    assert P.exitcf_bekleyen({"open_requests": [{"param": "trail_atr", "from": 3.0, "to": 2.75}]}) == []
+    r = P.exitcf_view(str(env.root / "var/learner/exit_counterfactual.sqlite"), NOW, bek)
+    assert r["kurulumlar"][0]["bekleyen"] == ["exit:breakeven"]      # yalniz kaniti olan kipte etiket
+    assert r["bekleyen"] == ["exit:breakeven", "exit:partial", "trail_atr:up"]
+    # uc nokta: ders deposundaki acik talep (rr_min) etiket uretmez
+    assert pd_(env).ciktikaniti()["kurulumlar"][0]["bekleyen"] == []
+
+
+@pytest.mark.parametrize("make,neden", [(None, "dosya_yok"), ("garbage", "bozuk"), ("empty", "kayit_yok")])
+def test_exitcf_missing_corrupt_empty(env, make, neden):
+    p = env.root / "var/learner/exit_counterfactual.sqlite"
+    if make == "garbage":
+        p.write_bytes(b"bu bir sqlite degil" * 50)
+    elif make == "empty":
+        mk_store(p)
+    r = pd_(env).ciktikaniti()
+    assert r["ok"] is True and r["var"] is False and r["neden"] == neden
+
+
+def test_exitcf_old_store_without_modes_table(env):
+    p = env.root / "var/learner/exit_counterfactual.sqlite"
+    db = sqlite3.connect(str(p))
+    db.execute("CREATE TABLE meta (key TEXT)")
+    db.commit()
+    db.close()
+    r = pd_(env).ciktikaniti()
+    assert r["ok"] and r["var"] is False and r["neden"] == "kayit_yok"
+
+
+def test_haber_ok(env):
+    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc()))
+    r = pd_(env).haber()
+    assert r["ok"] and r["var"] and r["yas_dk"] == 20
+    assert r["duygu"] == {"deger": 28, "sinif": "Fear", "sinif_tr": "Korku"}
+    assert [c["coin"] for c in r["coinler"]] == ["BTC", "ETH", "SOL"]
+    assert r["coinler"][0] == {"coin": "BTC", "adet_24s": 2, "ton": "pozitif"}
+    assert r["coinler"][1]["ton"] == "negatif"
+
+
+def test_haber_partial_and_stale(env):
+    ms = int(NOW.timestamp() * 1000)
+    # haber bayat (6 saat+), duygu taze -> yalniz duygu
+    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc(haber_ms=ms - 7 * 3600_000)))
+    r = pd_(env).haber()
+    assert r["var"] and r["duygu"]["deger"] == 28 and r["coinler"] == []
+    # ikisi de bayat -> veri yok
+    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc(haber_ms=ms - 7 * 3600_000,
+                                                              duygu={"deger": 28, "sinif": "Fear", "ms": ms - 30 * 3600_000})))
+    r = pd_(env).haber()
+    assert r["ok"] and r["var"] is False and r["neden"] == "bayat"
+
+
+@pytest.mark.parametrize("raw,neden", [(None, "dosya_yok"), ("{bozuk", "bozuk"), ("[1]", "bozuk"),
+                                       (json.dumps({"sema": "x"}), "sema_yanlis"),
+                                       (json.dumps({"sema": "ml.haber.v1", "duygu": 5, "basliklar": []}), "sema_yanlis")])
+def test_haber_missing_corrupt(env, raw, neden):
+    if raw is not None:
+        put(env, "var/durum/haber_v1.json", raw)
+    r = pd_(env).haber()
+    assert r["ok"] is True and r["var"] is False and r["neden"] == neden
+
+
+def test_views_never_raise_on_bad_input():
+    assert P.exitcf_view("", NOW)["var"] is False
+    assert P.haber_view("", NOW)["var"] is False
+    assert P.exitcf_bekleyen(None) == [] and P.exitcf_bekleyen({"open_requests": "x", "proposals": [1]}) == []
+
+
+def test_server_endpoints_and_snapshot(env):
+    mk_store(env.root / "var/learner/exit_counterfactual.sqlite", modes=[(1, "T1", "off", 1.0), (1, "T1", "partial", 2.0)])
+    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc()))
+    run = Running(env)
+    try:
+        assert run.get("/api/ciktikaniti")["var"] is True
+        assert run.get("/api/haber")["duygu"]["deger"] == 28
+    finally:
+        run.stop()
+    html = SN.render(pd_(env))
+    assert "/api/ciktikaniti" in html and "/api/haber" in html
+    data = SN.collect(pd_(env))
+    assert data["/api/ciktikaniti"]["kurulumlar"][0]["kismi"]["n"] == 1
+    assert data["/api/haber"]["var"] is True
+
+
+def test_snapshot_and_server_with_empty_sources(env):
+    data = SN.collect(pd_(env))
+    assert data["/api/ciktikaniti"]["var"] is False and data["/api/haber"]["var"] is False
+    assert data["/api/pbo"]["ok"] is True
+    run = Running(env)
+    try:
+        assert run.get("/api/ciktikaniti")["neden"] == "dosya_yok" and run.get("/api/haber")["neden"] == "dosya_yok"
+    finally:
+        run.stop()
