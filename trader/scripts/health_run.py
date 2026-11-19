@@ -691,7 +691,13 @@ EK_METIN = {   # parmak izi -> (baslik, anlami, duzeldi)
     "tutarlilik|sapma": ("Kâğıt ile geri test arasında fark var",
                          "Haftalık tutarlılık raporu bir sapma buldu; ayrıntı panoda Doğrulama sekmesinde. İşlemler etkilenmez.",
                          "Kâğıt ile geri test yeniden uyumlu"),
+    "disk|dolu": ("Disk dolmak üzere", "Veri diskinin %80'inden fazlası dolu; haftalık bakım eski çıktıları temizler, yetmezse yer açılmalı. İşlemler etkilenmez.",
+                  "Disk doluluğu yeniden normal"),
+    "disk|kritik": ("Disk neredeyse dolu", "Veri diskinin %95'inden fazlası dolu; yer açılmazsa kayıtlar yazılamaz.",
+                    "Disk doluluğu kritik seviyeden indi"),
 }
+DISK_UYARI_ORAN = 0.80      # var/ dosya sisteminde kullanim >= %80 -> WARN
+DISK_KRITIK_ORAN = 0.95     # >= %95 -> ayrica CRIT
 
 
 def ek_uyari_plani(ek: list, onceki, now: datetime):
@@ -709,6 +715,8 @@ def ek_uyari_plani(ek: list, onceki, now: datetime):
         yeni[fp] = {"ilk": e.get("ilk") or H._iso(now), "son": H._iso(now) if gonder else e.get("son")}
         if gonder:
             isaret = "⚠️ Dikkat" if a.level is H.Status.WARN else "🚨 Sorun"
+            if fp.startswith("disk|") and "(%" in a.title:      # doluluk yuzdesi basliga (metin sabit kalir)
+                baslik = f"{baslik} (%{a.title.rsplit('(%', 1)[1]}"
             out.append(H.Alert(a.level, a.code, f"{isaret}: {baslik}", anlam, f"{fp}|{H._iso(now)}", now))
     for fp, e in eski.items():
         if fp not in yeni:
@@ -719,6 +727,27 @@ def ek_uyari_plani(ek: list, onceki, now: datetime):
 
 
 CT_KADRO_BAYAT_DK = 45   # C1 (19 Kasim: CT kadro eklendi): son basarili okuma bu sureden eskiyse C1 aday uretmez
+
+
+def disk_alerts(env: dict, now: datetime, var_dir: str | None = None, usage_fn=None) -> list:
+    """var/ dosya sisteminde kullanim >= %80 -> WARN `disk|dolu` (\"Disk dolmak üzere (%NN)\"); >= %95 -> ayrica CRIT `disk|kritik`.
+    Okunamazsa uyari yok. usage_fn: shutil.disk_usage yerine (test)."""
+    import shutil
+    d = Path(var_dir) if var_dir else data_root(env) / "var"
+    try:
+        u = (usage_fn or shutil.disk_usage)(str(d))
+    except OSError:
+        return []
+    if not u.total:
+        return []
+    oran = (u.total - u.free) / u.total          # df ile ayni olcu degil (kok payi yok) ama bilgi amacli yeterli
+    pct = int(oran * 100)
+    out = []
+    if oran >= DISK_UYARI_ORAN:
+        out.append(H.Alert(H.Status.WARN, "disk_dolu", f"Disk dolmak üzere (%{pct})", "", "disk|dolu", now))
+    if oran >= DISK_KRITIK_ORAN:
+        out.append(H.Alert(H.Status.CRIT, "disk_kritik", f"Disk neredeyse dolu (%{pct})", "", "disk|kritik", now))
+    return out
 
 
 def ct_kadro_alerts(env: dict, now: datetime, var_dir: str | None = None) -> list:
@@ -944,7 +973,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
         except OSError:
             maint = None
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
-    ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now)
+    ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now) + disk_alerts(env, now)
     ek_gonder, new_state["ek_uyarilar"] = ek_uyari_plani(ek, state.get("ek_uyarilar"), now)
     alerts.extend(ek_gonder)
     if reset:

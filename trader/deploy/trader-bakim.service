@@ -1,0 +1,30 @@
+[Unit]
+Description=Trader haftalik disk bakimi (sqlite WAL checkpoint/VACUUM + eski cikti temizligi; izin listesi, defterlere dokunmaz)
+Documentation=file:///opt/trader/docs/sunucu-kurulum.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+Environment=PYTHONUNBUFFERED=1
+# var yolu betigin varsayilani (/opt/trader/var). Canli acik defterlerde (market/ledger/state) yalniz PASSIVE checkpoint; VACUUM yalniz kilit hemen alinirsa. Silme: yalniz izin listesi, 90 gun.
+# Hata yutulur, cikis 0 (bir dosyanin sorunu digerlerini durdurmaz).
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/bakim_run.py
+TimeoutStartSec=1800
+# Saf stdlib (sqlite3); VACUUM sayfa onbellegini sinirli tutar; olculen tepe RSS ~47 MB (65 MB sentetik defter VACUUM) -> 128M tavan
+MemoryHigh=96M
+MemoryMax=128M
+CPUQuota=20%
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+# var YAZILABILIR: WAL checkpoint (-wal/-shm) ve silme; ag yok
+ReadWritePaths=/opt/trader/var
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX

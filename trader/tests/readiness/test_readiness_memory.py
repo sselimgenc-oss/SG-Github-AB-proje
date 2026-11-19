@@ -72,6 +72,19 @@ def test_haber_hourly_oneshot_is_bounded_and_fits_slice():
     assert "OnCalendar=hourly" in tm and "Persistent=true" in tm and "WantedBy=timers.target" in tm
 
 
+def test_bakim_weekly_oneshot_is_bounded_and_fits_slice():
+    """Haftalik disk bakimi (pazar 04:20 UTC): saf stdlib sqlite; olculen tepe RSS ~47 MB (65 MB defter VACUUM) -> 128M tavan; idle IO."""
+    m = _mem("trader-bakim.service")
+    assert m == 128
+    kv = _kv("trader-bakim.service")
+    assert kv["Slice"] == "trader.slice" and kv["Nice"] == "19" and kv["IOSchedulingClass"] == "idle"
+    assert kv["ReadWritePaths"] == "/opt/trader/var" and kv["ProtectSystem"] == "strict" and kv["NoNewPrivileges"] == "true"
+    assert m <= int(_kv("trader.slice")["MemoryMax"][:-1]) // 2
+    assert 1170 + 64 + 96 + 256 + 400 + 128 + m < RAM_MB + SWAP_MB
+    tm = (DEPLOY / "trader-bakim.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=Sun *-*-* 04:20:00 UTC" in tm and "Persistent=true" in tm and "WantedBy=timers.target" in tm
+
+
 def test_dd9_budget_with_live_and_testnet_units():
     """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
     Toplam sert tavanlar trader.slice MemoryMax (1300M) ile sinirlanir; RAM+takas icinde kalir."""

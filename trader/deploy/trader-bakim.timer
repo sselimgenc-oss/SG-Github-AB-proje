@@ -1,0 +1,10 @@
+[Unit]
+Description=Trader haftalik disk bakimi zamanlayicisi (pazar 04:20 UTC)
+
+[Timer]
+OnCalendar=Sun *-*-* 04:20:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
