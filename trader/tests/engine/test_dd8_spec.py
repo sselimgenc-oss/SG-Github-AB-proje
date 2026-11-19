@@ -453,6 +453,7 @@ def make_tree(tmp, env="testnet", *, tag="testnet-sub", absolute=True, overlay_o
     ov["live"]["account_tag"] = tag
     if env == "live":
         ov["mode"] = "live"
+        ov["veto_mode"] = "required"        # testnet overlay'i veto_mode='off' tasir; canli veto'yu zorunlu tutar
         ov["var_dir"] = "var-live"
         ov["kill_file"] = "shared/live/KILL"
         ov["pause_file"] = "shared/live/PAUSE"

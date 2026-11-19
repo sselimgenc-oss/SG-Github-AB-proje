@@ -50,6 +50,18 @@ def test_testnet_mode_accepted(tmp_path):
     assert cfg.live is not None and cfg.live.account_tag == "sub-acct-01"
 
 
+def test_testnet_veto_off_accepted(tmp_path):
+    """DD-12 (veto kaldirildi): testnet veto_mode='off' ile calisir (veto.json gerekmez)."""
+    cfg = _load(tmp_path, {"mode": "testnet", "live": LIVE_OK, "veto_mode": "off"})
+    assert cfg.mode == "testnet" and cfg.veto_mode == "off"
+
+
+def test_live_veto_off_still_rejected(tmp_path, monkeypatch):
+    with pytest.raises(ConfigError):
+        _load(tmp_path, {"mode": "live", "live": LIVE_OK, "veto_mode": "off"}, env={"LIVE_CONFIRM": "sub-acct-01"},
+              monkeypatch=monkeypatch)
+
+
 def test_live_mode_accepted_with_matching_confirm(tmp_path, monkeypatch):
     cfg = _load(tmp_path, {"mode": "live", "live": LIVE_OK}, env={"LIVE_CONFIRM": "sub-acct-01"}, monkeypatch=monkeypatch)
     assert cfg.mode == "live" and cfg.bot == "learner"

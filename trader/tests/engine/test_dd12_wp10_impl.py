@@ -165,3 +165,18 @@ def test_script_end_to_end_with_real_ledger(tmp_path):
                  "--paper-models-csv", str(tmp_path / "pm.csv")], now_fn=lambda: NOW, env={})
     assert rc == 0 and (tmp_path / "pm.csv").read_text().splitlines().__len__() == 2
     assert R.main(["--once", "--ledger", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW, env={}) == 3
+
+
+def test_packageset_runtime_dir_wins_then_seed_fallback(tmp_path):
+    """Calisma zamani dizini once; depodaki tohum yalniz calisma zamaninda olmayan dosyayi tamamlar (tohum yazilmaz)."""
+    runtime, seed = tmp_path / "runtime", tmp_path / "seed"
+    P.save_package(T.train_arm("M1@1h", _synth("M1@1h"), created_at=NOW), seed)
+    P.save_package(T.train_arm("M1@4h", _synth("M1@4h"), created_at=NOW), seed)
+    P.save_package(T.train_arm("M1@4h", _synth("M1@4h", 40), created_at=NOW), runtime)
+    seed_before = {p.name: p.read_bytes() for p in seed.glob("*.json")}
+    ps = MP.PackageSet(runtime, fallback_dirs=(seed,))
+    r = ps.reload(now=NOW)
+    assert r["loaded"] == ["M1@1h", "M1@4h"]
+    assert json.loads((runtime / "M1@4h.json").read_text())["meta"]["n_train"] == 40
+    assert not (runtime / "M1@1h.json").exists()                              # tohum okunur, kopyalanmaz
+    assert {p.name: p.read_bytes() for p in seed.glob("*.json")} == seed_before  # tohum degismez

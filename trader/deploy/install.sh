@@ -346,6 +346,9 @@ install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var" "$TRADE
   "$TRADER_DIR/var/telegram" "$TRADER_DIR/var-testnet" "$TRADER_DIR/shared/testnet" \
   "$TRADER_DIR/var-live" "$TRADER_DIR/shared/live"
 install -d -m 2770 -o "$TRADER_USER" -g "$TG_GROUP" "$TRADER_DIR/var/telegram/outbox"
+# gece egitimi calisma zamani ciktilari (git-izli models/ ve research/ yazilmaz): var/learner/models/{setup_filter,pa_proposer}
+install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/learner" "$TRADER_DIR/var/learner/models" \
+  "$TRADER_DIR/var/learner/models/setup_filter" "$TRADER_DIR/var/learner/models/pa_proposer"
 install -d -m 0750 -o root -g root /var/backups/trader
 # veto birimi artik trader olarak calisir (DD-9 §4.2): onceden root'un yazdigi dosyalar trader'a gecer
 chown -hR "$TRADER_USER:$TRADER_USER" "$TRADER_DIR/shared/veto" "$TRADER_DIR/user_data"
@@ -532,6 +535,12 @@ enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
 # WP-3: motor (yazar) yeni kodla yeniden baslar => defter sema gocu motor icinde, premigrate yedegiyle olur
+if [ "$CODE_CHANGED" -eq 1 ]; then
+  # besleme (feed) once yeniden baslar: motor yeni 44-parite konfigurasyonunu feed'den alir
+  if systemctl is-active --quiet trader-feed.service 2>/dev/null; then
+    systemctl restart trader-feed.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-feed.service (kod degisti)" || echo "UYARI: trader-feed.service yeniden baslatilamadi (systemctl status trader-feed.service)"
+  fi
+fi
 if [ "$CODE_CHANGED" -eq 1 ] && [ -n "$ACTIVE_ENGINES" ]; then
   say "Kod degisti: calisan motorlar yeniden baslatiliyor (defter sema gocu motor icinde yapilir)"
   for u in $ACTIVE_ENGINES; do

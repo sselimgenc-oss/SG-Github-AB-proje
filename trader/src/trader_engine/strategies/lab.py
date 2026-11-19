@@ -67,7 +67,7 @@ class _CoreInner:
 
 class PriceActionLab:
     decision_tf = DECISION_TF                                   # motor karar adimi (15 dk); strateji bilgisi, motor okur
-    accepted_prev_strategies = ("price_action_v1", "price_action_v1_full_ml")   # acik pozisyonla etiket gecisine izin
+    accepted_prev_strategies = ("price_action_v1", "price_action_v1_full_ml", "price_action_v1_ml", "price_action_v1_full")   # acik pozisyonla etiket gecisine izin
 
     def __init__(self, arms: Sequence[str] = DEFAULT_ARMS, *, block_same_bar_reentry: bool = True) -> None:
         self.counters: Counter = Counter()

@@ -66,3 +66,28 @@ def test_create_user_version_same_params_still_rejected_by_default(tmp_path):
             assert "no_change" in str(e)
     finally:
         led.close()
+
+
+def test_strategy_update_keeps_active_params_not_defaults(tmp_path):
+    """Aktif parametreler varsayilandan farkliyken etiket tasima onlari korur (DEFAULT_SIGNAL_PARAMS'a dusmez)."""
+    from trader_core.signals import DEFAULT_SIGNAL_PARAMS
+    d = _cfgdir(tmp_path)
+    assert _run(d) == 0
+    db = str(tmp_path / "var" / "learner" / "ledger.sqlite")
+    led = L.open_ledger(db, "learner", create=False)
+    try:
+        base = {k: getattr(DEFAULT_SIGNAL_PARAMS, k) for k in L.PARAM_KEYS}
+        changed = dict(base)
+        key = next(k for k in L.PARAM_KEYS if isinstance(base[k], float) and base[k] > 0)
+        changed[key] = base[key] * 1.05
+        vid = led.create_user_version(changed, reason="test degisiklik")
+        led.activate_version(vid, actor="user", reason="test degisiklik")
+        cur = led.get_active_params()
+        assert cur.params_hash != L._hash_params(base)
+    finally:
+        led.close()
+    assert _run(d, "--env", "paper", "--reason", "strategy_update") == 0
+    a, r = _active(tmp_path)
+    assert parse_label(r)[0] == "price_action_lab_ml"
+    assert a.params_hash == cur.params_hash and a.params_hash != L._hash_params(base)
+    assert float(a.params[key]) == float(changed[key])

@@ -113,8 +113,8 @@ def test_config():
     with pytest.raises(errors.ConfigError):
         config.apply_overrides(cfg, max_trade_risk=0.03)
     assert config.apply_overrides(cfg, veto_mode="off").veto_mode == "off"      # DD-12 WP-06a: kagitta veto kapali gecerli
-    with pytest.raises(errors.ConfigError):                                       # testnet/canli: veto_mode='off' yasak
-        config.apply_overrides(cfg, mode="testnet", veto_mode="off")
+    with pytest.raises(errors.ConfigError):                                       # canli: veto_mode='off' yasak (live 'required' zorunlu)
+        config.apply_overrides(cfg, mode="live", veto_mode="off")
     ok = config.apply_overrides(cfg, mode="backtest", veto_mode="off",
                                 cost={"fill_model": "legacy_compat", "trigger_source": "last",
                                       "granularity": "15m"})

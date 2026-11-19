@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Gece egitimi (DD-12 WP-10 kurulum suzgeci; WP-18 M1 gece egitimi). 03:10 UTC, tek oneshot birim (MemoryMax).
 
-1) Kurulum suzgeci (WP-10; yalniz numpy): defter salt okunur; `models/setup_filter/<arm>.json` (+ `.prev.json`).
+1) Kurulum suzgeci (WP-10; yalniz numpy): defter salt okunur; `var/learner/models/setup_filter/<arm>.json` (+ `.prev.json`).
 2) M1 (`trader_ml.pa_proposer`, WP-18 (b)): tarihsel barlar (`var/history`, kilit baslangicindan ONCE kesilir) + kagit
    kayitlari (`scripts/export_paper_records.py` ile AYNI disa aktarma: kilit penceresiyle kesisen satirlar dusurulur) ->
-   `models/pa_proposer/M1@<tf>.json` (+ `.prev.json`). Bellek: ciftbasina kuyruk (tavan 50 000 satir; spec §5.2), feather
+   `var/learner/models/pa_proposer/M1@<tf>.json` (+ `.prev.json`). Bellek: ciftbasina kuyruk (tavan 50 000 satir; spec §5.2), feather
    pyarrow ile okunur. Olcum (WP-18): tepe RSS ~263 MB; pandas `trader_core.indicators` (dondurulmus) uzerinden gelir
    (~100 MB). Sert tavan: deploy/trader-ml-retrain.service MemoryMax=350M.
-Her iki kol `research/paper_models.csv`'ye satir ekler. Kilit donemi (2026-05-01..2026-11-01) egitime GIRMEZ.
+Her iki kol `var/learner/paper_models.csv`'ye satir ekler.
+Ciktilar YALNIZ calisma zamani dizinine yazilir (git-izli dosya asla degismez); okuyucular once calisma zamani dizinine,
+sonra depodaki tohum paketlere (`models/pa_proposer/`, `research/paper_models.csv`) bakar. Kilit donemi (2026-05-01..2026-11-01) egitime GIRMEZ.
 Cikis: 0 basarili (model olusmayan kol hata degil: `ml_no_model`); 1 kullanim; 3 defter acilamadi/yazma/egitim hatasi.
 """
 from __future__ import annotations
@@ -129,11 +131,11 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
     ap.add_argument("--once", action="store_true", required=True)
     ap.add_argument("--ledger")
     ap.add_argument("--cf")
-    ap.add_argument("--models-dir", default="models/setup_filter")
-    ap.add_argument("--paper-models-csv", default="research/paper_models.csv")
+    ap.add_argument("--models-dir", default="var/learner/models/setup_filter")
+    ap.add_argument("--paper-models-csv", default="var/learner/paper_models.csv")
     ap.add_argument("--max-rows", type=int, default=T.MAX_ROWS)
     ap.add_argument("--history-dir", default="var/history")
-    ap.add_argument("--m1-models-dir", default="models/pa_proposer")
+    ap.add_argument("--m1-models-dir", default="var/learner/models/pa_proposer")
     ap.add_argument("--m1-tfs", default=",".join(M1_TFS))
     ap.add_argument("--no-m1", action="store_true", help="yalniz kurulum suzgeci (M1 atlanir)")
     try:

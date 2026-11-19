@@ -160,8 +160,12 @@ class SetupDecision:
 
 
 class PackageSet:
-    def __init__(self, models_dir: str | Path, *, allow_paper_only: bool = True) -> None:
+    def __init__(self, models_dir: str | Path, *, allow_paper_only: bool = True,
+                 fallback_dirs: tuple[str | Path, ...] = ()) -> None:
+        # models_dir: calisma zamani dizini (gece egitimi burayi yazar); fallback_dirs: depodaki tohum (seed) paketler.
+        # Ayni dosya adi iki dizinde de varsa calisma zamani kazanir; yalniz tohumda olan dosya tohumdan yuklenir.
         self.dir = Path(models_dir)
+        self.fallback_dirs = tuple(Path(d) for d in fallback_dirs)
         self.allow_paper_only = allow_paper_only
         self._views: dict[str, MlModelView] = {}
         self._sig: dict[str, tuple] = {}
@@ -178,10 +182,12 @@ class PackageSet:
 
     def reload(self, *, now: datetime | None = None) -> dict:
         loaded, removed = [], []
-        files = {}
-        if self.dir.is_dir():
-            for p in sorted(self.dir.glob("*.json")):
-                if p.name.endswith(".prev.json") or p.name.startswith("."):
+        files: dict[str, Path] = {}
+        for d in (self.dir, *self.fallback_dirs):          # calisma zamani once; tohum yalniz eksik dosyayi tamamlar
+            if not d.is_dir():
+                continue
+            for p in sorted(d.glob("*.json")):
+                if p.name.endswith(".prev.json") or p.name.startswith(".") or p.name in files:
                     continue
                 files[p.name] = p
         new_views: dict[str, MlModelView] = {}

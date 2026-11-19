@@ -212,8 +212,8 @@ def _init_ledger_work(cfg, reason: str, strategy: str | None) -> int:
             if parse_label(cur_reason) == parse_label(label):
                 print(f"etkin surum zaten {label}: dokunulmadi")
                 return EXIT_OK
-            # strateji etiketi degisimi: params ayni kalir, yalniz etiket tasinir
-            vid = led.create_user_version(params, reason=f"{label} {reason}", allow_same_params=True)
+            # strateji etiketi degisimi: params ayni kalir (AKTIF params, varsayilan DEGIL), yalniz etiket tasinir
+            vid = led.create_user_version(dict(cur.params), reason=f"{label} {reason}", allow_same_params=True)
             led.activate_version(vid, actor="user", reason=f"{label} {reason}")
             print(f"strateji etiketi guncellendi: {'@'.join(x for x in parse_label(cur_reason) if x)} -> {label} (surum {vid})")
     finally:

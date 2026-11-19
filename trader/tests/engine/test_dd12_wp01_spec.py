@@ -49,7 +49,7 @@ CAPS = {"kripto_buyuk": 4, "kripto_diger": 6, "hisse": 5, "hisse_teknoloji": 3, 
 PINNED_SHA = {
     "engine.base.json": "ba218ea0404803c9e5af7ffbd276fad79b6d0af714c94150172f7d56e674c328",   # WP-06a: yalniz veto_config yolu
     "engine.learner.json": "30ca2842c40cacafbf6cdd90c9e6f1f54fc62b9a9ec913476d1399ac5352cb12",
-    "engine.testnet.json": "4411ff38fcbe987ef6445c6f9b5c0c614aa36eb2604bb060a110cfc73ffef926",
+    "engine.testnet.json": "4ec3d09f85862b1f70a0129bea4444b09c8c626c7840eb70eb1b6ed5ef84ca5e",
     "engine.live.json": "feb22c1c4db3b705d44d793836139d588d999fb44095c0bed1812e90c037b47e",
 }
 UNIT_SHA = {
@@ -110,7 +110,8 @@ def _clusters_of(cfg):
 def baseline(tmp_path_factory):
     """HEAD 0fc8b5c kaynak agaci + onun yukledigi configlerin dokumu."""
     d = tmp_path_factory.mktemp("baseline")
-    tar = subprocess.run(["git", "-C", str(ROOT), "archive", BASELINE_COMMIT, "src"], check=True, capture_output=True).stdout
+    # src VE config birlikte: eski yukleyici eski config ile calisir (testnet veto_mode=off yeni konfigurasyon, DD-12 veto kaldirma)
+    tar = subprocess.run(["git", "-C", str(ROOT), "archive", BASELINE_COMMIT, "src", "config"], check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(d)], input=tar, check=True)
     script = textwrap.dedent("""
         import dataclasses, json, sys
@@ -123,8 +124,8 @@ def baseline(tmp_path_factory):
         print(json.dumps(out, default=str, sort_keys=True))
     """)
     env = dict(os.environ, PYTHONPATH=str(d / "src"))
-    r = subprocess.run([sys.executable, "-c", script, str(CONFIG)], check=True, capture_output=True, text=True, env=env)
-    return json.loads(r.stdout)
+    r = subprocess.run([sys.executable, "-c", script, str(d / "config")], check=True, capture_output=True, text=True, env=env)
+    return json.loads(r.stdout.replace(str(d), str(ROOT)))     # goreli yollar arsivde farkli koke cozulur: ayni repo koküne esle
 
 
 def _cur_dump(envname):
@@ -141,6 +142,12 @@ def test_dt1_katmansiz_yukleme_onceki_engineconfig_ile_esit(baseline, envname):
     cur = _cur_dump(envname)
     old = baseline["cfg"][str(envname)]
     for k, v in old["cfg"].items():
+        if envname == "testnet" and k == "veto_mode":      # tek beklenen fark: testnet veto kaldirildi (off)
+            assert v == "required" and cur["cfg"][k] == "off"
+            continue
+        if k == "veto_config" and v == "config/veto.json":  # WP-06a yeniden adlandirma (engine.base.json), beklenen
+            assert cur["cfg"][k] == "config/veto.live.json"
+            continue
         assert cur["cfg"][k] == v, f"{envname}: alan {k} degisti"
     assert cur["risk"] == old["risk"]
 

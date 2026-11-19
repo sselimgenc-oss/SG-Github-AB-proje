@@ -6,6 +6,7 @@ Stop = giris -/+ 1,5 ATR, hedef = giris +/- 3 ATR (egitim etiketiyle ayni kurall
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -39,10 +40,13 @@ ML_SCORED = False
 EXIT_MODE = "target"
 PRIORITY = 90
 FEATURES = {"m1_body": "body_ratio", "m1_wick": "wick_ratio", "m1_rr": "rr"}
-MODELS_DIR = Path(__file__).resolve().parents[4] / "models" / "pa_proposer"
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+SEED_MODELS_DIR = _REPO_ROOT / "models" / "pa_proposer"   # depodaki tohum paketler (salt okunur; asla yazilmaz)
+# calisma zamani paketleri (gece egitimi burayi yazar); TRADER_ML_RUNTIME_DIR ile degistirilebilir (test/ozel kurulum)
+MODELS_DIR = Path(os.environ.get("TRADER_ML_RUNTIME_DIR") or (_REPO_ROOT / "var" / "learner" / "models")) / "pa_proposer"
 RR = PF.TARGET_ATR / PF.STOP_ATR
 
-_PS = PackageSet(MODELS_DIR)
+_PS = PackageSet(MODELS_DIR, fallback_dirs=(SEED_MODELS_DIR,))
 
 
 def compute(inp: ArmInput):

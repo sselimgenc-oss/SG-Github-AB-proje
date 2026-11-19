@@ -127,7 +127,7 @@ FROZEN_SHA256 = {
     "src/trader_engine/holdout.py": "ea854d9567a1fe791f810911b8822a25f7fa37c9a111b7b9994fe9ff0406e715",
     "config/engine.base.json": "ba218ea0404803c9e5af7ffbd276fad79b6d0af714c94150172f7d56e674c328",
     "config/engine.learner.json": "30ca2842c40cacafbf6cdd90c9e6f1f54fc62b9a9ec913476d1399ac5352cb12",
-    "config/engine.testnet.json": "4411ff38fcbe987ef6445c6f9b5c0c614aa36eb2604bb060a110cfc73ffef926",
+    "config/engine.testnet.json": "4ec3d09f85862b1f70a0129bea4444b09c8c626c7840eb70eb1b6ed5ef84ca5e",
     "config/engine.live.json": "feb22c1c4db3b705d44d793836139d588d999fb44095c0bed1812e90c037b47e",
     "src/trader_engine/order_manager.py": "1a8a93daf39dabacd62356fb59a3a09d87634fe6a7ada7afa94171d100605077",
     "research/s2_run.py": "66710418f9be36225b757f9d4a1158b1e9093db5f7df131572c639e3958b21a7",

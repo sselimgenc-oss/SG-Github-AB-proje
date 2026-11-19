@@ -1,5 +1,6 @@
 {
   "mode": "testnet",
+  "veto_mode": "off",
   "var_dir": "var-testnet",
   "kill_file": "shared/testnet/KILL",
   "pause_file": "shared/testnet/PAUSE",

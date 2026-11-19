@@ -644,11 +644,23 @@ PA_PROPOSER_MAX_AGE_DAYS = 8     # DD-12 WP-14 (spec 5.3): M1 paketi 8 gunden es
 def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) -> list:
     """M1 (pa_proposer) paket tazeligi: models/pa_proposer/*.json (.prev.json yok sayilir). Paket yok -> WARN; created_at 8 gunden
     eski ya da okunamayan -> WARN. Motor etkilenmez (M1 aday uretmez); yalniz bilgi amacli uyari."""
-    d = Path(models_dir or env.get("PA_PROPOSER_MODELS_DIR") or Path(__file__).resolve().parents[1] / "models" / "pa_proposer")
-    files = sorted(p for p in d.glob("*.json") if not p.name.endswith(".prev.json")) if d.is_dir() else []
+    root = Path(__file__).resolve().parents[1]
+    if models_dir:                       # acik dizin (test/elle): yalniz o dizin
+        dirs = [Path(models_dir)]
+    else:                                # calisma zamani (gece egitimi) once; depodaki tohum yalniz eksik dosyayi tamamlar
+        dirs = [Path(env.get("PA_PROPOSER_MODELS_DIR") or (root / "var" / "learner" / "models" / "pa_proposer")),
+                root / "models" / "pa_proposer"]
+    seen: dict[str, Path] = {}
+    for d in dirs:
+        if d.is_dir():
+            for p in sorted(d.glob("*.json")):
+                if not p.name.endswith(".prev.json"):
+                    seen.setdefault(p.name, p)
+    files = [seen[k] for k in sorted(seen)]
+    d = dirs[0]
     if not files:
         return [H.Alert(H.Status.WARN, "pa_proposer_missing", "M1 paketi yok",
-                        f"{d} altinda M1 paketi bulunamadi; M1 aday uretmiyor.", "pa_proposer|missing", now)]
+                        f"{d} ve tohum dizini altinda M1 paketi bulunamadi; M1 aday uretmiyor.", "pa_proposer|missing", now)]
     stale = []
     for p in files:
         try:

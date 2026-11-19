@@ -18,7 +18,7 @@ Yollar (kurulum betiğindeki gibi): kod `/home/trader/SG-Github-AB-proje/trader`
 
 ---
 
-## Adım 2: Mevcut sürümü görün
+## Adım 2: Mevcut sürümü görün ve yedek alın
 
 Sunucuda:
 
@@ -27,6 +27,15 @@ cat /etc/trader-release
 ```
 
 **Kontrol:** `COMMIT=...` satırı görünüyor. Bu, şu anki sürümdür (kurulumdan sonra değişecek).
+
+Kurulumdan ÖNCE elle yedek alın (defter, durum ve veto dosyaları; kurulum bunlara dokunur):
+
+```
+systemctl start trader-backup.service
+systemctl show trader-backup.service -p Result -p ExecMainStatus
+```
+
+**Kontrol:** `Result=success` ve `ExecMainStatus=0`. Başka bir şey görürseniz kuruluma geçmeyin, çıktıyı bana bildirin.
 
 ---
 
@@ -44,11 +53,59 @@ COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh
 
 **Kontrol:** `cat /etc/trader-release` çıktısı `COMMIT=<KOD>` gösteriyor.
 
-**Not:** Betik testnet motorunu, anahtar dolu ise, kendisi başlatabilir. Bir sonraki adım bunu durdurur.
+**Not:** Betik testnet motorunu, anahtar dolu ise, kendisi başlatabilir. Adım 6 bunu durdurur.
+
+**Not:** Kod değiştiyse install.sh önce besleme birimini (`trader-feed`), sonra çalışan motorları yeniden başlatır. Motorlar 44 çiftlik yapılandırmayı bu sayede besleme üzerinden alır.
 
 ---
 
-## Adım 4: Testnet motorunu durdurun (dolaşan çıkış kuyruğu için)
+## Adım 4: Besleme (feed) birimini doğrulayın
+
+install.sh kod değiştiyse feed'i zaten yeniden başlattı. Yine de çalıştırmak zararsızdır:
+
+```
+systemctl restart trader-feed.service
+```
+
+Besleme 44 çifti izlemeye başlayana kadar 1-2 dakika bekleyin. Ardından:
+
+```
+systemctl is-active trader-feed.service
+journalctl -u trader-feed.service -n 100 --no-pager | grep -i "cift\|pair"
+systemctl show trader-feed -p MemoryPeak
+```
+
+**Kontrol:**
+- `active`.
+- Günlükte 44 çift yazıyor. Günlük satır biçimi farklıysa pano kontrolü (Adım 12): kâğıt botta 44 çift görünmeli.
+- `MemoryPeak=` değerini not alın ve bana bildirin.
+
+Feed 44 çifte ulaşmadan öğrenen motoru (Adım 5) başlatmayın; motor eksik veriyle kural kontrolüne takılır.
+
+---
+
+## Adım 5: Kâğıt öğrenenin strateji etiketini değiştirin (price_action_lab_ml)
+
+Kurulum ve besleme tamam olduktan sonra, dolaşan çıkış kuyruğundan (Adım 6-9) ÖNCE yapılır. Bu adım öğrenen motoru kısa süre durdurur ve defterdeki etiketi günceller. Parametreler aynı kalır, yalnız strateji adı değişir.
+
+Bu adımdan önce motor (`trader-engine@learner`) `failed` ya da alarm gösterebilir (eski etiket). Bu beklenen bir durumdur, etiket güncellenince düzelir.
+
+```
+systemctl stop trader-engine@learner.service
+cd /home/trader/SG-Github-AB-proje/trader
+sudo -u trader env PYTHONPATH=src .venv/bin/python -m trader_engine init-ledger --bot learner --env paper --config-dir config --reason strategy_update
+systemctl start trader-engine@learner.service
+```
+
+**Kontrol:**
+- `init-ledger` çıktısı `strateji etiketi guncellendi: ... -> price_action_lab_ml ...` demeli. (`etkin surum zaten price_action_lab_ml: dokunulmadi` de kabul: etiket zaten doğru.)
+- Çıktı `defter eski semada` diyorsa: defter henüz yeni şemada değil. Motor bir kez açılınca şemayı kendisi geçirir. Sırayla yapın: `systemctl start trader-engine@learner.service`, bir dakika bekleyin, `systemctl stop trader-engine@learner.service`, sonra yukarıdaki `init-ledger` komutunu bir kez daha çalıştırın.
+- `systemctl is-active trader-engine@learner.service` → `active` (bu adımın sonunda).
+- Hata: `ledger_stamp_mismatch` görürseniz durun ve çıktıyı bana bildirin (anahtar veya parola yapıştırmayın).
+
+---
+
+## Adım 6: Testnet motorunu durdurun (dolaşan çıkış kuyruğu için)
 
 ```
 systemctl stop trader-engine-env-retry@testnet.timer
@@ -60,7 +117,7 @@ systemctl is-active trader-engine-testnet.service
 
 ---
 
-## Adım 5: DD-11 çıkış kuyruğu (outbox) için kuru koşu
+## Adım 7: DD-11 çıkış kuyruğu (outbox) için kuru koşu
 
 Motor durdu. Önce yalnız rapor alın, hiçbir şey değişmez:
 
@@ -70,23 +127,27 @@ sudo -u trader env PYTHONPATH=src .venv/bin/python -m trader_engine outbox-quara
 ```
 
 **Kontrol:** Çıktıda taşınacak satır sayısı yazar. Bu sayıyı not alın.
-- Sayı **0** ise Adım 6'yı atlayın.
-- Sayı **0'dan büyük** ise Adım 6'ya geçin.
+- Sayı **0** ise Adım 8'i atlayın (Adım 9 yine yapılır).
+- Sayı **0'dan büyük** ise Adım 8'e geçin.
 
 ---
 
-## Adım 6: Çıkış kuyruğunu uygulayın (yalnız Adım 5 sayı > 0 ise)
+## Adım 8: Çıkış kuyruğunu uygulayın (yalnız Adım 7 sayı > 0 ise)
 
-Motor hâlâ durmuş olmalı (Adım 4).
+Motor hâlâ durmuş olmalı (Adım 6).
 
 ```
 cd /home/trader/SG-Github-AB-proje/trader
 sudo -u trader env PYTHONPATH=src .venv/bin/python -m trader_engine outbox-quarantine --bot learner --env testnet --config-dir config --apply
 ```
 
-**Kontrol:** Çıktı taşınan satır sayısını gösterir (Adım 5'teki sayı ile aynı olmalı). Hata yoksa devam edin.
+**Kontrol:** Çıktı taşınan satır sayısını gösterir (Adım 7'deki sayı ile aynı olmalı). Hata yoksa devam edin.
 
-Testnet motorunu yeniden başlatın:
+---
+
+## Adım 9: Testnet motorunu yeniden başlatın (her durumda)
+
+Bu adım Adım 8 çalıştırılmış ya da atlanmış olsun, mutlaka yapılır:
 
 ```
 systemctl start trader-engine-testnet.service
@@ -96,27 +157,11 @@ systemctl is-active trader-engine-testnet.service
 
 **Kontrol:** `active`.
 
----
-
-## Adım 7: Kâğıt öğrenenin strateji etiketini değiştirin (price_action_lab_ml)
-
-Kâğıt öğrenen (learner) motorunu kısa süre durdurup defterdeki etiketi günceller. Parametreler aynı kalır, yalnız strateji adı değişir.
-
-```
-systemctl stop trader-engine@learner.service
-cd /home/trader/SG-Github-AB-proje/trader
-sudo -u trader env PYTHONPATH=src .venv/bin/python -m trader_engine init-ledger --bot learner --env paper --config-dir config --reason strategy_update
-systemctl start trader-engine@learner.service
-```
-
-**Kontrol:**
-- `init-ledger` çıktısı `strateji etiketi guncellendi: ... -> price_action_lab_ml ...` demeli. (`etkin surum zaten price_action_lab_ml: dokunulmadi` de kabul: etiket zaten doğru.)
-- `systemctl is-active trader-engine@learner.service` → `active`.
-- Hata: `ledger_stamp_mismatch` görürseniz durun ve çıktıyı bana bildirin (anahtar veya parola yapıştırmayın).
+**Not:** Testnet artık veto'suz çalışır (LLM veto kaldırıldı; `config/engine.testnet.json` içinde `veto_mode: "off"`). `shared/veto/veto.json` olmasa da motor girişleri açmaya devam eder. Eski kurulumda bu dosyanın yokluğu yaklaşık 45 dakika sonra girişleri durdururdu; bu artık olmaz. Canlı (live) kip değişmedi ve bu adımlarda dokunulmaz.
 
 ---
 
-## Adım 8: Birimleri ve zamanlayıcıları kontrol edin
+## Adım 10: Birimleri ve zamanlayıcıları kontrol edin
 
 Etkin birimler:
 
@@ -153,21 +198,20 @@ systemctl list-units 'trader-veto*' 'trader-*twin*' --all --no-pager
 
 ---
 
-## Adım 9: Gece eğitimini (ML) ilk kez görün
+## Adım 11: Gece eğitimini (ML) ilk kez görün
 
-Gece 03:10 UTC'de eğitim çalışır: kurulum süzgeci ve M1 (kendi adayı). İlk çalıştırmayı sonraki sabah kontrol edin:
+Gece 03:10 UTC'de eğitim çalışır: kurulum süzgeci ve M1 (kendi adayı). Eğitim çıktıları sunucuda `var/learner/models/` altına yazılır (depodaki `models/` dizini değişmez). İlk çalıştırmayı sonraki sabah kontrol edin:
 
 ```
 systemctl status trader-ml-retrain.service --no-pager | head -12
 journalctl -u trader-ml-retrain.service -n 30 --no-pager
-ls -la /home/trader/SG-Github-AB-proje/trader/models/pa_proposer
 ```
 
-**Kontrol:** son çalıştırma `status=0/SUCCESS` (ya da `m1_error` yoksa başarılı) ve `M1@1h.json`, `M1@4h.json` dosyaları var. Hata varsa `journalctl` çıktısını bana bildirin.
+**Kontrol:** son çalıştırma `status=0/SUCCESS` ve günlükte `"status": "ok"` satırı var (M1 için `M1@1h` ve `M1@4h` ayrı ayrı `"status": "ok"`, `"m1_error": null`). `ls` ile dosya aramayın. Hata varsa `journalctl` çıktısını bana bildirin.
 
 ---
 
-## Adım 10: Pano (salt okunur) kontrolü
+## Adım 12: Pano (salt okunur) kontrolü
 
 Pano sunucuda yalnız `127.0.0.1:8787` adresinde çalışır. Kendi bilgisayarınızdan SSH tüneliyle açın:
 

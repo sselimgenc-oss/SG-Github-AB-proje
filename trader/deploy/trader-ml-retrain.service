@@ -18,6 +18,7 @@ CPUQuota=50%
 Nice=10
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/trader/models /opt/trader/research -/opt/trader/var/learner
+# yazma yalniz calisma zamani dizinine: var/learner/models/{setup_filter,pa_proposer}, var/learner/paper_models.csv (git-izli dosyalar yazilmaz)
+ReadWritePaths=/opt/trader/var/learner
 NoNewPrivileges=true
 PrivateTmp=true
