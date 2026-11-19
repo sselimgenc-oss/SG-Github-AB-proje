@@ -292,7 +292,7 @@ def test_publish_timer_gated_and_wrangler_pinned():
     assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_API_TOKEN", t)
     assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_ACCOUNT_ID", t)
     assert "enable_now trader-panel-publish.timer" in t
-    assert "wrangler secret put PANEL_SIFRE" in t
+    assert "PANEL_SIFRE" not in t and "Cloudflare Access" in t     # 19 Kasim: parola kaldirildi, koruma Access
     assert re.search(r'^WRANGLER_VERSION="\d+\.\d+\.\d+"', t, re.M)
     code = re.sub(r"#.*", "", t)
     assert "npm install -g" not in code and "npm i -g" not in code
@@ -303,8 +303,9 @@ def test_publish_timer_gated_and_wrangler_pinned():
 
 def test_worker_js_static():
     t = (DEPLOY / "panel_worker.js").read_text(encoding="utf-8")
-    assert "PANEL_SIFRE" in t and "typeof sifre !== \"string\" || sifre.length === 0) return red()" in t   # fail-closed
-    assert "crypto.subtle.digest" in t and "fark |=" in t                                                  # sabit zamanli
+    # 19 Kasim: parola yok; Cloudflare Access JWT'si RS256 ile dogrulanir, yoksa 403 (fail-closed)
+    assert "PANEL_SIFRE" not in t and "WWW-Authenticate" not in t
+    assert "Cf-Access-Jwt-Assertion" in t and "crypto.subtle.verify" in t and "if (!(await accessGecerli(" in t
     assert re.search(r'"Cache-Control", "no-store"', t)
     for h in ("X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy"):
         assert h in t
@@ -319,15 +320,15 @@ def test_worker_js_static():
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
 def test_worker_js_fail_closed_behaviour(tmp_path):
+    """Access JWT'si olmadan (ya da sertifika alinamazsa) pano kapali; ayrintili davranis: tests/test_panel_worker_access.py."""
     js = tmp_path / "t.mjs"
     js.write_text(f"""import w from {str(DEPLOY / 'panel_worker.js')!r};
+globalThis.fetch = async () => new Response('hata', {{status: 500}});
 const env0 = {{ASSETS: {{fetch: async () => new Response('ok')}}}};
-const rq = (a) => new Request('https://x/', a ? {{headers: {{Authorization: a}}}} : {{}});
-const ok = 'Basic ' + btoa('trader:pw');
-let r = await w.fetch(rq(ok), env0); if (r.status !== 401) throw new Error('fail-open');
-r = await w.fetch(rq(ok), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 200 || r.headers.get('Cache-Control') !== 'no-store') throw new Error('ok yolu');
-r = await w.fetch(rq('Basic ' + btoa('trader:x')), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 401) throw new Error('yanlis parola');
-r = await w.fetch(rq(), {{...env0, PANEL_SIFRE: 'pw'}}); if (r.status !== 401) throw new Error('baslik yok');
+const rq = (h) => new Request('https://x/', {{headers: h || {{}}}});
+let r = await w.fetch(rq(), env0); if (r.status !== 403) throw new Error('fail-open');
+r = await w.fetch(rq({{Authorization: 'Basic ' + btoa('trader:pw')}}), env0); if (r.status !== 403) throw new Error('basic acik');
+r = await w.fetch(rq({{'Cf-Access-Jwt-Assertion': 'a.b.c'}}), env0); if (r.status !== 403) throw new Error('sahte jwt');
 """, encoding="utf-8")
     (tmp_path / "package.json").write_text('{"type":"module"}')
     r = subprocess.run(["node", str(js)], capture_output=True, text=True)

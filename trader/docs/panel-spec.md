@@ -169,6 +169,7 @@ Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı veriyle; ku
 - Güvenlik: Basic Auth HTTPS üzerinden, ama hız sınırı/kilitleme yok → uzun rastgele parola. Wrangler anahtarı tek Worker'a daraltılamaz: sunucu ele geçirilirse 1L3A ve CT Worker'ları da üzerine yazılabilir → ayrı Cloudflare hesabı ya da bu riski kabul (kullanıcı kararı). Anlık görüntüde yalnız pozisyon/özsermaye/özet; asla anahtar yok.
 - Reddedilen: Tunnel + Access (Cloudflare DNS'te alan adı gerekir; trycloudflare'de Access yok, adres değişken); Tailscale (cihaz kurulumu).
 - Sonra (doğrulanmadı): workers.dev üzerinde Cloudflare Access e-posta kodu Basic Auth'un yerini alabilir.
+- **19 Kasım 2026 (kullanıcı kararı): Basic Auth ve parola KALDIRILDI; koruma Cloudflare Access.** Worker, Access JWT'sini (`Cf-Access-Jwt-Assertion`, RS256, takım `slmgncortak`) doğrular; yoksa 403 (fail-closed). `/rejim.json` ve `/gunluk_ozet_v1.json` herkese açık kalır (Access'te yol bazlı Bypass uygulaması). Kurulum adımları: `docs/sunucu-kurulum.md`.
 - Zamanlama: ~1–2 gün; 30 Kasım'dan önce sığar.
 - **Kullanıcı kararı (16 Kasım 2026):** Mevcut Cloudflare hesabı kullanılır (ayrı hesap açılmaz). Hesap çapındaki anahtar riski kabul edildi; anahtar yalnız "Workers Scripts: Edit" izinli, sunucuda 0600 dosyada tutulur.
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Panelin anlik goruntusunu uretir ve Cloudflare Workers'a yayimlar (Basic Auth arkasinda; bkz. docs/panel-spec.md §13).
+# Panelin anlik goruntusunu uretir ve Cloudflare Workers'a yayimlar (Cloudflare Access arkasinda; bkz. docs/panel-spec.md §13).
 # Fikir/yapi 1L3A deploy/pano_yayinla.sh'den uyarlandi (kullanicinin kendi kodu).
 # Anahtarlar /etc/trader-panel-cf.env dosyasindan (systemd EnvironmentFile) gelir; bu betik onlari asla yazdirmaz.
-# Parola Worker secret'idir (PANEL_SIFRE) ve bu betikten gecmez: kurulumda `wrangler secret put` ile bir kez konur.
+# Pano Cloudflare Access ile korunur (19 Kasim: parola kaldirildi); Worker Access JWT'sini dogrular, yoksa 403.
 # Istege bagli: TRADER_PANEL_WORKER (varsayilan trader-pano), TRADER_DIR, WRANGLER_BIN.
 set -euo pipefail
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN tanimli degil (/etc/trader-panel-cf.env)}"

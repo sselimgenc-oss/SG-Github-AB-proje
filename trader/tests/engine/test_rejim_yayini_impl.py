@@ -298,7 +298,7 @@ def test_worker_rejim_branch_before_auth_and_get_head_only():
     assert '"/rejim.json"' in t
     assert '"GET"' in t and '"HEAD"' in t
     branch = t.index('pathname === "/rejim.json"')
-    auth = t.index("const sifre = env.PANEL_SIFRE;")
+    auth = t.index("if (!(await accessGecerli(")
     assert branch < auth, "rejim dali kimlik kontrolunden once olmali"
     # dal, yalniz GET/HEAD kosulu icinde; istek ASSETS'ten okunur
     kosul = t[t.rfind("if (", 0, branch):branch]
