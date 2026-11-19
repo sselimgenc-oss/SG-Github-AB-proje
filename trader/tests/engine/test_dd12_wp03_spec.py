@@ -226,6 +226,7 @@ def test_dt4_env_paper_feed_does_not_import_pandas(tmp_path):
     d, base, paper = _cfg(tmp_path)
     code = f"""
 import sys, json
+sys.path.insert(0, {str(REPO / 'src')!r})   # -I altinda PYTHONPATH yok: src acikca eklenir (editable kuruluma bagli degil)
 sys.path.insert(0, {str(HERE)!r})
 import test_dd12_wp03_spec as T
 from trader_engine.marketdata import feed as F

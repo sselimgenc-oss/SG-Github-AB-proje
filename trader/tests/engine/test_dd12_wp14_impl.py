@@ -216,8 +216,15 @@ def test_health_pa_proposer_alerts(tmp_path):
 
 def test_build_script_smoke(tmp_path):
     import pa_proposer_build as PB
-    rc = PB.main(["--pairs", "BTC", "--tfs", "4h", "--out-dir", str(tmp_path / "m"), "--paper-models-csv", str(tmp_path / "p.csv")],
-                 now=NOW)
+    # Gercek veri (var/history) git'te yok ve CI'da bulunmaz: kilit (2026-05-01) oncesi sentetik 4s bar dosyasi kullanilir.
+    hist = tmp_path / "history"
+    hist.mkdir()
+    o, h, l, c = _bars(1500, seed=5, base=1000.0)
+    idx = pd.date_range("2025-01-01", periods=len(c), freq="4h", tz="UTC")
+    pd.DataFrame({"date": idx, "open": o, "high": h, "low": l, "close": c, "volume": 1.0}).to_feather(
+        hist / "BTC_USDT_USDT-4h-futures.feather")
+    rc = PB.main(["--history-dir", str(hist), "--pairs", "BTC", "--tfs", "4h", "--out-dir", str(tmp_path / "m"),
+                  "--paper-models-csv", str(tmp_path / "p.csv")], now=NOW)
     assert rc == 0
     assert (tmp_path / "m" / "M1@4h.json").exists()
     lines = (tmp_path / "p.csv").read_text(encoding="utf-8").splitlines()

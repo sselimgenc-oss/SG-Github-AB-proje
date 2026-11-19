@@ -657,7 +657,10 @@ def test_r_01_four_root_units_run_from_root_tree(tmp_path):
 
 def test_r_02_only_the_four_units_run_as_root_and_veto_unit_is_gone():
     roots = {p.name for p in DEPLOY.glob("*.service") if unit_get(read(p), "User") == ["root"]}
-    assert roots == set(ROOT_UNITS)
+    # + kullanici onayli otomatik guncelleme (docs/motor/oto-guncelleme-spec.md): yalniz root sahipli surum agacindan calisir
+    assert roots == set(ROOT_UNITS) | {"trader-oto-guncelle.service"}
+    assert unit_get(read(DEPLOY / "trader-oto-guncelle.service"), "ExecStart") == [
+        f"/bin/bash {ROOT_DIR}/current/deploy/oto_guncelle.sh"]
     assert not (DEPLOY / "trader-veto.service").exists()           # DD-12 WP-06a: veto birimi kaldirildi
 
 
@@ -750,13 +753,19 @@ def test_r_08_proc_guard_makes_process_nondumpable_and_environ_owned_by_root():
             "a = P.set_nondumpable()\n"
             "b = P.is_dumpable()\n"
             "uid = os.stat('/proc/self/environ').st_uid\n"
-            "open('/proc/self/environ', 'rb').close()\n"
-            "print(json.dumps([a, b, uid]))\n")
+            "try:\n"
+            "    open('/proc/self/environ', 'rb').close(); readable = True\n"
+            "except PermissionError:\n"
+            "    readable = False\n"
+            "print(json.dumps([a, b, uid, readable, os.geteuid()]))\n")
     r = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
-    a, b, uid = json.loads(r.stdout)
+    a, b, uid, readable, euid = json.loads(r.stdout)
     assert a is True and b is False
     assert uid == 0
+    # Korumanin asil beklentisi: dokulemez surecte /proc/self/environ yalniz root'a acik (DAC: root okuyabilir,
+    # diger kullanicilar -- kendisi dahil -- okuyamaz). Root olmayan CI kosucusunda PermissionError beklenen davranis.
+    assert readable is (euid == 0)
 
 
 def _live_cli_setup(tmp_path, monkeypatch, run_env, env_name, tag="canli-x"):
