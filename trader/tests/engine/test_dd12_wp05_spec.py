@@ -231,8 +231,10 @@ def test_dt29_shipped_paper_table_is_2_3_4_times_base():
     base = (cfg.cost.slip_entry_bps, cfg.cost.slip_exit_bps, cfg.cost.slip_stop_bps)
     assert base == BASE_SLIP
     opt = [p for p in cfg.pairs if p in cfg.optional_pairs]
-    assert len(opt) == 24 and set(cfg.cost_overrides) == set(opt), "kripto icin override yok (tabanda aynen)"
+    assert len(opt) == 25 and set(cfg.cost_overrides) == set(opt) - {"TON/USDT"}, "kripto icin override yok (tabanda aynen)"  # 19 Kasim: TON istege bagli (not_trading), kripto => override yok
     for p in opt:
+        if p == "TON/USDT":
+            continue
         for tag, k in MULT.items():
             got = tuple(cfg.cost_overrides[p][tag][x] for x in ("slip_entry_bps", "slip_exit_bps", "slip_stop_bps"))
             assert got == tuple(b * k for b in base), (p, tag)
