@@ -1,7 +1,7 @@
-# Çıkış karşı-olgusu gece işi (plan 25c; mentor onaylı, uygulamaya hazır — kararlar §11)
+# Çıkış karşı-olgusu gece işi (plan 25c; mentor onaylı, 1a uygulandı 19 Kasım 2026 — kararlar §11)
 
 Amaç: kâr çıkışlardan geliyor (en iyi ~%5 işlem kârı taşır) ama ders servisi yalnız giriş tarafını öğreniyor; `trail_atr:up` için hiçbir kanıt yolu yok (menüde yalnız `trail_atr:down` kuralı var, `lesson.py` `Rule("trail_atr:down", ...)`). Bu iş, **kapanmış** her işlemin giriş sonrası fiyat yolunu alternatif çıkış parametreleriyle yeniden oynatır ve "o değerle çıksaydık net R ne olurdu" sonucunu saklar. Bu bir **kanıt** işidir: ders menüsüne bilgi olarak girer (tek istisna §7.3: kanıt-yalnız `trail_atr:up` girdisi), sınıfı daima `needs_user` ("kullanıcıya her zaman sor"), asla otomatik uygulanmaz (Revizyon 4 ile aynı ilke; `ders-spec.md` Rev. 4 madde 4-5).
-Kod (henüz yok): `src/trader_core/exit_counterfactual.py` (saf hesap + depo), `scripts/exit_counterfactual_run.py` (CLI). Birim: `deploy/trader-exit-counterfactual@.service|.timer`. Yapı, depo, blok-kümelenmiş SE, `CF_MIN_BLOCKS`, ağırlık 0,5 `alinmayan-sinyal-spec.md` ile aynıdır; yalnız farklar yazılıdır.
+Kod: `src/trader_core/exit_counterfactual.py` (saf hesap + depo), `scripts/exit_counterfactual_run.py` (CLI). Birim: `deploy/trader-exit-counterfactual@.service|.timer`. Yapı, depo, blok-kümelenmiş SE, `CF_MIN_BLOCKS`, ağırlık 0,5 `alinmayan-sinyal-spec.md` ile aynıdır; yalnız farklar yazılıdır.
 
 ## 0. Ön kayıt (koşudan önce zorunlu)
 - Bu iş çoklu test disiplinine tabidir. **İlk gerçek koşudan önce** `research/trial_registry.csv` sonuna bir satır eklenir: `id=exitcf-v1`, `strategy=TraderV1b`, `params={"grid":"cur±LESSON_STEP","params":["trail_atr"]}`, `notes` = bu belgenin commit'i, grid, hüküm kaynağı (yalnız kendi bot defteri), parite eşikleri, ufuk, `n_trials` katkısı, "kilitli dönem okunmadı".
@@ -103,3 +103,5 @@ Biçim Rev. 4 ile aynıdır: `lesson.build_exit_counterfactual(cfg, as_of)` salt
 6. **Eşikler:** 0,10 R medyan ve %85 neden uyumu **kabul**; eklenenler: |ortalama sapma| ≤ 0,05 R, `parity_n ≥ 20`, pencere geneli ölçüm (§8). 30 gün ufuk **kabul**, ancak ufukta kalan yollar dışlanmaz, piyasaya göre değerlenir; pay > %10 ⇒ `inconclusive` (§3.9).
 
 Diğer zorunlu düzeltmeler (metne işlendi): Bonferroni `z=1,6449` + haftalık dondurma + tek-işlem-hariç denetimi (§6); giriş mumu dahil / `armed` / `would_trigger` / `trigger_source` motor eşliği (§2.4, §3); `own` oynatımıyla parite (§1, §2.5); kayıt denetimi sunucuda CSV'siz (§0); pandas gerçeği, `MemoryMax=256M`, backtest yolu birimden çıkarıldı (§8).
+
+**Parite kapısı (§8, 19 Kasım 2026, geliştirme makinesi):** `--runs 1h_IS_f1_s0_native_last` (537 işlem; eski şemalı koşu defteri yalnız geçici kopyada göçürüldü) → medyan |fark| 0,0005 R (eşik ≤ 0,10), ortalama 0,010 R (≤ 0,05), çıkış nedeni uyumu %100 (≥ %85): **GEÇTİ**. Gece birimi etkin.

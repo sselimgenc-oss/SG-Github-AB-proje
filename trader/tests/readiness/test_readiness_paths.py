@@ -159,7 +159,7 @@ def test_every_timer_has_a_service_and_is_enabled_or_gated(units):
             kv = dict(unit_kv(units[name]))
             target = kv.get("Unit", stem + ".service")
             assert target in units, f"{name} -> {target} yok"
-            assert (f"enable_now {name}" in inst or (name in ("trader-engine-retry@.timer", "trader-counterfactual@.timer", "trader-drift@.timer") and f"enable_now {name.replace('@.', '@learner.')}" in inst)
+            assert (f"enable_now {name}" in inst or (name in ("trader-engine-retry@.timer", "trader-counterfactual@.timer", "trader-exit-counterfactual@.timer", "trader-drift@.timer") and f"enable_now {name.replace('@.', '@learner.')}" in inst)
                     or (name == "trader-engine-env-retry@.timer" and "enable_now trader-engine-env-retry@testnet.timer" in inst and "enable --now trader-engine-env-retry@live.timer" in inst)), f"{name} install.sh'te etkinlestirilmiyor"
 
 

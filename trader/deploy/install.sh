@@ -495,7 +495,7 @@ for u in trader-veto.timer trader-veto.service; do
   systemctl disable --now "$u" >/dev/null 2>&1 || true
 done
 rm -f "${UNIT_DIR}/trader-veto.service" "${UNIT_DIR}/trader-veto.timer"
-for u in trader-engine@twin.service trader-engine-retry@twin.timer trader-counterfactual@twin.timer trader-drift@twin.timer; do
+for u in trader-engine@twin.service trader-engine-retry@twin.timer trader-counterfactual@twin.timer trader-drift@twin.timer trader-exit-counterfactual@twin.timer; do
   systemctl disable --now "$u" >/dev/null 2>&1 || true
 done
 if [ -d "$TRADER_DIR/var/twin" ]; then
@@ -534,6 +534,7 @@ drift_first_run() { # var/<bot> dizinini hazirla ve ilk olcumu hemen al (yoksa s
 }
 enable_now trader-drift@learner.timer; drift_first_run learner   # gunluk sapma izleyicisi (WP-2; 20:20 TSI, salt okunur; var/<bot>/drift.json tek yazar; Telegram'a mesaj atmaz)
 enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23:10 UTC); defter/market salt okunur, var/<bot>/counterfactual.sqlite tek yazar
+enable_now trader-exit-counterfactual@learner.timer   # cikis karsi-olgusu gece isi (23:40 UTC; plan 25c); defter/market salt okunur, var/<bot>/exit_counterfactual.sqlite tek yazar; yalniz kanit (ders menusune bilgi)
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
 # WP-3: motor (yazar) yeni kodla yeniden baslar => defter sema gocu motor icinde, premigrate yedegiyle olur
@@ -633,7 +634,7 @@ else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRE
 # birimleri kalmamali (kaldirma yukarida yapildi; eski bir kopya kaldiysa burada gorunur).
 say "DD-12 zamanlayici denetimi"
 for t in trader-notes.timer trader-weekly-summary.timer trader-ml-retrain.timer trader-universe.timer \
-         trader-counterfactual@learner.timer trader-tutarlilik.timer; do
+         trader-counterfactual@learner.timer trader-exit-counterfactual@learner.timer trader-tutarlilik.timer; do
   if systemctl is-enabled --quiet "$t" 2>/dev/null; then echo "  etkin: $t"; else echo "UYARI: $t etkin degil (systemctl enable --now $t)"; fi
 done
 for u in trader-veto.service trader-veto.timer trader-engine@twin.service trader-engine-retry@twin.timer; do

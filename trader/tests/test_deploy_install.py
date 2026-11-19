@@ -130,7 +130,7 @@ def test_every_unit_handled_by_install():
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
                         "trader-telegram-report.service", "trader-engine@.service",
-                        "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service",
+                        "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service", "trader-exit-counterfactual@.service",
                         "trader-oi.service", "trader-drift@.service", "trader-notes.service", "trader-weekly-summary.service", "trader-ml-retrain.service", "trader-universe.service",
                         "trader-tutarlilik.service",  # Faz 2a: haftalik tutarlilik raporu (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-ct-kadro.service",  # 19 Kasim: C1 (CT kadro) eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
@@ -149,6 +149,8 @@ def test_every_unit_handled_by_install():
             assert "trader-drift@learner.timer" in enabled and "trader-drift@twin.timer" not in enabled
         elif u.name == "trader-counterfactual@.timer":
             assert "trader-counterfactual@learner.timer" in enabled and "trader-counterfactual@twin.timer" not in enabled
+        elif u.name == "trader-exit-counterfactual@.timer":
+            assert "trader-exit-counterfactual@learner.timer" in enabled and "trader-exit-counterfactual@twin.timer" not in enabled
         else:
             assert u.name in enabled, u.name
 
@@ -377,3 +379,30 @@ def test_counterfactual_units_and_install():
     assert "enable_now trader-counterfactual@learner.timer" in t
     assert "enable_now trader-counterfactual@twin" not in t
     assert (ROOT / "scripts/counterfactual_run.py").exists() and (ROOT / "docs/alinmayan-sinyal-spec.md").exists()
+
+
+def test_exit_counterfactual_units_and_install():
+    """Cikis karsi-olgusu gece isi (25c; docs/cikis-karsi-olgu-spec.md 8): 23:40 UTC, alinmayan-sinyal 23:10'dan sonra, ders servisinden once;
+    MemoryMax=256M (pandas ~70 MB), defter/market salt okunur, backtest yolu yok, ag/anahtar yok."""
+    s = (DEPLOY / "trader-exit-counterfactual@.service").read_text(encoding="utf-8")
+    tm = (DEPLOY / "trader-exit-counterfactual@.timer").read_text(encoding="utf-8")
+    code = re.sub(r"#.*", "", s)
+    assert "Type=oneshot" in s and "Slice=trader.slice" in s and "User=trader" in s
+    assert "exit_counterfactual_run.py --bot %i --once --registry-id exitcf-v1" in s and "OnFailure=trader-health-fail@%n.service" in s
+    for k, v in (("MemoryMax", "256M"), ("MemoryHigh", "192M"), ("CPUQuota", "30%"), ("Nice", "15"), ("IOSchedulingClass", "idle"),
+                 ("TimeoutStartSec", "900"), ("ProtectSystem", "strict")):
+        assert re.search(rf"^{k}={re.escape(v)}$", s, re.M), k
+    assert "NoNewPrivileges=true" in s and "ProtectHome=read-only" in s and "PrivateTmp=true" in s and "PrivateNetwork=true" in s
+    assert "EnvironmentFile" not in code and "backtests" not in code and "history" not in code      # anahtar yok; backtest yolu yok
+    assert re.search(r"^ReadWritePaths=(.*)$", s, re.M).group(1).split() == ["-/opt/trader/var/%i"]
+    ro = re.search(r"^ReadOnlyPaths=(.*)$", s, re.M).group(1).split()
+    assert ro == ["-/opt/trader/var/%i/ledger.sqlite", "-/opt/trader/var/market.sqlite"]
+    assert "OnCalendar=*-*-* 23:40:00 UTC" in tm and "Persistent=true" in tm and "RandomizedDelaySec=600" in tm
+    cf = (DEPLOY / "trader-counterfactual@.timer").read_text(encoding="utf-8")
+    assert "23:10:00 UTC" in cf and "RandomizedDelaySec=900" in cf and "23:10" < "23:40"            # 23:10 isi (+15 dk) 23:40'tan once biter
+    lesson = (DEPLOY / "trader-lesson.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=*-*-* 23:40" not in lesson
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert "enable_now trader-exit-counterfactual@learner.timer" in t and "enable_now trader-exit-counterfactual@twin" not in t
+    assert (ROOT / "scripts/exit_counterfactual_run.py").exists() and (ROOT / "docs/cikis-karsi-olgu-spec.md").exists()
+    assert "trader-exit-counterfactual@twin.timer" in t                                            # ikiz birimi (varsa) kapatilir

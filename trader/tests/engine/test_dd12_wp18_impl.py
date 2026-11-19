@@ -283,7 +283,7 @@ def test_m1_nightly_keeps_setup_filter_row_on_m1_error(tmp_path, monkeypatch):
 
 # ---- (d) kurulum, birimler, sunucu belgesi --------------------------------------------------------------------------
 DD12_TIMERS = ("trader-notes.timer", "trader-weekly-summary.timer", "trader-ml-retrain.timer", "trader-universe.timer",
-               "trader-counterfactual@learner.timer")
+               "trader-counterfactual@learner.timer", "trader-exit-counterfactual@learner.timer")
 
 
 def test_install_enables_dd12_timers():

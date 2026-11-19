@@ -28,6 +28,7 @@ from typing import Any, Protocol
 
 from trader_core import budget as _budget_mod
 from trader_core import counterfactual as _cf_mod
+from trader_core import exit_counterfactual as _ecf_mod
 from trader_core import ledger as L
 
 log = logging.getLogger("trader_core.lesson")
@@ -49,7 +50,7 @@ REGIMES = ("trend_up", "trend_down", "range", "volatile", "unclear")
 EXIT_REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit",
                 "liquidation", "other")
 SEMANTICS = ("tighten", "loosen", "reshape")
-EVIDENCE_CLASSES = ("observed_subset", "extrapolated", "exit_mix_weak", "exit_mfe_mae", "twin_observed")
+EVIDENCE_CLASSES = ("observed_subset", "extrapolated", "exit_mix_weak", "exit_mfe_mae", "twin_observed", "exit_cf_only")
 
 TERMINAL = frozenset({"skipped_no_data", "skipped_gate", "skipped_budget", "no_change", "proposal_rejected",
                       "applied", "needs_user", "rolled_back", "failed"})
@@ -270,6 +271,11 @@ class LessonConfig:
     counterfactual_path: str | None = None           # None => <ledger_path'in dizini>/counterfactual.sqlite
     counterfactual_min_n: int = 30                   # kilit: >= 30 hesaplanmis satir (barrier)
     counterfactual_days: int = 56                    # karar zamanina gore pencere (gun); kilit >= 7; 3 gunluk >= 8 blok icin 56
+    exit_cf_enabled: bool = True                     # Revizyon 6: cikis karsi-olgusu kaniti (docs/cikis-karsi-olgu-spec.md 7; salt okunur)
+    exit_cf_path: str | None = None                  # None => <ledger dizini>/exit_counterfactual.sqlite
+    exit_cf_min_n: int = 30                          # kilit: >= 30 islem
+    exit_cf_days: int = 120                          # giris zamanina gore pencere (gun); kilit >= 63: 8 tam blok + suren blok
+    exit_cf_reject_cooldown_days: int = 28           # trail_atr:up kaniti-yalniz girdisi: ret sonrasi bekleme
 
     def __post_init__(self) -> None:
         def bad(msg):
@@ -367,6 +373,12 @@ class LessonConfig:
             isstr(self.counterfactual_path, "counterfactual_path")
         isint(self.counterfactual_min_n, "counterfactual_min_n", 30)
         isint(self.counterfactual_days, "counterfactual_days", 7)
+        isbool(self.exit_cf_enabled, "exit_cf_enabled")
+        if self.exit_cf_path is not None:
+            isstr(self.exit_cf_path, "exit_cf_path")
+        isint(self.exit_cf_min_n, "exit_cf_min_n", 30)
+        isint(self.exit_cf_days, "exit_cf_days", 63)
+        isint(self.exit_cf_reject_cooldown_days, "exit_cf_reject_cooldown_days", 0)
         if self.notifier is not None:
             isstr(self.notifier, "notifier")
         if self.calibration_file is not None:
@@ -1112,6 +1124,8 @@ RULES_V1: tuple[Rule, ...] = (
     Rule("range_target_frac:down", "range_target_frac", "down", "exit_mix", "exit_mix_weak", "reshape"),
     Rule("range_target_frac:up", "range_target_frac", "up", "exit_mix", "exit_mix_weak", "reshape"),
     Rule("trail_atr:down", "trail_atr", "down", "mfe", "exit_mfe_mae", "tighten"),
+    # Revizyon 6 (docs/cikis-karsi-olgu-spec.md 7.3): kanit-yalniz girdi; yalniz exit_counterfactual 'supports_change' iken eligible
+    Rule("trail_atr:up", "trail_atr", "up", "exit_cf", "exit_cf_only", "loosen"),
 )
 RULES_BY_ID = {r.menu_id: r for r in RULES_V1}
 TWIN_RULES = {"vol_ratio_max:up", "rr_min:down"}
@@ -1525,13 +1539,16 @@ class Snapshot:
     stats_hash: str = ""
     new_checkpoints: list = field(default_factory=list, compare=False, repr=False)
     counterfactual: dict | None = None                # Revizyon 4: alinmayan sinyal kaniti (yoksa None)
+    cf_exit: dict | None = None                       # Revizyon 6: cikis karsi-olgusu kaniti (yoksa None)
 
     def core_dict(self) -> dict:
         d = {f.name: getattr(self, f.name) for f in dataclasses.fields(self)
-             if f.name not in ("stats_hash", "new_checkpoints", "menu", "counterfactual")}
+             if f.name not in ("stats_hash", "new_checkpoints", "menu", "counterfactual", "cf_exit")}
         d["menu"] = [m.to_dict() for m in self.menu]
         if self.counterfactual:                        # yoksa ozet/hash bit duzeyinde eskisiyle ayni
             d["counterfactual"] = self.counterfactual
+        if self.cf_exit:
+            d["cf_exit"] = self.cf_exit
         return d
 
     def to_dict(self) -> dict:
@@ -1766,6 +1783,193 @@ def counterfactual_line(cf: Mapping | None) -> str:
             f"yok sayar, islem yapilabilir kar degildir): {parts}{tail}")
 
 
+# ---------------------------------------------------------------------------
+# Cikis karsi-olgusu kaniti (Revizyon 6; docs/cikis-karsi-olgu-spec.md 6-7). SALT OKUNUR, yalnizca KANIT; daima kullaniciya sorulur.
+# ---------------------------------------------------------------------------
+
+CF_EXIT_WEIGHT = CF_WEIGHT           # 0,5: varsayimsal kanit agirligi (lesson.CF_WEIGHT ile ayni)
+CF_EXIT_Z90 = CF_Z90                 # bilgi icin tek tarafli %90 sinir
+CF_EXIT_Z_ADJ = 1.6449               # hukum: Bonferroni (2 alternatif; tek tarafli alfa = 0,10/2)
+CF_EXIT_BLOCK_DAYS = 7               # SE kume genisligi (giris zamanina gore, epoch 1970-01-01'e bagli, ortusmeyen)
+CF_EXIT_MIN_BLOCKS = 8
+CF_EXIT_CENSORED_MAX = 0.10          # ufukta kesilen yol payi bunu asarsa hukum `inconclusive` (horizon_heavy)
+CF_EXIT_TOP_FRAC = 0.05
+CF_EXIT_VERDICTS = ("supports_change", "against_change", "inconclusive", "insufficient_n", "insufficient_days", "degraded")
+CF_EXIT_MENU = {"trail_atr:up": "up", "trail_atr:down": "down"}
+CF_EXIT_PARAM = "trail_atr"
+CF_EXIT_BACKTEST_DAYS = 3650
+
+
+def exit_cf_path(cfg: LessonConfig) -> str:
+    if cfg.exit_cf_path:
+        return cfg.exit_cf_path
+    return os.path.join(os.path.dirname(os.path.abspath(cfg.ledger_path)), "exit_counterfactual.sqlite")
+
+
+def _cf_exit_block(ts: str) -> int:
+    """7 gunluk, ortusmeyen blok numarasi (epoch 1970-01-01'e bagli)."""
+    return (date.fromisoformat(str(ts)[:10]) - date(1970, 1, 1)).days // CF_EXIT_BLOCK_DAYS
+
+
+def _cf_exit_stats(cfg: LessonConfig, rows: Sequence[Mapping], parity: Mapping) -> dict:
+    """Tek alternatif (yon) icin istatistik. `rows`: yalniz TAMAMLANMIS bloklardaki islemler (haftalik dondurma)."""
+    n = len(rows)
+    x = [(float(r["delta_r"]), _cf_exit_block(r["entry_ts"])) for r in rows]
+    zr = cluster_mean(x, 0.0, CF_EXIT_MIN_BLOCKS)
+    m = zr.mean
+    lb = ub = lb_adj = ub_adj = None
+    if zr.z is not None:
+        lb, ub = m - CF_EXIT_Z90 * zr.se, m + CF_EXIT_Z90 * zr.se
+        lb_adj, ub_adj = m - CF_EXIT_Z_ADJ * zr.se, m + CF_EXIT_Z_ADJ * zr.se
+    vals = [v for v, _ in x]
+    cens = (sum(int(r["censored"]) for r in rows) / n) if n else None
+    loo = (math.fsum(vals) - max(vals)) / (n - 1) if n > 1 else None          # en buyuk tek Delta cikarilinca ortalama
+    top5 = n_top = trim = None
+    if n:
+        n_top = max(1, math.ceil(CF_EXIT_TOP_FRAC * n - 1e-12))
+        order = sorted(range(n), key=lambda i: (-abs(vals[i]), i))
+        top = set(order[:n_top])
+        tot = math.fsum(vals)
+        top5 = (math.fsum(vals[i] for i in top) / tot) if abs(tot) > 1e-12 else None
+        rest = [vals[i] for i in range(n) if i not in top]
+        trim = (math.fsum(rest) / len(rest)) if rest else None
+    pstat = parity.get("status")
+    if n < cfg.exit_cf_min_n:
+        verdict = "insufficient_n"
+    elif lb is None:
+        verdict = "insufficient_days"
+    elif pstat != "ok":
+        verdict = "degraded"                                  # parite bilinmiyor/bozuk: sayilar gosterilir, destek yok
+    elif cens is not None and cens > CF_EXIT_CENSORED_MAX:
+        verdict = "inconclusive"                              # horizon_heavy
+    elif lb_adj > 0 and loo is not None and loo > 0:
+        verdict = "supports_change"
+    elif ub_adj < 0:
+        verdict = "against_change"
+    else:
+        verdict = "inconclusive"
+    return {"n": n, "mean_delta_r": r4(m), "lb90": r4(lb), "ub90": r4(ub), "lb_adj": r4(lb_adj), "ub_adj": r4(ub_adj),
+            "blocks": zr.g, "loo_mean": r4(loo), "top5_share": r4(top5), "n_top": n_top, "mean_trim": r4(trim),
+            "censored_share": r4(cens), "verdict": verdict, "horizon_heavy": int(cens is not None and cens > CF_EXIT_CENSORED_MAX)}
+
+
+def build_exit_counterfactual(cfg: LessonConfig, as_of: datetime, path=None) -> dict | None:
+    """Defterin yanindaki `exit_counterfactual.sqlite`ten (salt okunur) `trail_atr` up/down kaniti. Dosya yok / kapali / okunamiyor /
+    hic satir yok => None (kanit yok; hata yok; istem, ozet, stats_hash bit duzeyinde eskisiyle ayni). Yalniz kendi bot defterinden
+    (paper/testnet) hukum; yalniz `window_end_ts <= as_of`; yalniz TAMAMLANMIS 7 gunluk bloklardaki islemler (as_of'u iceren blok
+    dislanir: haftalik dondurma). Backtest satirlari yalniz bilgi (`backtest`), hukme/n'ye girmez."""
+    if not cfg.exit_cf_enabled:
+        return None
+    p = path or exit_cf_path(cfg)
+    if not os.path.exists(p):
+        return None
+    try:
+        live = {d: _ecf_mod.deltas(p, cfg.bot, now=as_of, days=cfg.exit_cf_days, direction=d) for d in ("up", "down")}
+        parity = _ecf_mod.parity_stats(p, cfg.bot, now=as_of, days=cfg.exit_cf_days)
+        bt = {d: _ecf_mod.deltas(p, cfg.bot, now=as_of, days=CF_EXIT_BACKTEST_DAYS, direction=d, sources=("backtest",))
+              for d in ("up", "down")}
+    except Exception as e:  # noqa: BLE001  fail-safe: kanit yok sayilir
+        log.warning("exit_counterfactual okunamadi: %s", scrub(e))
+        return None
+    if not any(live.values()):
+        return None
+    cur = (_aware(as_of).astimezone(UTC).date() - date(1970, 1, 1)).days // CF_EXIT_BLOCK_DAYS
+    by_alt = {d: _cf_exit_stats(cfg, [r for r in rows if _cf_exit_block(r["entry_ts"]) < cur], parity)
+              for d, rows in live.items()}
+    backtest = {}
+    for d, rows in bt.items():
+        if not rows:
+            continue
+        zr = cluster_mean([(float(r["delta_r"]), _cf_exit_block(r["entry_ts"])) for r in rows], 0.0, CF_EXIT_MIN_BLOCKS)
+        lb = (zr.mean - CF_EXIT_Z90 * zr.se) if zr.z is not None else None
+        b = {"n": len(rows), "mean_delta_r": r4(zr.mean), "lb90": r4(lb), "source": "backtest", "in_sample": 1, "info_only": 1}
+        lm = by_alt[d]["mean_delta_r"]
+        b["source_conflict"] = int(lm is not None and zr.mean is not None and lm * zr.mean < 0)
+        backtest[d] = b
+    par = {k: (r4(v) if isinstance(v, float) else v) for k, v in parity.items()}
+    return {"available": True, "days": cfg.exit_cf_days, "min_n": cfg.exit_cf_min_n, "weight": CF_EXIT_WEIGHT,
+            "step": L.LESSON_STEP[CF_EXIT_PARAM], "parity": par, "by_alt": by_alt, "backtest": backtest}
+
+
+def exit_cf_extra(cf: Mapping | None, menu_id: str) -> dict:
+    """Menu girdisine yalnizca BILGI alanlari (uygunluk/skor/kontrol noktasi/vekil bunlardan etkilenmez; kanit-yalniz
+    `trail_atr:up` girdisinin uygunlugu ayri ve yalniz hukumden gelir)."""
+    if not cf:
+        return {}
+    alt = CF_EXIT_MENU.get(menu_id)
+    b = (cf.get("by_alt") or {}).get(alt) if alt else None
+    if not b:
+        return {}
+    out: dict[str, float | int] = {"cf_exit_n": b["n"], "cf_exit_n_eff": round(CF_EXIT_WEIGHT * b["n"], 4)}
+    for src, dst in (("mean_delta_r", "cf_exit_mean_delta_r"), ("lb90", "cf_exit_lb90"), ("lb_adj", "cf_exit_lb_adj"),
+                     ("ub_adj", "cf_exit_ub_adj"), ("top5_share", "cf_exit_top5_share"),
+                     ("censored_share", "cf_exit_censored_share")):
+        if b.get(src) is not None:
+            out[dst] = b[src]
+    out["cf_exit_support"] = 1 if b["verdict"] == "supports_change" else 0
+    return out
+
+
+def _tr_num(x: float) -> str:
+    return f"{x:.2f}".replace(".", ",")
+
+
+_EXIT_CF_PHRASE = {"supports_change": "destekliyor (yalnız bilgi)", "against_change": "aleyhine", "inconclusive": "güvenilir değil",
+                   "insufficient_n": "yetersiz veri", "insufficient_days": "yetersiz veri",
+                   "degraded": "oynatım gerçek çıkıştan sapıyor / henüz doğrulanmadı"}
+
+
+def exit_cf_line(cf: Mapping | None) -> str:
+    """Gunluk ozet / Telegram icin TEK duz Turkce satir (en cok 1; en yuksek n'li alt kume)."""
+    if not cf or not cf.get("by_alt"):
+        return "Çıkış denemesi: henüz hesaplanmadı"
+    best = max(cf["by_alt"].items(), key=lambda kv: (kv[1]["n"], kv[0] == "up"))        # esitlikte gevsek (up)
+    d, b = best
+    step = _tr_num(cf.get("step", 0.5))
+    what = f"iz stopu {step} {'gevşek' if d == 'up' else 'sıkı'}"
+    mean = "-" if b["mean_delta_r"] is None else f"{b['mean_delta_r']:+.2f}".replace(".", ",")
+    return (f"Çıkış denemesi (son {cf['days']} gün, varsayımsal; gerçek dolum yok): {what} (n={b['n']}): "
+            f"ortalama {mean} R fark, {_EXIT_CF_PHRASE[b['verdict']]} — sonuç yalnız bilgi, değişiklik için sana sorulur")
+
+
+def _exit_cf_only_entry(cf_exit: Mapping | None, params: Mapping, bounds: Mapping, ref_params: Mapping | None,
+                        blacklist: Mapping | None, cfg: LessonConfig, as_of: datetime) -> MenuEntry | None:
+    """Revizyon 6 (docs/cikis-karsi-olgu-spec.md 7.3): kanit-yalniz `trail_atr:up` girdisi. Kanit yok / kapali => girdi HIC uretilmez
+    (davranis bit duzeyinde eski). `eligible` yalniz hukum `supports_change` iken; `auto_capable` her zaman False; kontrol noktasi,
+    kalibrasyon ve kural vekili akisina girmez; sinir/`max_steps_from_ref`/kara liste (ret sonrasi 28 gun) aynen gecerli."""
+    p = CF_EXIT_PARAM
+    rule = RULES_BY_ID["trail_atr:up"]
+    if not cf_exit or p not in params or p not in bounds or p not in LESSON_PARAMS:
+        return None
+    b = (cf_exit.get("by_alt") or {}).get("up")
+    if not b:
+        return None
+    from_v = float(params[p])
+    to_v = rule_to_value(rule, from_v, bounds[p])
+    if abs(to_v - from_v) < _EPS:
+        return None                                      # sinirda: girdi yok
+    fails: list[str] = []
+    if b["verdict"] != "supports_change":
+        fails.append("exit_cf_" + b["verdict"])
+    if _blacklisted(blacklist, p, "up", as_of):
+        fails.append("blacklisted")
+    checks = {"checkpoint_passed": False, "cluster_guard": True, "bounds_ok": True,
+              "not_blacklisted": "blacklisted" not in fails, "exit_cf_supported": b["verdict"] == "supports_change"}
+    extra: dict[str, Any] = {}
+    if ref_params is not None and p in ref_params:
+        sa, sn = steps_from_ref(to_v, float(ref_params[p]), p), steps_from_ref(from_v, float(ref_params[p]), p)
+        extra.update({"steps_from_ref_now": sn, "steps_from_ref_after": sa})
+        if sa > sn and sa > cfg.max_steps_from_ref:
+            fails.append("max_steps_from_ref")
+            checks["ref_steps_ok"] = False
+    extra.update(exit_cf_extra(cf_exit, rule.menu_id))
+    return MenuEntry(
+        menu_id=rule.menu_id, param=p, direction="up", scope=scope_str(scope_of(p)), semantics=rule.semantics,
+        evidence_class=rule.evidence_class, from_value=round(from_v, 6), to_value=round(to_v, 6), n_scope=b["n"],
+        stream=f"{p}|exit_cf", checkpoint_c=None, n_a=None, n_b=None, mean_a=None, mean_b=None, gap=None, z=None, extra=extra,
+        fail_reasons=tuple(fails), eligible=not fails, auto_capable=False, always_user=True, score=0.0, checks=checks)
+
+
 def build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None, twin_code: str | None = None,
                    **kw) -> Snapshot:
     """`twin_ro` ya da `twin_code` verilmezse ikiz defteri `cfg.twin_ledger_path`'ten SALT OKUNUR acilir (4.5.1)."""
@@ -1862,6 +2066,8 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
             continue
         if rule.kind == "mfe" and not caps.excursion:
             continue
+        if rule.kind == "exit_cf":                       # kanit-yalniz girdi: kontrol noktasi akisi yok (asagida ayri uretilir)
+            continue
         scope = scope_of(p)
         from_v = float(params[p])
         to_v = rule_to_value(rule, from_v, bounds[p])
@@ -1918,6 +2124,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         for r in sorted(res.values(), key=lambda r: r.c):
             cp_summary.append({"stream": r.stream_key, "c": r.c, "passed": r.passed, "valid_until": r.valid_until})
     cf = build_counterfactual(cfg, as_of, rr_min=params.get("rr_min"))
+    cf_exit = build_exit_counterfactual(cfg, as_of)
     try:
         ref_id = cfg.ref_version or rollback_target_user_approved(ledger_ro)
         ref_params = {k: (float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
@@ -1961,6 +2168,7 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         extra = dict(stats.get("extra", {})) if stats else {}
         extra.update(extra_ref)
         extra.update(counterfactual_extra(cf, rule.menu_id))
+        extra.update(exit_cf_extra(cf_exit, rule.menu_id))       # yalniz bilgi (trail_atr:down)
         if pl["twin"]:
             extra["n_twin"] = n_scope
             extra.setdefault("n_only_twin", sum(1 for u in units if u.category == "only_twin"))
@@ -1981,6 +2189,9 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
             gap=stats.get("gap") if stats else None, z=z, extra=extra, fail_reasons=tuple(fails),
             eligible=eligible, auto_capable=bool(auto_cap), always_user=always_user, score=r4(score),
             checks=checks))
+    ecf_entry = _exit_cf_only_entry(cf_exit, params, bounds, ref_params, blacklist, cfg, as_of)
+    if ecf_entry is not None:
+        menu.append(ecf_entry)
     menu.sort(key=lambda m: m.menu_id)
 
     shadow_start = shadow_start_day or resolve_shadow_start(cfg, ledger_ro, run_day)
@@ -2001,7 +2212,8 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         counters=counters, twin=twin_block, checkpoints=cp_summary,
         shadow={"active": run_day < shadow_end, "ends_on": shadow_end, "start_day": shadow_start},
         calibration={"ok": cal_ok, "code": cal_code, "provisional": not cal_ok}, facts={},
-        max_source_ts=src.max, capabilities=caps.missing(), new_checkpoints=new_cps, counterfactual=cf)
+        max_source_ts=src.max, capabilities=caps.missing(), new_checkpoints=new_cps, counterfactual=cf,
+        cf_exit=cf_exit)
     snap.facts = build_facts(snap)
     assert_no_future(snap, as_of)
     snap.stats_hash = sha256_hex(canon(snap.core_dict()))
@@ -2044,6 +2256,11 @@ def build_facts(snap: Snapshot) -> dict:
             put(f"cf.{reason}.n", b["n"])
             put(f"cf.{reason}.mean_r_net", b["mean_r_net"])
             put(f"cf.{reason}.lb90", b["lb90"])
+    if snap.cf_exit:
+        for alt, b in snap.cf_exit["by_alt"].items():
+            put(f"cfx.{CF_EXIT_PARAM}.{alt}.n", b["n"])
+            put(f"cfx.{CF_EXIT_PARAM}.{alt}.mean_delta_r", b["mean_delta_r"])
+            put(f"cfx.{CF_EXIT_PARAM}.{alt}.lb90", b["lb90"])
     rep = snap.twin.get("report", {})
     if snap.twin.get("available"):
         for k_out, k_in in (("n_keys", "n_keys"), ("adv_mean", "adv_mean"), ("z", "z_twin"),
@@ -2175,6 +2392,18 @@ def _render_user(snap: Snapshot, recent_n: int) -> str:
             lines.append(f"cf reason={reason} param_menu={b['menu_id'] or '-'} method={b['method']} n={b['n']} "
                          f"mean_net_r={_fv(b['mean_r_net'])} lb90={_fv(b['lb90'])} ub90={_fv(b['ub90'])} "
                          f"verdict={b['verdict']}")
+    cfx = snap.cf_exit
+    if cfx and cfx.get("by_alt"):
+        lines.append("[cf_exit]")
+        lines.append(f"note: hypothetical replay of closed trades with another trail_atr (days={cfx['days']}); no real fills or gates; "
+                     f"weight={_fv(cfx['weight'])}; never a sole basis; tails are heavy; evidence only, user is always asked")
+        for alt, b in cfx["by_alt"].items():
+            lines.append(f"cfx param={CF_EXIT_PARAM} dir={alt} n={b['n']} mean_delta_r={_fv(b['mean_delta_r'])} "
+                         f"lb90={_fv(b['lb90'])} ub90={_fv(b['ub90'])} lb_adj={_fv(b['lb_adj'])} "
+                         f"top5_share={_fv(b['top5_share'])} censored_share={_fv(b['censored_share'])} verdict={b['verdict']}")
+        for alt, b in (cfx.get("backtest") or {}).items():
+            lines.append(f"cfx_bt param={CF_EXIT_PARAM} dir={alt} n={b['n']} mean_delta_r={_fv(b['mean_delta_r'])} "
+                         f"lb90={_fv(b['lb90'])} source=backtest in_sample=1 info_only")
     lines.append("[recent_trades]")
     for r in snap.recent[:recent_n]:
         parts = [f"{k}={_fv(r[k])}" for k in ("idx", "setup", "side", "regime", "r", "exit_reason", "atr_ratio")]
@@ -2258,6 +2487,8 @@ def _required_cites(entry: MenuEntry) -> list[str]:
         return [b + "n_scope", b + ("share_time_stop" if entry.direction == "down" else "share_target")]
     if c == "exit_mfe_mae":
         return [b + k for k in ("n_scope", "giveback_mean", "capture_ratio")]
+    if c == "exit_cf_only":
+        return [b + "n_scope", b + "cf_exit_n"] + ([b + "cf_exit_mean_delta_r"] if entry.extra.get("cf_exit_mean_delta_r") is not None else [])
     # esiksiz kagit: kucuk orneklemde z (ve gap) tanimsiz olabilir; olmayan olgu alinti sarti degildir
     return [b + k for k in ("n_scope", "gap", "z") if k == "n_scope" or getattr(entry, k, None) is not None]
 
@@ -2361,7 +2592,7 @@ def propose_rule_proxy(snapshot: Snapshot, cfg: LessonConfig) -> ProposalDraft:
 
 REASON_PRIORITY = ("shadow_period", "calibration_required", "twin_unavailable", "always_user", "ledger_needs_user",
                    "exit_proxy", "weak_evidence", "extrapolated", "ratchet_guard", "counterfactual_support",
-                   "off_menu")
+                   "counterfactual_exit_support", "off_menu")
 
 
 @dataclass(frozen=True)
@@ -2385,6 +2616,8 @@ def classify_route(snapshot: Snapshot, draft: ProposalDraft, cfg: LessonConfig) 
     entry = snapshot.entry(draft.menu_id) if draft.menu_id else None
     if draft.off_menu or entry is None:
         reasons.add("off_menu")
+    elif entry.extra.get("cf_exit_n") is not None:
+        reasons.add("counterfactual_exit_support")   # Revizyon 6: cikis karsi-olgusu kaniti olan girdi DAIMA kullaniciya sorulur
     elif not entry.auto_capable:
         reasons.add("weak_evidence")        # menu girdisi uygun degil (kanit akisi gecmedi): otomatik yol yok
     code = next((r for r in REASON_PRIORITY if r in reasons), None)
@@ -3471,11 +3704,12 @@ class LessonStore:
                 out[k] = r["until_ts"]
         return out
 
-    def rejection_cooldowns(self, days: int) -> dict[tuple[str, str], str]:
+    def rejection_cooldowns(self, days: int, overrides: Mapping[tuple[str, str], int] | None = None) -> dict[tuple[str, str], str]:
         """Acik KULLANICI reddinden (`rejected`) sonra ayni (param, yon) icin `days` gun bekleme (Revizyon 3).
         Zaman asimi (`expired`) reddedilmis sayilmaz."""
         out: dict[tuple[str, str], str] = {}
-        if days <= 0:
+        overrides = overrides or {}
+        if days <= 0 and not any(v > 0 for v in overrides.values()):
             return out
         for r in self._q("SELECT rq.request_json AS j, e.recorded_at AS t FROM lesson_requests rq "
                          "JOIN lesson_request_events e ON e.request_id = rq.request_id WHERE e.event='rejected' "
@@ -3483,10 +3717,13 @@ class LessonStore:
             try:
                 req = json.loads(r["j"])
                 direction = "up" if float(req["to_value"]) > float(req["from_value"]) else "down"
-                until = fmt_ts(parse_ts(r["t"]) + timedelta(days=days))
+                k = (req["param"], direction)
+                d = overrides.get(k, days)           # Revizyon 6: trail_atr:up icin 28 gun (exit_cf_reject_cooldown_days)
+                if d <= 0:
+                    continue
+                until = fmt_ts(parse_ts(r["t"]) + timedelta(days=d))
             except (ValueError, KeyError, TypeError):
                 continue
-            k = (req["param"], direction)
             if k not in out or until > out[k]:
                 out[k] = until
         return out
@@ -4250,7 +4487,9 @@ class LessonService:
 
     def _blacklist_with_cooldown(self, store: LessonStore) -> dict:
         bl = dict(store.blacklist())
-        for k, until in store.rejection_cooldowns(self.cfg.reject_cooldown_days).items():
+        for k, until in store.rejection_cooldowns(
+                self.cfg.reject_cooldown_days,
+                {(CF_EXIT_PARAM, "up"): self.cfg.exit_cf_reject_cooldown_days}).items():
             if k not in bl or until > str(bl[k]):
                 bl[k] = until
         return bl
@@ -4465,6 +4704,9 @@ class LessonService:
         # yapisal engel: golge donemde otomatik yol hic kurulmaz
         if snap.shadow["active"] and route.klass == "auto":
             route = dataclasses.replace(route, klass="ask_user", reason_code="shadow_period")
+        # yapisal engel (Revizyon 6): cikis karsi-olgusu kaniti olan girdi hicbir kosulda otomatik uygulanmaz
+        if entry is not None and entry.extra.get("cf_exit_n") is not None and route.klass == "auto":
+            route = dataclasses.replace(route, klass="ask_user", reason_code="counterfactual_exit_support")
         if entry is not None and not draft.off_menu and not entry.eligible:
             # DD-12 WP-08: kanit/adim/kara liste kapisindan gecmeyen oneri uygulanmaz, kullaniciya da sorulmaz
             store.add_decision(run.id, "primary", draft.source, menu_id=draft.menu_id, param=draft.param,
@@ -4614,6 +4856,10 @@ class LessonService:
             extras.append(f"Golge donem (bitis {snap.shadow['ends_on']}): onaysiz uygulanmaz")
         if route.provisional:
             extras.append("gecici esik (kalibre degil)")
+        if entry is not None and entry.extra.get("cf_exit_n") is not None:
+            tail = entry.extra.get("cf_exit_top5_share")
+            extras.append("varsayimsal oynatim; sonraki girislere etkisi yok sayildi; kuyruk payi "
+                          + ("bilinmiyor" if tail is None else f"{tail}"))
         # LLM gerekcesindeki sayilar dogrulanmamistir: onay metnine yalniz anlik goruntuden gelen sayilar girer
         why = draft.rationale if draft.source == "rule-proxy" else _strip_numbers(draft.rationale)
         body = sanitize_text(f"{why} | {ev_txt} | " + "; ".join(extras), 700)
@@ -4768,6 +5014,10 @@ class LessonService:
                 "supports": sorted(b["menu_id"] for b in cfb["by_reason"].values()
                                    if b["verdict"] == "supports_relaxing" and b["menu_id"]) if cfb else [],
                 "by_reason": dict(cfb["by_reason"]) if cfb else {}, "line": counterfactual_line(cfb)}
+            cfx = snap.cf_exit if snap else None
+            out["exit_counterfactual"] = {
+                "available": bool(cfx), "n": max((b["n"] for b in cfx["by_alt"].values()), default=0) if cfx else None,
+                "by_alt": dict(cfx["by_alt"]) if cfx else {}, "line": exit_cf_line(cfx)}
             rep = (snap.twin.get("report", {}) if snap else {})
             day_info = {"n_learner_entered": None, "n_twin_entered": None, "trade_count_diff": None}
             with contextlib.suppress(Exception):

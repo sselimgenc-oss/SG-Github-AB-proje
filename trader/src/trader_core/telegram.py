@@ -1696,6 +1696,8 @@ def section_lesson(cfg: TelegramConfig, now: datetime) -> str:
                 snap = store.get_snapshot(rows[0]["id"])
                 if snap is not None and snap.counterfactual:
                     lines.append("  " + LS.counterfactual_line(snap.counterfactual))
+                if snap is not None:                       # Revizyon 6: cikis karsi-olgusu (kanit yoksa "henuz hesaplanmadi")
+                    lines.append("  " + LS.exit_cf_line(snap.cf_exit))
         return "\n" + "\n".join(lines)
     except SectionError:
         raise

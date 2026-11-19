@@ -27,6 +27,8 @@ ENTRIES = {
     "telegram": ("script:scripts/telegram_run.py", ["trader_core.telegram", "requests"]),
     "telegram-report": ("script:scripts/telegram_run.py", ["trader_core.telegram"]),
     "counterfactual": ("script:scripts/counterfactual_run.py", ["trader_core.counterfactual", "trader_core.ledger"]),
+    "exit-counterfactual": ("script:scripts/exit_counterfactual_run.py", ["trader_core.exit_counterfactual", "trader_core.ledger", "trader_core.signals",
+                                                                         "trader_core.regime", "trader_engine.holdout"]),
     "backup": ("script:scripts/health_backup.py", []),
     "tutarlilik": ("script:scripts/tutarlilik_run.py", ["trader_engine.backtest", "trader_engine.config", "trader_engine.holdout",
                                                          "trader_engine.marketdata.store", "trader_core.ledger"]),

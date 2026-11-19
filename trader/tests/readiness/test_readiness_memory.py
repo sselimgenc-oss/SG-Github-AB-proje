@@ -141,3 +141,17 @@ def test_install_uninstall_handle_slice_and_publish_stays_gated():
     assert "has_value /etc/trader-panel-cf.env CLOUDFLARE_API_TOKEN" in t
     doc = (DEPLOY.parent / "docs" / "sunucu-kurulum.md").read_text(encoding="utf-8")
     assert "Bellek ölçümü" in doc and "systemd-cgtop" in doc and "MemoryCurrent" in doc and "900 MB" in doc
+
+
+def test_exit_counterfactual_oneshot_is_bounded_and_fits_slice():
+    """Cikis karsi-olgusu (25c): gece isi 23:40 UTC; pandas/numpy ice aktarilir (kacinilmaz) -> 256 MB (soft 192 MB). Alinmayan-sinyal isi (23:10, 128 MB)
+    ile cakismaz (kisa omurlu, siradan biter); ders servisi (hourly :17) ile ayni anda sure bindirmesi yalniz saat 23:40-00:xx; toplam butceye
+    bir 'gece isi' payi olarak girer (ONESHOTS listesinde degil: ml-retrain/counterfactual gibi gece isleri sirayla calisir)."""
+    m = _mem("trader-exit-counterfactual@.service")
+    kv = dict(unit_kv((DEPLOY / "trader-exit-counterfactual@.service").read_text(encoding="utf-8")))
+    assert m == 256 and kv["MemoryHigh"] == "192M" and int(kv["MemoryHigh"][:-1]) < m
+    assert kv["Slice"] == "trader.slice" and kv["Nice"] == "15" and kv["CPUQuota"] == "30%"
+    slice_max = int(dict(unit_kv((DEPLOY / "trader.slice").read_text(encoding="utf-8")))["MemoryMax"][:-1])
+    assert m <= slice_max // 2                                                  # slice tavaninin yarisini asmaz
+    worst = 1170 + 64 + 96 + 256 + 400 + 128 + m                                # en kotu ust uste binme bile RAM + takas icinde
+    assert worst < RAM_MB + SWAP_MB

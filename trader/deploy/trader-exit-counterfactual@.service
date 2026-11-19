@@ -1,0 +1,29 @@
+[Unit]
+Description=Trader cikis karsi-olgusu gece isi (%i; tek seferlik, salt okunur kanit)
+Documentation=file:///opt/trader/docs/cikis-karsi-olgu-spec.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/exit_counterfactual_run.py --bot %i --once --registry-id exitcf-v1
+TimeoutStartSec=900
+# 3: bozulmus calisma (market/defter/depo okunamadi ya da yazilamadi) SuccessExitStatus disinda => OnFailure; 1: kayitsiz (--registry-id); 0 = basarili (defter yoksa da)
+# pandas/numpy (signals/regime) ice aktarilir (~70 MB, kacinilmaz); islem basina tek tek oynatim, ayni anda bir cift (spec 8)
+MemoryMax=256M
+MemoryHigh=192M
+CPUQuota=30%
+Nice=15
+IOSchedulingClass=idle
+ProtectSystem=strict
+ProtectHome=read-only
+# YAZILABILIR yalniz var/<bot> (exit_counterfactual.sqlite; defterin -shm yan dosyasi icin dizin duzeyi). '-' oneki: dizin yoksa birim yine baslar.
+ReadWritePaths=-/opt/trader/var/%i
+# defter ve piyasa veritabani DOSYA duzeyinde salt okunur (kodda da mode=ro); backtest yolu YOK (--runs yalniz gelistirme makinesi)
+ReadOnlyPaths=-/opt/trader/var/%i/ledger.sqlite -/opt/trader/var/market.sqlite
+NoNewPrivileges=true
+# yalniz yerel dosya okur/yazar: ag ve anahtar yok
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+PrivateTmp=true
