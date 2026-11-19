@@ -24,6 +24,10 @@ if ! PYTHONPATH="$trader_dir/src" "$py" -m trader_panel --config "$trader_dir/co
   exit 1
 fi
 [ -s "$gecici/site/index.html" ] || { echo "HATA: anlik goruntu bos" >&2; exit 1; }
+# Rejim etiketi (parolasiz /rejim.json): uretim basarisizsa yalniz uyari; pano yayini surer (dosya o turda olmaz).
+if ! PYTHONPATH="$trader_dir/src" "$py" -m trader_core.rejim_yayini --config-dir "$trader_dir/config" --env paper --out "$gecici/site/rejim.json"; then
+  echo "UYARI: rejim yayini uretilemedi $(date -u +%FT%TZ); pano yayini devam ediyor" >&2
+fi
 cp "$betik_dizin/panel_worker.js" "$gecici/panel_worker.js"
 cat > "$gecici/wrangler.jsonc" <<JSON
 {

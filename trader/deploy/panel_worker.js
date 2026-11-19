@@ -78,6 +78,15 @@ function bilgiCoz(baslik) {
 
 export default {
   async fetch(istek, env) {
+    // Rejim etiketi (parolasiz; yalniz GET/HEAD; icerik rejim etiketidir, bakiye/pozisyon/anahtar yok). Auth'tan ONCE.
+    if ((istek.method === "GET" || istek.method === "HEAD") && new URL(istek.url).pathname === "/rejim.json") {
+      const r = await env.ASSETS.fetch(istek);
+      const h = new Headers(r.headers);
+      h.set("Content-Type", "application/json");
+      h.set("Cache-Control", "no-store");
+      h.set("Access-Control-Allow-Origin", "*");
+      return baslikEkle(new Response(r.body, { status: r.status, statusText: r.statusText, headers: h }));
+    }
     const sifre = env.PANEL_SIFRE;
     if (typeof sifre !== "string" || sifre.length === 0) return red();
     if (await cerezGecerli(istek, sifre)) return baslikEkle(await env.ASSETS.fetch(istek));
