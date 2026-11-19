@@ -373,9 +373,11 @@ class PaperBroker:
     # --- fills
     def _fills_pair(self, pair: str, bar: MinuteBar) -> None:
         self._funding_step(pair, bar)
-        rules = self._rules_fn(pair)
-        for o in [x for x in self._new_orders()
-                  if x.pair == pair and x.role in ("entry", "exit")]:
+        orders = [x for x in self._new_orders() if x.pair == pair and x.role in ("entry", "exit")]
+        # kural yalniz bekleyen emir varken okunur: kurali olmayan istege bagli cift (or. borsada not_trading) mum tasisa da
+        # motoru dusurmez (emir yoksa kurala gerek yok)
+        rules = self._rules_fn(pair) if orders else None
+        for o in orders:
             if o.role == "entry":
                 self._fill_entry(o, bar, rules)
             else:
