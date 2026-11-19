@@ -28,8 +28,8 @@
   "blacklist_days": 14,
   "user_request_ttl_days": 3,
   "pending_ttl_days": 3,
-  "allow_off_menu": false,
-  "proxy_include_ask_user": false,
+  "allow_off_menu": true,
+  "proxy_include_ask_user": true,
   "batch_max_age_h": 25,
   "prompt_max_est_tokens": 12000,
   "shadow_weeks": 0,
@@ -46,5 +46,7 @@
   "max_changes_per_night": null,
   "notes_enabled": true,
   "notes_model": "claude-haiku-5-5",
-  "lesson_candidate_max_in_prompt": 8
+  "lesson_candidate_max_in_prompt": 8,
+  "paper_auto": true,
+  "exit_cf_reject_cooldown_days": 0
 }

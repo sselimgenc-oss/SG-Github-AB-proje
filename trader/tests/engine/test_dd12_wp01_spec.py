@@ -221,7 +221,9 @@ def test_dt2_paper_ml_kapali_golgesiz_16_pozisyon():
     cfg = _paper()
     assert cfg.ml_mode == "off"
     assert cfg.ml_experimental is False and cfg.ml_model_path is None and cfg.ml_pairs == ()
-    assert cfg.shadow_blocks == ()
+    assert cfg.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")      # 19.11 (kagitta her sey acik): golge karar satirlari acik (karar yolunu etkilemez)
+    assert cfg.exit_modes == {"default": {"breakeven": {"trigger_r": 1.0, "offset_bps": cfg.exit_modes["default"]["breakeven"]["offset_bps"]},
+                              "partial": {"trigger_r": 1.5, "frac": 0.5}}}      # 19.11: cikis kipleri kagitta ACIK (spec varsayilanlari)
     assert cfg.max_positions == 16
     assert cfg.target_trade_risk == 0.01                           # islem basi %1
 
@@ -280,7 +282,7 @@ def test_dt2_paper_yeni_anahtar_ham_json_listesi():
         assert k in raw, k
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw)
-    assert raw["shadow_blocks"] == [] and raw["max_positions"] == 16 and raw["ml_mode"] == "off"
+    assert raw["shadow_blocks"] == ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"] and raw["max_positions"] == 16 and raw["ml_mode"] == "off"
 
 
 # --------------------------------------------------------------------------- D-T2 (yalniz --env paper)
@@ -289,7 +291,8 @@ def test_dt2_paper_katmani_yalniz_env_paper_ile_uygulanir():
     paper = load_cli_config(CONFIG, "learner", "paper")
     assert len(plain.pairs) == 10 and len(paper.pairs) == 44
     assert plain.ml_mode == "off" and paper.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli (kullanici karari)
-    assert plain.shadow_blocks != () and paper.shadow_blocks == ()
+    assert plain.shadow_blocks != () and paper.shadow_blocks == plain.shadow_blocks      # 19.11: kagitta golge satirlar acik
+    assert plain.exit_modes == {} and paper.exit_modes != {}
     for env in ("testnet", "live"):
         c = load_cli_config(CONFIG, "learner", env)
         assert c.mode == env and len(c.pairs) == 10 and c.ml_mode == "off"

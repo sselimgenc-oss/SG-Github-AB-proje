@@ -248,6 +248,8 @@ class LessonConfig:
     pending_ttl_days: int = 3
     max_user_requests_per_week: int | None = None    # DD-12 WP-08: haftalik kullanici istegi siniri yok
     allow_off_menu: bool = False
+    paper_auto: bool = False                         # 19.11 kullanici karari (docs/ders-spec.md Rev. 8): KAGITTA cikis onerileri + menu disi oneri
+                                                     # onaysiz uygulanir (otomatik geri alma ile); false (varsayilan, canli) => eski: daima kullaniciya sorulur
     proxy_include_ask_user: bool = False
     batch_max_age_h: int = 25
     prompt_max_est_tokens: int = 12000
@@ -351,6 +353,7 @@ class LessonConfig:
         if self.max_user_requests_per_week is not None:
             isint(self.max_user_requests_per_week, "max_user_requests_per_week", 1, 2)
         isbool(self.allow_off_menu, "allow_off_menu")
+        isbool(self.paper_auto, "paper_auto")
         isbool(self.proxy_include_ask_user, "proxy_include_ask_user")
         isint(self.batch_max_age_h, "batch_max_age_h", 24)
         isint(self.prompt_max_est_tokens, "prompt_max_est_tokens", 1, 20000)
@@ -2039,7 +2042,8 @@ def _exit_mode_entries(cf_exit: Mapping | None, params: Mapping, bounds: Mapping
             menu_id=menu_id, param=p, direction="up", scope=scope_str(scope_of(p)), semantics=rule.semantics,
             evidence_class=rule.evidence_class, from_value=round(from_v, 6), to_value=round(to_v, 6), n_scope=b["n"],
             stream=f"{p}|exit_cf", checkpoint_c=None, n_a=None, n_b=None, mean_a=None, mean_b=None, gap=None, z=None, extra=extra,
-            fail_reasons=tuple(fails), eligible=not fails, auto_capable=False, always_user=True, score=0.0, checks=checks))
+            fail_reasons=tuple(fails), eligible=not fails, auto_capable=bool(cfg.paper_auto and not fails),
+            always_user=not cfg.paper_auto, score=0.0, checks=checks))
     return out
 
 
@@ -2078,7 +2082,8 @@ def _exit_cf_only_entry(cf_exit: Mapping | None, params: Mapping, bounds: Mappin
         menu_id=rule.menu_id, param=p, direction="up", scope=scope_str(scope_of(p)), semantics=rule.semantics,
         evidence_class=rule.evidence_class, from_value=round(from_v, 6), to_value=round(to_v, 6), n_scope=b["n"],
         stream=f"{p}|exit_cf", checkpoint_c=None, n_a=None, n_b=None, mean_a=None, mean_b=None, gap=None, z=None, extra=extra,
-        fail_reasons=tuple(fails), eligible=not fails, auto_capable=False, always_user=True, score=0.0, checks=checks)
+        fail_reasons=tuple(fails), eligible=not fails, auto_capable=bool(cfg.paper_auto and not fails),
+        always_user=not cfg.paper_auto, score=0.0, checks=checks)
 
 
 def build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None, twin_code: str | None = None,
@@ -2740,9 +2745,11 @@ def classify_route(snapshot: Snapshot, draft: ProposalDraft, cfg: LessonConfig) 
         reasons.add("shadow_period")
     entry = snapshot.entry(draft.menu_id) if draft.menu_id else None
     if draft.off_menu or entry is None:
-        reasons.add("off_menu")
+        if not cfg.paper_auto:              # Rev. 8: kagitta menu disi oneri de onaysiz (sinir dogrulamasi _route'ta + defterde)
+            reasons.add("off_menu")
     elif entry.extra.get("cf_exit_n") is not None:
-        reasons.add("counterfactual_exit_support")   # Revizyon 6: cikis karsi-olgusu kaniti olan girdi DAIMA kullaniciya sorulur
+        if not cfg.paper_auto:              # Rev. 8: kagitta cikis kaniti girdisi onaysiz uygulanir (kanit hukmu + otomatik geri alma)
+            reasons.add("counterfactual_exit_support")   # Revizyon 6: cikis karsi-olgusu kaniti olan girdi DAIMA kullaniciya sorulur
     elif not entry.auto_capable:
         reasons.add("weak_evidence")        # menu girdisi uygun degil (kanit akisi gecmedi): otomatik yol yok
     code = next((r for r in REASON_PRIORITY if r in reasons), None)
@@ -2966,6 +2973,61 @@ def measure_effect(ledger_ro, cfg: LessonConfig, cur_params: Mapping[str, Any], 
                         math.fsum(added), math.fsum(removed))
 
 
+# Rev. 8 (19.11 kullanici karari): kagitta uygulanan CIKIS onerisinin otomatik geri alinmasi (1L3A cikis_karsi_olgu.geri_al_gerekli kalibi).
+# Olcut: degisiklikten SONRA giren >= EXIT_ROLLBACK_MIN_N islemde (ozgun cikis toplam R >= yeni toplam R + max(2 R, |yeni| x %20))
+# YA DA (yeni en kotu islem ozgun en kotuden >= 1 R daha kotu) => geri al. Iki yol da ayni kayit-defteri oynatimindan (ecf) olculur.
+EXIT_ROLLBACK_MIN_N = 10
+EXIT_ROLLBACK_MIN_R = 2.0
+EXIT_ROLLBACK_FRAC = 0.20
+EXIT_ROLLBACK_WORST_R = 1.0
+EXIT_PARAMS = (CF_EXIT_PARAM,) + tuple(CF_MODE_PARAM.values())
+
+
+def exit_rollback_needed(new_r: Sequence[float], orig_r: Sequence[float]) -> bool:
+    if len(new_r) < EXIT_ROLLBACK_MIN_N or len(new_r) != len(orig_r):
+        return False
+    y, o = math.fsum(new_r), math.fsum(orig_r)
+    return (o >= y + max(EXIT_ROLLBACK_MIN_R, abs(y) * EXIT_ROLLBACK_FRAC) - LOOSE_ERR
+            or min(new_r) <= min(orig_r) - EXIT_ROLLBACK_WORST_R + LOOSE_ERR)
+
+
+def exit_harm_verdict(cfg: LessonConfig, monitor: Monitor, started: datetime, as_of: datetime) -> MonitorVerdict | None:
+    """Yalniz `paper_auto` ve cikis parametresi: ecf deposundan, degisiklikten sonra giren islemlerin yeni/ozgun R'si. Kanit yok/yetersiz
+    ya da zarar yok => None (olagan etki olcumu/sure sonu akisi surer)."""
+    if not cfg.paper_auto or monitor.param not in EXIT_PARAMS or not cfg.exit_cf_enabled:
+        return None
+    path = exit_cf_path(cfg)
+    if not os.path.exists(path):
+        return None
+    new_r: list[float] = []
+    orig_r: list[float] = []
+    try:
+        if monitor.param == CF_EXIT_PARAM:
+            rev = "down" if monitor.to_value > monitor.from_value else "up"
+            for r in _ecf_mod.deltas(path, cfg.bot, now=as_of, days=cfg.exit_cf_days, direction=rev):
+                if parse_ts(r["entry_ts"]) >= started and abs(float(r["base_value"]) - monitor.to_value) < 1e-6:
+                    new_r.append(float(r["base_net_r"]))
+                    orig_r.append(float(r["alt_net_r"]))
+        else:
+            mode = {v: k.split(":")[1] for k, v in CF_MODE_PARAM.items()}[monitor.param]
+            if monitor.to_value <= monitor.from_value:
+                return None
+            for r in _ecf_mod.deltas_modes(path, cfg.bot, now=as_of, days=cfg.exit_cf_days, mode=mode, with_r=True):
+                if parse_ts(r["entry_ts"]) >= started:
+                    new_r.append(r["on_r"])
+                    orig_r.append(r["off_r"])
+    except Exception as e:  # noqa: BLE001  fail-safe: kanit yok
+        log.warning("cikis geri alma olcutu okunamadi: %s", scrub(e))
+        return None
+    if not exit_rollback_needed(new_r, orig_r):
+        return None
+    y, o = math.fsum(new_r), math.fsum(orig_r)
+    st = {"n": len(new_r), "effect": r4(y - o), "damped_effect": r4(y - o), "param": monitor.param, "new_sum_r": r4(y),
+          "orig_sum_r": r4(o), "new_worst_r": r4(min(new_r)), "orig_worst_r": r4(min(orig_r))}
+    return MonitorVerdict("rolled_back", "exit_effect", st,
+                          f"cikis kotulesti: yeni {y:+.2f} R vs ozgun {o:+.2f} R (n={len(new_r)})")
+
+
 def evaluate_monitor(ledger_ro, twin_ro, monitor: Monitor, as_of: datetime, cfg: LessonConfig, *,
                      twin_code: str | None = None, caps: Caps | None = None,
                      twin_report: TwinReport | None = None) -> MonitorVerdict:
@@ -2981,6 +3043,9 @@ def evaluate_monitor(ledger_ro, twin_ro, monitor: Monitor, as_of: datetime, cfg:
         return MonitorVerdict("superseded", "state", {}, "surum yok")
     started = parse_ts(monitor.started_at)
     age_days = (as_of - started).total_seconds() / 86400.0
+    xh = exit_harm_verdict(cfg, monitor, started, as_of)
+    if xh is not None:
+        return xh
     eff = measure_effect(ledger_ro, cfg, dict(ver.params), dict(base.params), started, as_of, caps=caps)
     st = {**eff.to_dict(), "param": monitor.param, "age_days": r4(age_days), "shrink_n": cfg.shrink_n,
           "threshold_r": -cfg.rollback_effect_r}
@@ -4535,7 +4600,8 @@ class LessonService:
                 continue
             store.add_monitor_event(m.monitor_id, v.action, stats, run.run_day)
             self._blacklist(store, m, now)
-            self._notify(ctx, "rolled_back", "warn", "Ders degisikligi geri alindi",
+            self._notify(ctx, "rolled_back", "warn",
+                         f"Geri alındı: {m.param}" if self.cfg.paper_auto else "Ders degisikligi geri alindi",
                          f"{m.param} {m.to_value} -> {m.from_value}: {reason}"
                          + (" (kullanici onayli degisiklik)" if m.origin == "user" else ""),
                          run.run_day, m.version_id, now)
@@ -4610,12 +4676,16 @@ class LessonService:
         items.sort(key=lambda t: t[0])
         return [d for _, d in items][-self.cfg.history_n:] if self.cfg.history_n else []
 
+    def _exit_cooldown_days(self) -> int:
+        """Rev. 8: kagitta (paper_auto) cikis onerisi ret sonrasi bekleme 0; canlida `exit_cf_reject_cooldown_days` (28)."""
+        return 0 if self.cfg.paper_auto else self.cfg.exit_cf_reject_cooldown_days
+
     def _blacklist_with_cooldown(self, store: LessonStore) -> dict:
         bl = dict(store.blacklist())
         for k, until in store.rejection_cooldowns(
                 self.cfg.reject_cooldown_days,
-                {(CF_EXIT_PARAM, "up"): self.cfg.exit_cf_reject_cooldown_days,
-                 **{(pp, "up"): self.cfg.exit_cf_reject_cooldown_days for pp in CF_MODE_PARAM.values()}}).items():
+                {(CF_EXIT_PARAM, "up"): self._exit_cooldown_days(),
+                 **{(pp, "up"): self._exit_cooldown_days() for pp in CF_MODE_PARAM.values()}}).items():
             if k not in bl or until > str(bl[k]):
                 bl[k] = until
         return bl
@@ -4831,7 +4901,7 @@ class LessonService:
         if snap.shadow["active"] and route.klass == "auto":
             route = dataclasses.replace(route, klass="ask_user", reason_code="shadow_period")
         # yapisal engel (Revizyon 6): cikis karsi-olgusu kaniti olan girdi hicbir kosulda otomatik uygulanmaz
-        if entry is not None and entry.extra.get("cf_exit_n") is not None and route.klass == "auto":
+        if entry is not None and entry.extra.get("cf_exit_n") is not None and route.klass == "auto" and not cfg.paper_auto:
             route = dataclasses.replace(route, klass="ask_user", reason_code="counterfactual_exit_support")
         if entry is not None and not draft.off_menu and not entry.eligible:
             # DD-12 WP-08: kanit/adim/kara liste kapisindan gecmeyen oneri uygulanmaz, kullaniciya da sorulmaz
@@ -4839,6 +4909,15 @@ class LessonService:
                                to_value=draft.to, gate_code="not_eligible", klass="auto", proposal_id=None,
                                outcome="no_change")
             return self._finish(ctx, run, "no_change", "not_eligible")
+        if entry is None and cfg.paper_auto and route.klass == "auto":
+            lo_hi = (snap.bounds or {}).get(draft.param)         # menu disi: sinir disi / degismeyen oneri uygulanmaz
+            cur = snap.params.get(draft.param)
+            if (not lo_hi or cur is None or not (float(lo_hi[0]) - _EPS <= float(draft.to) <= float(lo_hi[1]) + _EPS)
+                    or abs(float(draft.to) - float(cur)) < _EPS):
+                store.add_decision(run.id, "primary", draft.source, menu_id=draft.menu_id, param=draft.param,
+                                   to_value=draft.to, gate_code="off_menu_out_of_bounds", klass="auto", proposal_id=None,
+                                   outcome="no_change")
+                return self._finish(ctx, run, "no_change", "off_menu_out_of_bounds")
         require_user = route.klass != "auto"
         ev = self._evidence(snap, entry)
         claimed = {"n_closed": entry.n_scope if entry else None, "scope": entry.scope if entry else None,
@@ -4967,7 +5046,7 @@ class LessonService:
                     origin=origin)
         store.add_monitor(m)
         ev_txt = " ".join(f"{k}={v}" for k, v in (evidence or {}).items())
-        self._notify(ctx, "applied", "info", f"Ders uygulandi: {param}",
+        self._notify(ctx, "applied", "info", f"Ders uygulandı: {param}" if self.cfg.paper_auto else f"Ders uygulandi: {param}",
                      f"{param} {m.from_value} -> {m.to_value} ({'otomatik' if origin == 'auto' else 'kullanici onayli'}). "
                      f"Kanit: {ev_txt}. Geri alma: kullanici geri alma dugmesi ya da otomatik izleyici.",
                      run.run_day if run else fmt_ts(now)[:10], ares.version_id, now)

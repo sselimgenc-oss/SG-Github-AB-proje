@@ -192,3 +192,5 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
   - gerçek paraya geçişin zamanı ve şekli yalnız kullanıcıya aittir;
   - otomatik güncellemenin "yalnız yeşil test" şartı (kullanıcının kendi şartı);
   - PBO/holdout ve tutarlılık raporları yalnız rapordur, işlemi engellemez.
+
+- **19.11 kullanıcı kararı (kâğıtta her şey açık; kapılar yalnız canlı):** kâğıtta çıkış kipleri (başa-baş, kısmi kâr) tüm kollar için AÇIK; ders çıkış önerileri (`trail_atr:up`, `exit:breakeven`, `exit:partial`) ve menü dışı öneri onaysız uygulanır, kötüleşirse otomatik geri alınır (1L3A kalıbı; ret sonrası bekleme kâğıtta 0); gölge karar satırları açık. Ön-kayıt kapıları ve kalite eşikleri yalnız canlıya geçiş içindir. Değişmeyenler: sert limitler, holdout mührü, risk kademesi (60 işlem, −3R, −10R), canlı veto=required, kasa 1500. Uygulama: `ders-spec.md` Revizyon 8, `cikis-kipleri-spec.md` §10.

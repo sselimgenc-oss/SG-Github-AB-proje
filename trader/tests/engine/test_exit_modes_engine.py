@@ -229,6 +229,21 @@ def test_paper_equals_backtest(tmp_path, modes):
     assert a_env.engine.counters().get("partial_fills", 0) == b_env.engine.counters().get("partial_fills", 0)
 
 
+def test_paper_config_modes_are_open_and_paper_equals_backtest(tmp_path):
+    """19.11 kullanici karari: kagit yapilandirmasinda cikis kipleri ACIK (spec varsayilanlari); kagit = geri test paritesi bu
+    yapilandirmayla (kip acik) korunur. Testnet/canli/geri test varsayilani degismez (bos)."""
+    import json
+    from pathlib import Path
+    cfgdir = Path(__file__).resolve().parents[2] / "config"
+    raw = json.loads((cfgdir / "engine.paper.json").read_text())["exit_modes"]
+    assert raw == {"default": {"breakeven": True, "partial": True}}
+    for other in ("engine.base.json", "engine.live.json", "engine.testnet.json", "engine.learner.json"):
+        assert "exit_modes" not in json.loads((cfgdir / other).read_text())
+    a_env, a_id, _ = _run(tmp_path / "paper", mode="paper", modes=raw, drop_low=97.0)
+    b_env, b_id, _ = _run(tmp_path / "bt", mode="backtest", modes=raw, drop_low=97.0)
+    assert _snap(a_env, a_env.real_ledger.get_trade(a_id)) == _snap(b_env, b_env.real_ledger.get_trade(b_id))
+
+
 def test_lesson_flags_enable_modes_from_active_params(tmp_path):
     """Defter etkin surumunde `exit_breakeven=1` -> kip T1 icin acilir (yapilandirma bos)."""
     env = Env(tmp_path)
