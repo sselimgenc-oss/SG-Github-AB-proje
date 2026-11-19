@@ -29,7 +29,7 @@ Hedef: ~~aralık sonu–ocak başı canlı (1000 $, Binance global alt hesap). T
 ## Faz 2 — Strateji, Claude ve izleme (23–29 Kasım)
 13. Strateji: trendde trend takibi, yatayda ortalamaya dönüş; price action kuralları koda.
 14. Geçmiş veriyle test: komisyon iki katıyla da; geleceği görme (lookahead) hatası analizi.
-15. API bütçesi (veto ve dersten önce): ayrı workspace, aylık **30 $** (18 Kasım; eski: 10 $, veto 0,25 $/gün, ders 0,10 $/gün), %70 uyarısı; LLM aday önerisi açık, günlük adet sınırı yok (yalnız 30 $/ay); veto yok.
+15. API bütçesi (veto ve dersten önce): ayrı workspace, aylık **10 $** (19 Kasım kullanıcı kararı; 18 Kasım'daki 30 $ geri alındı), %70 uyarısı; LLM aday önerisi açık, günlük adet sınırı yok (yalnız 10 $/ay); veto yok.
 16. ~~Veto servisi (Haiku, 30 dk): dosya yok / eski / "girme" → işlem yok. Veto testleri.~~ **[KALDIRILDI 18 Kasım — kullanıcı: LLM veto kâğıtta tamamen kaldırıldı]**
 17. Ders servisi (Sonnet, günlük, toplu mod), en sade hali: ilk işlemden etkin, her işleme gece ders notu (ertesi gün aday ders; işe yaramazsa emekli; dersler ML'e girdi); işlem/kanıt eşiği ve haftalık sınır yok (18 Kasım); küçük değişikliği uygular, büyüğü Telegram'dan sorar; sınırlı ayarlar; **değişiklik günlüğü ve geri alma düğmesi**.
 18. Telegram: günlük rapor 21:00, anlık uyarılar; **acil durdurma komutu ("hepsini kapat")**.

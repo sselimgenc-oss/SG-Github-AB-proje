@@ -7,7 +7,7 @@ Kâğıt bot tek ve düzdür (learner); **ikiz YOK, gölge dönem YOK**. Aşağ�
 2. **Eşik/kanıt şartı yok:** 30/45/60 kontrol noktası, "≥ 20–30 işlem", `min_evidence_trades` ve kalibrasyon şartı (`calibration_required`) kâğıtta aranmaz; haftalık "en çok bir değişiklik" ve haftalık kullanıcı isteği sınırı yok. Tek adım, sınırlar ve otomatik geri alma kalır.
 3. **İkiz kaldırıldı:** `twin_enabled=false`; ikiz kontrolü, `twin_observed`, `steps_from_twin`/`max_steps_from_twin`, 4.5 ve "ikiz kullanılabilir" ön koşulu geçersiz (ikiz yokluğu otomatik uygulamayı KAPATMAZ).
 4. **Her işleme gece ders notu:** her kapanan işlem için gece bir ders notu yazılır, ertesi gün "aday ders" olarak kullanılır; işe yaramazsa emekli olur. Dersler ML'e girdi olur.
-5. **LLM:** aylık bütçe 30 $; LLM aday önerir (günlük adet sınırı yok); LLM veto yok. Eski günlük ders sınırı (0,10 $) geçersiz.
+5. **LLM:** aylık bütçe 10 $ (19 Kasım); LLM aday önerir (günlük adet sınırı yok); LLM veto yok. Eski günlük ders sınırı (0,10 $) geçersiz.
 6. Gerçek para / canlı ilişkili koşullar **[ASKIDA — kullanıcı yeniden belirleyecek]**.
 
 ## Revizyon 6 (çıkış karşı-olgusu, 19 Kasım 2026 — `docs/cikis-karsi-olgu-spec.md`; plan 25c madde 1a)

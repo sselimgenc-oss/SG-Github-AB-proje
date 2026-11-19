@@ -4,7 +4,7 @@
 
 Tarih: 18 Kasım 2026 (mentor). Sürüm 4 (v3'ün yerine geçer; dosya adı tarihseldir). Dayanak: kullanıcı kararları, 18 Kasım 2026 (`tasarim-kararlari.md`: "Tur 6 sonrası kullanıcı kararları", LLM bütçesi kararı) ve `research_notes/tur6-karsilastirma/D-sentez.md` (öneriler; kullanıcı eşik ve seans önerilerini reddetti, aşağıda kullanıcı kararı geçerlidir). Bu belge kod, test ve commit içermez.
 
-v3 → v4 özeti: **LLM veto kaldırıldı**; risk %0,5 → %1, 10 → 16 pozisyon, kümeler yeniden; seans yasağı yok, seans etiketi var; ML ve ders için hiçbir asgari işlem/kanıt eşiği, haftalık değişiklik sınırı ve bekleme yok; her kapanan işlem gece notu alır, notlar ders ve ML verisidir; LLM kendi adayını önerir (aylık toplam 30 $); aylık enstrüman güncelleme işi; 1 günlük zaman dilimi dahil; faz takvimi yerine iş paketleri (WP) ve yayın noktaları; gerçek para kararlarının tamamı askıda.
+v3 → v4 özeti: **LLM veto kaldırıldı**; risk %0,5 → %1, 10 → 16 pozisyon, kümeler yeniden; seans yasağı yok, seans etiketi var; ML ve ders için hiçbir asgari işlem/kanıt eşiği, haftalık değişiklik sınırı ve bekleme yok; her kapanan işlem gece notu alır, notlar ders ve ML verisidir; LLM kendi adayını önerir (aylık toplam 10 $); aylık enstrüman güncelleme işi; 1 günlük zaman dilimi dahil; faz takvimi yerine iş paketleri (WP) ve yayın noktaları; gerçek para kararlarının tamamı askıda.
 
 ## 0. Kararlar (kullanıcı) ve bu planın sınırı
 
@@ -13,7 +13,7 @@ v3 → v4 özeti: **LLM veto kaldırıldı**; risk %0,5 → %1, 10 → 16 pozisy
 - **Risk (kâğıt):** işlem başı %1; en çok 16 eşzamanlı pozisyon; toplam açık risk %12, aynı yön %8, günlük zarar %8 (D-sentez seçenek A). Yalnız kâğıt istisnası (§4).
 - **Seans yasağı yok** (hisse ve emtia 7/24 işlem alabilir). Her aday ve işlem seans durumu etiketi taşır (§4.2); ders ve ML bundan öğrenir.
 - **ML ve ders ilk işlemden etkin.** Asgari işlem/kanıt eşiği yok (30 işlem, ≥ 300 etiketli aday, ≥ 40 aday yok), haftalık değişiklik sınırı yok, "M1'den sonra" bekleme yok (§5, §6).
-- **LLM:** **veto kaldırıldı** (kullanıcı: "veto nedir, kaldır"); kâğıtta hiçbir LLM veto kapısı yoktur. Aylık LLM bütçesi **toplam 30 $** (kullanıcı kararı): işlem notu + ders ve LLM aday önerisi; öneri sayısında günlük sınır yok, yalnız bütçe payı sınırlar (§5.4, §6.5).
+- **LLM:** **veto kaldırıldı** (kullanıcı: "veto nedir, kaldır"); kâğıtta hiçbir LLM veto kapısı yoktur. Aylık LLM bütçesi **toplam 10 $** (kullanıcı kararı, 19 Kasım): işlem notu + ders ve LLM aday önerisi; öneri sayısında günlük sınır yok, yalnız bütçe payı sınırlar (§5.4, §6.5).
 - **Sunucu büyütülmez;** plan 2 GB'a sığar (§8).
 - **Gerçek para: bütün kararlar askıda** (kullanıcı, 18 Kasım gece: "reddediyorum, tekrar belirleyeceğim"). CANLI-K1 ölçütü, başlangıç tutarı, kasa tavanı, duman testi/canlı takvimi, risk kademe artış takvimi ve 5B adaylık ölçütü askıdadır; kullanıcı yeniden belirleyene kadar gerçek para adımı yapılmaz, canlı anahtar konmaz. Bu belgedeki hiçbir iş bunlara tarih ya da ön şart koymaz.
 - **Değişmeyenler:** testnet/canlı kodu ve yolu (dokunulmaz); S2 ön kaydı; kilitli dönem (2026-05-01 → 2026-11-01); `engine.base.json`.
@@ -168,8 +168,8 @@ Asgari örnek istenmez ama tek işlemin kararı sürüklemesi istenmez. Bu yüzd
 - **Kurulum aç/kapa:** son en çok 40 aday (alınan + "alınsaydı") üzerinde sönümlü ortalama ≤ −0,15 R ise kurulum kapanır (aday ve sonuç kaydı sürer); aynı pencerede ≥ +0,05 R ise yeniden açılır. Asgari aday yok.
 - **ML etkisi:** `−Σ R(ML'nin elediği adaylar; "alınsaydı")` ve `M1`/`L1` işlemlerinin gerçek R toplamı; ayrıca nightly süzgeç için kurulum bazında.
 
-### 6.5 LLM bütçesi (kullanıcı kararı: aylık toplam 30 $)
-Bütün LLM harcaması (işlem notu, ders, LLM adayı) tek `monthly_cap_usd = 30` altındadır (veto yok); ayrı paylar mentor önerisidir, sayılar tahmindir, ilk hafta ölçülüp bildirilir:
+### 6.5 LLM bütçesi (kullanıcı kararı 19 Kasım: aylık toplam 10 $)
+Bütün LLM harcaması (işlem notu, ders, LLM adayı) tek `monthly_cap_usd = 10` altındadır (veto yok). 19 Kasım: tavan 10 $ kalır (30 $ önerisi geri alındı); aşağıdaki pay tablosu 30 $ varsayımıyla yazılmış tarihsel öneridir, uygulanan paylar `config/budget.json`'dadır:
 
 | Pay | Aylık | Günlük tavan | Not |
 |---|---|---|---|
@@ -177,9 +177,9 @@ Bütün LLM harcaması (işlem notu, ders, LLM adayı) tek `monthly_cap_usd = 30
 | not + ders (Haiku batch + Sonnet) | 6 $ | 0,20 $ | |
 | `L1` LLM adayı (Sonnet batch) | 19 $ | yok (aday sayısı sınırı yok) | yalnız aylık pay sınırlar |
 | yedek | 3 $ | — | kimse payına yazmaz; payı biten kalemi yalnız yönetici (`budget.py`) yedekten karşılayabilir, loglanır |
-| **Toplam** | **30 $** | | `monthly_warn_usd` 15 $, uyarı oranı %70 aynen |
+| **Toplam (tarihsel öneri)** | **30 $** | | `monthly_warn_usd` 15 $, uyarı oranı %70 aynen |
 
-Kural: `L1` payı biterse yalnız `L1` o ay durur (not ve ders payı devredilmez, `L1` onlardan çekmez). Pay toplamı `monthly_cap_usd`'u geçemez (`budget.py` yüklemede denetler; yoksa hata). Yedek yalnız `budget.py` tarafından, loglanarak kullanılır. `prepaid_credit_usd` 30 $'a çıkarılması kullanıcı/operatör adımıdır (kredi yükleme; otomatik yükleme kapalı). `L1` için üçüncü anahtar eklenir (`ANTHROPIC_API_KEY_PROPOSER`). Eski veto anahtarı ve `veto` payı/günlük tavanı kaldırılır.
+Kural: `L1` payı biterse yalnız `L1` o ay durur (not ve ders payı devredilmez, `L1` onlardan çekmez). Pay toplamı `monthly_cap_usd`'u geçemez (`budget.py` yüklemede denetler; yoksa hata). Yedek yalnız `budget.py` tarafından, loglanarak kullanılır. Ön ödemeli kredi 10 $ kalır; artırmak kullanıcı adımıdır (kredi yükleme; otomatik yükleme kapalı). `L1` için üçüncü anahtar eklenir (`ANTHROPIC_API_KEY_PROPOSER`). Eski veto anahtarı ve `veto` payı/günlük tavanı kaldırılır.
 
 ## 7. Telegram ve pano
 
@@ -330,7 +330,7 @@ Hedef tarihler (tahmin, kayarsa kullanıcıya bildirilir; sıra korunur): Yayın
 | D-T24 | 18 | Yasak içe aktarma taraması (freqtrade, ccxt, python-binance); dondurulmuş dosyaların sha256'ları değişmedi. |
 | D-T25 | 09 | Notlar: her kapanan işlem için bir not satırı (eşik yok); sabit etiket sözlüğü dışı etiket reddedilir; ertesi gün aday ders istemde; etkisi ≤ 0 → emekli, > 0 → yaşar; harcama `budget.py` payına yazılır; pay bitince not işi durur, motor etkilenmez. |
 | D-T26 | 10 | Nightly süzgeç: ilk karşıt sınıflı kayıtla model oluşur, öncesi `ml_no_model`; özellikler karar anında bilinenlerdir (`lesson_ids`, `session_tag`), işlem sonrası etiket özellikte yok; paket sha256; sıcak yükleme motoru durdurmaz; eğitim işi bellek tavanında kalır; kilit içi tarihli satır eğitime girmez. Ders kimlikleri eğitim tablosunda. |
-| D-T27 | 06b/15 | Bütçe ve `L1`: pay toplamı > aylık tavan → yükleme hatası; `veto` payı yok; `L1` payı bitince yalnız `L1` durur, not/ders etkilenmez; **günlük aday sınırı yok** (bir turda 3'ten fazla öneri geçerlidir); `enabled:false` → sıfır çağrı; geçersiz öneri `llm_invalid`; öneri bütün kapılardan geçer; aylık toplam hiçbir senaryoda 30 $'ı aşmaz. |
+| D-T27 | 06b/15 | Bütçe ve `L1`: pay toplamı > aylık tavan → yükleme hatası; `veto` payı yok; `L1` payı bitince yalnız `L1` durur, not/ders etkilenmez; **günlük aday sınırı yok** (bir turda 3'ten fazla öneri geçerlidir); `enabled:false` → sıfır çağrı; geçersiz öneri `llm_invalid`; öneri bütün kapılardan geçer; aylık toplam hiçbir senaryoda 10 $'ı aşmaz. |
 | D-T28 | 16 | Aylık güncelleme: toplam 44 kalır; `TRADING` olmayan hisse yedekten değişir; açık pozisyonlu çıkan çift yönetilir ama yeni giriş almaz; `ml_pairs`/S2 listesi değişmez; kaynak yoksa hacim yedeği; kaplama dosyası yoksa `engine.paper.json` aynen. |
 | D-T29 | 05 | Kayma: seans içi/`closed`/`weekend` katsayıları (2×/3×/4×) doğru uygulanır; kripto tabanda aynı. |
 | D-T30 | 01 | `risk.py`: kâğıtta %1 / %12 / %8 / %8 uygulanır; aynı anahtarlar testnet/canlıda `ConfigError`; verilmezse eski sabitler. |
@@ -354,7 +354,7 @@ Hedef tarihler (tahmin, kayarsa kullanıcıya bildirilir; sıra korunur): Yayın
 1. 44 enstrüman listesinin onayı (kripto sıralaması doğrulanmadı) ve aylık güncelleme için piyasa değeri kaynağı (§1: dış kaynak ağ izni gerekebilir; yoksa hacim yedeği).
 2. Sönüm sabiti (§6.3, `shrink_n = 10`): tam eşiksiz isterseniz 0; varsayılan 10.
 3. %1 risk / 16 pozisyon / %12 toplam risk uyumu (§4.1 notu): pratik tavan 12 pozisyon; toplam riski %16'ya çıkarmak ister misiniz? Varsayılan: %12 (D-sentez A).
-4. LLM kredisi: ön ödemeli kredinin 30 $ aylık kullanıma yetmesi için yükleme sizin/operatörün adımıdır.
+4. LLM kredisi: ön ödemeli kredinin 10 $ aylık kullanıma yetmesi için yükleme sizin/operatörün adımıdır.
 5. Gerçek para kararları (CANLI-K1, adaylık ölçütü 5B, başlangıç tutarı, canlı takvimi) askıda; yeniden belirlediğinizde ayrı belgeyle işlenir.
 
 ## 15. Yapılandırma değişiklikleri (bu belge `config/lesson.json` dahil hiçbir config dosyasını yazmaz; ilgili WP uygular)

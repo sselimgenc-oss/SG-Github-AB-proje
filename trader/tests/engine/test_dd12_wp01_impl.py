@@ -48,7 +48,7 @@ def test_paper_config_shape():
     assert c.flat_bar_guard is True and "TRADIFI_PERPETUAL" in c.contract_types
     assert set(c.cost_overrides) == set(c.optional_pairs) - {"TON/USDT"}   # 19 Kasim: TON istege bagli kripto (not_trading), override yok
     r = c.risk_config
-    assert (r.target_trade_risk, r.max_open_risk, r.max_same_dir_risk, r.daily_max_loss) == (0.01, 0.12, 0.08, 0.08)
+    assert (r.target_trade_risk, r.max_open_risk, r.max_same_dir_risk, r.daily_max_loss) == (0.01, 0.12, 0.08, 0.05)
 
 
 def test_removed_layers():
