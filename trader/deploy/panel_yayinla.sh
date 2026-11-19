@@ -28,6 +28,10 @@ fi
 if ! PYTHONPATH="$trader_dir/src" "$py" -m trader_core.rejim_yayini --config-dir "$trader_dir/config" --env paper --out "$gecici/site/rejim.json"; then
   echo "UYARI: rejim yayini uretilemedi $(date -u +%FT%TZ); pano yayini devam ediyor" >&2
 fi
+# ML gunluk ozeti (parolasiz /gunluk_ozet_v1.json; ortak.gunluk_ozet.v1): ayni kural, basarisizsa yalniz uyari.
+if ! PYTHONPATH="$trader_dir/src" "$py" -m trader_core.gunluk_ozet --config-dir "$trader_dir/config" --env paper --out "$gecici/site/gunluk_ozet_v1.json"; then
+  echo "UYARI: gunluk ozet uretilemedi $(date -u +%FT%TZ); pano yayini devam ediyor" >&2
+fi
 cp "$betik_dizin/panel_worker.js" "$gecici/panel_worker.js"
 cat > "$gecici/wrangler.jsonc" <<JSON
 {
