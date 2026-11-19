@@ -1,5 +1,7 @@
 # Kendi işlem motorumuz — tasarım (mentor, 16 Kasım 2026)
 
+> **[19 Kasım 2026 — kullanıcı kesin kararı, bu belgedeki tüm takvimin ÜSTÜNDEDİR]** Kâğıt testin bitiş tarihi yok; canlı tarihi yok (30 Kasım, 14 Aralık testnet koşusu, 27 Aralık, aralık sonu/ocak başı gibi hedefler kalktı). "Dönem biter, devam mı dur mu" karar noktaları ve "en az N işlem / süre" şartları kaldırıldı; proje zarar etse de sürer, kullanıcı geliştirir. Gerçek paraya geçişin zamanı ve şekli yalnız kullanıcının kararıdır. Teknik ölçümler (ML kalite kapısı, ders emekliliği, risk limitleri) kalır.
+
 > **18 Kasım: kullanıcı kararıyla değişti.** Güncel: tek düz kâğıt bot (learner); ikiz (twin) süreci/`engine.twin.json` kaldırıldı; LLM veto kapısı kaldırıldı (giriş kapısında veto adımı yok); 44 enstrüman × 15dk/1s/4s/1g (1d ilk günden, aylık enstrüman güncellemesi şimdi); ders ve ML ilk işlemden etkin; canlıya geçiş/tek hesap maddeleri **[ASKIDA — kullanıcı yeniden belirleyecek]**. Aşağıdaki twin/veto satırları tarihsel.
 
 Kullanıcı kararı (16 Kasım 2026, parça ilkesi; geçmiş kayıt: o tarihte freqtrade çalışma zamanındaydı): freqtrade yerine kendi motorumuz ("1l3a'yı uyarla ya da sıfırdan yaz, ama şimdi başla").

@@ -1,5 +1,7 @@
 # Faz planı (taslak v2, 15 Kasım 2026 — mentor incelemesi işlendi)
 
+> **[19 Kasım 2026 — kullanıcı kesin kararı, bu belgedeki tüm takvimin ÜSTÜNDEDİR]** Kâğıt testin bitiş tarihi yok; canlı tarihi yok (30 Kasım, 14 Aralık testnet koşusu, 27 Aralık, aralık sonu/ocak başı gibi hedefler kalktı). "Dönem biter, devam mı dur mu" karar noktaları ve "en az N işlem / süre" şartları kaldırıldı; proje zarar etse de sürer, kullanıcı geliştirir. Gerçek paraya geçişin zamanı ve şekli yalnız kullanıcının kararıdır. Teknik ölçümler (ML kalite kapısı, ders emekliliği, risk limitleri) kalır.
+
 > **18 Kasım 2026: kullanıcı kararıyla değişti — güncel karar: tek düz kâğıt bot (öğrenen); gölge kip, ikiz, ayrı deney botu yok; 44 enstrüman, 15dk/1s/4s/1g, tüm kurulum aileleri; ML ve ders ilk işlemden etkin (eşik/haftalık sınır yok); risk %1, 16 pozisyon; seans/hafta sonu yasağı yok. TÜM gerçek para kararları (tarih, tutar, kasa tavanı, duman testi, kademe artışı, adaylık ölçütü) askıda: kullanıcı yeniden belirleyecek. Aşağıdaki canlı/Faz 4 maddeleri tarihsel taslaktır.**
 
 > 18 Kasım 2026: freqtrade kabulü kaldırıldı; parça ilkesi (16 Kasım) gereği kendi motorumuz kullanılıyor.

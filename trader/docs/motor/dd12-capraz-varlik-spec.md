@@ -1,5 +1,7 @@
 # DD-12: Kâğıt bot ana planı — 44 enstrüman, bütün kurulum aileleri, ML ve ders ilk işlemden etkin
 
+> **[19 Kasım 2026 — kullanıcı kesin kararı, bu belgedeki tüm takvimin ÜSTÜNDEDİR]** Kâğıt testin bitiş tarihi yok; canlı tarihi yok (30 Kasım, 14 Aralık testnet koşusu, 27 Aralık, aralık sonu/ocak başı gibi hedefler kalktı). "Dönem biter, devam mı dur mu" karar noktaları ve "en az N işlem / süre" şartları kaldırıldı; proje zarar etse de sürer, kullanıcı geliştirir. Gerçek paraya geçişin zamanı ve şekli yalnız kullanıcının kararıdır. Teknik ölçümler (ML kalite kapısı, ders emekliliği, risk limitleri) kalır.
+
 Tarih: 18 Kasım 2026 (mentor). Sürüm 4 (v3'ün yerine geçer; dosya adı tarihseldir). Dayanak: kullanıcı kararları, 18 Kasım 2026 (`tasarim-kararlari.md`: "Tur 6 sonrası kullanıcı kararları", LLM bütçesi kararı) ve `research_notes/tur6-karsilastirma/D-sentez.md` (öneriler; kullanıcı eşik ve seans önerilerini reddetti, aşağıda kullanıcı kararı geçerlidir). Bu belge kod, test ve commit içermez.
 
 v3 → v4 özeti: **LLM veto kaldırıldı**; risk %0,5 → %1, 10 → 16 pozisyon, kümeler yeniden; seans yasağı yok, seans etiketi var; ML ve ders için hiçbir asgari işlem/kanıt eşiği, haftalık değişiklik sınırı ve bekleme yok; her kapanan işlem gece notu alır, notlar ders ve ML verisidir; LLM kendi adayını önerir (aylık toplam 30 $); aylık enstrüman güncelleme işi; 1 günlük zaman dilimi dahil; faz takvimi yerine iş paketleri (WP) ve yayın noktaları; gerçek para kararlarının tamamı askıda.
