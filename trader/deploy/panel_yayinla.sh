@@ -51,3 +51,29 @@ if ! timeout -k 10 180 "$wrangler" deploy --config wrangler.jsonc >"$gecici/cikt
   exit 1
 fi
 echo "panel yayimlandi: $(date -u +%FT%TZ)"
+# Herkese acik ikiz Worker (<ad>-acik): yalniz rejim.json + gunluk_ozet_v1.json (pano Access arkasinda; workers.dev'de yol
+# muafiyeti yok). Pano yayini zaten basarili; bu adim basarisizsa yalniz uyari.
+mkdir -p "$gecici/acik/site"
+for f in rejim.json gunluk_ozet_v1.json; do
+  [ -s "$gecici/site/$f" ] && cp "$gecici/site/$f" "$gecici/acik/site/$f"
+done
+cp "$betik_dizin/acik_worker.js" "$gecici/acik/acik_worker.js"
+cat > "$gecici/acik/wrangler.jsonc" <<JSON
+{
+  "name": "$ad-acik",
+  "main": "acik_worker.js",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "assets": { "directory": "site", "binding": "ASSETS", "run_worker_first": true }
+}
+JSON
+if [ -n "$(ls -A "$gecici/acik/site")" ]; then
+  if (cd "$gecici/acik" && timeout -k 10 180 "$wrangler" deploy --config wrangler.jsonc >"$gecici/acik.log" 2>&1); then
+    echo "acik yayin: $(date -u +%FT%TZ)"
+  else
+    tail -n 5 "$gecici/acik.log" >&2 || true
+    echo "UYARI: acik yayin (Worker $ad-acik) basarisiz $(date -u +%FT%TZ); pano yayini tamam" >&2
+  fi
+else
+  echo "UYARI: acik yayin icin dosya yok $(date -u +%FT%TZ)" >&2
+fi
