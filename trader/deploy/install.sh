@@ -577,6 +577,15 @@ safe_tree_path "$TRADER_DIR/var/ct"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/ct"
 enable_now trader-ct-kadro.timer
 enable_now trader-weekly-summary.timer
+# Otomatik guncelleme (docs/motor/oto-guncelleme-spec.md): komutlar root sahipli surum dizininden; durum dizini root 0700.
+OTO_STATE_DIR="/var/lib/trader-oto-guncelle"
+safe_tree_path "$OTO_STATE_DIR"
+install -d -m 0700 -o root -g root "$OTO_STATE_DIR"
+for c in trader-geri-al trader-oto-ac; do
+  safe_tree_path "/usr/local/sbin/$c"
+  install -m 0755 -o root -g root "$REL_DIR/deploy/$c" "/usr/local/sbin/$c"
+done
+enable_now trader-oto-guncelle.timer   # saatlik; yalniz GitHub'da yesil testli commit kurulur, canli birim varsa dokunmaz
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
   MISSING+=("/etc/trader-health.env   -> HEARTBEAT_URL (https:// dis nabiz adresi; ZORUNLU: bos iken trader-health her 5 dk basarisiz olur)"); fi

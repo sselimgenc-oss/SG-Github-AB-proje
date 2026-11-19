@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# trader-oto-ac: DURDUR dosyasini siler; saatlik otomatik guncelleme yeniden acilir. Belirtim: docs/motor/oto-guncelleme-spec.md.
+# Kullanim (root): trader-oto-ac
+# Ortam degiskenleri (OTO_*) yalnizca testler icindir; uretimde varsayilanlar kullanilir.
+set -uo pipefail
+
+STATE_DIR="${OTO_STATE_DIR:-/var/lib/trader-oto-guncelle}"
+TG_ENV="${OTO_TELEGRAM_ENV:-/etc/trader-telegram.env}"
+
+log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
+
+mask() { # anahtar/parola kaliplari: Telegram'a giden metinden gecer
+  sed -E -e 's/bot[0-9]+:[A-Za-z0-9_-]+/bot<maskeli>/g' \
+         -e 's/[0-9]{8,10}:[A-Za-z0-9_-]{30,}/<maskeli>/g' \
+         -e 's/sk-ant-[A-Za-z0-9_-]+/sk-ant-<maskeli>/g'
+}
+
+env_deger() { # dosya ANAHTAR: ilk eslesen degeri verir (bosluk ve tirnak kirpilir); yoksa bos
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1 | tr -d ' \t\r\n"\047'
+}
+
+tg_send() { # token curl'e --config - ile stdin'den verilir (komut satirinda gorunmez)
+  local tok chat text
+  [ -f "$TG_ENV" ] || { log "Telegram: $TG_ENV yok; yalniz gunluk"; return 0; }
+  tok="$(env_deger "$TG_ENV" TELEGRAM_BOT_TOKEN)"
+  chat="$(env_deger "$TG_ENV" TELEGRAM_CHAT_ID)"
+  if [ -z "$tok" ] || [ -z "$chat" ]; then log "Telegram: anahtar bos; yalniz gunluk"; return 0; fi
+  text="$(printf '%s' "$1" | mask)"
+  printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$tok" \
+    | curl -fsS --max-time 20 --config - --data-urlencode "chat_id=${chat}" --data-urlencode "text=${text}" -o /dev/null \
+    || log "Telegram gonderilemedi"
+  return 0
+}
+
+mkdir -p "$STATE_DIR"
+if [ -e "$STATE_DIR/DURDUR" ]; then
+  rm -f "$STATE_DIR/DURDUR"
+  echo "Otomatik guncelleme yeniden acildi."
+  tg_send "[ML] Otomatik güncelleme yeniden açıldı."
+else
+  echo "Otomatik guncelleme zaten acik."
+fi
+exit 0

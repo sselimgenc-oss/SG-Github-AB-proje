@@ -1,0 +1,13 @@
+[Unit]
+Description=Trader sunucu otomatik guncelleme (yalniz GitHub'da yesil testli commit; belirtim: docs/motor/oto-guncelleme-spec.md)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+# Kurulumdaki kok kopya (root sahipli surum dizini); trader'in yazabildigi depo calistirilmaz
+ExecStart=/bin/bash /usr/local/lib/trader-root/current/deploy/oto_guncelle.sh
+# install.sh 30 dk'ya kadar surebilir (oto_guncelle.sh icindeki zaman asimi) + GitHub sorgusu
+TimeoutStartSec=45min
+Nice=10

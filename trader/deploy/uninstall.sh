@@ -24,6 +24,7 @@ for f in "$UNIT_DIR"/trader-*.service "$UNIT_DIR"/trader-*.timer; do
   [ -e "$f" ] && rm -f "$f"
 done
 rm -f "$UNIT_DIR/trader.slice"
+rm -f /usr/local/sbin/trader-geri-al /usr/local/sbin/trader-oto-ac
 rm -f /etc/sysctl.d/99-trader-swappiness.conf
 systemctl daemon-reload
 systemctl reset-failed >/dev/null 2>&1 || true
@@ -31,7 +32,7 @@ echo "Birimler kaldirildi (canli ve env-retry birimleri dahil). Veri ($REPO_DIR,
 
 if [ "$PURGE" -eq 1 ]; then
   echo "==> --purge: veri siliniyor"
-  rm -rf "$REPO_DIR" /var/backups/trader /var/lib/trader-health
+  rm -rf "$REPO_DIR" /var/backups/trader /var/lib/trader-health /var/lib/trader-oto-guncelle
   rm -f /etc/trader-health.env /etc/trader-lesson.env /etc/trader-telegram.env /etc/trader-veto.env /etc/trader-panel-cf.env /etc/trader-testnet.env
   # DD-9: canli anahtar dosyasi, veto HMAC anahtari, surum sabitlemesi ve root sahipli kod/venv/klon agaci
   rm -f /etc/trader-live.env /etc/trader-veto-hmac.env /etc/trader-release

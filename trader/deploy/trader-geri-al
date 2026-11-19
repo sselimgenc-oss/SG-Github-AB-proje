@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# trader-geri-al: son basarili otomatik guncellemeden onceki surumu kurar (install.sh ile), sonra otomatik guncellemeyi
+# DURDUR dosyasiyla durdurur (geri alinan surum tekrar kurulmasin). Belirtim: docs/motor/oto-guncelleme-spec.md.
+# Kullanim (root): trader-geri-al      Geri acmak: trader-oto-ac
+# Ortam degiskenleri (OTO_*) yalnizca testler icindir; uretimde varsayilanlar kullanilir.
+set -uo pipefail
+
+STATE_DIR="${OTO_STATE_DIR:-/var/lib/trader-oto-guncelle}"
+RELEASE_FILE="${OTO_RELEASE_FILE:-/etc/trader-release}"
+INSTALL_SH="${OTO_INSTALL:-/usr/local/lib/trader-root/current/deploy/install.sh}"
+TG_ENV="${OTO_TELEGRAM_ENV:-/etc/trader-telegram.env}"
+INSTALL_TIMEOUT="${OTO_INSTALL_TIMEOUT:-1800}"
+HIST="$STATE_DIR/gecmis.tsv"
+ILOG="$STATE_DIR/son-kurulum.log"
+
+log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
+
+mask() { # anahtar/parola kaliplari: ekrana, gunluge ve Telegram'a giden her metinden gecer
+  sed -E -e 's/bot[0-9]+:[A-Za-z0-9_-]+/bot<maskeli>/g' \
+         -e 's/[0-9]{8,10}:[A-Za-z0-9_-]{30,}/<maskeli>/g' \
+         -e 's/sk-ant-[A-Za-z0-9_-]+/sk-ant-<maskeli>/g'
+}
+
+env_deger() { # dosya ANAHTAR: ilk eslesen degeri verir (bosluk ve tirnak kirpilir); yoksa bos
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1 | tr -d ' \t\r\n"\047'
+}
+
+release_commit() { sed -n 's/^COMMIT=//p' "$RELEASE_FILE" 2>/dev/null | head -n 1 | tr -d ' \t\r\n'; }
+
+tg_send() { # token curl'e --config - ile stdin'den verilir (komut satirinda gorunmez)
+  local tok chat text
+  [ -f "$TG_ENV" ] || { log "Telegram: $TG_ENV yok; yalniz gunluk"; return 0; }
+  tok="$(env_deger "$TG_ENV" TELEGRAM_BOT_TOKEN)"
+  chat="$(env_deger "$TG_ENV" TELEGRAM_CHAT_ID)"
+  if [ -z "$tok" ] || [ -z "$chat" ]; then log "Telegram: anahtar bos; yalniz gunluk"; return 0; fi
+  text="$(printf '%s' "$1" | mask)"
+  printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$tok" \
+    | curl -fsS --max-time 20 --config - --data-urlencode "chat_id=${chat}" --data-urlencode "text=${text}" -o /dev/null \
+    || log "Telegram gonderilemedi"
+  return 0
+}
+
+mkdir -p "$STATE_DIR"
+chmod 0700 "$STATE_DIR" 2>/dev/null || true
+exec 9>"$STATE_DIR/kilit"
+flock -n 9 || { echo "Baska bir guncelleme ya da geri alma calisiyor; birazdan tekrar deneyin." >&2; exit 1; }
+
+if [ ! -f "$HIST" ]; then
+  echo "Geri alinacak surum yok: $HIST yok (henuz otomatik guncelleme basarili olmamis)." >&2
+  exit 1
+fi
+mevcut="$(release_commit)"
+# hedef: mevcut surumden FARKLI en son basarili guncellemenin eski surumu (geri alma tekrarlanirsa bir oncekine iner)
+hedef="$(awk -F'\t' -v m="$mevcut" '$4 == "basarili" && $2 != m {h = $2} END {print h}' "$HIST")"
+if ! [[ "$hedef" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "Geri alinacak onceki surum bulunamadi (gecmiste basarili guncelleme kaydi yok)." >&2
+  exit 1
+fi
+
+echo "Geri alma: ${mevcut:0:7} -> ${hedef:0:7}"
+COMMIT="$hedef" timeout "$INSTALL_TIMEOUT" bash "$INSTALL_SH" >"$ILOG" 2>&1 9>&-
+rc=$?
+# geri alinan surum otomatik guncellemeyle tekrar kurulmasin (kurulum basarisiz olsa da durdurulur)
+: > "$STATE_DIR/DURDUR"
+simdi="$(release_commit)"
+if [ "$rc" -eq 0 ] && [ "$simdi" = "$hedef" ]; then
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$mevcut" "$hedef" geri_alindi >> "$HIST"
+  tg_send "[ML] Geri alındı: ${mevcut:0:7} → ${hedef:0:7}. Otomatik güncelleme durduruldu; açmak için: trader-oto-ac"
+  echo "Geri alindi: ${hedef} (otomatik guncelleme DURDU; acmak icin: trader-oto-ac)"
+  exit 0
+fi
+
+printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$mevcut" "$hedef" geri_alma_basarisiz >> "$HIST"
+tg_send "[ML] Geri alma BAŞARISIZ (${hedef:0:7}); ${mevcut:0:7} çalışmaya devam ediyor. Otomatik güncelleme durduruldu."$'\n'"$(tail -n 5 "$ILOG")"
+mask < "$ILOG" >&2
+echo "Geri alma BASARISIZ (kurulum cikis=$rc). Otomatik guncelleme yine de DURDU." >&2
+exit 1
