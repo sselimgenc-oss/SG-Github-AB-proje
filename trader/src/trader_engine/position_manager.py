@@ -11,7 +11,7 @@ import numpy as np
 from trader_core import ledger as _ledger
 from trader_core import risk, signals
 
-from .bars import floor_tf
+from .bars import arm_floor_tf, floor_tf
 from .numeric import round_tight
 from .state import iso_z
 from .types import BrokerEvent, Fill, MinuteBar, Position
@@ -61,9 +61,15 @@ def _fin(x) -> bool:
     return x is not None and isinstance(x, (int, float, np.floating, np.integer)) and math.isfinite(float(x))
 
 
+def exit_mode_of(setup: str | None) -> str | None:
+    """Kurulumun cikis kipi (`trail` | `target`) ya da None (bilinmeyen). Kurulum adina degil kipe bakilir (WP-12a)."""
+    from .strategies import arms as _arms          # gecikmeli: strategies -> base -> position_manager dongusunu onler
+    return _arms.exit_mode(setup)
+
+
 def trail_stop_value(pos: Position, ctx: ExitContext) -> tuple[float, bool]:
     highs, lows, atrs = ctx.highs, ctx.lows, ctx.atrs
-    if pos.setup != "T1" or len(highs) == 0:
+    if exit_mode_of(pos.setup) != "trail" or len(highs) == 0:
         return float(pos.initial_stop), False
     path = signals.trail_stop_path(pos.side, pos.entry_price, pos.initial_stop, highs, lows, atrs, pos.trail_atr)
     stop = float(path.iloc[-1])
@@ -73,12 +79,15 @@ def trail_stop_value(pos: Position, ctx: ExitContext) -> tuple[float, bool]:
 def evaluate_exit(pos: Position, ctx: ExitContext | None) -> ExitDecision:
     if ctx is None:
         return _FORCE
+    mode = exit_mode_of(pos.setup)
+    if mode is None:                                # bilinmeyen kurulum: zorla kapat
+        return _FORCE
     if (not pos.setup or not _fin(pos.initial_stop) or pos.entry_bar_open is None
-            or (pos.setup == "T1" and (not _fin(pos.entry_price) or not _fin(pos.trail_atr)))):
+            or (mode == "trail" and (not _fin(pos.entry_price) or not _fin(pos.trail_atr)))):
         return _FORCE
     if ctx.n_closed == 0:
         return _NONE
-    if pos.setup == "R1":
+    if mode == "target":                            # R1 yolu: hedef + zaman durdurma (B1, F1 de burada)
         if _fin(pos.planned_target):
             for h, l in zip(ctx.highs, ctx.lows):
                 if signals.target_reached(pos.side, pos.planned_target, h, l):
@@ -86,7 +95,7 @@ def evaluate_exit(pos: Position, ctx: ExitContext | None) -> ExitDecision:
         if signals.time_stop_due(ctx.n_closed):
             return ExitDecision("exit", "time_stop", None, None)
         return _NONE
-    # T1
+    # trail (T1 yolu): rejim cikisi + iz suren stop (TF1, S1, H2 de burada)
     if signals.regime_flip_exit(pos.side, ctx.regime_last):
         return ExitDecision("exit", "regime_flip", None, None)
     stop, armed = trail_stop_value(pos, ctx)
@@ -114,7 +123,7 @@ def update_excursion(pos: Position, bar: MinuteBar) -> Position:
 
 def apply_entry_fill(pos: Position, fill: Fill, bar: MinuteBar | None, now: datetime) -> Position:
     p = replace(pos, status="open", entry_ts=fill.ts, entry_price=fill.price, qty=fill.qty, fee_entry=fill.fee,
-                entry_bar_open=floor_tf(fill.ts, pos.trigger_tf), mfe_price=fill.price, mae_price=fill.price)
+                entry_bar_open=(arm_floor_tf if pos.trigger_tf == "1d" else floor_tf)(fill.ts, pos.trigger_tf), mfe_price=fill.price, mae_price=fill.price)
     if bar is not None:
         p = update_excursion(p, bar)
     return p

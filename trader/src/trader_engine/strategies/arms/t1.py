@@ -9,6 +9,9 @@ SETUP = "T1"
 TIMEFRAMES = ("15m", "1h", "4h", "1d")
 CORE = True
 ML_SCORED = True
+EXIT_MODE = "trail"
+PRIORITY = 10
+FEATURES = {"pullback_ema": "pullback_ema", "ema_value": "ema_value", "body_ratio": "body_ratio"}
 
 
 def compute(inp: ArmInput):

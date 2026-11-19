@@ -22,6 +22,7 @@ from .bars import (ARM_TFS, MIN_CONTIG_ARM, STARTUP_BARS_ARM, WINDOW_ARM, aggreg
                    arm_tf_delta, tf_delta)
 from .marketdata.sources import MarketView
 from .position_manager import ExitContext
+from .strategies.arms import priority_of
 from .strategies.base import Strategy, StrategyContext, StrategyError, validate_row, validate_table
 from .types import Position
 
@@ -443,7 +444,7 @@ class MultiArmSignalSource(WindowedSignalSource):
             return self._bad(pair, st, det)
         for tf, (st, det) in bad.items():                         # kismi bosluk: kalan zaman dilimleri yine calisir
             self.counters[f"arm_tf_{st}:{tf}"] += 1
-        cands.sort(key=lambda c: (c[0], c[1]))
+        cands.sort(key=lambda c: (c[0], priority_of(c[2].setup), c[1]))     # tf (buyuk once), sonra kurulum onceligi (K-7 md. 3)
         frames = [SignalFrame(pair=pair, status="ok", detail=None, last=row, table=None, trigger_bar=tb)
                   for _, _, row, tb in cands]
         head = frames[0]

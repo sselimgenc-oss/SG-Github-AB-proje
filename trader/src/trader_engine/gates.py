@@ -23,6 +23,7 @@ from .errors import DataError
 from .killswitch import Killswitch
 from .pause import EntryPause
 from .state import StateStore, parse_iso_z
+from .strategies import arms as AR
 from .strategy_runner import SignalFrame, SignalRow
 from .types import SymbolRules
 
@@ -93,16 +94,25 @@ def _fin(x) -> bool:
     return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(float(x))
 
 
+_INT_CARRIERS = ("pullback_ema", "rh_touches", "rl_touches")
+
+
 def _features(row: SignalRow) -> dict:
-    keys = ["atr_tf", "stop_dist_atr", "atr_4h"]
-    keys += (["pullback_ema", "ema_value", "body_ratio"] if row.setup == "T1"
-             else ["wick_ratio", "rr", "edge_dist_atr"])
-    keys += ["rh_touches", "rl_touches"]
+    """Defter ozellikleri: ortak anahtarlar + kurulumun `FEATURES` eslemesi (DD-12 WP-12a, K-7 madde 2). Tasiyici sutun
+    adi tamsayiysa (pullback_ema) defterde tamsayi yazilir. T1/R1 eslemesi eski anahtar kumesiyle ayni sirada."""
     out: dict = {}
-    for k in keys:
-        v = getattr(row, k)
+
+    def put(key: str, carrier: str) -> None:
+        v = getattr(row, carrier)
         if _fin(v):
-            out[k] = int(v) if k in ("pullback_ema", "rh_touches", "rl_touches") else float(v)
+            out[key] = int(v) if carrier in _INT_CARRIERS else float(v)
+
+    for k in ("atr_tf", "stop_dist_atr", "atr_4h"):
+        put(k, k)
+    for key, carrier in AR.features_of(row.setup).items():
+        put(key, carrier)
+    for k in ("rh_touches", "rl_touches"):
+        put(k, k)
     return out
 
 

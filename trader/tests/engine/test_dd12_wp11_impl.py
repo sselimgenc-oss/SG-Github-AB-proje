@@ -28,12 +28,12 @@ from trader_engine.strategy_runner import MultiArmSignalSource
 ROOT = Path(__file__).resolve().parents[2]
 UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
-ALL_ARMS = ("T1@15m", "T1@1h", "T1@4h", "T1@1d", "R1@15m", "R1@1h", "R1@4h", "R1@1d")
+ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1 eklendi
 
 
 # --------------------------------------------------------------------------- arms paketi
 def test_arms_discovery_and_lookup():
-    assert ARMS.list_arms() == ("R1", "T1")
+    assert {"R1", "T1"} <= set(ARMS.list_arms())   # WP-12a: TF1/B1 de var
     t1, r1 = ARMS.find_arm("T1"), ARMS.find_arm("R1")
     assert t1.SETUP == "T1" and set(t1.TIMEFRAMES) == {"15m", "1h", "4h", "1d"} and t1.CORE and r1.CORE
     with pytest.raises(ARMS.ArmError):
@@ -52,6 +52,9 @@ def test_new_arm_file_found_without_registry_edit(tmp_path):
         TIMEFRAMES = ("1h",)
         CORE = False
         ML_SCORED = False
+        EXIT_MODE = "trail"      # WP-12a (K-7): zorunlu
+        PRIORITY = 99
+        FEATURES = {}
         def compute(inp):
             return inp.core()
     '''))
@@ -65,7 +68,7 @@ def test_new_arm_file_found_without_registry_edit(tmp_path):
         ARMS.__path__.remove(str(tmp_path))                      # type: ignore[attr-defined]
         sys.modules.pop(f"{ARMS.__name__}.x9", None)
         ARMS.discover(refresh=True)
-    assert ARMS.list_arms() == ("R1", "T1")
+    assert {"R1", "T1"} <= set(ARMS.list_arms())   # WP-12a: TF1/B1 de var
 
 
 def test_lab_rejects_unknown_arm_and_tf():

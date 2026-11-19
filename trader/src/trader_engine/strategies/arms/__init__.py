@@ -10,6 +10,10 @@ Kurulum dosyasi sozlesmesi (modul seviyesi):
                                kurulumlarin tablosunu zaman dilimi basina TEK hesapla toplu uretir
   ML_SCORED: bool              True: 1s adaylari r03 suzgecinden gecer (yalniz `ml_pairs`; digerleri puansiz gecer, WP-10'a kadar)
   compute(inp: ArmInput) -> DataFrame   SIGNAL_COLUMNS sutunlu, `inp.trig.index` indeksli tablo; kurulumun olmayan satirlarinda signal=False
+  EXIT_MODE: str               "trail" (iz suren stop + rejim cikisi; T1 yolu) | "target" (hedef + zaman durdurma; R1 yolu);
+                               position_manager cikisi bu kipe gore secer (kurulum adina gore degil) (DD-12 WP-12a, K-7 madde 1)
+  FEATURES: dict[str, str]     defter ozellik anahtari -> tasiyici sutun (CARRIERS); en fazla 6; gates._features okur (WP-12a, K-7 madde 2)
+  PRIORITY: int                ayni zaman dilimindeki cakismada kucuk olan kazanir (T1 10, R1 20, TF1 30, B1 40, H2 50, S1 60, F1 70; M1 90)
 Kurulum kimligi `arm_id = <KURULUM>@<zaman dilimi>`."""
 from __future__ import annotations
 
@@ -26,6 +30,12 @@ import pandas as pd
 from ...bars import ARM_TFS
 
 _SETUP_RE = re.compile(r"[A-Z][A-Z0-9]{1,7}")
+EXIT_MODES = ("trail", "target")
+# tasiyici sutunlar (SIGNAL_COLUMNS icinde, sayisal ya da tamsayi); ortak anahtarlar (atr_tf, stop_dist_atr, atr_4h,
+# rh_touches, rl_touches) gates'te her zaman yazilir ve burada tasiyici olamaz (rejim anlami tasir)
+CARRIERS = ("ema_value", "body_ratio", "wick_ratio", "edge_dist_atr", "rr", "pullback_ema")
+_RESERVED_FEATURE_KEYS = ("atr_tf", "stop_dist_atr", "atr_4h", "rh_touches", "rl_touches")
+MAX_FEATURES = 6
 _ARM_ID_RE = re.compile(r"([A-Z][A-Z0-9]{1,7})@(15m|1h|4h|1d)")
 _OFF_PREFIX = "lab:arm_off|"
 
@@ -90,11 +100,48 @@ def discover(refresh: bool = False) -> dict[str, ModuleType]:
         tfs = getattr(mod, "TIMEFRAMES", None)
         if not tfs or any(t not in ARM_TFS for t in tfs) or not callable(getattr(mod, "compute", None)):
             raise ArmError(f"{info.name}.py: TIMEFRAMES/compute sozlesmeye uymuyor")
+        validate_arm(mod, info.name)
         if setup in found:
             raise ArmError(f"yinelenen kurulum kodu: {setup}")
         found[setup] = mod
     _CACHE = found
     return found
+
+
+def validate_arm(mod: ModuleType, name: str = "?") -> None:
+    """WP-12a sozlesme alanlari: EXIT_MODE (zorunlu, ONC-3), PRIORITY (tamsayi), FEATURES (<= 6, tasiyici sutun)."""
+    mode = getattr(mod, "EXIT_MODE", None)
+    if mode not in EXIT_MODES:
+        raise ArmError(f"{name}.py: EXIT_MODE gecersiz: {mode!r} (trail | target)")
+    prio = getattr(mod, "PRIORITY", None)
+    if not isinstance(prio, int) or isinstance(prio, bool):
+        raise ArmError(f"{name}.py: PRIORITY tamsayi olmali: {prio!r}")
+    feats = getattr(mod, "FEATURES", None)
+    if not isinstance(feats, dict) or len(feats) > MAX_FEATURES:
+        raise ArmError(f"{name}.py: FEATURES sozluk olmali (en fazla {MAX_FEATURES})")
+    for k, v in feats.items():
+        if not isinstance(k, str) or not k or k in _RESERVED_FEATURE_KEYS:
+            raise ArmError(f"{name}.py: FEATURES anahtari gecersiz: {k!r}")
+        if v not in CARRIERS:
+            raise ArmError(f"{name}.py: FEATURES tasiyicisi gecersiz: {v!r} (bilinenler: {CARRIERS})")
+
+
+def exit_mode(setup: str) -> str | None:
+    """Kurulumun cikis kipi; bilinmeyen kurulum None (position_manager: force_exit)."""
+    mod = discover().get(setup) if isinstance(setup, str) else None
+    return None if mod is None else mod.EXIT_MODE
+
+
+def features_of(setup: str) -> dict[str, str]:
+    """Kurulumun defter ozellik eslemesi {defter_anahtari: tasiyici}; bilinmeyen kurulum: {}."""
+    mod = discover().get(setup) if isinstance(setup, str) else None
+    return {} if mod is None else dict(mod.FEATURES)
+
+
+def priority_of(setup: str | None) -> int:
+    """Siralama onceligi (kucuk once); bilinmeyen/None kurulum en sona."""
+    mod = discover().get(setup) if isinstance(setup, str) else None
+    return 1000 if mod is None else int(mod.PRIORITY)
 
 
 def find_arm(setup: str) -> ModuleType:
