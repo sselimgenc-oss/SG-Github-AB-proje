@@ -642,7 +642,7 @@ def test_run_shadow_matches_run_once_and_is_separate(tmp_path):
     assert len(base) == 1 and base[0]["hyp_r_net"] == rows[0]["hyp_r_net"]           # ayni fiyat yolu ayni sonuc
     assert CF.summary(tmp_path / "cf.sqlite", "learner", now=now, days=30)["n"] == 1             # golge icermez
     con = sqlite3.connect(str(tmp_path / "cf.sqlite"))
-    assert con.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert con.execute("PRAGMA user_version").fetchone()[0] == 2      # DD-12 WP-13: cf deposu sema 2 (arm_id/session_tag)
     assert con.execute("SELECT COUNT(*) FROM cf_outcomes").fetchone()[0] == 2           # barrier + plan, golge yok
     con.close()
     # idempotent; ufku dolmamis bekler; kilitli donemle kesisen atlanir

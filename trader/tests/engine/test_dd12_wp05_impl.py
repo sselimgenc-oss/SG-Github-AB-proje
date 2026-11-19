@@ -124,10 +124,16 @@ def _gate_engine(view, optional=("NVDA/USDT",)):
 
 @pytest.fixture
 def real_gate():
-    import conftest                                             # tests/conftest.py: kapi varsayilan olarak etkisiz kilinir
-    conftest._REAL["on"] = True
+    from trader_engine.engine import Engine
+    # tests/conftest.py oturum fixture'i Engine._startup_gate'i sarar; sargi fonksiyonunun globalleri o conftest modulu
+    # (ad cakismasi: tests/ml/conftest.py da 'conftest' olarak yuklenebilir, bu yuzden `import conftest` guvenilmez)
+    real = Engine._startup_gate.__globals__.get("_REAL")
+    if real is None:
+        yield
+        return
+    real["on"] = True
     yield
-    conftest._REAL["on"] = False
+    real["on"] = False
 
 
 def test_startup_gate_optional_does_not_block(real_gate):
