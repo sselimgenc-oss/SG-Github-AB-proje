@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -190,13 +189,7 @@ def _backtest_block(args, now, store, runs):
             continue
         # Eski semali kosu defteri (sema < guncel): ASLA yerinde gocmez; gecici kopyada gocurulur, kosu dizini degismez.
         tmpdir = tempfile.mkdtemp(prefix="exitcf_bt_")
-        kopya = Path(tmpdir) / "ledger.sqlite"
-        src = sqlite3.connect(f"file:{d / 'ledger.sqlite'}?mode=ro", uri=True)
-        dst = sqlite3.connect(str(kopya))
-        src.backup(dst)
-        src.close()
-        dst.close()
-        led = L.open_ledger(str(kopya), "learner", create=False, migrate=True)
+        led = L.open_migrated_copy(d / "ledger.sqlite", Path(tmpdir) / "ledger.sqlite", "learner")
         try:
             trades = led.list_closed_trades(limit=L.Ledger.LIST_CLOSED_MAX)
             _load_tf(led, trades)

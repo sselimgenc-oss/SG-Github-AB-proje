@@ -104,8 +104,13 @@ def _rs(m, rule):
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
 
 
+def _yuvarla(v):
+    """Ondalik degerler 10 anlamli basamakla: islemci SIMD farki (AVX512 var/yok) son bitte iz birakir; ozet makineden bagimsiz."""
+    return format(v, ".10g") if isinstance(v, float) else str(v)
+
+
 def _digest(t):
-    return hashlib.sha256(pd.util.hash_pandas_object(t.astype(str), index=True).values.tobytes()).hexdigest()[:16]
+    return hashlib.sha256(pd.util.hash_pandas_object(t.map(_yuvarla), index=True).values.tobytes()).hexdigest()[:16]
 
 
 def _bars4h_synth(n, start="2026-03-01", seed=3):
@@ -261,8 +266,8 @@ def test_1d_causal_prefix_independent():
 
 
 # ============================================================================================= tarafsizlik (D-T13)
-GOLD = {("price_action_v1", "1h"): "8319ccc6a0ca6b32", ("price_action_v1_full", "1h"): "e22b25679063d903",
-        ("price_action_v1_full", "15m"): "4ad826b0114bccd4"}
+GOLD = {("price_action_v1", "1h"): "bfb477801efe0794", ("price_action_v1_full", "1h"): "b0d7aea78d821aad",
+        ("price_action_v1_full", "15m"): "e38e9380e8c4f270"}
 
 
 @pytest.mark.parametrize("name,tf", sorted(GOLD))

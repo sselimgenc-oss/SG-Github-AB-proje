@@ -273,3 +273,16 @@ def test_feather_source_never_returns_rows_inside_holdout(tmp_path, monkeypatch)
     assert got and all(not (hs <= r[0] < he) for r in got)
     assert all(not (hs <= ms_all[i] < he) and not (hs <= ms_all[j - 1] < he) for i, j in touched)       # dilimler kilitli donemi icermez
     assert EC.FeatherSource.stem("BTC/USDT") == "BTC_USDT_USDT" and src.bars("XXX/USDT", "1h", 0, hs) == []
+
+
+def test_open_migrated_copy_kaynagi_degistirmez(tmp_path):
+    """Gocurulmus kopya: kaynak defter bayt bayt ayni kalir, kopya guncel semada acilir."""
+    import hashlib
+    from trader_core import ledger as L
+    src = tmp_path / "kaynak.sqlite"
+    L.open_ledger(str(src), "learner").close()
+    once = hashlib.sha256(src.read_bytes()).hexdigest()
+    led = L.open_migrated_copy(src, tmp_path / "kopya.sqlite", "learner")
+    led.close()
+    assert hashlib.sha256(src.read_bytes()).hexdigest() == once
+    assert (tmp_path / "kopya.sqlite").exists()

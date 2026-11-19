@@ -160,13 +160,13 @@ def _flag_off_digest(mod, px, fund, cand_bars, mode):
         for p in PAIRS_E:
             fr = src.frame(p, D.to_pydatetime(), PARAMS, 1)
             out.append((p, str(D), fr.status, fr.detail,
-                        None if fr.last is None else tuple((k, repr(v)) for k, v in sorted(vars(fr.last).items())
+                        None if fr.last is None else tuple((k, format(v, ".10g") if isinstance(v, float) else repr(v)) for k, v in sorted(vars(fr.last).items())
                                                               if k not in _WP11_FIELDS)))
     return hashlib.sha256(repr(out).encode()).hexdigest()[:16], sum(1 for o in out if o[4] and dict(o[4]).get("signal") == "True"), view.calls
 
 
-# G5 oncesi (strategy_runner_old, mentor probe_g5.py A) koduyla uretilen ozetler: bayrak kapaliyken cikti BAYT BAYT ayni kalmali.
-_FLAG_OFF_GOLDEN = {"off": ("d7a10834a2006a10", 29, 500), "shadow": ("5040885aa41b9f9d", 29, 500)}
+# Ondaliklar 10 anlamli basamakla ozetlenir (islemci SIMD farki son bitte iz birakir). G5 oncesi (strategy_runner_old, mentor probe_g5.py A) koduyla uretilen ozetler: bayrak kapaliyken cikti BAYT BAYT ayni kalmali.
+_FLAG_OFF_GOLDEN = {"off": ("e726dfbacc461156", 29, 500), "shadow": ("152d23fbee71e682", 29, 500)}
 
 
 @pytest.mark.parametrize("mode", ["off", "shadow"])

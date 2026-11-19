@@ -1314,6 +1314,20 @@ def open_ledger(path, bot: str, *, create: bool = True, read_only: bool = False,
                   min_evidence_trades=min_evidence_trades, paper_lesson=paper_lesson)
 
 
+def open_migrated_copy(src, dst, bot: str) -> "Ledger":
+    """Kaynak defteri (salt okunur) `dst`'ye kopyalar ve YALNIZ kopyayi gocurur; kaynak asla degismez.
+    Eski semali (or. backtest kosusu) defterleri okumak icin."""
+    import sqlite3
+    s = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    d = sqlite3.connect(str(dst))
+    try:
+        s.backup(d)
+    finally:
+        s.close()
+        d.close()
+    return Ledger(dst, bot, create=False, migrate=True)
+
+
 class Ledger:
     def __init__(self, path, bot: str, *, create: bool = True, read_only: bool = False,
                  migrate: bool | None = None, clock: Callable[[], datetime] | None = None,
