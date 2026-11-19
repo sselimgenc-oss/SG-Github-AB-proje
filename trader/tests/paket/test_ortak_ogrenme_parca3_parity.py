@@ -343,7 +343,7 @@ def test_notifier_parity_after_removing_tag(tmp_path):
     assert ours["r"] == ref["r"] == [True, True, False, 1]
     assert ours["sleeps"] == ref["sleeps"] == [2, 5, 15, 1.0]
     assert ours["names"] == ref["names"]
-    assert [s.removeprefix("[1L3A] ") for s in ours["sent"]] == ref["sent"]
+    assert [s.removeprefix("[1L3A] ") for s in ours["sent"]] == [s.removeprefix("[ML] ") for s in ref["sent"]]   # 19 Kasim: ML de etiketli
     assert all(s.startswith("[1L3A] ") for s in ours["sent"])
 
 

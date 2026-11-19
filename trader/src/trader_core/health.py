@@ -975,7 +975,20 @@ def _num_s(x, nd=2) -> str:
         return "?"
 
 
+_LADDER_WARMUP_OK = frozenset({"ladder_missing", "capital_missing", "ladder_invalid", "equity_unreadable"})
+
+
 def _c_ladder(snap, bot, cfg):
+    """19 Kasim: motor yeni basladiysa (isinma, cfg.warmup_s) kademe blogu henuz yazilmamis/ilklenmemis olabilir; bu
+    gecici durum alarm degildir (guncelleme sirasinda yanlis 'Risk kademesi sorunlu' CRIT'i). Isinma bitince aynen denetlenir.
+    Gercek kademe olaylari (taban, -%20 durma, aktarim uyusmazligi, basamak inisi) isinmada da bildirilir."""
+    r = _c_ladder_inner(snap, bot, cfg)
+    if r.code in _LADDER_WARMUP_OK and _in_warmup(snap, bot, cfg):
+        return _res(r.name, Status.OK, "ok", f"{bot} kademe denetimi: motor isiniyor ({r.code} gecici)")
+    return r
+
+
+def _c_ladder_inner(snap, bot, cfg):
     """12 §11 tablosu: en agir tek sonuc. Blok yoksa yalniz testnet/live'da CRIT `ladder_missing`."""
     name = f"risk_ladder:{bot}"
     a = snap.api[bot]

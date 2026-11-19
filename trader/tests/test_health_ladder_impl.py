@@ -186,3 +186,27 @@ def test_probe_status_maps_ladder_block_and_pause_holds(tmp_path):
     doc["risk_ladder"] = "bozuk"
     p.write_text(json.dumps(doc))
     assert R.probe_status(str(p), "learner", NOW)[0].ladder is None
+
+
+# 19 Kasim: motor yeniden basladiginda (oto guncelleme) kademe blogu birkac dakika yok -> yanlis CRIT olmamali
+def _check_warm(a, started_ago):
+    cfg = H.HealthConfig(require_bots=("learner",))
+    snap = H.HealthSnapshot(now=NOW, timeframe_s=3600, api={"learner": a}, ledger={}, disk_free_bytes=50 * H.GIB,
+                            mem_available_bytes=900 * H.MIB, swap_total_bytes=0, swap_used_bytes=0,
+                            last_backup_at=NOW - timedelta(hours=1),
+                            containers={"trader-learner": H.ContainerProbe("running", 0, NOW - started_ago, False)})
+    return {r.name: r for r in H.evaluate(snap, cfg).results}["risk_ladder:learner"]
+
+
+def test_isinmada_kurulum_eksigi_alarm_degil_sonra_yine_crit():
+    r = _check_warm(api(None, "testnet"), timedelta(minutes=3))
+    assert r.status is Status.OK and "isiniyor" in r.detail
+    r = _check_warm(api(block(state="uninitialized"), "testnet"), timedelta(minutes=3))
+    assert r.status is Status.OK
+    r = _check_warm(api(None, "testnet"), timedelta(minutes=30))          # isinma bitti: gercek sorun yine CRIT
+    assert (r.status, r.code) == (Status.CRIT, "ladder_missing")
+
+
+def test_isinmada_gercek_kademe_olayi_yine_bildirilir():
+    r = _check_warm(api(block(state="floor", equity=500.0)), timedelta(minutes=3))
+    assert (r.status, r.code) == (Status.CRIT, "capital_floor")

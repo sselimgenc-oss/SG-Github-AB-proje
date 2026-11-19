@@ -167,7 +167,7 @@ def test_spool_expired_approval_not_sent_and_drain(tmp_path):
     fake.fail = []
     n.outbox.drain(n.client, CHAT, lambda s: None)
     texts = [p["text"] for p in fake.sent()]
-    assert texts == ["normal"] and n.outbox.list() == []
+    assert texts == ["[ML] normal"] and n.outbox.list() == []
 
 
 def test_unauthorized_and_group_ignored(rig):
@@ -316,7 +316,7 @@ def test_report_run_and_late_tag(tmp_path):
     cfg = T.TelegramConfig.from_env(env)
     n = T.notifier_from_env(env, fake, clk, lambda s: None)
     assert T.run_report(cfg, n, clk()) == "sent"
-    assert fake.sent()[0]["text"].startswith("[gecikmiş]")
+    assert fake.sent()[0]["text"].startswith("[ML] [gecikmiş]")
     assert T.run_report(cfg, n, clk()) == "already"
 
 
@@ -326,7 +326,7 @@ def test_script_send_and_report(tmp_path, capsys):
     fake = FakeTG()
     env = env_for(tmp_path)
     assert TR.main(["send", "--severity", "CRIT", "--dedup-key", "h:1", "birim"], env=env, http_post=fake) == 0
-    assert fake.sent()[0]["text"] == "birim"
+    assert fake.sent()[0]["text"] == "[ML] birim"
     assert TR.main(["send", "--dedup-key", "h:1", "birim"], env={}, http_post=fake) == 1
     assert TOKEN not in capsys.readouterr().out
 

@@ -395,6 +395,18 @@ class Outbox:
 # ---------------------------------------------------------------------------
 # Giden: notifier
 # ---------------------------------------------------------------------------
+PROJE_ETIKETI = "[ML]"
+
+
+def etiketle(text: str, severity: str) -> str:
+    """Telegram standardi (docs/standart/telegram-standardi.md; ortak paket `telegram_cekirdek.etiketle` ile ayni): ilk satir
+    `[ML] ` ile baslar; zaten etiketliyse dokunulmaz. Onem duzeyi metindeki isaretle (Dikkat/Sorun/Duzeldi) ve INFO'nun
+    sessiz bildirimiyle gorunur."""
+    if text.startswith(PROJE_ETIKETI):
+        return text
+    return f"{PROJE_ETIKETI} {text}"
+
+
 class TelegramNotifier:
     def __init__(self, client: TelegramClient, chat_id: int, outbox: Outbox, now_fn: Callable[[], datetime] | None = None,
                  sleep: Callable[[float], None] = time.sleep):
@@ -437,7 +449,7 @@ class TelegramNotifier:
     def _deliver(self, text, severity, key, expires_at, reply_markup, pinned) -> bool:
         if self.outbox.sent_recently(key):
             return True                                   # zaten teslim edildi
-        body = fit_text(text, pinned)
+        body = fit_text(etiketle(text, severity), pinned)
         if expires_at is not None and expires_at <= self.now().timestamp():
             return False
         if self._send_retry(body, severity, reply_markup):

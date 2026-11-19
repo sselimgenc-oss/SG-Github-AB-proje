@@ -677,6 +677,47 @@ def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) 
                     "pa_proposer|stale", now)]
 
 
+# Ek (bilgi amacli) uyarilar: sade Turkce metin; dosya/servis adi yok. Ayni uyari bir kez gider, sorun surerse en fazla
+# EK_HATIRLATMA_SAAT'te bir hatirlatma, kapaninca tek "Duzeldi" (19 Kasim: CT uyarisi her turda tekrarlaniyordu).
+EK_HATIRLATMA_SAAT = 6
+EK_METIN = {   # parmak izi -> (baslik, anlami, duzeldi)
+    "ct_kadro|bayat": ("Kopya-işlem (CT) verisi gelmiyor",
+                       "CT projesinin verisi 45 dakikadan eski; bu sürede C1 kurulumu yeni aday üretmez. Diğer kurulumlar etkilenmez.",
+                       "CT verisi yeniden geliyor"),
+    "pa_proposer|stale": ("M1 modeli eskidi", "M1 önerici modeli 8 günden eski; yeniden eğitilmesi gerekiyor. İşlemler etkilenmez.",
+                          "M1 modeli yeniden güncel"),
+    "pa_proposer|missing": ("M1 modeli bulunamadı", "M1 kurulumu şu an aday üretmiyor; diğer kurulumlar etkilenmez.",
+                            "M1 modeli yeniden yüklendi"),
+    "tutarlilik|sapma": ("Kâğıt ile geri test arasında fark var",
+                         "Haftalık tutarlılık raporu bir sapma buldu; ayrıntı panoda Doğrulama sekmesinde. İşlemler etkilenmez.",
+                         "Kâğıt ile geri test yeniden uyumlu"),
+}
+
+
+def ek_uyari_plani(ek: list, onceki, now: datetime):
+    """Saf: (gonderilecek uyarilar, yeni durum). Yeni sorun -> bir kez; suren sorun -> EK_HATIRLATMA_SAAT'te bir;
+    kapanan sorun -> tek 'Duzeldi' (INFO). Durum: {parmak_izi: {"ilk": iso, "son": iso}}."""
+    eski = onceki if isinstance(onceki, dict) else {}
+    yeni: dict = {}
+    out = []
+    for a in ek:
+        fp = a.fingerprint
+        baslik, anlam, _ = EK_METIN.get(fp, (a.title, a.body, "Sorun düzeldi"))
+        e = eski.get(fp) if isinstance(eski.get(fp), dict) else {}
+        son = H._from_iso(e.get("son")) if e.get("son") else None
+        gonder = son is None or (now - son) >= timedelta(hours=EK_HATIRLATMA_SAAT)
+        yeni[fp] = {"ilk": e.get("ilk") or H._iso(now), "son": H._iso(now) if gonder else e.get("son")}
+        if gonder:
+            isaret = "⚠️ Dikkat" if a.level is H.Status.WARN else "🚨 Sorun"
+            out.append(H.Alert(a.level, a.code, f"{isaret}: {baslik}", anlam, f"{fp}|{H._iso(now)}", now))
+    for fp, e in eski.items():
+        if fp not in yeni:
+            duzeldi = EK_METIN.get(fp, ("", "", "Sorun düzeldi"))[2]
+            out.append(H.Alert(H.Status.OK, fp.partition("|")[2] or fp, f"✅ Düzeldi: {duzeldi}", "Her şey yeniden normal.",
+                               f"{fp}|duzeldi|{H._iso(now)}", now))
+    return out, yeni
+
+
 CT_KADRO_BAYAT_DK = 45   # C1 (19 Kasim: CT kadro eklendi): son basarili okuma bu sureden eskiyse C1 aday uretmez
 
 
@@ -903,9 +944,9 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
         except OSError:
             maint = None
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
-    alerts.extend(pa_proposer_alerts(env, now))
-    alerts.extend(ct_kadro_alerts(env, now))
-    alerts.extend(tutarlilik_alerts(env, now))
+    ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now)
+    ek_gonder, new_state["ek_uyarilar"] = ek_uyari_plani(ek, state.get("ek_uyarilar"), now)
+    alerts.extend(ek_gonder)
     if reset:
         alerts.append(H.Alert(H.Status.WARN, "state_reset", "Saglik durum dosyasi sifirlandi",
                               "state.json yok ya da bozuktu; sayaclar sifirdan basladi.", "state|state_reset", now))
