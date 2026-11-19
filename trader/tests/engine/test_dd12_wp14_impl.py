@@ -216,7 +216,7 @@ def test_health_pa_proposer_alerts(tmp_path):
 
 def test_build_script_smoke(tmp_path):
     import pa_proposer_build as PB
-    # Gercek veri (var/history) git'te yok ve CI'da bulunmaz: kilit (2026-05-01) oncesi sentetik 4s bar dosyasi kullanilir.
+    # Gercek gecmis veri git deposunda yok ve CIda bulunmaz: kilit (2026-05-01) oncesi sentetik 4s bar dosyasi kullanilir.
     hist = tmp_path / "history"
     hist.mkdir()
     o, h, l, c = _bars(1500, seed=5, base=1000.0)
