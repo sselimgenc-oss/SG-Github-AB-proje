@@ -228,3 +228,14 @@ def test_export_missing_ledger_is_error(tmp_path):
     import export_paper_records as EX
     rc = EX.main(["--ledger", str(tmp_path / "none.sqlite"), "--out", str(tmp_path / "o.jsonl")])
     assert rc == 3
+
+
+def test_health_pa_proposer_uses_data_root(tmp_path):
+    """19 Kasim: saglik birimi kodu releases/<commit> altindan calistirir; M1 paketleri veri kokunde (TRADER_DATA_ROOT) aranir."""
+    import health_run as HR
+    (tmp_path / "models" / "pa_proposer").mkdir(parents=True)
+    (tmp_path / "models" / "pa_proposer" / "M1@1h.json").write_text("{}")
+    alerts = HR.pa_proposer_alerts({"TRADER_DATA_ROOT": str(tmp_path)}, NOW)
+    assert all(a.code != "pa_proposer_missing" for a in alerts)
+    missing = HR.pa_proposer_alerts({"TRADER_DATA_ROOT": str(tmp_path / "yok")}, NOW)
+    assert [a.code for a in missing] == ["pa_proposer_missing"]

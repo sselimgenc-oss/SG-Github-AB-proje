@@ -644,7 +644,7 @@ PA_PROPOSER_MAX_AGE_DAYS = 8     # DD-12 WP-14 (spec 5.3): M1 paketi 8 gunden es
 def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) -> list:
     """M1 (pa_proposer) paket tazeligi: models/pa_proposer/*.json (.prev.json yok sayilir). Paket yok -> WARN; created_at 8 gunden
     eski ya da okunamayan -> WARN. Motor etkilenmez (M1 aday uretmez); yalniz bilgi amacli uyari."""
-    root = Path(__file__).resolve().parents[1]
+    root = data_root(env)                # 19 Kasim: kod kopyasi (releases/<commit>) models/ ve var/ icermez; veri koku (TRADER_DATA_ROOT)
     if models_dir:                       # acik dizin (test/elle): yalniz o dizin
         dirs = [Path(models_dir)]
     else:                                # calisma zamani (gece egitimi) once; depodaki tohum yalniz eksik dosyayi tamamlar
