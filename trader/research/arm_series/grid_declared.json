@@ -1,0 +1,147 @@
+{
+ "grid": {
+  "M1": {
+   "esik_carpani": [
+    0.95,
+    1.0,
+    1.05
+   ],
+   "tf": "1h"
+  },
+  "costs_fee_mult_slip_bp": [
+   [
+    1.0,
+    0.0
+   ],
+   [
+    1.0,
+    5.0
+   ],
+   [
+    2.0,
+    0.0
+   ],
+   [
+    2.0,
+    5.0
+   ]
+  ],
+  "kurulumlar": {
+   "B1": {
+    "parametre_varyantlari": [
+     "def",
+     "BRK_ATR=0.1",
+     "BRK_ATR=0.3",
+     "TARGET_R=1.5",
+     "TARGET_R=2.5",
+     "stop_buffer_atr=0.2",
+     "stop_buffer_atr=0.5"
+    ],
+    "tfs": [
+     "15m",
+     "1h",
+     "4h",
+     "1d"
+    ]
+   },
+   "F1": {
+    "parametre_varyantlari": [
+     "def",
+     "SWEEP_ATR=0.05",
+     "SWEEP_ATR=0.2",
+     "REJ_MIN=0.5",
+     "REJ_MIN=0.7",
+     "rr_min=1.25",
+     "rr_min=1.75"
+    ],
+    "tfs": [
+     "15m",
+     "1h",
+     "4h",
+     "1d"
+    ]
+   },
+   "H2": {
+    "parametre_varyantlari": [
+     "def",
+     "PB_MIN_ATR=0.75",
+     "PB_MIN_ATR=1.5",
+     "LEG_GAP_MAX=6",
+     "LEG_GAP_MAX=14",
+     "trail_atr=2.5",
+     "trail_atr=3.5"
+    ],
+    "tfs": [
+     "15m",
+     "1h",
+     "4h",
+     "1d"
+    ]
+   },
+   "R1": {
+    "parametre_varyantlari": [
+     "def",
+     "range_target_frac=0.6",
+     "range_target_frac=0.9",
+     "rr_min=1.25",
+     "rr_min=1.75",
+     "stop_buffer_atr=0.2",
+     "stop_buffer_atr=0.5"
+    ],
+    "tfs": [
+     "4h",
+     "1d"
+    ]
+   },
+   "S1": {
+    "parametre_varyantlari": [
+     "def",
+     "BOX_W_ATR=2.5",
+     "BOX_W_ATR=3.5",
+     "BRK_ATR=0.05",
+     "BRK_ATR=0.2",
+     "trail_atr=2.5",
+     "trail_atr=3.5"
+    ],
+    "tfs": [
+     "15m",
+     "1h",
+     "4h",
+     "1d"
+    ]
+   },
+   "T1": {
+    "parametre_varyantlari": [
+     "def",
+     "pullback_ema=20",
+     "stop_buffer_atr=0.2",
+     "stop_buffer_atr=0.5",
+     "trail_atr=2.5",
+     "trail_atr=3.5"
+    ],
+    "tfs": [
+     "4h",
+     "1d"
+    ]
+   },
+   "TF1": {
+    "parametre_varyantlari": [
+     "def",
+     "BRK_ATR=0.1",
+     "BRK_ATR=0.3",
+     "BODY_MIN=0.4",
+     "BODY_MIN=0.6",
+     "trail_atr=2.5",
+     "trail_atr=3.5"
+    ],
+    "tfs": [
+     "15m",
+     "1h",
+     "4h",
+     "1d"
+    ]
+   }
+  }
+ },
+ "sha256": "d81ca1e66ae65c5e8fc3a4d722c25246a7da1151167912ed12866673614bfd99"
+}
