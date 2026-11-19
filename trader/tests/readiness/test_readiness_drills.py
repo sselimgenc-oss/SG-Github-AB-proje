@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import logging
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -138,7 +139,17 @@ def _health_env(tmp_path, cfgd):
     veto = tmp_path / "veto.json"
     veto.write_text("{}")
     os.utime(veto, (NOW0.timestamp(), NOW0.timestamp()))             # benzetim saatine gore taze
-    return {"VETO_FILE": str(veto), "ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://hb.invalid/x",
+    # M1 paketi: sunucuda paket dagitimdan hemen sonra tazedir. Depodaki models/pa_proposer kopyalanir ve created_at
+    # benzetim saatine (NOW0) cekilir; aksi halde depo paketi (gercek tarihli) benzetim zamaninda 8 gunden eski sayilip
+    # pa_proposer_stale WARN'i uretir ve bu tatbikatlarin beklenen alarm kumesini kirar.
+    models = tmp_path / "models" / "pa_proposer"
+    if not models.exists():
+        shutil.copytree(ROOT / "models" / "pa_proposer", models)
+        for mp in models.glob("*.json"):
+            d = json.loads(mp.read_text(encoding="utf-8"))
+            d["meta"]["created_at"] = NOW0.isoformat()
+            mp.write_text(json.dumps(d), encoding="utf-8")
+    return {"PA_PROPOSER_MODELS_DIR": str(models), "VETO_FILE": str(veto), "ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://hb.invalid/x",
             "MARKET_DB": str(tmp_path / "var" / "market.sqlite"), "ENGINE_CONFIG_DIR": str(cfgd), "NOTIFIER": "log",
             "STATE_DIR": str(tmp_path / "hs")}
 

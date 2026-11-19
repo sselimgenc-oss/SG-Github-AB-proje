@@ -557,6 +557,8 @@ else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON ve Telegram 
 # DD-12 WP-09: gece islem notu (kodla; anahtar/ag gerekmez) ve haftalik ozet (anahtar yoksa no-op; butce payi haftalik_ozet)
 enable_now trader-notes.timer
 enable_now trader-ml-retrain.timer
+# DD-12 WP-16: unit ReadWritePaths (namespace) icin dizin ilk kurulumda olussun; birim ilk calismadan once vardir
+install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/universe"
 enable_now trader-universe.timer   # DD-12 WP-16: aylik kagit evreni (1. gun 00:30 UTC; var/universe/paper_pairs.json, ag yok)
 enable_now trader-weekly-summary.timer
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar

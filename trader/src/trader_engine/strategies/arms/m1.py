@@ -27,7 +27,7 @@ def empty_output(index) -> pd.DataFrame:
                  "rh_touches": np.zeros(n, dtype="int64"), "rl_touches": np.zeros(n, dtype="int64"),
                  "pullback_ema": np.zeros(n, dtype="int64")})
     return pd.DataFrame({c: data[c] for c in SIGNAL_COLUMNS}, index=index)[SIGNAL_COLUMNS]
-from trader_ml.pa_proposer import features as PF
+from trader_core import pa_features as PF
 
 from . import ArmInput
 from . import _pa as P
