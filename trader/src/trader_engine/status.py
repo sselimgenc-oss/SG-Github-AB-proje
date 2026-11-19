@@ -120,6 +120,7 @@ class StatusWriter:
             "open_positions": pos, "unrealized_pnl_usd": unreal_total, "mark_ts": mark_ts, "open_trade_ids": ids, "counters": f["counters"], "ml": ml,
             **({"records": f["records"]} if f.get("records") is not None else {}),   # WP-3 9.3: yalniz kayit sayaclari
             **({"cluster_counts": f["cluster_counts"]} if f.get("cluster_counts") is not None else {}),   # DD-12 WP-05 (yalniz kagit)
+            **({"ml_filtre": f["ml_filtre"]} if f.get("ml_filtre") is not None else {}),   # 19.11: kagit ML filtresi ozeti
             **({"pause": f["pause"]} if f.get("pause") is not None else {}),
             **({"risk_ladder": f["risk_ladder"]} if f.get("risk_ladder") is not None else {}),   # 12 §10
             **({"exchange": xb} if (xb := _exchange_block(engine, f, self.cfg.mode)) is not None else {}),

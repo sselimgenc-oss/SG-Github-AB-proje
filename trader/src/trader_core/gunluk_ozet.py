@@ -308,6 +308,34 @@ def _filtre(kok: Path, ledger_dir: Path, now: datetime) -> bool | None:
     return False if gordu else None
 
 
+def _ortak_filtre(kok: Path, ledger_dir: Path, now: datetime) -> list[str] | None:
+    """Kagit ML filtresi (ortak_ogrenme; 19.11): gecerli (hash + sure) ve >= 10 islemle egitilmis kurulumlarin listesi.
+    Dizin ya da paket yoksa None (bilgi yok). Hata -> None."""
+    d = ledger_dir / "models" / "ortak_filtre"
+    if not d.is_dir():
+        return None
+    try:
+        try:
+            from ortak_ogrenme import filtre
+        except ImportError:
+            import sys
+            sys.path.insert(0, str(kok / "paket"))
+            from ortak_ogrenme import filtre
+        out = []
+        for p in sorted(d.glob("*.json")):
+            if p.name.endswith(".prev.json") or p.name.startswith("."):
+                continue
+            try:
+                pk = filtre.yukle(p, simdi=now)
+            except ValueError:
+                continue
+            if int(pk["meta"].get("n_egitim", 0)) >= 10:
+                out.append(str(pk["meta"]["kurulum"]))
+        return out
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _saglik(yol: Path, now: datetime) -> tuple[str | None, int | None]:
     try:
         st = _json(yol)
@@ -369,6 +397,7 @@ def girdi_oku(config_dir: str | os.PathLike, env: str, environ: Mapping[str, str
     ldir = ledger_yol.parent
     _, a, b = gun_sinirlari(now)
     g = Girdi(notlar=[])
+    ml_atlanan = None
     ws = cfg.get("wallet_start")
     g.wallet_start = float(ws) if isinstance(ws, (int, float)) and not isinstance(ws, bool) else None
     g.gunluk_kayip_yuzde, g.kaldirac_tavan = _limitler(cfg)
@@ -382,6 +411,8 @@ def girdi_oku(config_dir: str | os.PathLike, env: str, environ: Mapping[str, str
             g.acik = led.list_open_trades()
             g.aktivasyonlar = led.list_activations()
             decisions = led.list_decisions()
+            ml_atlanan = sum(1 for d in decisions if getattr(d, "skip_reason", None) == "ml_filter"
+                             and _icinde(getattr(d, "bar_close_ts", None), a, b))
         finally:
             led.close()
         cf_yol = ldir / "counterfactual.sqlite"
@@ -395,6 +426,10 @@ def girdi_oku(config_dir: str | os.PathLike, env: str, environ: Mapping[str, str
         g.notlar.append("defter okunamadi")
     g.alinmayan_sinyal = _cf_gunluk(ldir / "counterfactual.sqlite", a, b)
     g.filtre_aktif = _filtre(kok, ldir, now)
+    ortak = _ortak_filtre(kok, ldir, now)
+    if ortak is not None:
+        g.filtre_aktif = bool(ortak) or bool(g.filtre_aktif)
+        g.notlar.insert(0, f"ML filtresi: {len(ortak)} kurulumda aktif, bugün {int(ml_atlanan or 0)} giriş atlandı")
     g.rejim = _rejim(cfg, cdir, kok, now)
     if g.rejim is None:
         g.notlar.append("rejim verisi yok")

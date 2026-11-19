@@ -175,6 +175,8 @@ class PriceActionV1Ml:
 
     def _decide(self, row: pd.Series, why: str) -> pd.Series:
         """why: no_model | expired | unscored | filter. shadow'da yalniz sayac/uyari; active'te aday notrlenir."""
+        if self.fail_open and not self.ml_block and self.ml_universe is None and why == "no_model":
+            return row                                      # 19.11: kagit lab'da model yolu yok (ML etkinligi kurulum filtresinde): sessiz gec
         if self.fail_open and why in ("no_model", "expired", "unscored"):
             self.counters["ml_no_model" if why == "no_model" else f"ml_{why}"] += 1      # puan uretilemedi: aday GECER (spec 5)
             if self.ml_mode != "active":

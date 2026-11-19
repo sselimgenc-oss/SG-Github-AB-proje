@@ -219,7 +219,7 @@ def test_dt2_paper_44_cift_taban_10_ust_kumesi():
 def test_dt2_paper_ml_kapali_golgesiz_16_pozisyon():
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     cfg = _paper()
-    assert cfg.ml_mode == "off"
+    assert cfg.ml_mode == "active"      # 19.11: ML kagitta aktif (kullanici karari)
     assert cfg.ml_experimental is False and cfg.ml_model_path is None and cfg.ml_pairs == ()
     assert cfg.shadow_blocks == ()
     assert cfg.max_positions == 16
@@ -288,7 +288,7 @@ def test_dt2_paper_katmani_yalniz_env_paper_ile_uygulanir():
     plain = load_cli_config(CONFIG, "learner", None)
     paper = load_cli_config(CONFIG, "learner", "paper")
     assert len(plain.pairs) == 10 and len(paper.pairs) == 44
-    assert plain.ml_mode == "off" and paper.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli (kullanici karari)
+    assert plain.ml_mode == "off" and paper.ml_mode == "active"      # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert plain.shadow_blocks != () and paper.shadow_blocks == ()
     for env in ("testnet", "live"):
         c = load_cli_config(CONFIG, "learner", env)

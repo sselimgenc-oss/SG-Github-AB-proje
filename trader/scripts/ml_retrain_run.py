@@ -26,6 +26,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 sys.path.insert(0, str(_HERE))                       # export_paper_records (scripts/)
+sys.path.insert(0, str(_HERE.parent / "paket"))      # ortak_ogrenme (ML filtresi kagitta aktif, 19.11)
 sys.path.insert(0, str(_HERE.parent / "research"))   # pa_proposer_build (research/): tarihsel etiket + kagit satiri yardimcilari
 
 from trader_core import ledger as L  # noqa: E402
@@ -163,6 +164,13 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
         digest = hashlib.sha256("".join(sorted(p["meta"]["model_hash"] for p in pkgs.values())).encode()).hexdigest()
         csv_rows.append([f"setup_filter_nightly_{now.date().isoformat()}", "nightly", f"ridge_logistic;arms={len(pkgs)}",
                          f"rows={len(rows)};lock_dropped={rep['lock_dropped']}", "", digest, now.isoformat()])
+        ortak: dict = {}
+        try:   # 19.11: kagit ML filtresi (ortak_ogrenme) - kurulum basina >=10 kapanmis islem; hata digerlerini geri almaz
+            from trader_engine import ogrenme_filtre as OF
+            ortak = OF.egit_hepsi(OF.adaylar_defterden(led), OF.model_dizini(lp), now)
+        except Exception as e:  # noqa: BLE001
+            ortak = {"durum": f"hata:{type(e).__name__}"}
+            print(f"ortak filtre egitim hatasi: {type(e).__name__}: {e}", file=sys.stderr)
         if not args.no_m1:
             tfs = [t.strip() for t in args.m1_tfs.split(",") if t.strip()]
             if any(t not in PB_TFS for t in tfs):
@@ -187,7 +195,7 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
         return 3
     finally:
         led.close()
-    print(json.dumps({"status": "ok" if m1_err is None else "m1_error", "rows": len(rows), "models": sorted(pkgs), "m1": m1,
+    print(json.dumps({"status": "ok" if m1_err is None else "m1_error", "rows": len(rows), "ortak_filtre": ortak, "models": sorted(pkgs), "m1": m1,
                       "m1_error": m1_err, **rep}, sort_keys=True, default=str))
     return 0 if m1_err is None else 3
 

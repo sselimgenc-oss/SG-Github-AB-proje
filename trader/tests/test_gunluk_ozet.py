@@ -271,3 +271,22 @@ def test_duygu_onbellekten_okunur_bayatsa_yok(tmp_path):
     (tmp_path / "var" / "durum" / "haber_v1.json").write_text(json.dumps(HB.belge_yap(anlik, now_ms)), encoding="utf-8")
     assert G._duygu(tmp_path, NOW) == {"deger": 28, "sinif": "Fear"}
     assert G._duygu(tmp_path, NOW + timedelta(hours=30)) is None                             # 26 saatten eski
+
+
+def test_ortak_filtre_aktif_kurulum_sayisi(tmp_path):
+    """19.11: kagit ML filtresi paketleri (>=10 islem, gecerli) 'aktif kurulum' sayilir; dizin yoksa None."""
+    from datetime import datetime, timedelta, timezone
+
+    from ortak_ogrenme import filtre
+    from ortak_ogrenme.kayit import Aday
+    from trader_core.gunluk_ozet import _ortak_filtre
+
+    now = datetime(2026, 12, 1, tzinfo=timezone.utc)
+    assert _ortak_filtre(tmp_path, tmp_path, now) is None
+    d = tmp_path / "models" / "ortak_filtre"
+    for arm, n in (("T1@1h", 12), ("R1@1h", 6)):
+        ad = [Aday(id=str(i), proje="ML", kurulum=arm, enstruman="BTC/USDT", varlik_sinifi="kripto", yon="long",
+                   ts=now - timedelta(days=40, hours=i), alindi=True, r=1.0 if i % 2 else -1.0, ozellikler={"x": float(i)})
+              for i in range(n)]
+        filtre.kaydet(filtre.egit(arm, ad, olusturma=now), d)
+    assert _ortak_filtre(tmp_path, tmp_path, now) == ["T1@1h"]

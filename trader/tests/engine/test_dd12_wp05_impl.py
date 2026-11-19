@@ -50,7 +50,7 @@ def test_registry_full_ml_info():
     s = get_strategy("price_action_v1_full_ml", mode="paper", ml_mode="active")
     assert s.info.name == "price_action_v1_full_ml" and s.info.paper_allowed
     assert s.info.setups == ("T1", "R1") and s.ml_mode == "active" and s.fail_open
-    assert PAPER.strategy == "price_action_lab_ml" and PAPER.ml_mode == "off"      # 19 Kasim: r03 kagitta emekli
+    assert PAPER.strategy == "price_action_lab_ml" and PAPER.ml_mode == "active"      # 19.11: r03 kagitta emekli; ML etkinligi kurulum filtresinde (kullanici karari)
     assert PAPER_R03.ml_mode == "active" and PAPER_R03.ml_features == "r03"
 
 
