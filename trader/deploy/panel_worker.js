@@ -43,7 +43,7 @@ async function esitMi(a, b) {
   return fark === 0;
 }
 
-function baslikEkle(yanit) {
+function baslikEkle(yanit, formIzni = false) {
   const h = new Headers(yanit.headers);
   h.set("Cache-Control", "no-store");
   h.set("X-Robots-Tag", "noindex");
@@ -52,7 +52,7 @@ function baslikEkle(yanit) {
   h.delete("X-Frame-Options");   // 19 Kasim: orkestra kapisi iframe'i (CSP frame-ancestors yeterli)
   h.set("Strict-Transport-Security", "max-age=31536000");
   h.set("Content-Security-Policy",
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev");
+    `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action ${formIzni ? "'self'" : "'none'"}; frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev`);
   return new Response(yanit.body, { status: yanit.status, statusText: yanit.statusText, headers: h });
 }
 
@@ -61,6 +61,22 @@ function red() {
     status: 401,
     headers: { "WWW-Authenticate": 'Basic realm="Trader panosu", charset="UTF-8"' },
   }));
+}
+
+// Kapi iframe'i: tarayicilar capraz-site iframe'de Basic Auth penceresi acmaz ve ust duzey giristeki (bolumlenmis)
+// cerez iframe'e gecmez. Bu yuzden iframe isteginde (Sec-Fetch-Dest: iframe) parola formu doner; POST /giris dogruysa
+// cerez kapi bolumunde kurulur. Ust duzey (telefon/tarayici) Basic Auth aynen kalir.
+function girisFormu(hatali) {
+  const govde = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Trader panosu</title><body style="font-family:system-ui;max-width:22rem;margin:3rem auto;padding:0 1rem">' +
+    '<h1 style="font-size:1.2rem">Trader panosu</h1>' + (hatali ? '<p style="color:#b00">Parola yanlış.</p>' : '') +
+    '<form method="post" action="/giris"><label>Parola<br><input type="password" name="sifre" autocomplete="current-password" ' +
+    'required style="width:100%;font-size:1rem;padding:.4rem"></label><p><button type="submit">Giriş</button></p></form></body>';
+  return baslikEkle(new Response(govde, { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } }), true);
+}
+
+function iframeMi(istek) {
+  return istek.headers.get("Sec-Fetch-Dest") === "iframe";
 }
 
 function bilgiCoz(baslik) {
@@ -99,6 +115,18 @@ export default {
     const sifre = env.PANEL_SIFRE;
     if (typeof sifre !== "string" || sifre.length === 0) return red();
     if (await cerezGecerli(istek, sifre)) return baslikEkle(await env.ASSETS.fetch(istek));
+    if (istek.method === "POST" && new URL(istek.url).pathname === "/giris") {
+      let gelen = "";
+      try {
+        const v = (await istek.formData()).get("sifre");
+        gelen = typeof v === "string" ? v : "";
+      } catch (_) {
+        gelen = "";
+      }
+      if (!(await esitMi(gelen, sifre))) return girisFormu(true);
+      return baslikEkle(new Response(null, { status: 303, headers: { "Location": "/", "Set-Cookie": await cerezYap(sifre) } }));
+    }
+    if (iframeMi(istek) && !istek.headers.get("Authorization")) return girisFormu(false);
     const bilgi = bilgiCoz(istek.headers.get("Authorization"));
     if (!bilgi) return red();
     // iki karşılaştırma da her zaman yapılır (kullanıcı adı yanlışsa bile süre sızdırmasın)
