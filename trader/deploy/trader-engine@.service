@@ -16,7 +16,7 @@ Type=simple
 User=trader
 Group=trader
 WorkingDirectory=/opt/trader
-Environment=PYTHONPATH=/opt/trader/src
+Environment=PYTHONPATH=/opt/trader/src:/opt/trader/paket
 Environment=PYTHONUNBUFFERED=1
 # Feed market.sqlite'i olusturana kadar (en fazla 60 sn) bekler; sonrasinda motorun kendi acilis kapisi (kural + taze veri) devreye girer
 ExecStartPre=/bin/sh -c 'i=0; while [ ! -e var/market.sqlite ] && [ $i -lt 60 ]; do i=$((i+1)); sleep 1; done; [ -e var/market.sqlite ]'

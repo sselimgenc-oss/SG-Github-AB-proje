@@ -155,6 +155,13 @@ class Engine:
             self.gate.ct_kadro = lambda: _CT.oku(_C1.kadro_yolu(), clock.now(), evren=_evren)
             from trader_core import haber as _HB                        # haber/duygu etiketi (yalniz kayit; docs/haber-etiketi-spec.md)
             self.gate.haber_etiket = lambda pair, now_ms: _HB.etiket(pair, now_ms)
+            if cfg.ml_mode == "active":                                 # 19.11 kullanici karari: kagitta ML filtresi AKTIF (girisi atlatabilir)
+                try:
+                    from . import ogrenme_filtre as _OF
+                    if not _OF.kapali():
+                        self.gate.ml_filtre = _OF.FiltreDeposu(_OF.model_dizini(cfg.ledger_path))
+                except Exception as e:  # noqa: BLE001 - filtre kurulamazsa motor filtresiz surer
+                    log.warning("ML filtresi kurulamadi, filtre YOK: %s: %s", type(e).__name__, e)
         self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
@@ -379,6 +386,7 @@ class Engine:
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
+            "ml_filtre": self._ml_filtre_status(now),
             "cluster_counts": self.cluster_counts(),
             "last_marks": dict(self._last_marks),
             "records": self.records_block(),
@@ -488,6 +496,17 @@ class Engine:
         if m is not None and getattr(self.strategy, "fail_open", False):
             m = {**m, "entries_blocked": False, "pass_through": True}      # DD-12 spec 5: model yok => aday gecer (`ml_no_model`)
         return m
+
+    def _ml_filtre_status(self, now: datetime) -> dict | None:
+        flt = getattr(self.gate, "ml_filtre", None)
+        if flt is None:
+            return None
+        try:
+            c = self.gate.counters
+            return {"aktif_kurulum": len(flt.aktif_kurulumlar(now)), "atladi": int(c.get("ml_filtre_atladi", 0)),
+                    "gecti": int(c.get("ml_filtre_gecti", 0)), "calisiyor": bool(flt.calisiyor)}
+        except Exception:  # noqa: BLE001
+            return None
 
     def cluster_counts(self) -> dict | None:
         """status.json `clusters` (DD-12 §4.1): kume basina acik + acilmakta pozisyon sayisi ve tavan; hesap geneli. Yalniz kagit."""
@@ -2135,6 +2154,9 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
         from .config import load_keys
         load_keys(env)                               # ConfigError("keys_missing: ...") aynen (11 §3.2)
     strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode, arms=cfg.arms or None)
+    if cfg.mode == "paper" and cfg.ml_mode == "active" and not cfg.ml_model_path and not cfg.ml_pairs \
+            and hasattr(strategy, "set_ml_mode"):
+        strategy.set_ml_mode("off")      # 19.11: model yolu yok; ML etkinligi kurulum filtresiyle (EntryGate.ml_filtre). Eski yol sessiz ve saglik alarmsiz
     if cfg.mode == "paper" and hasattr(strategy, "fail_open"):
         strategy.fail_open = True                               # DD-12 spec 5 / D-T8: kagitta model yok => aday GECER (`ml_no_model`)
     if cfg.mode == "paper" and cfg.ml_pairs and hasattr(strategy, "set_ml_universe"):

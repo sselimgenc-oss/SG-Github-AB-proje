@@ -165,6 +165,9 @@ class EntryGate:
         # Haber/duygu etiketi (docs/haber-etiketi-spec.md): (cift, now_ms) -> {"duygu","haber"} ya da None (onbellek yok/bozuk/bayat).
         # Yalniz KAYIT: features["duygu"], features["haber"]; hicbir adayi engellemez, karar/boyut/risk yoluna girmez.
         self.haber_etiket: Callable[[str, int], Mapping | None] | None = None
+        # 19.11 kullanici karari: kagitta ML filtresi AKTIF (ogrenme_filtre.FiltreDeposu ya da None). YALNIZ bir girisi atlatabilir
+        # (`ml_filter`); boyut/kaldirac/limit/risk yoluna girmez. Hata/paket yok => serbest.
+        self.ml_filtre = None
         self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
@@ -261,6 +264,32 @@ class EntryGate:
         except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
             return {}
 
+    def _ml_filtre_karari(self, row: SignalRow, tf: str, D: datetime, tk: dict) -> EntryOutcome | None:
+        """ML filtresi (kagit): esik alti puan => `ml_filter` ile atla (karar satiri + puan; karsi-olgu mevcut atlama yolundan).
+        Baska her durum (filtre yok/paket yok/hata) => None (giris serbest). Asla istisna yaymaz."""
+        flt = self.ml_filtre
+        if flt is None:
+            return None
+        try:
+            from .ogrenme_filtre import ozellikler
+            aid = row.arm_id or AG.arm_id_of(row.setup, tf)
+            feats = tk.get("features") or _features(row)
+            oz = ozellikler(side=row.side, regime=row.regime, atr_ratio=row.atr_ratio, session_tag=tk.get("session_tag"),
+                            pair=row.pair, planned_entry=row.planned_entry, planned_stop=row.planned_stop,
+                            planned_target=row.planned_target, rh_touches=int(row.rh_touches), rl_touches=int(row.rl_touches),
+                            features=feats)
+            k = flt.karar(aid, oz, self.clock.now())
+            if k.neden == "ok":
+                self.counters["ml_filtre_gecti"] += 1
+            if k.izin:
+                return None
+            self.counters["ml_filtre_atladi"] += 1
+            return self._skip(row, tf, "ml_filter", skip_reason="ml_filter", veto_reason="gate:ml_filter",
+                              ml_score=k.puan, **tk)
+        except Exception as e:  # noqa: BLE001 - filtre hatasi giris engellemez
+            log.warning("ML filtre kapisi hatasi, giris serbest: %s: %s", type(e).__name__, e)
+            return None
+
     def _arms_off(self) -> Collection[str]:
         ao = self.arms_off
         return (ao() if callable(ao) else ao) or ()
@@ -343,6 +372,9 @@ class EntryGate:
             if AG.account_full(len(held), self.cfg.max_positions):
                 return self._skip(row, tf, "max_positions", skip_reason="max_positions",
                                   veto_reason="gate:max_positions", **tk)
+            ml_skip = self._ml_filtre_karari(row, tf, D, tk)
+            if ml_skip is not None:
+                return ml_skip
             lk = veto.VetoLookup("allowed", "not_evaluated:paper", False)
         else:
             lk = self.veto.lookup(pair, row.side, now)                                  # 10
