@@ -59,6 +59,19 @@ def test_tutarlilik_weekly_oneshot_is_bounded_and_fits_slice():
     assert "OnCalendar=Mon *-*-* 00:30:00 UTC" in tm and "Persistent=true" in tm
 
 
+def test_haber_hourly_oneshot_is_bounded_and_fits_slice():
+    """Haber/duygu toplayici (saatlik, yalniz kayit; docs/haber-etiketi-spec.md): saf stdlib, olculen tepe RSS ~16 MB; tavan 100M."""
+    m = _mem("trader-haber.service")
+    assert m == 100
+    kv = _kv("trader-haber.service")
+    assert kv["Slice"] == "trader.slice" and kv["Nice"] == "15"
+    assert kv["ReadWritePaths"] == "/opt/trader/var/durum" and kv["ProtectSystem"] == "strict" and kv["NoNewPrivileges"] == "true"
+    assert m <= int(_kv("trader.slice")["MemoryMax"][:-1]) // 2
+    assert 1170 + 64 + 96 + 256 + 400 + 128 + m < RAM_MB + SWAP_MB
+    tm = (DEPLOY / "trader-haber.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=hourly" in tm and "Persistent=true" in tm and "WantedBy=timers.target" in tm
+
+
 def test_dd9_budget_with_live_and_testnet_units():
     """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
     Toplam sert tavanlar trader.slice MemoryMax (1300M) ile sinirlanir; RAM+takas icinde kalir."""

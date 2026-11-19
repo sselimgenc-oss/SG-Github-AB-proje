@@ -133,6 +133,7 @@ def test_every_unit_handled_by_install():
                         "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service", "trader-exit-counterfactual@.service",
                         "trader-oi.service", "trader-drift@.service", "trader-notes.service", "trader-weekly-summary.service", "trader-ml-retrain.service", "trader-universe.service",
                         "trader-tutarlilik.service",  # Faz 2a: haftalik tutarlilik raporu (zamanlayici etkinlestirilir; servis tetiklenir)
+                        "trader-haber.service",  # 19 Kasim: haber/duygu toplayici eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-ct-kadro.service",  # 19 Kasim: C1 (CT kadro) eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-engine-live.service", "trader-engine-env-retry@.service",
                         "trader-oto-guncelle.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)
