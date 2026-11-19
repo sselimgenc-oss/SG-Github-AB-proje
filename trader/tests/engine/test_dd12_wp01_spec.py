@@ -235,8 +235,9 @@ def test_dt2_paper_ml_pairs_sabit_taban_10():
 
 def test_dt2_paper_optional_pairs_hisse_emtia_24():
     cfg = _paper()
-    assert len(cfg.optional_pairs) == 24
-    assert {_base(p) for p in cfg.optional_pairs} == STOCKS20 | COMMODITY4
+    # 19 Kasim: TON vadelisi Binance'te not_trading; zorunlu olunca besleme acilmiyordu => istege bagli
+    assert len(cfg.optional_pairs) == 25
+    assert {_base(p) for p in cfg.optional_pairs} == STOCKS20 | COMMODITY4 | {"TON"}
     assert set(cfg.optional_pairs) <= set(cfg.pairs)
 
 
