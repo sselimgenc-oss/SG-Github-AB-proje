@@ -45,6 +45,39 @@ def week_key(day: datetime) -> str:
     return f"{y}-W{w:02d}"
 
 
+def _data_root(env) -> Path:
+    v = (env.get("TRADER_DATA_ROOT") or "").strip()
+    return Path(v) if v and os.path.isabs(v) else _HERE.parent
+
+
+def _tr_pct(x: float) -> str:
+    return f"%{round(x * 100):d}"
+
+
+def tutarlilik_satiri(env, now: datetime, durum_path=None) -> str:
+    """Faz 2a: var/durum/tutarlilik_v1.json'dan tek satir. Dosya yok/bozuk ya da 8 gunden eski -> `Tutarlılık: rapor yok`."""
+    p = Path(durum_path) if durum_path else _data_root(env) / "var" / "durum" / "tutarlilik_v1.json"
+    yok = "Tutarlılık: rapor yok"
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+        uret = datetime.strptime(doc["uretim"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except (OSError, ValueError, KeyError, TypeError):
+        return yok
+    if not isinstance(doc, dict) or (now - uret) > timedelta(days=8):
+        return yok
+    ks = doc.get("kurulumlar") or []
+    nt = doc.get("not")
+    if not ks:
+        return f"Tutarlılık: {nt}" if nt else yok
+    e = sum(int(k.get("eslesen") or 0) for k in ks)
+    yk = sum(int(k.get("yalniz_kagit") or 0) for k in ks)
+    yb = sum(int(k.get("yalniz_bt") or 0) for k in ks)
+    dr = sum(float(k.get("kagit_R") or 0.0) - float(k.get("bt_R") or 0.0) for k in ks)
+    oran = _tr_pct(e / (e + yk + yb)) if (e + yk + yb) else "yok"
+    uy = "uyarı: tutarlilik_sapma" if doc.get("uyari") else "uyarı yok"
+    return f"Tutarlılık: eşleşme {oran}, ΣR farkı {dr:+.1f}R; {uy}".replace(".", ",")
+
+
 def build_input(ledger, since: str, until: str) -> tuple[dict, str]:
     notes = [n for n in ledger.list_trade_notes() if since <= n["note_date"] <= until]
     tags = Counter(t for n in notes for t in n["tags"])
@@ -141,7 +174,11 @@ def main(argv=None, *, llm=None, budget=None, now_fn=None, env=None) -> int:
         print(json.dumps({"status": "empty"}))
         return 2
     out_dir.mkdir(parents=True, exist_ok=True)
-    out.write_text(f"# Haftalik ozet {week_key(day)}\n\n{text}\n", encoding="utf-8")
+    try:
+        satir = tutarlilik_satiri(env, now)
+    except Exception:  # noqa: BLE001  (bilgi satiri ozeti asla bozmaz)
+        satir = "Tutarlılık: rapor yok"
+    out.write_text(f"# Haftalik ozet {week_key(day)}\n\n{text}\n\n{satir}\n", encoding="utf-8")
     print(json.dumps({"status": "ok", "week": week_key(day), "file": str(out), "notes": stats["not_sayisi"]}))
     return 0
 

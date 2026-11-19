@@ -1,0 +1,9 @@
+[Unit]
+Description=Trader tutarlilik raporu zamanlayicisi (pazartesi 00:30 UTC = 03:30 TSI)
+
+[Timer]
+OnCalendar=Mon *-*-* 00:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

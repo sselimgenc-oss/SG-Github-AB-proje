@@ -45,6 +45,20 @@ def test_memory_budget_sums():
     assert 'SWAP_SIZE="4G"' in t and "vm.swappiness=10" in t
 
 
+def test_tutarlilik_weekly_oneshot_is_bounded_and_fits_slice():
+    """Faz 2a: haftalik kagit-geri test tutarlilik birimi (pazartesi 00:30 UTC; kisa omurlu, `backtest --env paper`). Tavan olcume dayanir
+    (docs/motor/tutarlilik-raporu-spec.md notu); gece isleri (counterfactual 23:10, ml-retrain 03:10) ile cakismaz; toplam butceye girer."""
+    m = _mem("trader-tutarlilik.service")
+    assert m == 300                                                      # olculen tepe ~135 MB (44 cift, 7 gun, store) x ~2,2
+    kv = _kv("trader-tutarlilik.service")
+    assert kv["Slice"] == "trader.slice" and kv["Nice"] == "10"
+    assert m <= int(_kv("trader.slice")["MemoryMax"][:-1]) // 2          # slice tavaninin yarisini asmaz
+    worst = 1170 + 64 + 96 + 256 + 400 + 128 + m
+    assert worst < RAM_MB + SWAP_MB
+    tm = (DEPLOY / "trader-tutarlilik.timer").read_text(encoding="utf-8")
+    assert "OnCalendar=Mon *-*-* 00:30:00 UTC" in tm and "Persistent=true" in tm
+
+
 def test_dd9_budget_with_live_and_testnet_units():
     """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
     Toplam sert tavanlar trader.slice MemoryMax (1300M) ile sinirlanir; RAM+takas icinde kalir."""

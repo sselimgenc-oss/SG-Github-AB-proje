@@ -28,6 +28,8 @@ ENTRIES = {
     "telegram-report": ("script:scripts/telegram_run.py", ["trader_core.telegram"]),
     "counterfactual": ("script:scripts/counterfactual_run.py", ["trader_core.counterfactual", "trader_core.ledger"]),
     "backup": ("script:scripts/health_backup.py", []),
+    "tutarlilik": ("script:scripts/tutarlilik_run.py", ["trader_engine.backtest", "trader_engine.config", "trader_engine.holdout",
+                                                         "trader_engine.marketdata.store", "trader_core.ledger"]),
 }
 FORBIDDEN = ["scipy", "sklearn", "lightgbm", "yaml", "pytest", "matplotlib", "joblib", "numba", "websockets", "ccxt",
              "freqtrade", "trader_ml", "torch"]

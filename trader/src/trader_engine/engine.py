@@ -2004,6 +2004,12 @@ def _require_live_paths(cfg: EngineConfig) -> None:
     check_shared_paths(cfg.mode, cfg.var_dir, cfg.kill_file, cfg.pause_file)
 
 
+def signal_source_class(strategy):
+    """Kagit sinyal kaynagi sinifi (tek yer): bilesik strateji (`decision_tf` var; WP-11) -> `MultiArmSignalSource`, aksi
+    halde `WindowedSignalSource`. `build_engine` ve geri testin `--env paper` yolu (tutarlilik raporu) ayni secimi kullanir."""
+    return MultiArmSignalSource if getattr(strategy, "decision_tf", None) else WindowedSignalSource
+
+
 def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketView | None = None,
                  broker: Broker | None = None, env: Mapping[str, str] | None = None) -> Engine:
     """Zorunlu acilis sirasi (testnet/live; DD-8 §0): 1 yapilandirma (yollar) -> 2 LIVE_CONFIRM + anahtarlar -> 3 state kilidi
@@ -2121,8 +2127,7 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
         else:
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
                                                    experimental=cfg.ml_experimental, paper_active=paper_active)
-    src_cls = MultiArmSignalSource if getattr(strategy, "decision_tf", None) else WindowedSignalSource    # WP-11: bilesik strateji
-    signals = src_cls(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
+    signals = signal_source_class(strategy)(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
                       ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None)
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)

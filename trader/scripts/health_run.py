@@ -702,6 +702,25 @@ def ct_kadro_alerts(env: dict, now: datetime, var_dir: str | None = None) -> lis
                     "ct_kadro|bayat", now)]
 
 
+def tutarlilik_alerts(env: dict, now: datetime, durum_dir: str | None = None) -> list:
+    """Faz 2a: var/durum/tutarlilik_v1.json `uyari=true` -> WARN `tutarlilik_sapma` (kagit-geri test tutarlilik raporu; yalniz bilgi,
+    motor etkilenmez). Dosya yok/bozuk/uyari yok -> uyari yok (haftalik is henuz calismadiysa bayatlik olculemez)."""
+    d = Path(durum_dir) if durum_dir else data_root(env) / "var" / "durum"
+    try:
+        doc = json.loads((d / "tutarlilik_v1.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(doc, dict) or doc.get("uyari") is not True:
+        return []
+    why = doc.get("uyari_nedenleri")
+    why = [str(x) for x in why][:5] if isinstance(why, list) else []
+    donem = doc.get("donem") if isinstance(doc.get("donem"), dict) else {}
+    return [H.Alert(H.Status.WARN, "tutarlilik_sapma", "Kagit-geri test tutarlilik sapmasi",
+                    f"Haftalik tutarlilik raporu uyari verdi ({str(donem.get('bas', '?'))[:10]} .. {str(donem.get('bit', '?'))[:10]}): "
+                    + ("; ".join(why) if why else "ayrinti var/rapor/tutarlilik/ altinda") + ". Yalniz bilgi; motor etkilenmez.",
+                    "tutarlilik|sapma", now)]
+
+
 def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
     """Opt-in (15 kalibi: yapilandirma varligi): bir bot icin model paketi yolu (ML_MODEL_PATH_<BOT> ya da
     engine config `ml_model_path`) VAR ya da status.json `ml` blogu dict ve mode != "off" ise acik; aksi None -> ml_package kontrolu uretilmez. Durum yazimi `run_once` icinde."""
@@ -886,6 +905,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
     alerts.extend(pa_proposer_alerts(env, now))
     alerts.extend(ct_kadro_alerts(env, now))
+    alerts.extend(tutarlilik_alerts(env, now))
     if reset:
         alerts.append(H.Alert(H.Status.WARN, "state_reset", "Saglik durum dosyasi sifirlandi",
                               "state.json yok ya da bozuktu; sayaclar sifirdan basladi.", "state|state_reset", now))

@@ -29,7 +29,7 @@ from .bars import floor_tf, is_tf_close, tf_delta
 from .brokers.paper import PaperBroker, PaperConfig
 from .clock import SimClock
 from .config import EngineConfig, _read as _read_cfg, _validate as _validate_cfg, apply_overrides, load_engine_config
-from .engine import ENGINE_VERSION, Engine
+from .engine import ENGINE_VERSION, Engine, signal_source_class
 from .errors import ConfigError, DataError, EngineError
 from .gates import NoVeto
 from .holdout import HOLDOUT, BacktestArgError, check_holdout  # noqa: F401  (yeniden disa aktarim)
@@ -181,6 +181,8 @@ class BacktestSpec:
     pairs: tuple[str, ...] | None = None
     target_trade_risk: float | None = None      # None -> kilitli hedef risk (LOCKED_CFG); verilirse yalniz daha SIKI (<=) deger
     record_shadow: bool = False                 # WP-3 5.1: --record-shadow (tf_15m geri testte DESTEKLENMEZ)
+    env: str | None = None                      # tutarlilik raporu: "paper" -> kagit katmani (arms/kume/maliyet) + cok kurullu kaynak; None = eski yol
+    wallet_start: float | None = None           # yalniz env ile: ozsermaye baslangici (kagit defterinden turetilir)
     flags: dict = field(default_factory=dict)
 
 
@@ -318,9 +320,11 @@ class BacktestRunner:
         self.spec = spec
 
     # -- yapilandirma
-    def build_config(self) -> EngineConfig:
+    def build_config(self, out_dir: Path | None = None) -> EngineConfig:
         s = self.spec
         d = _resolve(s.config_dir)
+        if s.env:
+            return self._build_env_config(d, out_dir)
         bot = d / "engine.learner.json"
         if bot.exists():
             cfg = load_engine_config(d / "engine.base.json", bot)
@@ -342,6 +346,29 @@ class BacktestRunner:
             kw["history_dir"] = s.history_dir
         return apply_overrides(cfg, **kw)
 
+    def _build_env_config(self, d: Path, out_dir: Path | None) -> EngineConfig:
+        """`--env paper`: kagit motorunun yapilandirmasi (base + learner + engine.<env>.json katmani; `load_cli_config` ile ayni) KIPI DAHIL
+        aynen yuklenir (mode="paper": kume/arm/risk/maliyet kapilari kagitla ayni kod yolu). Yalniz yollar cikti dizinine tasinir ki
+        kagit var dizinine/KILL/PAUSE dosyalarina HICBIR sey yazilmasin/okunmasin. Holdout kilidi `run_once`ta ayrica denetlenir."""
+        from .config import load_cli_config
+        s = self.spec
+        cfg = load_cli_config(d, "learner", s.env)
+        kw: dict = {"mtm_marks": False}
+        if s.target_trade_risk is not None:
+            kw["target_trade_risk"] = s.target_trade_risk
+        if s.wallet_start is not None:
+            kw["wallet_start"] = float(s.wallet_start)
+        if s.market_db:
+            kw["market_db"] = s.market_db
+        if s.history_dir:
+            kw["history_dir"] = s.history_dir
+        if s.pairs:
+            kw["pairs"] = tuple(canon_pair(p) for p in s.pairs)
+        if out_dir is not None:
+            o = str(Path(out_dir).resolve())
+            kw.update(var_dir=o, kill_file=f"{o}/KILL.never", pause_file=f"{o}/PAUSE.never")
+        return apply_overrides(cfg, **kw)
+
     def build_view(self, cfg: EngineConfig):
         s = self.spec
         if s.source == "store":
@@ -354,6 +381,8 @@ class BacktestRunner:
         step = timedelta(seconds=view.step_seconds())
         for p in cfg.pairs:
             rng = view.data_range(p, tf)
+            if rng is None and cfg.mode == "paper" and p in cfg.optional_pairs:
+                continue                                  # --env paper: istege bagli cift (hisse/emtia) verisiz kalabilir (kagitla ayni)
             if rng is None:
                 raise DataError(f"{p} {tf}: veri yok")
             if rng[1] < end - tf_delta(tf):
@@ -375,8 +404,21 @@ class BacktestRunner:
         led_path = out_dir / "ledger.sqlite"
         if led_path.exists():
             raise BacktestArgError("output_exists", f"{led_path} zaten var")
-        cfg = self.build_config()
-        strategy = get_strategy(s.strategy, mode="backtest")
+        envm = bool(s.env)
+        if envm:
+            if s.paranoid is not None or s.truncate_check is not None or s.fill_model != "native" or s.fee_mult != 1.0 \
+                    or s.slip_bps is not None or s.record_shadow or s.veto != "none":
+                raise BacktestArgError("bad_args", "--env: paranoid/truncate-check/legacy_compat/fee-mult/slip-bps/record-shadow/veto desteklenmez")
+            check_holdout(s.start, end)          # mode="paper" ile kosuldugu icin motorun kendi kilidi (run_range) devre disi: burada zorunlu
+        cfg = self.build_config(out_dir if envm else None)
+        if envm:
+            strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode, arms=cfg.arms or None)   # build_engine ile ayni
+            if hasattr(strategy, "fail_open"):
+                strategy.fail_open = True
+            if cfg.ml_pairs and hasattr(strategy, "set_ml_universe"):
+                strategy.set_ml_universe(cfg.ml_pairs)
+        else:
+            strategy = get_strategy(s.strategy, mode="backtest")
         if s.fill_model == "legacy_compat" and s.strategy != "price_action_v1_full":
             log.warning("uyum kipi: capraz dogrulama yalniz price_action_v1_full ile anlamlidir")
         tf = s.tf
@@ -402,8 +444,11 @@ class BacktestRunner:
         except L.LedgerError as e:
             ledger.close()
             raise BacktestArgError("bad_params", f"ledger parametre: {e}") from e
-        signals = PrecomputedSignalSource(raw, strategy, pairs=cfg.pairs, tf=tf, params=params, version_id=version_id,
-                                          end=end, strict=True)
+        if envm:                                            # kagitla ayni kaynak (bilesik strateji -> MultiArmSignalSource; strict=False)
+            signals = signal_source_class(strategy)(view, strategy, strict=False, ml_model=None, ml_error=None)
+        else:
+            signals = PrecomputedSignalSource(raw, strategy, pairs=cfg.pairs, tf=tf, params=params, version_id=version_id,
+                                              end=end, strict=True)
         paranoid_report = None
         if paranoid and s.paranoid is not None:
             paranoid_report = self.paranoid_check(raw, strategy, signals, cfg, params, version_id, end, out_dir)
@@ -413,8 +458,12 @@ class BacktestRunner:
         if cfg.cost.fill_model == "legacy_compat" and hasattr(raw, "tick_at"):
             raw.main_tf = tf                                # referans: tarihsel tick ana zaman dilimi mumlarindan
             tick_fn = view.tick_at
-        broker = broker_cls(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate, wallet_start=cfg.wallet_start),
-                             view.rules, view.funding, clock, tick_fn=tick_fn)
+        pcfg = PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate, wallet_start=cfg.wallet_start)
+        if envm and cfg.cost_overrides:                     # kagit: cift/seans kaymasi (build_engine ile ayni)
+            from .engine import session_cost_broker
+            broker = session_cost_broker(cfg, pcfg, view.rules, view.funding, clock)
+        else:
+            broker = broker_cls(pcfg, view.rules, view.funding, clock, tick_fn=tick_fn)
         if s.veto.startswith("ledger:"):
             veto = LedgerReplayVeto(_resolve(s.veto[len("ledger:"):]))
         else:
@@ -424,9 +473,14 @@ class BacktestRunner:
         if cfg.cost.fill_model == "legacy_compat":
             def entry_ref(pair, D, row, _v=view):          # noqa: E306  (referans: sonraki adim acilisi)
                 return _v.open_at(pair, D)
+        if envm:
+            from .pause import EntryPause
+            pause = EntryPause(str(out_dir / "PAUSE.never"), clock, audit_path=str(out_dir / "pause_audit.jsonl"), bot=cfg.bot)
+        else:
+            pause = None
         eng = Engine(cfg, clock=clock, view=view, broker=broker, ledger=ledger, state=state, signals=signals,
-                     strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=True,
-                     tick_fn=tick_fn)
+                     strategy=strategy, veto=veto, kill=kill, status=None, entry_ref_fn=entry_ref, strict=not envm,
+                     tick_fn=tick_fn, pause=pause)
         view_peek = [0]
         if cfg.cost.fill_model == "legacy_compat":
             eng.gate.state = _CompatEntryView(state, raw, clock, view_peek)
@@ -495,7 +549,8 @@ class BacktestRunner:
         (out_dir / "summary.json").write_text(json.dumps(summ, indent=1, default=_json_default))
         (out_dir / "meta.json").write_text(json.dumps(meta, indent=1, default=_json_default))
         (out_dir / "open_at_end.json").write_text(json.dumps(open_pos, indent=1, default=_json_default))
-        self._write_mtm(out_dir, mtm_rows, trades, met, cfg.wallet_start, s.start)
+        if not envm:
+            self._write_mtm(out_dir, mtm_rows, trades, met, cfg.wallet_start, s.start)
         return BacktestResult(out_dir=out_dir, summary=summ, meta=meta, trades=tdf, open_at_end=open_pos, snapshot=snap,
                               signals=signals)
 
@@ -773,6 +828,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--seed", type=int, default=17)
     ap.add_argument("--truncate-check", default=None, help="END' (YYYYMMDDTHH)")
     ap.add_argument("--from-paper-ledger", default=None)
+    ap.add_argument("--env", default=None, choices=["paper"],
+                    help="kagit katmani (config/engine.paper.json: arms/kume/maliyet) + kagitla ayni cok kurullu sinyal kaynagi; "
+                         "verilmezse eski yol (bit bit ayni)")
+    ap.add_argument("--wallet-start", type=float, default=None, help="yalniz --env ile: baslangic ozsermayesi")
     ap.add_argument("--out-root", default=None, help="varsayilan: <var_dir>/backtests")
     ap.add_argument("--config-dir", default="config")
     ap.add_argument("--pairs", default=None, help="virgullu kanonik ciftler (BTC/USDT,ETH/USDT)")
@@ -796,6 +855,8 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
     if a.fill_model == "legacy_compat" and a.granularity not in (None, "15m"):
         raise BacktestArgError("bad_args", "legacy_compat: --granularity 15m zorunlu")
     trunc = parse_end_prime(a.truncate_check) if a.truncate_check else None
+    if a.wallet_start is not None and not a.env:
+        raise BacktestArgError("bad_args", "--wallet-start yalniz --env ile")
     return BacktestSpec(
         id=a.id, start=start, end=end, period=period, strategy=a.strategy, tf=a.tf, fill_model=a.fill_model,
         fee_mult=a.fee_mult, slip_bps=a.slip_bps, params=params, granularity=a.granularity, trigger_source=a.trigger_source, source=a.source,
@@ -804,7 +865,7 @@ def spec_from_args(a: argparse.Namespace, argv: list[str]) -> BacktestSpec:
         truncate_check=trunc, from_paper_ledger=a.from_paper_ledger, out_root=a.out_root, config_dir=a.config_dir,
         pairs=tuple(x.strip() for x in a.pairs.split(",")) if a.pairs else None,
         target_trade_risk=a.target_trade_risk, record_shadow=bool(a.record_shadow),
-        flags=dict(argv=list(argv)))
+        env=a.env, wallet_start=a.wallet_start, flags=dict(argv=list(argv)))
 
 
 def run_spec(spec: BacktestSpec) -> BacktestResult:
