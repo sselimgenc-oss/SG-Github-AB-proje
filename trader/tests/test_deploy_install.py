@@ -372,7 +372,7 @@ def test_counterfactual_units_and_install():
     assert "ProtectSystem=strict" in s and "ProtectHome=read-only" in s and "PrivateTmp=true" in s
     assert "EnvironmentFile" not in re.sub(r"#.*", "", s)                      # anahtar/token yok: ag ve API kullanmaz
     rw = re.search(r"^ReadWritePaths=(.*)$", s, re.M).group(1).split()
-    assert rw == ["-/opt/trader/var/%i"]                                        # yalniz kendi bot dizini
+    assert rw == ["-/opt/trader/var/%i", "-/opt/trader/var/durum"]             # kendi bot dizini + alinmayan_sonuc_v1.json (var/durum)
     ro = re.search(r"^ReadOnlyPaths=(.*)$", s, re.M).group(1).split()
     assert "-/opt/trader/var/%i/ledger.sqlite" in ro and "-/opt/trader/var/market.sqlite" in ro
     assert "OnCalendar=*-*-* 23:10:00 UTC" in tm and "Persistent=true" in tm
