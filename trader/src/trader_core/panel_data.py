@@ -820,6 +820,25 @@ def haber_sonuc_view(path: str) -> dict:
         return {"var": False, "neden": "okunamadi"}
 
 
+def alinmayan_sonuc_view(path: str) -> dict:
+    """`var/durum/alinmayan_sonuc_v1.json` (`ml.alinmayan_sonuc.v1`, alinmayan_sonuc.py yazar): yalniz bicim, yeni hesap yok.
+    Yok/bozuk/sema yanlis/kayit yok -> {"var": False, "neden": kod}; asla istisna atmaz. Birim R."""
+    try:
+        d, err = _read_json_obj(path)
+        if d is None:
+            return {"var": False, "neden": err}
+        if d.get("sema") != "ml.alinmayan_sonuc.v1" or not isinstance(d.get("tablolar"), dict) or not isinstance(d.get("tum_zamanlar"), dict):
+            return {"var": False, "neden": "sema_yanlis"}
+        if not any(d[k].get("neden") for k in ("tablolar", "tum_zamanlar")):
+            return {"var": False, "neden": "kayit_yok"}
+        coz = d.get("cozulmedi")
+        return {"var": True, "uretim": d.get("uretim"), "birim": d.get("birim") or "R", "pencere_gun": d.get("pencere_gun"),
+                "tablolar": d["tablolar"], "tum_zamanlar": d["tum_zamanlar"], "cozulmedi": coz if isinstance(coz, dict) else {},
+                "not": d.get("not") if isinstance(d.get("not"), str) else ""}
+    except Exception:  # noqa: BLE001
+        return {"var": False, "neden": "okunamadi"}
+
+
 def haber_view(path: str, now: datetime) -> dict:
     """`var/durum/haber_v1.json` onbellegi: Korku-Acgozluluk degeri + sinifi, en cok anilan <=3 coin ve tonu, onbellek yasi.
     Yok/bozuk/bayat -> {"var": False, "neden": kod}; asla istisna atmaz."""

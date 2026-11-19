@@ -501,8 +501,8 @@
   function tabDogrulama(root) {
     clear(root);
     var pt = panel('Tutarlılık (kâğıt – geri test, haftalık)', ''), pp = panel('PBO / Holdout', ''), ig = el('div', 'ig');
-    var pc = panel('Çıkış kanıtı (başka çıkış olsaydı ne olurdu?)', ''), ph = panel('Haber / duygu', ''), phs = panel('Haber ve duygu × sonuç', '');
-    add(ig, pt, pp, pc, ph, phs); add(root, ig);
+    var pc = panel('Çıkış kanıtı (başka çıkış olsaydı ne olurdu?)', ''), ph = panel('Haber / duygu', ''), phs = panel('Haber ve duygu × sonuç', ''), pas = panel('Alınmayan sinyal × sonuç (R)', '');
+    add(ig, pt, pp, pc, ph, phs, pas); add(root, ig);
     function rTr(x) { return num(x) ? (x > 0 ? '+' : '') + x.toFixed(2).replace('.', ',') + 'R' : '—'; }
     function kanit(o) { return o && o.n ? {t: rTr(o.delta_r) + ' (' + o.n + ' işlem)', v: o.delta_r, c: num(o.delta_r) ? (o.delta_r > 0 ? 'iyi' : (o.delta_r < 0 ? 'kotu' : '')) : ''} : {t: 'veri yok', v: ''}; }
     get('/api/ciktikaniti').then(function (c) {
@@ -547,6 +547,27 @@
         add(phs._body, el('h4', '', d[1] + ' — Duygu (Fear & Greed)'), tab('Duygu', b.duygu), el('h4', '', d[1] + ' — Haber tonu'), tab('Haber tonu', b.haber_ton));
       });
       add(phs._body, el('div', 'yok', (h.notlar || []).join(' ')));
+    });
+    get('/api/alinmayansonuc').then(function (h) {
+      clear(pas._body);
+      if (!h.ok) { add(pas._body, nodata(h.code)); return; }
+      if (!h.var) { add(pas._body, el('div', 'yok', 'veri yok' + (h.neden ? ' (' + h.neden + ')' : ''))); return; }
+      pas._right.textContent = 'son ' + (h.pencere_gun || 7) + ' gün · tüm zamanlar · birim R';
+      function tab(satirlar) {
+        return table(['Neden', 'İşlem', 'Kazanan', 'İsabet %', 'Toplam PnL (R)', 'Ort. PnL (R)'], (satirlar || []).map(function (r) {
+          return [r.etiket, {t: String(r.n), v: r.n}, {t: String(r.kazanan), v: r.kazanan}, {t: f2(r.isabet_yuzde, 1), v: r.isabet_yuzde},
+                  {t: sgn(r.toplam_pnl), v: r.toplam_pnl, c: cls(r.toplam_pnl)}, {t: f2(r.ortalama_pnl), v: r.ortalama_pnl}];
+        }), {right: [1, 2, 3, 4, 5]});
+      }
+      function coz(o) {
+        var k = Object.keys(o || {});
+        return k.length ? 'Çözülmedi: ' + k.map(function (x) { return x + ' ' + o[x]; }).join(', ') : '';
+      }
+      [['tablolar', 'Son ' + (h.pencere_gun || 7) + ' gün'], ['tum_zamanlar', 'Tüm zamanlar']].forEach(function (d) {
+        var b = h[d[0]] || {};
+        add(pas._body, el('h4', '', d[1] + ' — Engel nedenine göre'), tab(b.neden), el('div', 'yok', coz((h.cozulmedi || {})[d[0]])));
+      });
+      add(pas._body, el('div', 'yok', h.not || ''));
     });
     get('/api/tutarlilik').then(function (t) {
       clear(pt._body);

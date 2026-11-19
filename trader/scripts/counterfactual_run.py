@@ -23,6 +23,7 @@ from types import SimpleNamespace
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from trader_core import alinmayan_sonuc as AS  # noqa: E402
 from trader_core import counterfactual as CF  # noqa: E402
 from trader_core import ledger as L  # noqa: E402
 from trader_core import lesson as LS  # noqa: E402
@@ -175,6 +176,8 @@ def main(argv=None, *, now_fn=None) -> int:
         log.error("bozulmus calisma: %s", getattr(e, "code", type(e).__name__))
         print(json.dumps({"bot": args.bot, "status": "degraded", "code": getattr(e, "code", type(e).__name__)}))
         return EXIT_DEGRADED
+    if not args.dry_run:                                    # alinmayan x sonuc raporu (yalniz bilgi; hata isi bozmaz; docs/alinmayan-sonuc-spec.md)
+        AS.yaz_defterden(Path(ledger_path), Path(out_path), args.bot, now, Path(ledger_path).parent.parent / "durum" / AS.DOSYA)
     out = {"bot": args.bot, "status": "ok", "dry_run": args.dry_run, **vars(r), **vars(sr)}
     if lesson_block is not None:
         out["arms"] = lesson_block

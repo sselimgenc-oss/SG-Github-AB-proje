@@ -20,7 +20,7 @@ from trader_core import panel_data as P
 BOTS = ("learner",)
 DEFAULT_PORT = 8787
 _PATH_KEYS = ("status_path", "ledger_path", "budget_config", "lesson_store",
-              "health_state", "kill_file", "engine_config", "tutarlilik_path", "pbo_path", "muhur_path", "exitcf_path", "haber_path", "haber_sonuc_path")
+              "health_state", "kill_file", "engine_config", "tutarlilik_path", "pbo_path", "muhur_path", "exitcf_path", "haber_path", "haber_sonuc_path", "alinmayan_sonuc_path")
 _NUM_KEYS = {"health_stale_s": (60, 86400), "cache_s": (0, 60), "request_timeout_s": (0.5, 30),
              "max_concurrent": (1, 16), "max_response_bytes": (1024, 4 * 1024 * 1024),
              "closed_limit": (1, P.CLOSED_MAX), "curve_limit": (1, P.CLOSED_MAX)}
@@ -239,6 +239,11 @@ class PanelData:
         c = self.cfg.haber_sonuc_path
         return self._wrap(lambda: P.haber_sonuc_view(
             c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "haber_sonuc_v1.json") if self.cfg.ledger_path else "")))
+
+    def alinmayansonuc(self) -> dict:
+        c = self.cfg.alinmayan_sonuc_path
+        return self._wrap(lambda: P.alinmayan_sonuc_view(
+            c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "alinmayan_sonuc_v1.json") if self.cfg.ledger_path else "")))
 
     def haber(self) -> dict:
         c = self.cfg.haber_path
