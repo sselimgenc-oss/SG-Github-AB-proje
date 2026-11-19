@@ -136,7 +136,7 @@ def test_run_modes_writes_three_variants_idempotently_and_deltas(tmp_path):
     assert (r1.scanned, r1.computed, r1.rows_written, r1.already) == (1, 1, 3, 0)
     rs = mrows(tmp_path)
     assert [x["variant"] for x in rs] == ["breakeven", "off", "partial"]
-    assert all(x["registry_id"] == "exitcf-v2" and x["version"] == 1 and x["trail_atr"] == 3.0 and x["grid_min"] == 15 for x in rs)
+    assert all(x["registry_id"] == "exitcf-v2" and x["version"] == EC.MODES_VERSION and x["trail_atr"] == 3.0 and x["grid_min"] == 15 for x in rs)
     by = {x["variant"]: x for x in rs}
     assert by["breakeven"]["net_r"] == pytest.approx(0.075) and by["breakeven"]["exit_reason_sim"] == "trail_stop"
     assert by["off"]["exit_reason_sim"] == "stop" and by["off"]["censored"] == 0 and by["off"]["net_r"] == pytest.approx(-1.0)
