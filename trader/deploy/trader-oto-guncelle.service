@@ -11,3 +11,6 @@ ExecStart=/bin/bash /usr/local/lib/trader-root/current/deploy/oto_guncelle.sh
 # install.sh 30 dk'ya kadar surebilir (oto_guncelle.sh icindeki zaman asimi) + GitHub sorgusu
 TimeoutStartSec=45min
 Nice=10
+# Bilincli olarak trader.slice DISINDA (elle kurulum gibi): pip/derleme slice tavanini doldurup motoru OOM ile oldurmesin.
+# Kendi sert tavani var; kurulum bundan fazlasini kullanirsa yalniz kurulum durur, eski surum calismaya devam eder.
+MemoryMax=800M

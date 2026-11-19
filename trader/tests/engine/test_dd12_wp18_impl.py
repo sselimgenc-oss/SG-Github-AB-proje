@@ -51,7 +51,8 @@ def test_soft_cap_sum_fits_slice_hard_cap():
 
 def test_every_trader_service_is_in_trader_slice():
     missing = [p.name for p in sorted(DEPLOY.glob("trader-*.service"))
-               if "Slice=trader.slice" not in p.read_text(encoding="utf-8")]
+               if "Slice=trader.slice" not in p.read_text(encoding="utf-8")
+               and p.name != "trader-oto-guncelle.service"]   # kurulum isi: slice disinda, kendi MemoryMax'i ile (birim yorumu)
     assert missing == [], f"trader.slice disinda servis: {missing}"
 
 

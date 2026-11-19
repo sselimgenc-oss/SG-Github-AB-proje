@@ -64,6 +64,9 @@ def test_exec_lines_resolve_to_real_module_script_subcommand(rendered):
                     script = next(t for t in toks[1:] if t.startswith(T))
                     assert _repo(script).is_file(), f"{name}: betik yok {script}"
                     seen["script"] += 1
+            elif exe == "/bin/bash" and toks[1].startswith(f"{ROOT_LIB}/current/"):   # root sahipli surum agaci
+                assert (ROOT / toks[1][len(f"{ROOT_LIB}/current/"):]).is_file(), f"{name}: betik yok {toks[1]}"
+                seen["script"] += 1
             elif exe == "/bin/bash":
                 assert _repo(toks[1]).is_file(), f"{name}: betik yok {toks[1]}"
                 seen["script"] += 1
@@ -153,5 +156,7 @@ def test_slice_rendered_and_every_service_references_it(rendered):
     assert "trader.slice" not in rendered
     assert "render \"$REL_DIR/deploy/trader.slice\"" in install_text()
     for name, txt in rendered.items():
-        if name.endswith(".service"):
+        if name == "trader-oto-guncelle.service":         # kurulum isi: bilincli olarak slice disinda, kendi tavani var
+            assert ("MemoryMax", "800M") in unit_kv(txt), name
+        elif name.endswith(".service"):
             assert ("Slice", "trader.slice") in unit_kv(txt), name

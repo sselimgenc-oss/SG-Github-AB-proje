@@ -99,6 +99,9 @@ def test_every_service_in_trader_slice():
     units = sorted(DEPLOY.glob("trader-*.service"))
     assert units
     for p in units:
+        if p.name == "trader-oto-guncelle.service":     # kurulum isi: bilincli olarak slice disinda (motoru OOM'a sokmasin), kendi tavani
+            assert _mem(p.name) == 800 and "Slice" not in _kv(p.name)
+            continue
         assert _kv(p.name).get("Slice") == "trader.slice", p.name
 
 
