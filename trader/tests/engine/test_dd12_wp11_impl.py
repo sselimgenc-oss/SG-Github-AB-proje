@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
 ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1", "H2", "S1", "F1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1; WP-12b: H2/S1/F1
+PAPER_ARMS = ALL_ARMS + ("M1@1h", "M1@4h")   # DD-12 WP-14: M1 (ML'in kendi adayi) config/engine.paper.json'a eklendi
 
 
 # --------------------------------------------------------------------------- arms paketi
@@ -124,7 +125,7 @@ def test_arm_tf_helpers_and_old_contract_untouched():
 
 # --------------------------------------------------------------------------- yapilandirma
 def test_config_arms_and_caps():
-    assert PAPER.strategy == NAME and PAPER.arms == ALL_ARMS
+    assert PAPER.strategy == NAME and PAPER.arms == PAPER_ARMS
     assert PAPER.arm_max_positions == {"default": 4, "M1": 3, "L1": 3}
     c = apply_overrides(PAPER, arms={"T1": ["1h", "4h"]}, arm_max_positions=2)
     assert c.arms == ("T1@1h", "T1@4h") and c.arm_max_positions == {"default": 2}
@@ -302,7 +303,7 @@ def _rows(eng, sql):
 
 def test_end_to_end_multi_arm_paper_with_caps(tmp_path, hist):
     eng, cfg = _run(tmp_path, hist, arm_max_positions={"default": 1})
-    assert eng.step_tf == "15m" and eng.tf == "1h" and eng.strategy.arm_ids == ALL_ARMS
+    assert eng.step_tf == "15m" and eng.tf == "1h" and eng.strategy.arm_ids == PAPER_ARMS
     # kurulum tavani her adimda gecerli (parca parca ilerleyerek denetlenir)
     t = START
     seen_open = 0
@@ -336,7 +337,10 @@ def test_end_to_end_multi_arm_paper_with_caps(tmp_path, hist):
     byk = {"15m": 0, "1h": 1, "4h": 2, "1d": 3}
     for r in (r for r in rows if r["skip_reason"] == "arm_conflict"):
         win = r["veto_reason"].split(":")[-1]
-        assert byk[win.split("@")[1]] > byk[r["trigger_tf"]]
+        # K-7 md.3: tf once (buyuk), ayni tf'de kurulum onceligi (kucuk kazanir; WP-14 M1=90 ile ayni tf kayipları olabilir)
+        pri = {"T1": 10, "R1": 20, "TF1": 30, "B1": 40, "H2": 50, "S1": 60, "F1": 70, "M1": 90}
+        wtf, ltf = win.split("@")[1], r["trigger_tf"]
+        assert byk[wtf] > byk[ltf] or (wtf == ltf and pri[win.split("@")[0]] < pri[r["setup"]])
     # cikislar pozisyonun kendi tf'sinde; pozisyon trigger_tf'i satirinki ile ayni
     for p in eng.state.open_positions():
         assert p.trigger_tf in ("15m", "1h", "4h", "1d")

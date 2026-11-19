@@ -6,15 +6,13 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Collection, Mapping, Sequence
-from datetime import datetime, time, timezone
-from zoneinfo import ZoneInfo
+
+from trader_core.arm_time import CLASS_CRYPTO, CLASS_COMMODITY, CLASS_EQUITY, arm_id_of, session_tag
 
 from .config import ClusterSpec
 
-_NY = ZoneInfo("America/New_York")
 EQUITY_CLUSTER = "hisse"
 COMMODITY_CLUSTERS = ("metal", "enerji_sanayi")
-CLASS_CRYPTO, CLASS_EQUITY, CLASS_COMMODITY = "kripto", "hisse", "emtia"
 
 
 def clusters_of(pair: str, clusters: Mapping[str, ClusterSpec]) -> list[str]:
@@ -46,27 +44,6 @@ def asset_class(pair: str, clusters: Mapping[str, ClusterSpec]) -> str:
         if name in COMMODITY_CLUSTERS:
             return CLASS_COMMODITY
     return CLASS_CRYPTO
-
-
-def session_tag(cls: str, ts: datetime) -> str:
-    """open | closed | weekend (spec §4.2). `ts` tz-bilincli. Hisse: New York 09:30-16:00 Pzt-Cum open (DST'e gore),
-    hafta ici dis closed, Cts-Paz weekend. Emtia: Paz 23:00 -> Cum 21:00 UTC open, Cum 21:00 -> Paz 23:00 weekend. Kripto: open."""
-    if ts.tzinfo is None:
-        raise ValueError("ts tz-bilincli olmali")
-    if cls == CLASS_CRYPTO:
-        return "open"
-    if cls == CLASS_EQUITY:
-        t = ts.astimezone(_NY)
-        if t.weekday() >= 5:
-            return "weekend"
-        return "open" if time(9, 30) <= t.time() < time(16, 0) else "closed"
-    if cls == CLASS_COMMODITY:
-        u = ts.astimezone(timezone.utc)
-        wd, hm = u.weekday(), u.time()
-        if wd == 5 or (wd == 4 and hm >= time(21, 0)) or (wd == 6 and hm < time(23, 0)):
-            return "weekend"
-        return "open"
-    raise ValueError(f"bilinmeyen varlik sinifi: {cls!r}")
 
 
 def is_flat_bar(high: float | None, low: float | None, volume: float | None) -> bool:
@@ -102,11 +79,6 @@ def session_closed_by_lesson(session_off: Mapping[str, Collection[str]] | None, 
 # ---------------------------------------------------------------------------------------------------------------------
 # DD-12 WP-11 (D-T16): kurulum (arm) basina acik pozisyon tavani. Saf yardimcilar (durum/saat yok).
 # ---------------------------------------------------------------------------------------------------------------------
-def arm_id_of(setup: str | None, tf: str | None) -> str:
-    """`<kurulum>@<zaman dilimi>`; kurulum/tf yoksa `?` (tavan sayiminda eslesmez)."""
-    return f"{setup or '?'}@{tf or '?'}"
-
-
 def arm_cap(caps: Mapping[str, int] | None, arm_id: str, setup: str | None) -> int | None:
     """Tavan arama sirasi: tam arm_id, kurulum kodu, `default`; hicbiri yoksa None (tavan yok)."""
     if not caps:

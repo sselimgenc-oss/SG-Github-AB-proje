@@ -34,9 +34,9 @@ class Prep:
     regime: np.ndarray        # 4s rejimi (ortak tablodan, tetik barina hizali)
 
 
-def prepare(inp: ArmInput) -> Prep:
+def prepare(inp: ArmInput, core: pd.DataFrame | None = None) -> Prep:
     trig = inp.trig
-    core = inp.core()
+    core = inp.core() if core is None else core
     o = trig["open"].to_numpy(dtype=float)
     h = trig["high"].to_numpy(dtype=float)
     lo = trig["low"].to_numpy(dtype=float)

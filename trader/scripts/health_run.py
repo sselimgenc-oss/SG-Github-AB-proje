@@ -638,6 +638,33 @@ def ml_stale_update(prev: dict | None, f: dict) -> tuple[dict, bool]:
     return rec, stale
 
 
+PA_PROPOSER_MAX_AGE_DAYS = 8     # DD-12 WP-14 (spec 5.3): M1 paketi 8 gunden eskiyse uyar (sonra expiry 21 gun)
+
+
+def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) -> list:
+    """M1 (pa_proposer) paket tazeligi: models/pa_proposer/*.json (.prev.json yok sayilir). Paket yok -> WARN; created_at 8 gunden
+    eski ya da okunamayan -> WARN. Motor etkilenmez (M1 aday uretmez); yalniz bilgi amacli uyari."""
+    d = Path(models_dir or env.get("PA_PROPOSER_MODELS_DIR") or Path(__file__).resolve().parents[1] / "models" / "pa_proposer")
+    files = sorted(p for p in d.glob("*.json") if not p.name.endswith(".prev.json")) if d.is_dir() else []
+    if not files:
+        return [H.Alert(H.Status.WARN, "pa_proposer_missing", "M1 paketi yok",
+                        f"{d} altinda M1 paketi bulunamadi; M1 aday uretmiyor.", "pa_proposer|missing", now)]
+    stale = []
+    for p in files:
+        try:
+            created = _parse_dt_utc(json.loads(p.read_text(encoding="utf-8"))["meta"]["created_at"])
+            if created is None or (now - created) > timedelta(days=PA_PROPOSER_MAX_AGE_DAYS):
+                stale.append(f"{p.stem} ({'bilinmiyor' if created is None else (now - created).days} gun)")
+        except (OSError, ValueError, KeyError, TypeError):
+            stale.append(f"{p.stem} (okunamadi)")
+    if not stale:
+        return []
+    return [H.Alert(H.Status.WARN, "pa_proposer_stale", "M1 paketi eski",
+                    f"{PA_PROPOSER_MAX_AGE_DAYS} gunden eski ya da okunamayan M1 paketi: {', '.join(stale)}. "
+                    "Nightly degil, sunucu disi egitim (research/pa_proposer_build.py) yeniden calistirilmali.",
+                    "pa_proposer|stale", now)]
+
+
 def collect_ml(env: dict, state: dict, now: datetime, var_dir: str, api_bots):
     """Opt-in (15 kalibi: yapilandirma varligi): bir bot icin model paketi yolu (ML_MODEL_PATH_<BOT> ya da
     engine config `ml_model_path`) VAR ya da status.json `ml` blogu dict ve mode != "off" ise acik; aksi None -> ml_package kontrolu uretilmez. Durum yazimi `run_once` icinde."""
@@ -820,6 +847,7 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
         except OSError:
             maint = None
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
+    alerts.extend(pa_proposer_alerts(env, now))
     if reset:
         alerts.append(H.Alert(H.Status.WARN, "state_reset", "Saglik durum dosyasi sifirlandi",
                               "state.json yok ya da bozuktu; sayaclar sifirdan basladi.", "state|state_reset", now))

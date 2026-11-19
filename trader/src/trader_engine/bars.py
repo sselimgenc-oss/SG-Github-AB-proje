@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Sequence
 
+from trader_core.arm_time import ARM_TFS, ARM_TF_SECONDS, arm_tf_delta
+
 from .errors import DataError
 from .types import Bar, Kind, MinuteBar, require_utc
 
@@ -119,19 +121,10 @@ def funding_times(start: datetime, end: datetime) -> list[datetime]:
 # DEGISMEZ (eski sozlesme: `tf_delta("1d")` hata verir); kurulum yolu `arm_*` ailesini kullanir.
 # 1 gunluk bar feed'e/market.sqlite'a EKLENMEZ: UTC gununun 6 x 4s barindan motor icinde toplanir (D-T16).
 # ---------------------------------------------------------------------------------------------------------------------
-ARM_TFS = ("15m", "1h", "4h", "1d")                       # kucukten buyuge; oncelik buyuk zaman dilimindedir
-ARM_TF_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
 WINDOW_ARM = {"15m": 5000, "1h": 1500, "4h": 1500, "1d": 250}     # cift x zaman dilimi basina son pencere (bellek siniri)
 STARTUP_BARS_ARM = {"15m": 4800, "1h": 1200, "4h": 300, "1d": 50}  # 1d: 300 x 4s / 6
 MIN_CONTIG_ARM = {"trigger": 20, "4h": 150}
 BARS_PER_DAY_4H = 6
-
-
-def arm_tf_delta(tf: str) -> timedelta:
-    try:
-        return timedelta(seconds=ARM_TF_SECONDS[tf])
-    except (KeyError, TypeError):
-        raise ValueError(f"bilinmeyen kurulum zaman dilimi: {tf!r}") from None
 
 
 def arm_floor_tf(ts: datetime, tf: str) -> datetime:

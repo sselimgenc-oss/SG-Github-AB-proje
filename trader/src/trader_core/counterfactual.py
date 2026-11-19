@@ -4,7 +4,7 @@ Atlanan her karar (`final_action='skipped'`, her `skip_reason`), karar mumunun k
 yeniden oynatilir: (a) `barrier` = ML etiketiyle AYNI uclu bariyer (trader_ml.labels.label_candidates; -1R stop, +2R hedef,
 72 mum zaman), (b) `plan` = defterdeki planned_stop/planned_target, 48 mumluk ufukta. Sonuc `counterfactual.sqlite`'e
 (var/<bot>/, bu isin TEK yazari) yazilir. Defter ve market.sqlite yalnizca `mode=ro` acilir. WP-13: kurulum zaman dilimleri (15dk/1s/4s/1g; 1g = 6 x 4s), kayma seansa gore (cost_overrides; yoksa taban 5 bp).
-Bagimlilik: trader_engine.bars (arm_*) ve trader_engine.arm_guard (saf islevler). Ayrica pandas ve trader_ml ice aktarilmaz;
+Bagimlilik: trader_core.arm_time (saf, stdlib; eskiden trader_engine.bars/arm_guard). Ayrica pandas ve trader_ml ice aktarilmaz;
 trader_engine / trader_ml / pandas ice aktarilmaz (formul trader_ml.labels'ten kopyadir; esitlik tests/test_counterfactual.py).
 
 Sizinti kurali: bir karar ancak ufku (72 mum) TAMAMEN dolduktan ve pencere mumlari kapanis sonrasi yazilmis, eksiksiz
@@ -20,8 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from trader_engine import arm_guard as AG
-from trader_engine.bars import ARM_TFS, arm_tf_delta
+from trader_core import arm_time as AT
 
 __all__ = ["VERSION", "HORIZON_BARS", "PLAN_HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
            "run_once", "summary", "outcomes", "RunResult", "CounterfactualError",
@@ -42,7 +41,7 @@ BAR_MS = 3_600_000
 METHODS = ("barrier", "plan")
 MARKET_SCHEMA_VERSION = 1             # trader_engine.marketdata.store.SCHEMA_VERSION'in kopyasi (salt okunur dogrulama)
 STORE_SCHEMA_VERSION = 2              # 2: cf_outcomes += arm_id, session_tag, asset_class (WP-13); 1 -> 2 kolon ekleme
-ARM_TF_MS = {tf: int(arm_tf_delta(tf).total_seconds() * 1000) for tf in ARM_TFS}   # 15m, 1h, 4h, 1d
+ARM_TF_MS = {tf: int(AT.arm_tf_delta(tf).total_seconds() * 1000) for tf in AT.ARM_TFS}   # 15m, 1h, 4h, 1d
 DAY_MS = ARM_TF_MS["1d"]
 H4_MS = ARM_TF_MS["4h"]
 # Taban kayma (oran, taraf basina): kripto ve `cost_overrides`'ta olmayan cift/seans. 5 bp = SLIPPAGE_RATE (legacy taban).
@@ -376,7 +375,7 @@ def run_once(*, bot: str, decisions: Sequence, market_path, store: Counterfactua
     res = RunResult()
     done = store.done_ids(bot)
     mk = _Market(market_path)
-    cls_of = asset_class_of or (lambda pair: AG.CLASS_CRYPTO)
+    cls_of = asset_class_of or (lambda pair: AT.CLASS_CRYPTO)
     try:
         batch: list[dict] = []
         for d in decisions:
@@ -389,8 +388,8 @@ def run_once(*, bot: str, decisions: Sequence, market_path, store: Counterfactua
             tf = d.trigger_tf
             cls = cls_of(d.pair)
             bar_close = _utc(d.bar_close_ts)
-            sess = getattr(d, "session_tag", None) or AG.session_tag(cls, bar_close)
-            meta = {"arm_id": getattr(d, "arm_id", None) or AG.arm_id_of(d.setup, tf), "session_tag": sess,
+            sess = getattr(d, "session_tag", None) or AT.session_tag(cls, bar_close)
+            meta = {"arm_id": getattr(d, "arm_id", None) or AT.arm_id_of(d.setup, tf), "session_tag": sess,
                     "asset_class": cls}
             if tf not in ARM_TF_MS:                               # bilinmeyen kurulum zaman dilimi: hesap yok
                 start = end = bar_close
@@ -634,7 +633,7 @@ def arm_candidates(*, decisions, trades, cf_rows, asset_class_of) -> list[dict]:
             taken, r = False, r_cf.get(d.id)
         else:
             continue
-        arm = getattr(d, "arm_id", None) or AG.arm_id_of(d.setup, d.trigger_tf)
+        arm = getattr(d, "arm_id", None) or AT.arm_id_of(d.setup, d.trigger_tf)
         out.append({"arm_id": arm, "asset_class": asset_class_of(d.pair), "taken": taken,
                     "ts": _utc(d.bar_close_ts), "r": None if r is None else float(r), "decision_id": d.id})
     return out
