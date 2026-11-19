@@ -112,6 +112,9 @@ class EngineConfig:
     flat_bar_guard: bool = False                              # 4.2: son kapanmis tetik bari volume==0 / high==low => giris yok
     contract_types: tuple[str, ...] | None = None             # exchangeInfo contractType kabul listesi (03); None = PERPETUAL (yalniz paper verebilir)
     cost_overrides: Mapping[str, Mapping[str, Mapping[str, float]]] = dataclasses.field(default_factory=dict)  # cift -> seans -> kayma bps (4.3)
+    # --- DD-12 WP-11 (yalniz mode="paper"; varsayilan bos = onceki davranis) ---
+    arms: tuple[str, ...] = ()                                # bilesik strateji kurulumlari: arm_id ("T1@1h") listesi; bos = stratejinin varsayilani
+    arm_max_positions: Mapping[str, int] = dataclasses.field(default_factory=dict)  # kurulum tavani: {"default": 4, "M1": 3, "T1@15m": 2}; bos = tavan yok
 
     @functools.cached_property
     def risk_config(self) -> RiskConfig:
@@ -148,9 +151,9 @@ _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
                   "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks",
                   "optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
-                  "cost_overrides"}
+                  "cost_overrides", "arms", "arm_max_positions"}
 _PAPER_ONLY_KEYS = ("optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
-                    "cost_overrides")
+                    "cost_overrides", "arms", "arm_max_positions")
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
 _STRATEGY_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -261,6 +264,42 @@ def _pair_subset(name: str, v: Any, pairs: tuple[str, ...]) -> tuple[str, ...]:
     outside = [p for p in out if p not in pairs]
     if outside:
         raise ConfigError(f"{name} pairs disinda cift iceriyor: {outside}")
+    return out
+
+
+_ARM_ID_RE = re.compile(r"[A-Z][A-Z0-9]{1,7}@(15m|1h|4h|1d)")
+_ARM_SETUP_RE = re.compile(r"[A-Z][A-Z0-9]{1,7}")
+
+
+def _build_arms(v: Any) -> tuple[str, ...]:
+    """`arms`: arm_id listesi (["T1@1h", "R1@4h"]) ya da {kurulum: [zaman dilimleri]} sozlugu. Sira korunur; yinelenen yasak.
+    Kurulumun var olup olmadigi strateji kurulurken (arms paketi) denetlenir."""
+    if isinstance(v, Mapping):
+        v = [f"{k}@{tf}" for k, tfs in v.items()
+             for tf in (tfs if isinstance(tfs, (list, tuple)) else [tfs])]
+    if isinstance(v, (str, bytes)) or not isinstance(v, (list, tuple)):
+        raise ConfigError(f"arms liste ya da sozluk olmali: {v!r}")
+    for a in v:
+        if not isinstance(a, str) or not _ARM_ID_RE.fullmatch(a):
+            raise ConfigError(f"arms gecersiz arm_id {a!r} (bicim <KURULUM>@<15m|1h|4h|1d>)")
+    if len(set(v)) != len(v):
+        raise ConfigError("arms yinelenen oge iceriyor")
+    return tuple(v)
+
+
+def _build_arm_caps(v: Any) -> dict[str, int]:
+    """`arm_max_positions`: tam sayi (hepsi icin tavan) ya da {"default": n, "<KURULUM>": n, "<arm_id>": n}."""
+    if isinstance(v, bool):
+        raise ConfigError("arm_max_positions tam sayi ya da sozluk olmali")
+    if isinstance(v, int):
+        v = {"default": v}
+    if not isinstance(v, Mapping):
+        raise ConfigError(f"arm_max_positions tam sayi ya da sozluk olmali: {v!r}")
+    out: dict[str, int] = {}
+    for k, n in v.items():
+        if not (k == "default" or (isinstance(k, str) and (_ARM_SETUP_RE.fullmatch(k) or _ARM_ID_RE.fullmatch(k)))):
+            raise ConfigError(f"arm_max_positions anahtari gecersiz: {k!r}")
+        out[k] = _int(f"arm_max_positions.{k}", n, 1, 1000)
     return out
 
 
@@ -471,10 +510,12 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         contract_types = tuple(ct_raw)
     clusters = _build_clusters(raw.get("clusters", {}), pairs_set)
     cost_overrides = _build_cost_overrides(raw.get("cost_overrides", {}), pairs_set)
+    arms = _build_arms(raw.get("arms", ()))
+    arm_caps = _build_arm_caps(raw.get("arm_max_positions", {}))
     if mode != "paper":
         given = {"optional_pairs": optional_pairs, "ml_pairs": ml_pairs, "max_positions": max_positions, "risk": risk_raw,
                  "clusters": clusters, "flat_bar_guard": flat_bar_guard, "cost_overrides": cost_overrides,
-                 "contract_types": contract_types}
+                 "contract_types": contract_types, "arms": arms, "arm_max_positions": arm_caps}
         bad = sorted(k for k, x in given.items() if x not in ((), {}, None, False))
         if bad:
             raise ConfigError(f"{bad} yalniz mode='paper' ile verilebilir (mode={mode!r})")
@@ -518,6 +559,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         shadow_blocks=shadow_blocks, mtm_marks=mtm_marks,
         optional_pairs=optional_pairs, ml_pairs=ml_pairs, max_positions=max_positions, risk=risk_raw, clusters=clusters,
         flat_bar_guard=flat_bar_guard, contract_types=contract_types, cost_overrides=cost_overrides,
+        arms=arms, arm_max_positions=arm_caps,
         **{n: raw[n] for n in _STR},
     )
 

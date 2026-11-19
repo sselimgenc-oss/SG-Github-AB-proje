@@ -2,6 +2,7 @@
 karsiligi). Hata o cifte ozgudur; giris yok, cikislar etkilenmez."""
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 from collections import Counter
@@ -17,7 +18,8 @@ from trader_core import ledger as L
 from trader_core.ml_package import MlModelView, ml_score_from_reasons
 from trader_core.signals import SignalParams
 
-from .bars import tf_delta
+from .bars import (ARM_TFS, MIN_CONTIG_ARM, STARTUP_BARS_ARM, WINDOW_ARM, aggregate_4h_to_1d, arm_closing_tfs,
+                   arm_tf_delta, tf_delta)
 from .marketdata.sources import MarketView
 from .position_manager import ExitContext
 from .strategies.base import Strategy, StrategyContext, StrategyError, validate_row, validate_table
@@ -25,6 +27,7 @@ from .types import Position
 
 log = logging.getLogger("engine.runner")
 _OHLC = ["open", "high", "low", "close"]
+_FILTERED_SKIPS = ("stop_width", "rr_below_min", "ml_filter")   # gates._FILTERED_SKIPS ile ayni (kaydedilen elenmis adaylar)
 
 
 @dataclass(frozen=True)
@@ -57,6 +60,8 @@ class SignalRow:
     reasons: str
     param_version_id: int
     ml_score: float | None = None          # ML-0a: reasons'taki `ml:p=` etiketinden; ML'siz stratejide None
+    arm_id: str | None = None              # DD-12 WP-11: bilesik strateji satiri `<kurulum>@<tf>`; tekli stratejide None
+    tf: str | None = None                  # DD-12 WP-11: satirin tetik zaman dilimi; tekli stratejide None (bar suresinden bulunur)
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,7 @@ class SignalFrame:
     last: SignalRow | None
     table: pd.DataFrame | None
     trigger_bar: tuple[float, float, float] | None = None   # DD-12 WP-04: (high, low, volume) son kapanmis tetik bari; yoksa None
+    extras: tuple["SignalFrame", ...] = ()                  # DD-12 WP-11: ayni adimda baska kurulumlarin adaylari (onceliksirali)
 
 
 class SignalSource(Protocol):
@@ -171,6 +177,12 @@ class WindowedSignalSource:
             for k, v in getattr(self.ml_v2, "counters", {}).items():
                 self.counters[k] = v
 
+    def _prepass_due(self, D: datetime) -> bool:
+        return True                                     # tekli strateji: her karar adiminda (tetik tf = 1s)
+
+    def _new_step(self, D: datetime) -> None:
+        return None
+
     # ------------------------------------------------------------------ frame
     def frame(self, pair: str, D: datetime, params, version_id: int) -> SignalFrame:
         if self._cache_d != D:
@@ -179,7 +191,8 @@ class WindowedSignalSource:
             self._cache_d = D
             self._bar_feats = None
             self._gathered = {}
-            if self._v2_active():
+            self._new_step(D)
+            if self._v2_active() and self._prepass_due(D):
                 self._v2_prepass(D, _params_map(params))
         key = (pair, D, int(version_id))
         hit = self._cache.get(key)
@@ -291,3 +304,163 @@ class WindowedSignalSource:
         return ExitContext(bar_close_ts=D, highs=sl["high"].to_numpy(dtype=float), lows=sl["low"].to_numpy(dtype=float),
                            atrs=sl["atr_tf"].to_numpy(dtype=float), regime_last=_text(t["regime"].iloc[-1]),
                            last_close=float(t["close"].iloc[-1]), n_closed=len(sl))
+
+
+# ====================================================================== DD-12 WP-11: cok kurulumlu kaynak
+class MultiArmSignalSource(WindowedSignalSource):
+    """Bilesik strateji (`price_action_lab_ml`) kaynagi: 15 dakikalik karar adiminda YALNIZ kapanan zaman dilimlerinin kurulumlarini
+    hesaplar (D-T16). Cift basina tek `SignalFrame`: `last` = oncelikli aday (buyuk zaman dilimi; sinyal > elenmis > diger),
+    `extras` = diger kurulum adaylari (sinyal ise motor `arm_conflict` yazar). `table` YOKTUR (bellek): acik pozisyonun cikis
+    baglami (kendi zaman dilimi kapandiginda) kucuk bir gorunum olarak tutulur. Bellek: adimlar arasi yalniz cift basina
+    rejim tablosu (lab._reg_cache) ve ML pencereleri; tablolar adim sonunda atilir."""
+
+    def __init__(self, *a, position_fn=None, **k) -> None:
+        super().__init__(*a, **k)
+        self.position_fn = position_fn                  # cift -> (trigger_tf, entry_bar_open | None) | None (motor tedarik eder)
+        self._exit_views: dict[tuple[str, datetime], tuple[str, ExitContext]] = {}
+
+    def _prepass_due(self, D: datetime) -> bool:
+        return "1h" in arm_closing_tfs(D)               # ML v2 ozellikleri 1s mumlara kuruludur: yalniz saat basi
+
+    def _new_step(self, D: datetime) -> None:
+        self._exit_views.clear()
+
+    # ------------------------------------------------------------------ veri
+    def _arm_gather(self, pair: str, D: datetime, tf: str, h4: pd.DataFrame):
+        """tf icin (trig, None) ya da (None, (durum, ayrinti)). 1s `_gather` ile ayni denetimler (ısınma, tetik bari, bosluk)."""
+        if tf == "4h":
+            trig = h4
+        elif tf == "1d":
+            trig = aggregate_4h_to_1d(h4).iloc[-WINDOW_ARM["1d"]:]
+        else:
+            trig = self.view.bars(pair, tf, D, WINDOW_ARM[tf])
+        if len(trig) < STARTUP_BARS_ARM[tf]:
+            return None, ("no_history", f"{tf}:{len(trig)}<{STARTUP_BARS_ARM[tf]}")
+        if trig.index[-1].to_pydatetime() != D - arm_tf_delta(tf):
+            return None, ("data_gap", f"trigger_bar_missing:{tf}")
+        if not self._tail_ok(trig.index, tf, MIN_CONTIG_ARM["trigger"]):
+            return None, ("data_gap", f"hole:{tf}")
+        return trig, None
+
+    @staticmethod
+    def _tail_ok(index: pd.DatetimeIndex, tf: str, need: int) -> bool:
+        if len(index) < need:
+            return False
+        idx = index[-need:]
+        return bool((idx[1:] - idx[:-1] == pd.Timedelta(arm_tf_delta(tf))).all())
+
+    def _h4_checked(self, pair: str, D: datetime, h4: pd.DataFrame):
+        if len(h4) < STARTUP_BARS_ARM["4h"]:
+            return ("no_history", f"4h:{len(h4)}<{STARTUP_BARS_ARM['4h']}")
+        if not self._tail_ok(h4.index, "4h", MIN_CONTIG_ARM["4h"]):
+            return ("data_gap", "hole:4h")
+        return None
+
+    # ------------------------------------------------------------------ frame
+    def _build(self, pair: str, D: datetime, params: Mapping[str, object], version_id: int) -> SignalFrame:
+        try:
+            return self._build_multi(pair, D, params, version_id)
+        except Exception as e:  # noqa: BLE001
+            if self.strict:
+                raise
+            self.counters["callback_errors"] += 1
+            return self._bad(pair, "error", f"{type(e).__name__}: {e}", error=True)
+
+    def _build_multi(self, pair: str, D: datetime, params: Mapping[str, object], version_id: int) -> SignalFrame:
+        lab = self.strategy
+        closing = arm_closing_tfs(D)
+        pos = self.position_fn(pair) if self.position_fn is not None else None
+        pos_tf = pos[0] if (pos is not None and pos[0] in closing) else None
+        tfs = [tf for tf in ARM_TFS if tf in closing and (lab.arms_at(tf) or tf == pos_tf)]
+        if not tfs:
+            return SignalFrame(pair=pair, status="ok", detail="no_arm_closed", last=None, table=None)
+        # 4s (rejim kaynagi + 4s/1g tetigi): 1s ML on-gecisi veri topladiysa yeniden kullanilir
+        h4 = None
+        g = None
+        if "1h" in tfs:
+            g = self._gathered.get(pair) or self._gather(pair, D, params)
+            if g[2] is None:
+                h4 = g[0]["4h"]
+        if h4 is None:
+            h4 = self.view.bars(pair, "4h", D, WINDOW_ARM["4h"])
+        h4_bad = self._h4_checked(pair, D, h4)
+        cands: list[tuple[int, str, SignalRow, tuple | None]] = []
+        bad: dict[str, tuple[str, str]] = {}
+        exit_view = None
+        for tf in tfs:
+            if h4_bad is not None:
+                bad[tf] = h4_bad
+                continue
+            if tf == "1h":
+                if g[2] is not None:
+                    bad[tf] = g[2]
+                    continue
+                trig = g[1]
+            else:
+                trig, why = self._arm_gather(pair, D, tf, h4)
+                if why is not None:
+                    bad[tf] = why
+                    continue
+            bars = {tf: trig, "4h": h4}
+            le = self.last_exit_fn(pair, D, tf) if self.last_exit_fn is not None else None
+            ctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=None, model=self.ml_model,
+                                  ml_v2=self._bar_feats if tf == "1h" else None)
+            fctx = StrategyContext(pair=pair, D=D, tf=tf, params=params, bars=bars, last_exit=le, model=self.ml_model,
+                                   ml_v2=self._bar_feats if tf == "1h" else None)
+            info = lab.info
+            for key, sig in lab.compute_tf(ctx, force_core=(tf == pos_tf)).items():
+                validate_table(sig, info, trig.index)
+                last_row = lab.filter_row(key, sig.iloc[-1], fctx)
+                validate_row(last_row, info)
+                if bool(last_row["signal"]) and not bool(sig.iloc[-1]["signal"]):
+                    raise StrategyError("bad_table", "post_filter aday ekleyemez")
+                if bool(last_row["signal"]):
+                    for k in ("planned_entry", "planned_stop", "planned_target", "setup", "side"):
+                        a, b = last_row[k], sig.iloc[-1][k]
+                        same = (a == b) or (isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b))
+                        if not same:
+                            raise StrategyError("bad_table", f"post_filter {k} degistiremez")
+                lr = sig.iloc[-1].copy()
+                for c in ("signal", "skip_reason", "reasons"):
+                    lr[c] = last_row[c]
+                open_ts = trig.index[-1].to_pydatetime()
+                row = _to_row(pair, open_ts, D, lr, version_id)
+                if row.setup:
+                    row = dataclasses.replace(row, arm_id=f"{row.setup}@{tf}", tf=tf)
+                else:
+                    row = dataclasses.replace(row, tf=tf)
+                lt = trig.iloc[-1]
+                tb = (float(lt["high"]), float(lt["low"]), float(lt["volume"])) if "volume" in trig.columns else None
+                is_filtered = bool(row.setup and row.side and row.skip_reason in _FILTERED_SKIPS)
+                cls = 0 if row.signal else (1 if is_filtered else 2)
+                cands.append((cls * 10 - ARM_TFS.index(tf), key, row, tb))
+                if tf == pos_tf and (key == "core" or exit_view is None):
+                    exit_view = self._exit_view(sig, trig, lr, pos, D)
+        if exit_view is not None:
+            self._exit_views[(pair, D)] = (pos_tf, exit_view)
+        if not cands:
+            st, det = next(iter(bad.values()))
+            return self._bad(pair, st, det)
+        for tf, (st, det) in bad.items():                         # kismi bosluk: kalan zaman dilimleri yine calisir
+            self.counters[f"arm_tf_{st}:{tf}"] += 1
+        cands.sort(key=lambda c: (c[0], c[1]))
+        frames = [SignalFrame(pair=pair, status="ok", detail=None, last=row, table=None, trigger_bar=tb)
+                  for _, _, row, tb in cands]
+        head = frames[0]
+        extras = tuple(f for f in frames[1:] if f.last.signal or (f.last.setup and f.last.side and f.last.skip_reason in _FILTERED_SKIPS))
+        return dataclasses.replace(head, extras=extras)
+
+    @staticmethod
+    def _exit_view(sig: pd.DataFrame, trig: pd.DataFrame, lr: pd.Series, pos, D: datetime) -> ExitContext:
+        t = sig.join(trig[_OHLC])
+        eb = pos[1]
+        sl = t[t.index >= pd.Timestamp(eb)] if eb is not None else t.iloc[0:0]
+        return ExitContext(bar_close_ts=D, highs=sl["high"].to_numpy(dtype=float), lows=sl["low"].to_numpy(dtype=float),
+                           atrs=sl["atr_tf"].to_numpy(dtype=float), regime_last=_text(t["regime"].iloc[-1]),
+                           last_close=float(t["close"].iloc[-1]), n_closed=len(sl))
+
+    def exit_context(self, pair: str, pos: Position, D: datetime) -> ExitContext | None:
+        v = self._exit_views.get((pair, D))
+        if v is None or v[0] != pos.trigger_tf or pos.entry_bar_open is None:
+            return None
+        return v[1]

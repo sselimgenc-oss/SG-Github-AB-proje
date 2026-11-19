@@ -87,7 +87,10 @@ def _scan_file(path: Path, rel: str, is_engine: bool) -> list[str]:
             name = _dotted(n.func, al) or ""
             if name in ("importlib.import_module", "importlib.util.find_spec", "__import__", "builtins.__import__"):
                 if not n.args or not (isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)):
-                    add(n, "dynamic import")
+                    if path.as_posix().endswith("strategies/arms/__init__.py"):
+                        pass    # DD-12 WP-11: yalniz kendi paketinin pkgutil ile kesfedilen alt modulleri (yapilandirma dizesi degil)
+                    else:
+                        add(n, "dynamic import")
                 elif n.args[0].value.split(".")[0] in FORBIDDEN_TOP:
                     add(n, "forbidden dynamic import")
             first = _strs(n.args[0]) if n.args else []

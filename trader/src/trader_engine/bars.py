@@ -112,3 +112,69 @@ def funding_times(start: datetime, end: datetime) -> list[datetime]:
                 out.append(t)
         day += timedelta(days=1)
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DD-12 WP-11: cok zaman dilimli kurulumlar (arms). Yukaridaki sabitler/islevler (TF_SECONDS, tf_delta, floor_tf ...)
+# DEGISMEZ (eski sozlesme: `tf_delta("1d")` hata verir); kurulum yolu `arm_*` ailesini kullanir.
+# 1 gunluk bar feed'e/market.sqlite'a EKLENMEZ: UTC gununun 6 x 4s barindan motor icinde toplanir (D-T16).
+# ---------------------------------------------------------------------------------------------------------------------
+ARM_TFS = ("15m", "1h", "4h", "1d")                       # kucukten buyuge; oncelik buyuk zaman dilimindedir
+ARM_TF_SECONDS = {"15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+WINDOW_ARM = {"15m": 5000, "1h": 1500, "4h": 1500, "1d": 250}     # cift x zaman dilimi basina son pencere (bellek siniri)
+STARTUP_BARS_ARM = {"15m": 4800, "1h": 1200, "4h": 300, "1d": 50}  # 1d: 300 x 4s / 6
+MIN_CONTIG_ARM = {"trigger": 20, "4h": 150}
+BARS_PER_DAY_4H = 6
+
+
+def arm_tf_delta(tf: str) -> timedelta:
+    try:
+        return timedelta(seconds=ARM_TF_SECONDS[tf])
+    except (KeyError, TypeError):
+        raise ValueError(f"bilinmeyen kurulum zaman dilimi: {tf!r}") from None
+
+
+def arm_floor_tf(ts: datetime, tf: str) -> datetime:
+    require_utc(ts)
+    d = arm_tf_delta(tf)
+    return ts - ((ts - _EPOCH) % d)
+
+
+def arm_is_tf_close(ts: datetime, tf: str) -> bool:
+    return ts == arm_floor_tf(ts, tf)
+
+
+def arm_closing_tfs(ts: datetime, tfs: Sequence[str] = ARM_TFS) -> list[str]:
+    return [tf for tf in tfs if arm_is_tf_close(ts, tf)]
+
+
+def aggregate_4h_to_1d(df4h):
+    """4s OHLCV (UTC tz-bilincli DatetimeIndex, acilis zamani) -> 1g OHLCV. Yalniz TAM 6 x 4s barli UTC gunu bar uretir
+    (eksik 4s barla 1g bar uretilmez, sessiz doldurma yok). Sutunlar: open high low close volume."""
+    import pandas as pd
+    cols = ["open", "high", "low", "close", "volume"]
+    if len(df4h) == 0:
+        return pd.DataFrame({c: pd.Series(dtype="float64") for c in cols},
+                            index=pd.DatetimeIndex([], tz="UTC", name=getattr(df4h.index, "name", None)))
+    day = df4h.index.floor("1D")
+    g = df4h.groupby(day, sort=True)
+    n = g["open"].count()
+    out = g.agg(open=("open", "first"), high=("high", "max"), low=("low", "min"), close=("close", "last"),
+                volume=("volume", "sum"))
+    out = out.loc[n[n == BARS_PER_DAY_4H].index][cols]
+    out.index.name = df4h.index.name
+    return out
+
+
+def contiguous_tail_len(index, tf: str) -> int:
+    """Indeksin sonundaki kesintisiz (tf adimli) bar sayisi."""
+    k = len(index)
+    if k == 0:
+        return 0
+    step = arm_tf_delta(tf)
+    n = 1
+    for i in range(k - 1, 0, -1):
+        if index[i] - index[i - 1] != step:
+            break
+        n += 1
+    return n

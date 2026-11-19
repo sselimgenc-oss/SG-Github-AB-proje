@@ -1,0 +1,14 @@
+"""R1: yatay piyasa kenari (PA-YTY-02; mevcut kurulum). Sinyal `trader_core.signals` (donuk) ortak tablosundan R1 satirlari
+secilerek gelir; yeni mantik yoktur."""
+from __future__ import annotations
+
+from . import ArmInput, mask_to_setups
+
+SETUP = "R1"
+TIMEFRAMES = ("15m", "1h", "4h", "1d")
+CORE = True
+ML_SCORED = True
+
+
+def compute(inp: ArmInput):
+    return mask_to_setups(inp.core(), (SETUP,))

@@ -17,7 +17,7 @@ from trader_core import risk as K
 from trader_core import veto
 from trader_core.signals import SignalParams
 
-from .bars import floor_tf, is_tf_close, tf_delta
+from .bars import arm_is_tf_close, arm_tf_delta, floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
@@ -40,7 +40,7 @@ from .status import StatusWriter
 from .strategies.base import Strategy, StrategyError
 from .strategies.price_action_v1_ml import load_engine_model
 from .strategies.registry import check_param_keys, get_strategy, make_label, parse_label
-from .strategy_runner import SignalFrame, SignalSource, WindowedSignalSource
+from .strategy_runner import MultiArmSignalSource, SignalFrame, SignalSource, WindowedSignalSource
 from .types import BrokerEvent, Fill, Intent, Position
 
 log = logging.getLogger("engine")
@@ -149,6 +149,12 @@ class Engine:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
         self._c: Counter = Counter()
         self.tf: str = strategy.info.allowed_trigger_tfs[0]
+        # DD-12 WP-11: bilesik strateji (price_action_lab_ml) karar adimini kendisi belirler (15 dk); `self.tf` parametre/ledger
+        # zaman dilimi olarak kalir (1s). Tekli stratejilerde step_tf == tf: davranis bit bit ayni.
+        self.step_tf: str = getattr(strategy, "decision_tf", None) or self.tf
+        self._multi_tf: bool = self.step_tf != self.tf
+        if self._multi_tf and getattr(signals, "position_fn", False) is None:
+            signals.position_fn = self._position_for_arms       # type: ignore[attr-defined]
         self._params_map: dict | None = None
         self._act_id: int | None = None
         self._version_id = 0
@@ -259,8 +265,12 @@ class Engine:
         except Exception as e:  # noqa: BLE001 - sayac hatasi korumayi geciktirmez
             log.error("stop_failed sayaci hatasi: %r", e)
 
-    def _last_exit(self, pair: str, D: datetime):
-        since = D - tf_delta(self.tf)
+    def _position_for_arms(self, pair: str):
+        p = self.state.position_for_pair(pair)
+        return None if p is None else (p.trigger_tf, p.entry_bar_open)
+
+    def _last_exit(self, pair: str, D: datetime, tf: str | None = None):
+        since = D - (arm_tf_delta(tf) if tf else tf_delta(self.tf))
         best = None
         for p in self.state.closed_positions_since(since):
             if p.pair == pair and p.closed_ts is not None and p.exit_reason and (best is None or p.closed_ts >= best[0]):
@@ -474,8 +484,16 @@ class Engine:
         held = [p.pair for p in self.state.open_positions()]
         out = {name: {"open": sum(1 for h in held if h in spec.pairs), "max": spec.max_positions}
                for name, spec in self.cfg.clusters.items()}
-        return {"account": {"open": len(held), "max": self.cfg.max_positions}, "clusters": out,
-                "optional_waiting": int(self._c.get("optional_waiting", 0))}
+        res = {"account": {"open": len(held), "max": self.cfg.max_positions}, "clusters": out,
+               "optional_waiting": int(self._c.get("optional_waiting", 0))}
+        if self.cfg.arms or self.cfg.arm_max_positions:            # WP-11: kurulum basina acik pozisyon ve tavan
+            from . import arm_guard as AG
+            held_arms = [AG.arm_id_of(p.setup, p.trigger_tf) for p in self.state.open_positions()]
+            ids = list(self.cfg.arms) or list(getattr(self.strategy, "arm_ids", ()))
+            ids += [a for a in dict.fromkeys(held_arms) if a not in ids]
+            res["arms"] = {a: {"open": sum(1 for h in held_arms if h == a),
+                               "max": AG.arm_cap(self.cfg.arm_max_positions, a, a.split("@")[0])} for a in ids}
+        return res
 
     def summary(self) -> RunSummary:
         c = self.counters()
@@ -787,7 +805,8 @@ class Engine:
         # strateji degisikligi / ledger uyumu (§13.2, §13.6)
         label = make_label(info.name, info.version)
         prev = self.state.kv_get("strategy")
-        if prev and prev != label and self.state.open_positions():
+        accepted = tuple(getattr(self.strategy, "accepted_prev_strategies", ()))     # WP-11: onceki kagit stratejisinden gecis
+        if prev and prev != label and self.state.open_positions() and parse_label(prev)[0] not in accepted:
             raise StrategyError("strategy_change_with_open_positions", f"{prev} -> {label}")
         with self.state.tx():
             self.state.kv_set("strategy", label)
@@ -839,7 +858,7 @@ class Engine:
                 return False
             lasts.append(lm)
         last = min(lasts)
-        D = floor_tf(last + timedelta(seconds=self.view.step_seconds()), self.tf)
+        D = floor_tf(last + timedelta(seconds=self.view.step_seconds()), self.step_tf)
         with self.state.tx():
             for p in self.cfg.pairs:
                 self.state.set_cursor(p, "minute", last)
@@ -1394,12 +1413,17 @@ class Engine:
         for pos in self.state.open_positions():
             if pos.status != "open":
                 continue
+            if self._multi_tf and not arm_is_tf_close(D, pos.trigger_tf):
+                continue                                        # WP-11: cikis yalniz pozisyonun KENDI zaman dilimi kapaninca degerlendirilir
             fr = frames.get(pos.pair)
             if fr is None or fr.status != "ok":
                 self._c["exit_data_gap"] += 1
                 continue
             try:
                 ctx = self.signals.exit_context(pos.pair, pos, D)
+                if self._multi_tf and ctx is None:              # baglam yok (kendi tf verisi bosluklu): zorla cikis DEGIL, atla
+                    self._c["exit_data_gap"] += 1
+                    continue
                 dec = policy.evaluate(pos, ctx) if policy is not None else evaluate_exit(pos, ctx)
                 dec = self._vet(pos, dec)
                 if dec.kind == "exit":
@@ -1446,6 +1470,8 @@ class Engine:
                 else:
                     attempted = True
                     self._enter(pair, D, frames[pair], out)
+                for ex in frames[pair].extras:                  # WP-11: ayni adimda baska kurulum adaylari
+                    self._extra_candidate(pair, D, ex, frames[pair].last, pre)
             except StateError:
                 raise
             except Exception as e:  # noqa: BLE001 - cift-bazli hata: giris yok
@@ -1453,6 +1479,19 @@ class Engine:
                     raise
                 self._c["callback_errors"] += 1
                 log.critical("giris degerlendirmesi hatasi %s: %r", pair, e, exc_info=True)
+
+    def _extra_candidate(self, pair: str, D: datetime, ex: SignalFrame, winner, pre) -> None:
+        """D-T16: kazanan (buyuk zaman dilimi) disindaki sinyal adaylari `arm_conflict` olarak yazilir; elenmis (filtre) adaylar
+        kendi atlama nedenleriyle (kapi `decide` yolu). Kaybedenler hicbir zaman giris yapmaz."""
+        if ex.last is None:
+            return
+        if ex.last.signal:
+            if winner is not None and winner.signal:
+                self._record_skip(pair, D, self.gate.conflict(ex, winner))
+            return
+        out = self.gate.decide(ex, D, pre, self._version_id)
+        if out.action == "skip":
+            self._record_skip(pair, D, out)
 
     def _testnet_price_gate(self, pair: str, D: datetime, fr: SignalFrame, out: EntryOutcome) -> EntryOutcome:
         """DD-6 D17 (11-canli-broker §11): yalniz testnet. Testnet fiyati (bookTicker orta) `planned_entry`den %0,5'ten fazla
@@ -1504,7 +1543,7 @@ class Engine:
                 decision_id=did, signal_bar_close_ts=row.bar_close_ts, entry_ts=None, entry_bar_open=None,
                 entry_price=None, qty=None, leverage=out.leverage, initial_stop=row.planned_stop,
                 current_stop=row.planned_stop, stop_seq=0, stop_client_id=None, planned_target=row.planned_target,
-                trail_atr=trail, param_version_id=row.param_version_id, trigger_tf=self.tf,
+                trail_atr=trail, param_version_id=row.param_version_id, trigger_tf=row.tf or self.tf,
                 risk_amount=size.risk_amount, margin=size.margin, rh=row.rh, rl=row.rl, fee_entry=0.0,
                 funding_paid=0.0, mfe_price=None, mae_price=None, exit_reason=None, exit_client_id=None,
                 closed_ts=None, strategy_name=info.name, strategy_version=info.version)
@@ -1544,10 +1583,10 @@ class Engine:
                     return n
                 cur = self._cursor("minute")
             nxt = cur + timedelta(seconds=step_s)
-            if is_tf_close(nxt, self.tf):
+            if is_tf_close(nxt, self.step_tf):
                 ld = self._cursor("decision")
                 if ld is None or ld < nxt:
-                    if not self.is_paper and nxt < floor_tf(now, self.tf):
+                    if not self.is_paper and nxt < floor_tf(now, self.step_tf):
                         # 11 §6.2 madde 4: kacan karar barlari yeniden oynatilmaz; yalniz en son kapanmis bar degerlendirilir
                         self._c["skipped_decisions"] += 1
                         with self.state.tx():
@@ -1581,8 +1620,8 @@ class Engine:
         if now >= D + timedelta(seconds=self.cfg.bar_wait_s):
             return True
         for p in self._required_pairs():
-            rng = self.view.data_range(p, self.tf)
-            if rng is None or rng[1] < D - tf_delta(self.tf):
+            rng = self.view.data_range(p, self.step_tf)
+            if rng is None or rng[1] < D - tf_delta(self.step_tf):
                 return False
         return True
 
@@ -1856,7 +1895,7 @@ class Engine:
     def run_range(self, start: datetime, end: datetime, *, active_only: bool = True) -> RunSummary:
         if self.cfg.mode == "backtest":
             check_holdout(start, end)      # kilitli donem: hicbir bar okunmadan once reddedilir
-        tf = self.tf
+        tf = self.step_tf
         step_s = self.view.step_seconds()
         D = floor_tf(start, tf)
         if D <= start:
@@ -1977,7 +2016,7 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
     if live_mode and broker is None:
         from .config import load_keys
         load_keys(env)                               # ConfigError("keys_missing: ...") aynen (11 §3.2)
-    strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
+    strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode, arms=cfg.arms or None)
     if cfg.mode == "paper" and hasattr(strategy, "fail_open"):
         strategy.fail_open = True                               # DD-12 spec 5 / D-T8: kagitta model yok => aday GECER (`ml_no_model`)
     if cfg.mode == "paper" and cfg.ml_pairs and hasattr(strategy, "set_ml_universe"):
@@ -2075,8 +2114,9 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
         else:
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
                                                    experimental=cfg.ml_experimental, paper_active=paper_active)
-    signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
-                                   ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None)
+    src_cls = MultiArmSignalSource if getattr(strategy, "decision_tf", None) else WindowedSignalSource    # WP-11: bilesik strateji
+    signals = src_cls(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
+                      ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None)
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,

@@ -150,6 +150,9 @@ class Env:
     def __init__(self, tmp, D, mode_cfg=None):
         self.D = D
         self.cfg = mode_cfg or load_cli_config(CONFIG, "learner", "paper")
+        if mode_cfg is None and getattr(self.cfg, "arm_max_positions", None):     # WP-11 kurulum tavani bu dosyanin konusu degil
+            import dataclasses as _dc
+            self.cfg = _dc.replace(self.cfg, arm_max_positions=None)
         self.clock = SimClock(D + timedelta(seconds=5))
         self.led = L.open_ledger(str(tmp / "l.sqlite"), "learner", create=True, clock=self.clock.now)
         self.led.init_params(_params(), reason="strategy:test")

@@ -252,11 +252,11 @@ class TestG5Configs:
         """DD-12: paper-ml katmani engine.paper.json'a katildi (ml_mode active; dosya engine.paper-ml.json silindi)."""
         assert not (CFG / "engine.paper-ml.json").exists()
         raw = json.loads((CFG / "engine.paper.json").read_text())
-        assert raw["strategy"] == "price_action_v1_full_ml" and raw["ml_mode"] == "active" and raw["ml_experimental"] is True
+        assert raw["strategy"] == "price_action_lab_ml" and raw["ml_mode"] == "active" and raw["ml_experimental"] is True
         assert raw["ml_model_path"] == "models/ml1-r03.json" and raw["ml_features"] == "r03"
         cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.paper.json")
         assert (cfg.mode, cfg.bot, cfg.strategy, cfg.ml_mode, cfg.ml_experimental, cfg.ml_features) == \
-               ("paper", "learner", "price_action_v1_full_ml", "active", True, "r03")
+               ("paper", "learner", "price_action_lab_ml", "active", True, "r03")
         assert cfg.ml_model_path == "models/ml1-r03.json"
 
     def test_paper_ml_loads_via_cli_loader(self):

@@ -82,3 +82,26 @@ def session_closed_by_lesson(session_off: Mapping[str, Collection[str]] | None, 
     if not session_off:
         return False
     return tag in (session_off.get(cls) or ()) or tag in (session_off.get(pair) or ())
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DD-12 WP-11 (D-T16): kurulum (arm) basina acik pozisyon tavani. Saf yardimcilar (durum/saat yok).
+# ---------------------------------------------------------------------------------------------------------------------
+def arm_id_of(setup: str | None, tf: str | None) -> str:
+    """`<kurulum>@<zaman dilimi>`; kurulum/tf yoksa `?` (tavan sayiminda eslesmez)."""
+    return f"{setup or '?'}@{tf or '?'}"
+
+
+def arm_cap(caps: Mapping[str, int] | None, arm_id: str, setup: str | None) -> int | None:
+    """Tavan arama sirasi: tam arm_id, kurulum kodu, `default`; hicbiri yoksa None (tavan yok)."""
+    if not caps:
+        return None
+    for key in (arm_id, setup, "default"):
+        if key is not None and key in caps:
+            return int(caps[key])
+    return None
+
+
+def arm_full(held_arm_ids: Sequence[str], arm_id: str, cap: int | None) -> bool:
+    """`held_arm_ids`: acik + acilmakta pozisyonlarin arm_id'leri. cap None => dolu degil."""
+    return cap is not None and sum(1 for a in held_arm_ids if a == arm_id) >= cap

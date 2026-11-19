@@ -6,6 +6,7 @@ import re
 from collections.abc import Mapping
 
 from .base import ParamSpec, Strategy, StrategyError
+from .lab import make_lab_ml
 from .price_action_v1 import make_v1_full, make_v1b
 from .price_action_v1_ml import make_v1_full_ml, make_v1b_ml
 
@@ -16,6 +17,7 @@ _FACTORIES = {
     "price_action_v1_full": make_v1_full,
     "price_action_v1_ml": make_v1b_ml,
     "price_action_v1_full_ml": make_v1_full_ml,
+    "price_action_lab_ml": make_lab_ml,                    # DD-12 WP-11: cok kurulumlu bilesik strateji (kurulumlar arms/ paketinde)
 }
 _NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _LABEL_RE = re.compile(r"strategy:([a-z][a-z0-9_]{0,39})@(\S+)")
@@ -26,13 +28,17 @@ def list_strategies() -> tuple[str, ...]:
     return tuple(_FACTORIES)
 
 
-def get_strategy(name: str, *, mode: str | None = None, ml_mode: str | None = None) -> Strategy:
+def get_strategy(name: str, *, mode: str | None = None, ml_mode: str | None = None, arms=None) -> Strategy:
     if not isinstance(name, str) or not _NAME_RE.fullmatch(name):
         raise StrategyError("bad_name", f"gecersiz strateji adi: {name!r}")
     f = _FACTORIES.get(name)
     if f is None:
         raise StrategyError("unknown_strategy", f"bilinmeyen strateji {name!r}; izinli: {list_strategies()}")
     s = f()
+    if arms:
+        if not hasattr(s, "set_arms"):
+            raise StrategyError("arms_not_supported", f"{name} cok kurulumlu degil (arms={list(arms)!r})")
+        s.set_arms(arms)
     if mode == "paper" and not s.info.paper_allowed:
         raise StrategyError("paper_not_allowed", f"{name} yalniz backtest/capraz dogrulama icindir")
     if ml_mode is not None:

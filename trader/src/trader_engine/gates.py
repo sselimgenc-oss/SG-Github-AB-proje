@@ -107,8 +107,10 @@ def _features(row: SignalRow) -> dict:
 
 
 def _tf_of(row: SignalRow) -> str:
+    if row.tf:                                               # DD-12 WP-11: bilesik strateji satiri zaman dilimini kendisi tasir
+        return row.tf
     secs = int((row.bar_close_ts - row.bar_open_ts).total_seconds())
-    for name, v in (("15m", 900), ("1h", 3600), ("4h", 14400)):
+    for name, v in (("15m", 900), ("1h", 3600), ("4h", 14400), ("1d", 86400)):
         if secs == v:
             return name
     raise ValueError(f"tetik tf cozulemedi: {secs}s")
@@ -124,7 +126,7 @@ def build_decision_event(row: SignalRow, tf: str, **override) -> L.DecisionEvent
         planned_target=row.planned_target, param_version_id=int(row.param_version_id),
         veto_status="not_evaluated", veto_reason=None, risk_allowed=None, risk_reason=None,
         size_qty=None, size_notional=None, size_margin=None, size_risk_amount=None, leverage=None,
-        final_action="skipped", skip_reason=None, ml_score=row.ml_score)
+        final_action="skipped", skip_reason=None, ml_score=row.ml_score, arm_id=row.arm_id)
     base.update(override)
     return L.DecisionEvent(**base)
 
@@ -213,9 +215,19 @@ class EntryGate:
         so = self.session_off
         return so() if callable(so) else so
 
+    def conflict(self, frame: SignalFrame, winner: SignalRow) -> EntryOutcome:
+        """DD-12 WP-11 (D-T16): ayni cift/adimda birden cok kurulum sinyal verdi; buyuk zaman dilimi kazandi, kaybeden
+        `arm_conflict` ile yazilir (kagit; veto yok; `mark_decided` yok - kazananin karari isaretler)."""
+        row = frame.last
+        tk: dict = {}
+        if self.cfg.mode == "paper":
+            tk = {"session_tag": AG.session_tag(AG.asset_class(row.pair, self.cfg.clusters), frame.last.bar_close_ts)}
+        return self._skip(row, _tf_of(row), "arm_conflict", mark=False, skip_reason="arm_conflict",
+                          veto_reason=f"gate:arm_conflict:{winner.arm_id or winner.setup}", **tk)
+
     def decide(self, frame: SignalFrame, D: datetime, pre: GateVerdict, active_version: int) -> EntryOutcome:
         if frame.status != "ok" or frame.last is None:                                  # 0
-            return self._ignore(frame.status)
+            return self._ignore(frame.status if frame.status != "ok" else "no_arm_closed")
         row = frame.last
         pair = row.pair
         tf = _tf_of(row)
@@ -257,6 +269,14 @@ class EntryGate:
             if cname is not None:
                 return self._skip(row, tf, "cluster_cap", skip_reason="cluster_cap",
                                   veto_reason=f"gate:cluster_cap:{cname}", **tk)
+            if self.cfg.arm_max_positions:                                               # WP-11: kurulum basina tavan
+                aid = row.arm_id or AG.arm_id_of(row.setup, tf)
+                cap = AG.arm_cap(self.cfg.arm_max_positions, aid, row.setup)
+                held_arms = [AG.arm_id_of(p.setup, p.trigger_tf) for p in self.state.open_positions()
+                             if getattr(p, "setup", None) and getattr(p, "trigger_tf", None)]
+                if AG.arm_full(held_arms, aid, cap):
+                    return self._skip(row, tf, "max_positions", skip_reason="max_positions",
+                                      veto_reason=f"gate:arm_cap:{aid}", **tk)
             if AG.account_full(len(held), self.cfg.max_positions):
                 return self._skip(row, tf, "max_positions", skip_reason="max_positions",
                                   veto_reason="gate:max_positions", **tk)
