@@ -159,6 +159,9 @@ class EntryGate:
         self.entry_ref_fn = entry_ref_fn
         self.counters: Counter = Counter()
         self.session_off: Mapping[str, Collection[str]] | Callable[[], Mapping[str, Collection[str]]] | None = None  # DD-12 D-T7: dersin kapattigi seanslar (sinif|cift -> etiketler); yok = hepsi acik
+        # 19 Kasim: CT kadro uzlasisi (cift -> kayit) ya da None (yok/bayat). Yalniz ETIKET: features["ct_yon"] (+1 ayni yon,
+        # -1 ters yon, 0 uzlasi yok); hicbir adayi engellemez. Motor kagitta baglar.
+        self.ct_kadro: Callable[[], Mapping | None] | None = None
         self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
@@ -226,6 +229,24 @@ class EntryGate:
         so = self.session_off
         return so() if callable(so) else so
 
+    def _ct_yon(self, pair: str, side) -> int | None:
+        """CT uzlasisina gore yon etiketi: +1 ayni, -1 ters, 0 uzlasi yok/notr; veri yok ya da bayatsa None (etiket yazilmaz).
+        Okuma hatasi asla karari etkilemez."""
+        fn = self.ct_kadro
+        if fn is None or side not in ("long", "short"):
+            return None
+        try:
+            kadro = fn()
+        except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
+            return None
+        if not kadro:
+            return None
+        rec = kadro.get(pair)
+        yon = rec.get("net_yon") if isinstance(rec, Mapping) else None
+        if yon not in ("long", "short"):
+            return 0
+        return 1 if yon == side else -1
+
     def _arms_off(self) -> Collection[str]:
         ao = self.arms_off
         return (ao() if callable(ao) else ao) or ()
@@ -252,6 +273,9 @@ class EntryGate:
         if paper:
             cls = AG.asset_class(pair, self.cfg.clusters)
             tk = {"session_tag": AG.session_tag(cls, D)}                                # etiket yasak degil, kayit
+            ct = self._ct_yon(pair, row.side)
+            if ct is not None:                                                          # CT yon etiketi (engellemez)
+                tk["features"] = {**_features(row), "ct_yon": ct}
         if not row.signal:                                                              # 1 / 1b
             if (row.setup and row.side and row.skip_reason in _FILTERED_SKIPS
                     and self.cfg.record_filtered_candidates and row.param_version_id >= 1):

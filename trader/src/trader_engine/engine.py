@@ -147,6 +147,10 @@ class Engine:
         if cfg.mode == "paper":                  # DD-12 WP-13: ders kapattigi kurulumlar (salt okunur dosya; yoksa hepsi acik)
             _arms_path = Path(cfg.ledger_path).parent / "arms_off.json"
             self.gate.arms_off = lambda: load_arms_off(_arms_path)
+            from trader_core import ct_kadro as _CT                     # 19 Kasim: CT yon etiketi (yalniz kayit/ML ozelligi)
+            from .strategies.arms import c1 as _C1
+            _evren = frozenset(cfg.pairs)
+            self.gate.ct_kadro = lambda: _CT.oku(_C1.kadro_yolu(), clock.now(), evren=_evren)
         self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]
