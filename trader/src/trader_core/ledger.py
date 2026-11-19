@@ -254,6 +254,9 @@ def _json_safe(obj):
     return repr(obj)
 
 
+_ETIKET_ANAHTARLARI = ("duygu", "haber")        # features icindeki yalniz-kayit etiketleri (docs/haber-etiketi-spec.md)
+
+
 def _json_limited(obj, name) -> str:
     try:
         s = _cj(obj)
@@ -1678,7 +1681,9 @@ class Ledger:
                 raise LedgerValidationError("features anahtarlari metin olmali")
             if isinstance(v, float) and not math.isfinite(v):
                 raise LedgerValidationError(f"features.{k} sonlu olmali")
-            if v is not None and not isinstance(v, (str, int, float, bool)):
+            if k in _ETIKET_ANAHTARLARI and isinstance(v, Mapping):      # haber/duygu etiketi (yalniz kayit): ic ice sozluk
+                v = json.loads(_json_limited(v, f"features.{k}"))
+            elif v is not None and not isinstance(v, (str, int, float, bool)):
                 if isinstance(v, numbers.Real):
                     v = float(v)
                 else:
@@ -1692,6 +1697,18 @@ class Ledger:
                      "size_qty", "size_notional", "size_margin", "size_risk_amount", "leverage",
                      "final_action", "skip_reason", "arm_id", "session_tag", "lesson_ids", "source")
 
+    @staticmethod
+    def _cmp_deger(k: str, v):
+        """Ayni-karar karsilastirmasi: `features` icindeki yalniz-kayit etiketleri (haber/duygu: onbellek saatlik degisir) sayilmaz;
+        boylece etiket, yeniden denenen ayni kararin cakisma sonucunu degistiremez."""
+        if k != "features" or not isinstance(v, str):
+            return v
+        try:
+            d = json.loads(v)
+        except ValueError:
+            return v
+        return {a: b for a, b in d.items() if a not in _ETIKET_ANAHTARLARI} if isinstance(d, dict) else v
+
     def _write_decision(self, c, vals, sup, now: datetime) -> int:
         bot = self.bot
         if not c.execute("SELECT 1 FROM param_versions WHERE id=? AND bot=?",
@@ -1699,7 +1716,7 @@ class Ledger:
             raise LedgerValidationError("param_version_id mevcut degil")
 
         def same(row) -> bool:
-            return all(row[k] == vals[k] for k in self._DECISION_CMP)
+            return all(self._cmp_deger(k, row[k]) == self._cmp_deger(k, vals[k]) for k in self._DECISION_CMP)
 
         if sup is None:
             row = c.execute(

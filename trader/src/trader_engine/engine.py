@@ -151,6 +151,8 @@ class Engine:
             from .strategies.arms import c1 as _C1
             _evren = frozenset(cfg.pairs)
             self.gate.ct_kadro = lambda: _CT.oku(_C1.kadro_yolu(), clock.now(), evren=_evren)
+            from trader_core import haber as _HB                        # haber/duygu etiketi (yalniz kayit; docs/haber-etiketi-spec.md)
+            self.gate.haber_etiket = lambda pair, now_ms: _HB.etiket(pair, now_ms)
         self.reconciler = reconciler if reconciler is not None else self._make_reconciler()
         if getattr(signals, "last_exit_fn", False) is None:
             signals.last_exit_fn = self._last_exit            # type: ignore[attr-defined]

@@ -162,6 +162,9 @@ class EntryGate:
         # 19 Kasim: CT kadro uzlasisi (cift -> kayit) ya da None (yok/bayat). Yalniz ETIKET: features["ct_yon"] (+1 ayni yon,
         # -1 ters yon, 0 uzlasi yok); hicbir adayi engellemez. Motor kagitta baglar.
         self.ct_kadro: Callable[[], Mapping | None] | None = None
+        # Haber/duygu etiketi (docs/haber-etiketi-spec.md): (cift, now_ms) -> {"duygu","haber"} ya da None (onbellek yok/bozuk/bayat).
+        # Yalniz KAYIT: features["duygu"], features["haber"]; hicbir adayi engellemez, karar/boyut/risk yoluna girmez.
+        self.haber_etiket: Callable[[str, int], Mapping | None] | None = None
         self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
@@ -247,6 +250,17 @@ class EntryGate:
             return 0
         return 1 if yon == side else -1
 
+    def _haber_etiketi(self, pair: str) -> dict:
+        """Haber/duygu etiketi alanlari ({} = yazilmaz). Okuma hatasi asla karari etkilemez."""
+        fn = self.haber_etiket
+        if fn is None:
+            return {}
+        try:
+            e = fn(pair, int(self.clock.now().timestamp() * 1000))
+            return dict(e) if e else {}
+        except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
+            return {}
+
     def _arms_off(self) -> Collection[str]:
         ao = self.arms_off
         return (ao() if callable(ao) else ao) or ()
@@ -276,6 +290,9 @@ class EntryGate:
             ct = self._ct_yon(pair, row.side)
             if ct is not None:                                                          # CT yon etiketi (engellemez)
                 tk["features"] = {**_features(row), "ct_yon": ct}
+            hb = self._haber_etiketi(pair)
+            if hb:                                                                      # haber/duygu etiketi (yalniz kayit; engellemez)
+                tk["features"] = {**tk.get("features", _features(row)), **hb}
         if not row.signal:                                                              # 1 / 1b
             if (row.setup and row.side and row.skip_reason in _FILTERED_SKIPS
                     and self.cfg.record_filtered_candidates and row.param_version_id >= 1):

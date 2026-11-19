@@ -25,3 +25,7 @@
 
 ## LightGBM (MIT) — yalnız ML eğitim/araştırma tarafı
 - Kod kopyalanmadı; `requirements-ml.txt` içinde tam sürüm (4.6.0) + hash sabitli isteğe bağlı bağımlılık. Motor ve bot süreci yüklemez; motor tarafı kendi ağaç okuyucumuzu (`src/trader_ml/treeeval.py`) kullanır. scipy yalnız lightgbm'in dolaylı bağımlılığıdır.
+
+## CT haber/duygu modülü (kullanıcının kendi projesi)
+- Kaynak: `copytrade/canli/haber.py`, `tests/test_haber.py` ve `docs/VERI_SOZLESMESI.md` "Haber / duygu etiketi" bölümü (CT projesi, kullanıcının kendi kodu; yalnız okunarak uyarlandı, çalıştırılmadı/kurulmadı), 2026-11-19.
+- Uyarlanan: `src/trader_core/haber.py` (çözücüler `duygu_coz`, `ton`, `rss_coz`, `eslesir`, `coin_haber`, `duygu_ozet`, `guncelle`; `POZITIF`/`NEGATIF`/`ISIMLER` listeleri aynen). Değişiklik: ağ `requests` yerine stdlib `urllib` (yeni bağımlılık yok); kaynak adresleri (`kurallar.yaml`) sabite alındı; ML tarafı önbellek dosyası (`var/durum/haber_v1.json`) ve motor okuyucusu eklendi. Alan sözleşmesi CT ile aynıdır.
