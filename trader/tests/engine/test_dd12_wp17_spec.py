@@ -87,7 +87,16 @@ def _telegram_cfg(e: Env, status_path: Path | None = None) -> T.TelegramConfig:
 
 def _report(cfg: T.TelegramConfig) -> str:
     # gercek uretim yolu: report_run varsayilan bolumlerle cagirir (sections=None en kisa ozet; eski testler buna bagli)
-    return T.build_report(cfg, NOW, DAY, sections=T.default_sections(cfg, NOW, DAY))
+    # Gunluk ozet artik <=12 satir; ders/model/seans/LLM bolumleri kaldirilmadi, /ders /kurulumlar /rapor komutlariyla ve panelde.
+    # Bolumler tek tek uretilir (okunamayan bolum bos kalir).
+    secs = T.default_sections(cfg, NOW, DAY)
+    out = [T.build_report(cfg, NOW, DAY, sections=secs)]
+    for fn in secs.values():
+        try:
+            out.append(str(fn() or ""))
+        except Exception:  # noqa: BLE001
+            pass
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- pano: Öğrenme sekmesi (statik kaynak)

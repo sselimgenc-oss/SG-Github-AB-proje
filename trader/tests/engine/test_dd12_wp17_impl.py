@@ -149,7 +149,8 @@ def test_daily_sections_show_learning_and_scorecard(world):
     assert "T1@1h: aday 3 · alınan 1" in karne and "M1@1h: aday 2 · alınan 2" in karne and "KAPALI" in karne
     assert "F1@1h" not in karne                                                 # adayi olmayan kurulum satiri yok
     out = T.build_report(cfg, NOW, "2026-11-19", {"Öğrenme": lambda: ogr, "Kurulum karnesi": lambda: karne})
-    assert out.index("📚 Ders") < out.index("🧪 Kurulum karnesi")
+    assert "📚" not in out and "🧪" not in out and len(out.splitlines()) <= 12     # gunluk ozet kisa; bolumler komutlarda
+    assert ogr.index("📚 Ders") < ogr.index("Haftalık özet")
     for banned in ("ikiz", "twin", "veto"):
         assert banned not in (ogr + karne).lower()
 

@@ -231,8 +231,10 @@ def test_devam_pause_removal_failure_per_bot_not_silent(rig):
 def test_report_has_per_bot_pause_line(rig, tmp_path):
     rig.pauses["learner"].add("drawdown_review", "engine:rk1")
     secs = T.default_sections(rig.cfg, T0, "2026-12-30", rig.pauses)
+    assert "⏸️ ana bot: yeni işlemler duraklatıldı — risk kademesi incelemesi bekliyor (motor tarafından, 30.12 13:00)" in secs["Duraklatma"]()
+    status(rig, loop_at=T0.strftime("%Y-%m-%dT%H:%M:%SZ"), entries_open=True)
     out = T.build_report(rig.cfg, T0, "2026-12-30", {"Duraklatma": secs["Duraklatma"]})
-    assert "⏸️ ana bot: yeni işlemler duraklatıldı — risk kademesi incelemesi bekliyor (motor tarafından, 30.12 13:00)" in out
+    assert "Yeni işlemler duraklatıldı." in out
     assert "ikiz bot" not in out and "drawdown_review" not in out
     assert "Duraklatma" not in T.default_sections(rig.cfg, T0, "2026-12-30")
 

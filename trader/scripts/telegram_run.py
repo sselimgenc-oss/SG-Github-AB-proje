@@ -22,6 +22,7 @@ from trader_core import live_paths as LP  # noqa: E402
 from trader_core import proc_guard  # noqa: E402
 from trader_core import risk_ladder as RL  # noqa: E402
 from trader_core import telegram as T  # noqa: E402
+from trader_core import tg_sade as TS  # noqa: E402
 from trader_engine.killswitch import Killswitch  # noqa: E402
 from trader_engine.pause import EntryPause  # noqa: E402
 
@@ -120,7 +121,17 @@ def main(argv=None, *, env=None, http_post=None, now_fn=None, sleep=time.sleep, 
     try:
         if args.cmd == "send":
             n = T.TelegramNotifier(client, cfg.chat_id, T.Outbox(cfg.var_dir, now_fn), now_fn, sleep)
-            ok = n.send_text(args.text, args.severity, args.dedup_key)
+            text = args.text
+            if text.startswith("Birim basarisiz: "):        # systemd OnFailure: birim adi kullaniciya gitmez
+                n.status_path = cfg.status_path or None
+                birim = text.split(": ", 1)[1]
+                text = TS.birim_metni(birim, n.status_path)
+                if text is not None and "engine" in birim:
+                    n.kayit.isaretle("bot")
+                if text is None:
+                    print("skipped")
+                    return EXIT_OK
+            ok = n.send_text(text, args.severity, args.dedup_key)
             print("sent" if ok else "spooled")
             return EXIT_OK
         if args.cmd == "report":

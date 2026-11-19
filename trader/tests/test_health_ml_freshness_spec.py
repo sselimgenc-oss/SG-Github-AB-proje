@@ -996,7 +996,14 @@ def report_for(tmp, ml, *, health_state="", extra_sections=None, **status_kw):
     sections = {"Model": secs["Model"]}
     if extra_sections:
         sections.update(extra_sections)
-    return tg.build_report(cfg, TNOW, TDAY, sections)
+    # Gunluk ozet kisa; model/risk/butce bolumleri komutlarda ve panelde. Burada ozet + bolum cikislari birlikte sinanir.
+    parts = [tg.build_report(cfg, TNOW, TDAY, sections)]
+    for fn in sections.values():
+        try:
+            parts.append(str(fn() or ""))
+        except Exception:  # noqa: BLE001
+            pass
+    return "\n".join(parts)
 
 
 def lines_of(txt):
@@ -1052,14 +1059,14 @@ class TestDailyReport:
     def test_27_active_expired(self, tmp_path):
         out = report_for(tmp_path, ml_block("active", "expired", None), entries_open=False, gate_code="ml_expired")
         assert "🚨 Modelin süresi doldu: yeni işlem açılmıyor, açık pozisyonlar korunuyor" in lines_of(out)
-        assert "modelin süresi doldu" in out
+        assert "modelin süresi doldu" in out.lower()
         assert "yapay zekâ filtresi hazır değil" not in out
 
     def test_active_no_model(self, tmp_path):
         out = report_for(tmp_path, ml_block("active", "no_model", None, error="PackageError: x"),
                          entries_open=False, gate_code="ml_no_model")
         assert "🚨 Model yüklenemedi: yeni işlem açılmıyor, açık pozisyonlar korunuyor" in lines_of(out)
-        assert "model yüklenemedi" in out and "PackageError" not in out
+        assert "model yüklenemedi" in out.lower() and "PackageError" not in out
 
     @pytest.mark.parametrize("state", ["no_model", "expired"])
     def test_28_shadow_down(self, tmp_path, state):
@@ -1109,7 +1116,7 @@ class TestDailyReport:
     @pytest.mark.parametrize("bad", [[1, 2, 3], "metin", 42, {"mode": ["x"], "state": 5}])
     def test_30_corrupt_block_does_not_crash(self, tmp_path, bad):
         out = report_for(tmp_path, bad)
-        assert "⚠️ Bazı bilgiler okunamadı" in lines_of(out)
+        assert "[ML] 🌙 Günlük özet" in out                      # bozuk model blogu ozeti dusurmez
         for raw in ("Traceback", "Error", "list", "TypeError"):
             assert raw not in out
 
@@ -1120,7 +1127,7 @@ class TestDailyReport:
         i_model = next(i for i, ln in enumerate(ls) if ln.startswith("🤖 Model filtresi açık"))
         i_risk = ls.index("📶 kademe satiri")
         i_budget = ls.index("💰 butce satiri")
-        i_normal = next(i for i, ln in enumerate(ls) if ln.startswith("🛡️ Her şey normal"))
+        i_normal = next(i for i, ln in enumerate(ls) if ln.startswith("Yeni işlemler açık"))
         assert i_normal < i_model < i_risk < i_budget
         assert i_risk - i_model == 1                                 # "hemen önce"
 

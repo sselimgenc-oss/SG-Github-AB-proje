@@ -27,6 +27,7 @@ from typing import Any
 
 from . import lesson as LS
 from . import risk_ladder as RL
+from . import tg_sade as TS
 
 
 # trader_core -> trader_engine bagimliligi yasak (08 §4.7): motorun fileio bicimiyle ayni kucuk yardimcilar.
@@ -217,7 +218,8 @@ class TelegramClient:
 class TelegramConfig:
     def __init__(self, token: str, chat_id: int, var_dir: str, kill_file: str = "", status_path: str = "",
                  lesson_run: str = "", health_state: str = "", ledger_path: str = "",
-                 budget_config: str = "", lesson_store: str = ""):
+                 budget_config: str = "", lesson_store: str = "", config_dir: str = ""):
+        self.config_dir = config_dir                 # gunluk zarar orani (engine.*.json risk blogu); bos -> kilitli deger
         self.ledger_path = ledger_path
         self.budget_config, self.lesson_store = budget_config, lesson_store
         self.token, self.chat_id, self.var_dir = token, chat_id, var_dir
@@ -244,7 +246,8 @@ class TelegramConfig:
                    env.get("HEALTH_STATE_PATH", ""),
                    _abs_path(here, env.get("LEDGER_PATH") or "user_data/ledger_learner.sqlite"),
                    _abs_path(here, env.get("BUDGET_CONFIG_PATH") or "config/budget.json"),
-                   _abs_path(here, env.get("LESSON_STORE_PATH") or "user_data/lesson.sqlite"))
+                   _abs_path(here, env.get("LESSON_STORE_PATH") or "user_data/lesson.sqlite"),
+                   (env.get("ENGINE_CONFIG_DIR") or "").strip() or str(here / "config"))
 
 
 def _abs_path(base: Path, p: str) -> str:
@@ -413,6 +416,8 @@ class TelegramNotifier:
         self.client, self.chat_id, self.outbox = client, chat_id, outbox
         self.now = now_fn or (lambda: datetime.now(UTC))
         self.sleep = sleep
+        self.status_path: str | None = None            # "Bot durdu" mesajinda acik pozisyon sayisi icin
+        self.kayit = TS.Kayit(Path(outbox.dir).parent / "alarm_kaydi.json", self.now)
 
     def _send_retry(self, text: str, severity: str, reply_markup=None) -> bool:
         waited = 0.0
@@ -463,23 +468,40 @@ class TelegramNotifier:
 
     # health.Notifier
     def send(self, alert) -> bool:
-        lvl = getattr(alert.level, "value", str(alert.level))
-        sev = "CRIT" if str(lvl).upper() in ("CRIT", "CRITICAL", "UNKNOWN", "FAIL") else (
-            "INFO" if str(lvl).upper() in ("OK", "INFO") else "WARN")
-        return self.send_text(f"{alert.title}\n{alert.body}", sev, alert.fingerprint)
+        """Saglik uyarisi -> sade metin. Susturulanlar (INFO, yapilacak bir sey yok) hicbir sey gondermez (True: teslim sayilir).
+        Ayni uyari 6 saatte bir; duzelince tek 'Duzeldi' (yalniz uyarisi gitmisse); 'Bot durdu' 6 saat kuralindan muaf."""
+        tur, text, key = TS.saglik_mesaji(alert, self.status_path)
+        if text is None:
+            return True
+        if tur in ("bot_durdu", "bot_duzeldi"):
+            key = "bot"
+        if tur in ("duzeldi", "bot_duzeldi"):
+            if not self.kayit.kapat(key):
+                return True                                   # uyarisi hic gitmedi: Duzeldi de gitmez
+            return self.send_text(text, "INFO", f"duzeldi:{key}:{self.now().isoformat()}")
+        if tur == "bot_durdu":
+            self.kayit.isaretle(key)
+            return self.send_text(text, "CRIT", f"bot-durdu:{alert.fingerprint}:{int(self.now().timestamp() // 600)}")
+        if not self.kayit.gonder_mi(key):
+            return True
+        sev = "CRIT" if text.startswith("🔴") else "WARN"
+        return self.send_text(text, sev, f"alarm:{key}:{self.now().isoformat()}")
 
     # lesson.LessonNotifier
     def notify(self, notice) -> bool:
-        sev = {"info": "INFO", "warn": "WARN", "warning": "WARN", "crit": "CRIT", "critical": "CRIT"}.get(
-            str(notice.level).lower(), "INFO")
-        return self.send_text(f"{notice.title}\n{notice.body}", sev, notice.fingerprint)
+        r = TS.ders_mesaji(str(notice.level), str(getattr(notice, "code", "")), str(getattr(notice, "title", "")),
+                           str(getattr(notice, "body", "")))
+        if r is None:
+            return True
+        text, key = r
+        if not self.kayit.gunde_bir(key, self.now().astimezone(TR).date().isoformat()):
+            return True                                       # ayni ders icin gunde tek mesaj
+        return self.send_text(text, "INFO" if notice.code == "applied" else "WARN", f"ders:{key}:{self.now().isoformat()}")
 
     def request_approval(self, req) -> bool:
         exp = req.expires_at.timestamp()
         rid = req.request_id
-        ev = ", ".join(f"{k}={v}" for k, v in list(dict(req.evidence).items())[:6])
-        text = (f"{req.title}\n{req.param}: {req.from_value} -> {req.to_value} [{req.reason_code}]\n"
-                f"{req.body}\nKanit: {ev}\nSon gecerlilik: {LS.fmt_ts(req.expires_at)}")
+        text = TS.onay_istegi(str(req.param), req.from_value, req.to_value, str(req.body), LS.fmt_ts(req.expires_at))
         pinned = f"/onayla {rid}\n/reddet {rid}"
         kb = {"inline_keyboard": [[{"text": "Onayla", "callback_data": f"ok:{rid}:{int(exp)}"},
                                    {"text": "Reddet", "callback_data": f"no:{rid}:{int(exp)}"}]]}
@@ -491,8 +513,9 @@ def notifier_from_env(env: Mapping[str, str], http_post=None, now_fn=None, sleep
     if cfg is None:
         return None
     now_fn = now_fn or (lambda: datetime.now(UTC))
-    return TelegramNotifier(TelegramClient(cfg.token, http_post, sleep), cfg.chat_id,
-                            Outbox(cfg.var_dir, now_fn), now_fn, sleep)
+    n = TelegramNotifier(TelegramClient(cfg.token, http_post, sleep), cfg.chat_id, Outbox(cfg.var_dir, now_fn), now_fn, sleep)
+    n.status_path = cfg.status_path or None
+    return n
 
 
 LS.NOTIFIER_FACTORIES["telegram"] = lambda cfg, env: notifier_from_env(env)
@@ -1297,11 +1320,20 @@ class TelegramDaemon:
     def run_forever(self, stop: Callable[[], bool] = lambda: False) -> None:
         backoff = 1.0
         last_drain = 0.0
+        last_islem = 0.0
         while not stop():
             self.write_alive()
             ok = self.poll_once()
             self.tick_kill_watch()
             nowt = self.now().timestamp()
+            if nowt - last_islem >= 60:                      # yeni islem / gunluk zarar mesajlari (en cok dakikada bir bakilir)
+                last_islem = nowt
+                try:
+                    n = TelegramNotifier(self.client, self.cfg.chat_id, self.outbox, self.now, self.sleep)
+                    n.status_path = self.cfg.status_path or None
+                    islem_tick(self.cfg, n, self.now())
+                except Exception as e:  # noqa: BLE001
+                    log.warning("islem bildirimi: %s", type(e).__name__)
             if nowt - last_drain >= 30:
                 last_drain = nowt
                 try:
@@ -1498,72 +1530,121 @@ _BOLUM_SIRASI = ("Model", "Davranış", "Risk kademesi", "Bütçe", "Ders", "Ö�
                  "Alınmayan sinyaller (son 7 gün)")
 
 
+def _durum_satiri(st: Mapping[str, Any] | None, pause_text: str, doldu: bool) -> str:
+    if st is None:
+        return "Bot durumu okunamadı."
+    if st.get("kill"):
+        return "Acil durdurma açık: yeni işlem açılmaz."
+    if doldu:
+        return "Günlük zarar sınırı doldu: bugün yeni işlem açılmaz."
+    if pause_text:
+        return "Yeni işlemler duraklatıldı."
+    if st.get("entries_open") is False:
+        return "Yeni işlemler kapalı."
+    if st.get("entries_open") is True:
+        return "Yeni işlemler açık."
+    return ""
+
+
+def _ders_gunluk(cfg: TelegramConfig, day: str) -> tuple[int, int] | None:
+    """Istanbul gununde ders tarafindan uygulanan / geri alinan (fren haric) degisiklik sayisi; okunamazsa None."""
+    from . import ledger as L  # noqa: PLC0415
+    if not cfg.ledger_path or not Path(cfg.ledger_path).exists():
+        return None
+    try:
+        a, b = _istanbul_day_bounds_utc(day)
+        led = L.open_ledger(cfg.ledger_path, "learner", create=False, read_only=True, migrate=False)
+        try:
+            acts = [x for x in led.list_activations() if x.actor == "lesson"]
+        finally:
+            led.close()
+        gun = [x for x in acts if a <= LS.fmt_ts(x.activated_at) < b]
+        brake = lambda x: str(x.reason or "").startswith(LS.BRAKE_REASON_PREFIX)  # noqa: E731
+        return (sum(1 for x in gun if x.kind == "apply"),
+                sum(1 for x in gun if x.kind == "rollback" and not brake(x)))
+    except Exception as e:  # noqa: BLE001
+        log.warning("rapor: ders sayisi okunamadı: %s", type(e).__name__)
+        return None
+
+
+def _model_ozet(st: Mapping[str, Any] | None) -> str:
+    """status.json `ml` blogu -> tek sade satir (yok/kapali -> bos)."""
+    ml = (st or {}).get("ml")
+    if not isinstance(ml, Mapping) or ml.get("mode") not in ("shadow", "active"):
+        return ""
+    state = ml.get("state")
+    if state == "ok":
+        return "Model: güncel, işlemlere etkili" if ml.get("mode") == "active" else "Model: güncel, gölgede izliyor"
+    if state in ("expired", "no_model"):
+        return "Model süresi doldu, kararlar kuralla veriliyor" if state == "expired" else "Model yüklenemedi, kararlar kuralla veriliyor"
+    return ""
+
+
 def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping[str, Callable[[], str]] | None = None
                  ) -> str:
-    """Günlük rapor: sade Türkçe, ham sözlük/kod/istisna adı yok. Okunamayan bölümler tek genel satırla bildirilir."""
+    """Günlük özet (en çok 12 satır, sade Türkçe). `sections` yalnız 'Duraklatma' için okunur; diğer bölümler panelde."""
     problems = 0
     st: dict | None = None
     try:
         st = json.loads(Path(cfg.status_path).read_text(encoding="utf-8"))
-        loop = parse_ts_z(st["loop_at"])
-        age = (now - loop).total_seconds()
+        age = (now - parse_ts_z(st["loop_at"])).total_seconds()
     except Exception as e:  # noqa: BLE001
         log.warning("rapor: motor durumu okunamadı: %s", type(e).__name__)
         st, age, problems = None, 0.0, problems + 1
-    stale = st is not None and age > 120
+    stale = st is not None and age > STALE_S
     mod = KIP_TR.get(str((st or {}).get("mode")), "")
     out: list[str] = []
     if stale:
-        out.append(f"🚨 Motor yanıt vermiyor! (son sinyal {int(age // 60)} dk önce)")
-    out += [f"🌙 Günlük rapor · {_gun_tr(day)}" + (f" ({mod})" if mod else ""), AYRAC]
-
-    got: dict[str, str] = {}
-    failed: set[str] = set()
-    for name, fn in (sections or {}).items():
-        try:
-            got[name] = str(fn() or "").strip()
-        except Exception as e:  # noqa: BLE001 - ayrıntı yalnız günlükte
-            log.warning("rapor bölümü okunamadı (%s): %s %s", name, type(e).__name__, getattr(e, "code", ""))
-            failed.add(name)
-            problems += 1
-
-    if got.get("Defter"):
-        out.append(got["Defter"])
-    elif "Defter" in failed and st is not None and (k := _kasa_satiri(st.get("equity"), st.get("day_start_equity"))):
-        out.append(k)
+        out.append(f"🔴 Bot yanıt vermiyor (son sinyal {int(age // 60)} dk önce)")
+    out.append(f"🌙 Günlük özet · {_gun_tr(day)}" + (" · gerçek para" if mod == KIP_TR["live"] else ""))
+    pause_text = ""
+    try:
+        pause_text = str((sections or {}).get("Duraklatma", lambda: "")() or "").strip()
+    except Exception:  # noqa: BLE001
+        pass
+    closed: list = []
+    try:
+        closed, _ = _ledger_day(cfg.ledger_path, "learner", day)
+    except Exception as e:  # noqa: BLE001
+        log.warning("rapor: defter okunamadı: %s", type(e).__name__)
+        problems += 1
+    if closed:
+        pnl, _r = _sum(closed)
+        win = sum(1 for t in closed if (t.realized_pnl or 0) > 0)
+        out.append(f"Bugün {len(closed)} işlem kapandı ({win} kâr, {len(closed) - win} zarar) · {TS.isaretli(pnl)} $")
+    elif not problems:
+        out.append("Bugün kapanan işlem yok.")
+    eq, dse = (st or {}).get("equity"), (st or {}).get("day_start_equity")
+    doldu = False
+    if _num_ok(eq):
+        out.append(f"Kasa: {TS.sayi(eq)} $" + (f" (gün başı {TS.sayi(dse)} $)" if _num_ok(dse) else ""))
+        if _num_ok(dse) and dse > 0:
+            kayip, lim = max(0.0, dse - eq), TS.limit_orani(cfg.config_dir, (st or {}).get("mode")) * dse
+            doldu = kayip >= lim
+            out.append(f"Günlük zarar sınırı: {TS.sayi(kayip)} $ / {TS.sayi(lim)} $ kullanıldı")
+    pos = (st or {}).get("open_positions") or []
     if st is not None:
-        out += _pozisyon_satirlari(st)
-        akt = _aktivite_satirlari(st)
-        if akt:
-            out += [AYRAC, *akt]
-        eq, dse = st.get("equity"), st.get("day_start_equity")
-        doldu = (_num_ok(eq) and _num_ok(dse) and dse > 0 and (dse - eq) >= GUNLUK_ZARAR_ORANI * dse)
-        risk = [] if stale else _risk_satirlari(st, got.get("Duraklatma", ""), bool(doldu))
-        out += risk
-    elif got.get("Duraklatma"):
-        out.append(got["Duraklatma"])
-    for name in _BOLUM_SIRASI:
-        if got.get(name):
-            out.append(got[name])
-    for name, text in got.items():                         # tanınmayan (dışarıdan verilen) bölümler
-        if name not in ("Defter", "Duraklatma", *_BOLUM_SIRASI) and text:
-            out.append(f"{name}: {text}")
+        out.append("Açık pozisyon yok." if not pos else f"Açık pozisyon: {len(pos)} (" + ", ".join(
+            f"{TS.coin(p.get('pair'))} {TS.yon(p.get('side'))}" for p in pos[:4]) + (", …" if len(pos) > 4 else "") + ")")
+    d = _durum_satiri(st, pause_text, doldu)
+    if d and not stale:
+        out.append(d)
+    dg = _ders_gunluk(cfg, day)
+    if dg is not None:
+        out.append(f"Dersler: bugün {dg[0]} uygulandı, {dg[1]} geri alındı · işlemlere etkili")
+    ml = _model_ozet(st)
+    if ml:
+        out.append(ml)
     if cfg.health_state:
         try:
             ov = json.loads(Path(cfg.health_state).read_text(encoding="utf-8")).get("last_overall")
             if isinstance(ov, str) and ov != "OK":
-                out.append("⚠️ Sağlık kontrolü: sorun var, panoya bak")
+                out.append("⚠️ Bir sistem kontrolü sorunlu; panoya bak.")
         except Exception as e:  # noqa: BLE001
             log.warning("rapor: sağlık durumu okunamadı: %s", type(e).__name__)
-    try:
-        n = len(Outbox(cfg.var_dir, lambda: now).list())
-        if n > 0:
-            out.append(f"📮 Gönderilemeyen {n} mesaj bekliyor")
-    except Exception:  # noqa: BLE001
-        pass
     if problems:
         out.append("⚠️ Bazı bilgiler okunamadı")
-    return fit_text("\n".join(out), "", 3500)
+    return TS.etiketle("\n".join(out[:TS.MAX_SATIR_OZET]))
 
 
 class SectionError(Exception):
@@ -1623,7 +1704,7 @@ def section_ledger(cfg: TelegramConfig, day: str) -> str:
     lines = [f"öğrenen: kapanan={len(closed)} PnL={pnl:+.2f}$ R={r:+.2f} kazanan/kaybeden={win}/{loss} "
              f"açık={len(opened)}"]
     if dse:
-        lim = 0.05 * float(dse)
+        lim = TS.limit_orani(cfg.config_dir, None) * float(dse)
         lines.append(f"  equity={_fnum(eq)} gün_başı={_fnum(dse)} günlük zarar={max(0.0, -pnl):.2f}$ / "
                      f"bütçe %5={lim:.2f}$")
     else:
@@ -2140,13 +2221,197 @@ def run_report(cfg: TelegramConfig, notifier: TelegramNotifier, now: datetime, s
     if decision == "atla":
         return "already" if last == day else "skipped"
     text = build_report(cfg, now, day, default_sections(cfg, now, day, pauses, ladders) if sections is None else sections)
-    if decision == "gecikmis":
-        text = "[gecikmiş] " + text
     ok = notifier.send_text(text, "INFO", f"report-{day}")
     if ok:
         try:
             atomic_write_json(lp, {"day": day})
         except Exception:  # noqa: BLE001
             pass
+        try:
+            haftalik_gonder(cfg, notifier, now)
+        except Exception as e:  # noqa: BLE001
+            log.warning("haftalik ozet: %s", type(e).__name__)
         return "sent"
     return "spooled"
+
+
+# ---------------------------------------------------------------------------
+# Haftalik ozet (ayri, kisa mesaj; pazar gunu bir kez)
+# ---------------------------------------------------------------------------
+def haftalik_metni(cfg: TelegramConfig, now: datetime) -> str:
+    """Son 7 gunun kapanan islemleri (defterden). 6 satiri asmaz."""
+    from . import ledger as L  # noqa: PLC0415
+    led = L.open_ledger(cfg.ledger_path, "learner", create=False, read_only=True, migrate=False)
+    try:
+        closed = led.list_closed_trades(since=now - timedelta(days=7), until=now + timedelta(minutes=1), limit=5000)
+    finally:
+        led.close()
+    gun = now.astimezone(TR).date()
+    bas = gun - timedelta(days=6)
+    lines = [f"🗓 Haftalık özet · {bas.day} {AY_TR[bas.month - 1]} – {gun.day} {AY_TR[gun.month - 1]}"]
+    if not closed:
+        lines.append("Bu hafta kapanan işlem yok.")
+    else:
+        pnl, _ = _sum(closed)
+        win = sum(1 for t in closed if (t.realized_pnl or 0) > 0)
+        lines.append(f"{len(closed)} işlem kapandı ({win} kâr, {len(closed) - win} zarar) · {TS.isaretli(pnl)} $")
+        en = max(closed, key=lambda t: t.realized_pnl or 0.0)
+        kt = min(closed, key=lambda t: t.realized_pnl or 0.0)
+        lines.append(f"En iyi: {TS.coin(en.pair)} {TS.isaretli(en.realized_pnl or 0.0)} $")
+        if (kt.realized_pnl or 0.0) < 0:
+            lines.append(f"En kötü: {TS.coin(kt.pair)} {TS.isaretli(kt.realized_pnl or 0.0)} $")
+    return TS.etiketle("\n".join(lines[:TS.MAX_SATIR]))
+
+
+def haftalik_gonder(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime) -> bool:
+    tr = now.astimezone(TR)
+    if tr.weekday() != 6:                       # yalniz pazar
+        return False
+    hafta = f"{tr.isocalendar()[0]}-W{tr.isocalendar()[1]:02d}"
+    kayit = TS.Kayit(Path(cfg.var_dir) / "alarm_kaydi.json", lambda: now)
+    if not kayit.gunde_bir("haftalik", hafta):
+        return False
+    return notifier.send_text(haftalik_metni(cfg, now), "INFO", f"haftalik-{hafta}")
+
+
+# ---------------------------------------------------------------------------
+# Islem acildi / kapandi + gunluk zarar uyarilari (defter + durum dosyasi okunur; yeni islem tablosu yok)
+# ---------------------------------------------------------------------------
+def _imlec_oku(p: Path) -> dict | None:
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+SAATLIK_ISLEM_MESAJI = 6          # saatte en cok bu kadar tekil islem mesaji; fazlasi saat sonunda tek ozet
+
+
+def _kol_haritasi(path: str) -> dict:
+    """trade_id -> okunur kol adi ('M1 · 1s'); ledger salt okunur. arm_id yoksa setup@trigger_tf; okunamazsa bos."""
+    import sqlite3  # noqa: PLC0415
+    out: dict = {}
+    try:
+        c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+        try:
+            for q in ("SELECT e.trade_id, COALESCE(e.arm_id, e.setup || '@' || d.trigger_tf) FROM trade_entries e "
+                      "JOIN decision_events d ON d.id = e.decision_id",
+                      "SELECT e.trade_id, e.setup || '@' || d.trigger_tf FROM trade_entries e "
+                      "JOIN decision_events d ON d.id = e.decision_id"):
+                try:
+                    for tid, arm in c.execute(q):
+                        out[int(tid)] = TS.kol_adi(arm)
+                    break
+                except sqlite3.Error:
+                    continue
+        finally:
+            c.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _saat_gonder(kayit, now: datetime, text: str, notifier: "TelegramNotifier", anahtar: str, delta: dict) -> int:
+    """Saatlik sinir: ilk 6 mesaj sessiz gider; sonrakiler `delta` ile ozete eklenir."""
+    st = kayit.durum("islem_saat")
+    n = int(st.get("n", 0))
+    if n < SAATLIK_ISLEM_MESAJI:
+        ok = notifier.send_text(text, "INFO", anahtar)
+        if ok:
+            st["n"] = n + 1
+            kayit.durum_yaz("islem_saat", st)
+        return int(bool(ok))
+    for k, v in delta.items():
+        st["tasma"] = {**st.get("tasma", {}), k: st.get("tasma", {}).get(k, 0) + v}
+    kayit.durum_yaz("islem_saat", st)
+    return 0
+
+
+def _saat_kaydi(kayit, now: datetime, notifier: "TelegramNotifier") -> int:
+    """Saat degisti ise: tasan islemler icin tek ozet yolla ve sayaci sifirla."""
+    saat = now.astimezone(TR).strftime("%Y-%m-%dT%H")
+    st = kayit.durum("islem_saat")
+    sent = 0
+    if st.get("saat") != saat:
+        t = st.get("tasma") or {}
+        if t.get("acilan", 0) + t.get("kapanan", 0) > 0:
+            if notifier.send_text(TS.saatlik_ozet(int(t.get("acilan", 0)), int(t.get("kapanan", 0)), float(t.get("net", 0.0))),
+                                  "INFO", f"islem-ozet:{st.get('saat')}"):
+                sent = 1
+        kayit.durum_yaz("islem_saat", {"saat": saat, "n": 0})
+    return sent
+
+
+def islem_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime | None = None) -> int:
+    """Yeni acilan/kapanan islemler (sessiz) ve gunluk zarar esikleri (sesli) icin mesaj yollar; yollanan sayiyi dondurur.
+    Ilk calismada mevcut islemler 'bildirilmis' sayilir. Saatte en cok 6 tekil islem mesaji; ayni dakikadaki acilislar tek
+    mesaj; fazlasi saat sonunda tek ozet. Imlec: <var>/islem_imleci.json."""
+    from . import ledger as L  # noqa: PLC0415
+    now = now or datetime.now(UTC)
+    if not cfg.ledger_path or not Path(cfg.ledger_path).exists():
+        return 0
+    imp = Path(cfg.var_dir) / "islem_imleci.json"
+    im = _imlec_oku(imp)
+    ilk = im is None
+    im = im or {"acilan": [], "kapanan": []}
+    led = L.open_ledger(cfg.ledger_path, "learner", create=False, read_only=True, migrate=False)
+    try:
+        acik = led.list_open_trades()
+        kap = led.list_closed_trades(since=now - timedelta(days=2), until=now + timedelta(minutes=1), limit=500)
+    finally:
+        led.close()
+    kollar = _kol_haritasi(cfg.ledger_path)
+    kol = lambda t: kollar.get(t.trade_id) or TS.kol_adi(t.setup)  # noqa: E731
+    acilan, kapanan = set(im.get("acilan", [])), set(im.get("kapanan", []))
+    kayit = notifier.kayit
+    sent = _saat_kaydi(kayit, now, notifier)
+    yeni_acilan: dict[str, list] = {}
+    for t in sorted(acik + kap, key=lambda t: (t.entry_ts, t.trade_id)):
+        if t.trade_id in acilan:
+            continue
+        acilan.add(t.trade_id)
+        if ilk:
+            continue
+        yeni_acilan.setdefault(t.entry_ts.strftime("%Y-%m-%dT%H:%M"), []).append(
+            (t, (kol(t), t.pair, t.side, t.entry_price, (t.qty or 0.0) * (t.entry_price or 0.0), t.planned_stop)))
+    for dk, grup in yeni_acilan.items():
+        sent += _saat_gonder(kayit, now, TS.islemler_acildi([g[1] for g in grup]), notifier,
+                             f"islem-ac:{'-'.join(str(g[0].trade_id) for g in grup)}", {"acilan": len(grup)})
+    for t in sorted(kap, key=lambda t: (t.exit_ts, t.trade_id)):
+        if t.trade_id in kapanan:
+            continue
+        kapanan.add(t.trade_id)
+        if ilk:
+            continue
+        pnl = float(t.realized_pnl or 0.0)
+        sent += _saat_gonder(kayit, now, TS.islem_kapandi(kol(t), t.pair, t.side, pnl, (t.qty or 0.0) * (t.entry_price or 0.0),
+                                                          t.exit_reason), notifier, f"islem-kapat:{t.trade_id}",
+                             {"kapanan": 1, "net": pnl})
+    try:
+        atomic_write_json(imp, {"acilan": sorted(acilan)[-500:], "kapanan": sorted(kapanan)[-500:]})
+    except Exception:  # noqa: BLE001
+        pass
+    return sent + zarar_tick(cfg, notifier, now)
+
+
+def zarar_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime) -> int:
+    """Gunluk zarar: sinirin %80'inde gunde bir uyari; sinira ulasinca gunde bir 'limit doldu'."""
+    try:
+        st = json.loads(Path(cfg.status_path).read_text(encoding="utf-8"))
+        eq, dse = st.get("equity"), st.get("day_start_equity")
+    except Exception:  # noqa: BLE001
+        return 0
+    if not (_num_ok(eq) and _num_ok(dse) and dse > 0):
+        return 0
+    zarar, lim = max(0.0, dse - eq), TS.limit_orani(cfg.config_dir, st.get("mode")) * dse
+    gun = now.astimezone(TR).date().isoformat()
+    kayit = notifier.kayit
+    sent = 0
+    if zarar >= lim:
+        if kayit.gunde_bir("limit-doldu", gun):
+            sent += int(bool(notifier.send_text(TS.limit_doldu(zarar, lim), "WARN", f"limit-doldu:{gun}")))
+    elif zarar >= TS.UYARI_ORANI * lim:
+        if kayit.gunde_bir("limit-uyari", gun):
+            sent += int(bool(notifier.send_text(TS.limit_uyari(zarar, lim), "WARN", f"limit-uyari:{gun}")))
+    return sent
