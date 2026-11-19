@@ -44,13 +44,17 @@ def _covered(path, allowed):
 
 
 # ------------------------------------------------------------------ yapilandirma anahtarlari
-def test_engine_configs_load_for_both_bots_and_pairs_agree_everywhere():
+def test_engine_config_loads_and_twin_is_rejected_and_pairs_agree_everywhere():
     from trader_core import veto
-    learner, twin = _cfg("learner"), _cfg("twin")
-    assert learner.bot == "learner" and twin.bot == "twin"
-    assert learner.mode == twin.mode == "paper" and learner.veto_mode == twin.veto_mode == "required"
-    assert learner.ml_mode == twin.ml_mode == "off" and learner.ml_model_path is None      # ml_mode=off: ML bagimliligi yok
-    assert len(learner.pairs) == 10 and learner.pairs == twin.pairs
+    from trader_engine.errors import ConfigError
+    learner = _cfg("learner")
+    assert learner.bot == "learner" and learner.mode == "paper" and learner.veto_mode == "required"
+    assert learner.ml_mode == "off" and learner.ml_model_path is None                        # ml_mode=off: ML bagimliligi yok
+    assert len(learner.pairs) == 10
+    assert not (ROOT / "config/engine.twin.json").exists()
+    with pytest.raises(ConfigError):                                                         # DD-12: ikiz reddedilir
+        from trader_engine.config import load_cli_config
+        load_cli_config(ROOT / "config", "twin")
     vcfg = veto.load_config(ROOT / "config/veto.json")
     vp = veto.load_pairs(vcfg, ROOT)
     assert sorted(veto.pair_key(p) for p in learner.pairs) == vp, "veto pair listesi (config/engine.base.json) motorun ciftleriyle ayni olmali"
@@ -68,19 +72,14 @@ def test_other_configs_load():
     assert lc.twin_enabled is True
 
 
-def test_twin_is_isolated_from_learner_but_shares_feed():
-    l, t = _cfg("learner"), _cfg("twin")
-    assert t.start_delay_s > 0 and l.start_delay_s == 0                      # ikiz birkac sn gec baslar
-    assert t.market_db == l.market_db                                         # TEK feed (tek yazar), ikisi salt okur
-    assert len({l.ledger_path, t.ledger_path}) == 2 and len({l.state_path, t.state_path}) == 2
-    assert len({l.status_path, t.status_path}) == 2
-    for a, b in ((l.ledger_path, t.ledger_path), (l.state_path, t.state_path), (l.status_path, t.status_path)):
-        assert posixpath.dirname(a) != posixpath.dirname(b)                   # ayri var alt dizini
-    assert l.kill_file == t.kill_file                                         # kill ortak: ikisi de durur
+def test_learner_alone_shares_feed_and_twin_not_installed():
+    l = _cfg("learner")
+    assert l.start_delay_s == 0
+    assert l.ledger_path == "var/learner/ledger.sqlite" and l.status_path == "var/learner/status.json"
     eng = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
     assert "--bot %i" in eng and "trader-feed.service" in eng                 # sablon: tek feed'e bagli
     inst = install_text()
-    assert "enable_now trader-engine@twin.service" in inst and "--with-twin" in inst
+    assert "enable_now trader-engine@twin.service" not in inst and "--with-twin" not in inst      # DD-12
     assert inst.index("enable_now trader-feed.service") < inst.index("enable_now trader-engine@learner.service")
 
 
@@ -99,7 +98,7 @@ def test_engine_var_paths_match_health_panel_telegram(envs, units):
     assert h["MARKET_DB"] == _abs(l.market_db)
     assert h["ENGINE_CONFIG_DIR"] == f"{T}/config"
     pc = load_config(ROOT / "config/panel.json")
-    for bot, st, lg in (("learner", pc.status_path, pc.ledger_path), ("twin", pc.twin_status_path, pc.twin_ledger_path)):
+    for bot, st, lg in (("learner", pc.status_path, pc.ledger_path),):
         c = _cfg(bot)
         assert st.replace(str(ROOT), T) == _abs(c.status_path), bot
         assert lg.replace(str(ROOT), T) == _abs(c.ledger_path), bot
@@ -107,7 +106,7 @@ def test_engine_var_paths_match_health_panel_telegram(envs, units):
     spec = importlib.util.spec_from_file_location("health_run_mod", ROOT / "scripts/health_run.py")
     hr = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(hr)
-    for bot in ("learner", "twin"):
+    for bot in ("learner",):
         c = _cfg(bot)
         assert hr.status_path(var, bot) == _abs(c.status_path) and hr.ledger_path(var, bot) == _abs(c.ledger_path)
 
@@ -120,7 +119,7 @@ def test_telegram_engine_status_path_points_to_learner_status(envs):
 def test_kill_file_same_path_in_engine_telegram_panel(envs, units):
     from trader_panel.data import load_config
     eng = _abs(_cfg("learner").kill_file)
-    assert eng == _abs(_cfg("twin").kill_file) == f"{T}/shared/KILL"
+    assert eng == f"{T}/shared/KILL"
     assert envs["trader-telegram.env"]["KILL_FILE"] == eng
     assert load_config(ROOT / "config/panel.json").kill_file.replace(str(ROOT), T) == eng
     kdir = posixpath.dirname(eng)
@@ -187,7 +186,7 @@ def test_OPEN_lesson_and_telegram_ledger_path_is_the_engine_ledger(envs):
     assert envs["trader-lesson.env"]["LEDGER_PATH"] == want
     assert envs["trader-telegram.env"]["LEDGER_PATH"] == want
     lc = json.loads((ROOT / "config/lesson.json").read_text())
-    assert _abs(lc["ledger_path"]) == want and _abs(lc["twin_ledger_path"]) == _abs(_cfg("twin").ledger_path)
+    assert _abs(lc["ledger_path"]) == want
 
 
 def test_OPEN_lesson_and_telegram_can_create_sqlite_sidecars(units):
@@ -212,7 +211,7 @@ def test_health_unit_can_notify_telegram_and_write_outbox(envs, units):
 
 def test_health_env_has_bots_and_veto_freshness(envs):
     h = envs["trader-health.env"]
-    assert h["HEALTH_BOTS"] in ("learner,twin", "learner")
+    assert h["HEALTH_BOTS"] == "learner"
     assert h["VETO_FILE"] == f"{T}/shared/veto/veto.json"
     assert h["VETO_MAX_AGE_S"] == "5400"
     # veto.json'daki gercek cikis yolu ile ayni dosya
@@ -222,10 +221,8 @@ def test_health_env_has_bots_and_veto_freshness(envs):
 def test_lesson_and_telegram_sandbox_ledger_access(units):
     for u in ("trader-lesson.service", "trader-telegram.service"):
         assert f"-{T}/var/learner" in _rw(units, u), u
-    assert f"-{T}/var/twin" in _ro(units, "trader-lesson.service")
-    # telegram: /durdur ikiz icin de var/twin/pause_audit.jsonl yazar (WP-B6)
-    assert f"-{T}/var/twin" in _rw(units, "trader-telegram.service")
-    assert f"-{T}/var/twin" in _ro(units, "trader-telegram-report.service")
+    for u, paths in (("trader-lesson.service", _ro), ("trader-telegram.service", _rw), ("trader-telegram-report.service", _ro)):
+        assert f"-{T}/var/twin" not in paths(units, u), u                                 # DD-12: ikiz yollari yok
     assert _covered(f"{T}/var", _rw(units, "trader-backup.service"))                  # OPEN-10
 
 
@@ -241,11 +238,10 @@ def test_telegram_pause_env_and_unit_match_engine(envs, units, tmp_path):
     l = _cfg("learner")
     assert e["PAUSE_FILE"] == _abs(l.pause_file) == f"{T}/shared/PAUSE"
     assert e["ENGINE_VAR_DIR"] == _abs(l.var_dir) == f"{T}/var"
-    assert e["PAUSE_BOTS"] == "learner,twin"
+    assert e["PAUSE_BOTS"] == "learner"
     assert any(k == "WorkingDirectory" for k, _ in unit_kv(units["trader-telegram.service"]))
     assert _covered(posixpath.dirname(e["PAUSE_FILE"]), _rw(units, "trader-telegram.service"))
     assert _covered(f"{T}/var/learner", _rw(units, "trader-telegram.service"))
-    assert _covered(f"{T}/var/twin", _rw(units, "trader-telegram.service"))
     from readiness_support import render_env_files as rend
     (tmp_path / "nt").mkdir()
-    assert rend(tmp_path / "nt", with_twin=0)["trader-telegram.env"]["PAUSE_BOTS"] == "learner"
+    assert rend(tmp_path / "nt")["trader-telegram.env"]["PAUSE_BOTS"] == "learner"

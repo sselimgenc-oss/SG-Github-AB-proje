@@ -14,8 +14,8 @@ from panel_support import Env, ROOT, free_port, mkledger
 
 UTC = timezone.utc
 RSS_MAX_KB = 60 * 1024
-PATHS = ["/api/status", "/api/ledger?bot=learner", "/api/ledger?bot=twin", "/api/curve?bot=learner", "/api/risk?bot=learner",
-         "/api/compare", "/api/budget", "/api/lesson", "/api/health", "/api/system", "/"]
+PATHS = ["/api/status", "/api/ledger?bot=learner", "/api/curve?bot=learner", "/api/risk?bot=learner",
+         "/api/budget", "/api/lesson", "/api/health", "/api/system", "/"]
 
 
 @pytest.mark.skipif(not os.path.exists("/proc/self/status"), reason="/proc yok")

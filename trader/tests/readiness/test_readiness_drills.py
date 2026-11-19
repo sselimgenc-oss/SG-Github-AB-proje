@@ -111,7 +111,7 @@ def _health_mod(name):
     return hr
 
 
-def _bring_up(tmp_path, bots=("learner", "twin")):
+def _bring_up(tmp_path, bots=("learner",)):
     """Bos sunucu -> feed (kurallar+backfill) -> init-ledger -> motor kapisi -> status.json. Doner: (cfgd, clock, sess, engines)."""
     from trader_engine import cli
     cfgd = write_config(tmp_path)
@@ -144,7 +144,7 @@ def _health_env(tmp_path, cfgd):
 
 
 def test_rehearsal_empty_server_feed_rules_gate_status_health(tmp_path, capsys):
-    """Bos sunucu: feed baslat+backfill -> kurallar 10/10 -> init-ledger -> motor kapisi gecer -> status.json -> health (iki bot) OK/WARN."""
+    """Bos sunucu: feed baslat+backfill -> kurallar 10/10 -> init-ledger -> motor kapisi gecer -> status.json -> health (ogrenen) OK/WARN."""
     from trader_core import health as H
     cfgd, clock, _, _e = _bring_up(tmp_path)
     db = tmp_path / "var" / "market.sqlite"
@@ -154,7 +154,7 @@ def test_rehearsal_empty_server_feed_rules_gate_status_health(tmp_path, capsys):
         n = c.execute("select count(distinct pair) from bars where kind=? and tf='1m'", (kind,)).fetchone()[0]
         assert n == 10, kind
     c.close()
-    for bot in ("learner", "twin"):
+    for bot in ("learner",):
         st = json.loads((tmp_path / "var" / bot / "status.json").read_text())
         assert st["counters"]["rules_missing"] == 0 and st["counters"]["data_stale"] == 0
         assert st["bot"] == bot and st["mode"] == "paper"
@@ -439,7 +439,7 @@ def test_backup_of_running_engines_ledgers_is_ok_and_restorable(tmp_path):
     bm = _backup_mod()
     code, m = bm.run_backup(str(tmp_path / "bk"), str(tmp_path / "var"), 14)
     assert code == 0 and m["ok"] is True
-    assert set(m["files"]) == {"ledger_learner.sqlite", "ledger_twin.sqlite", "state_learner.sqlite", "state_twin.sqlite"}
+    assert set(m["files"]) == {"ledger_learner.sqlite", "state_learner.sqlite"}
     day = next((tmp_path / "bk").iterdir())
     for n in m["files"]:
         c = sqlite3.connect(day / n)
@@ -484,12 +484,12 @@ def test_panel_reads_status_ledger_health_and_kill_file_is_shared(tmp_path):
     pd = PanelData(load_config(cfgd / "panel.json"), clock=clock.now)
     st = pd.status()
     assert st["ok"] and st["kill_file_exists"] is False
-    assert {b: v["state"] for b, v in st["bots"].items()} == {"learner": "live", "twin": "live"}
-    assert pd.ledger("learner", None)["ok"] and pd.ledger("twin", None)["ok"]
+    assert {b: v["state"] for b, v in st["bots"].items()} == {"learner": "live"}
+    assert pd.ledger("learner", None)["ok"] and pd.ledger("twin", None)["ok"] is False   # DD-12: ikiz yok
     assert pd.health()["ok"]
     # KILL: motorun kill_file'i ile panelinki ayni; dosya olusunca ikisi de gorur
     assert engines["learner"].cfg.kill_file == pj["kill_file"] == str(tmp_path / "shared" / "KILL")
     (tmp_path / "shared").mkdir(exist_ok=True)
     engines["learner"].kill.set("test", "hazirlik")
-    assert engines["twin"].kill.active() and engines["learner"].kill.active()
+    assert engines["learner"].kill.active()
     assert PanelData(load_config(cfgd / "panel.json"), clock=clock.now).status()["kill_file_exists"] is True

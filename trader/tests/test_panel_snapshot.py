@@ -33,7 +33,7 @@ def test_stamp_present_and_tsi(html):
     snap = json.loads(m.group(1))
     assert snap["generated_at"] == "2026-11-16T18:00:00.000Z"
     assert snap["data"]["/api/status"]["ok"] is True
-    for b in ("learner", "twin"):
+    for b in ("learner",):
         for k in ("ledger", "curve", "risk"):
             assert f"/api/{k}?bot={b}" in snap["data"]
     assert snap["data"]["/api/budget"]["ok"] is True

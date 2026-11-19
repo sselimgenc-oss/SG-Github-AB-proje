@@ -274,17 +274,17 @@ def test_cli_holdout_rows_and_readonly(tmp_path, capsys, ver):
 def test_cli_errors_and_empty(tmp_path, capsys):
     rc, j = run_cli(["--bot", "learner", "--ledger", str(tmp_path / "yok.sqlite"), "--now", NOW, "--out", str(tmp_path / "o")], capsys)
     assert rc == 2 and j["code"] == "ledger_missing" and not (tmp_path / "yok.sqlite").exists()
-    for v in (1, 5):   # sema 4 (WP-3) artik kabul; reddedilen ilk yeni surum 5
+    for v in (1, 6):   # sema 5 (DD-12 WP-02) artik kabul; reddedilen ilk yeni surum 6
         led = tmp_path / f"l{v}.sqlite"
         make_ledger(led, v)
-        rc, j = run_cli(["--bot", "twin", "--ledger", str(led), "--now", NOW, "--out", str(tmp_path / "o")], capsys)
+        rc, j = run_cli(["--bot", "learner", "--ledger", str(led), "--now", NOW, "--out", str(tmp_path / "o")], capsys)
         assert rc == 2 and j["code"] == "ledger_schema"
     led = tmp_path / "e.sqlite"
     make_ledger(led, 3)
-    rc, j = run_cli(["--bot", "twin", "--ledger", str(led), "--cf", str(tmp_path / "c"), "--now", NOW, "--out", str(tmp_path / "o2"),
+    rc, j = run_cli(["--bot", "learner", "--ledger", str(led), "--cf", str(tmp_path / "c"), "--now", NOW, "--out", str(tmp_path / "o2"),
                      "--dry-run"], capsys)
     assert rc == 0 and j["status"] == "empty" and not (tmp_path / "o2").exists()
-    rc, j = run_cli(["--bot", "twin", "--run-dir", "x", "--now", NOW], capsys)
+    rc, j = run_cli(["--bot", "learner", "--run-dir", "x", "--now", NOW], capsys)
     assert rc == 2
     rc, j = run_cli(["--run-dir", "x", "--telegram", "--now", NOW], capsys)
     assert rc == 2

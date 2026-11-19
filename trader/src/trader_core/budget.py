@@ -27,15 +27,15 @@ from typing import Any, Callable, Literal, Sequence
 
 log = logging.getLogger("trader_core.budget")
 
-Service = Literal["veto", "lesson"]
-SERVICES: tuple[str, ...] = ("veto", "lesson")
+Service = Literal["haftalik_ozet", "lesson"]
+SERVICES: tuple[str, ...] = ("haftalik_ozet", "lesson")
 DEFAULT_PATH = "config/budget.json"
 SCHEMA_VERSION = 1
 MAX_TOTAL_INPUT_TOKENS = 100_000
 PRICE_KEYS = ("input", "output", "cache_write_5m", "cache_write_1h", "cache_read")
 
 HARD_LIMITS: dict[str, Any] = {
-    "daily_cap_usd": {"veto": 0.25, "lesson": 0.10},
+    "daily_cap_usd": {"haftalik_ozet": 0.25, "lesson": 0.10},
     "monthly_cap_usd": 10.0,
     "warn_fraction_max": 0.70,
     "price_safety_factor_min": 1.0,
@@ -126,14 +126,14 @@ _DEFAULT_PRICES = {
 
 def _default_retry() -> dict:
     return {"max_retries": 3, "base_s": 2.0, "factor": 2.0, "max_sleep_s": 20.0, "jitter": 0.2,
-            "deadline_s": {"veto": 60, "lesson": 300}}
+            "deadline_s": {"haftalik_ozet": 300, "lesson": 300}}
 
 
 @dataclass(frozen=True)
 class BudgetConfig:
     version: int = 1
     db_path: str = "user_data/budget.sqlite"
-    daily_cap_usd: dict = field(default_factory=lambda: {"veto": 0.25, "lesson": 0.10})
+    daily_cap_usd: dict = field(default_factory=lambda: {"haftalik_ozet": 0.25, "lesson": 0.10})
     monthly_cap_usd: float = 10.0
     monthly_warn_usd: float = 5.0
     warn_fraction: float = 0.70
@@ -143,9 +143,9 @@ class BudgetConfig:
     price_safety_factor: float = 1.0
     prices_verified_on: str | None = None
     batch_multiplier: float = 0.5
-    api_key_env: dict = field(default_factory=lambda: {"veto": "ANTHROPIC_API_KEY_VETO",
+    api_key_env: dict = field(default_factory=lambda: {"haftalik_ozet": "ANTHROPIC_API_KEY_HAFTALIK_OZET",
                                                        "lesson": "ANTHROPIC_API_KEY_LESSON"})
-    reservation_ttl_s: dict = field(default_factory=lambda: {"veto": 600, "lesson": 108000})
+    reservation_ttl_s: dict = field(default_factory=lambda: {"haftalik_ozet": 3600, "lesson": 108000})
     retry: dict = field(default_factory=_default_retry)
     prices_usd_per_mtok: dict = field(default_factory=lambda: copy.deepcopy(_DEFAULT_PRICES))
 
@@ -165,7 +165,7 @@ class BudgetConfig:
         for name in ("daily_cap_usd", "api_key_env", "reservation_ttl_s"):
             v = getattr(self, name)
             if not isinstance(v, dict) or set(v) != set(SERVICES):
-                raise E(f"{name}: veto ve lesson anahtarlari gerekli")
+                raise E(f"{name}: haftalik_ozet ve lesson anahtarlari gerekli")
         for s in SERVICES:
             cap = _dec(self.daily_cap_usd[s], f"daily_cap_usd.{s}")
             if cap > Decimal(str(HARD_LIMITS["daily_cap_usd"][s])):
@@ -207,7 +207,7 @@ class BudgetConfig:
         if _dec(r["jitter"], "retry.jitter") > 1:
             raise E("retry.jitter <= 1 olmali")
         if not isinstance(r["deadline_s"], dict) or set(r["deadline_s"]) != set(SERVICES):
-            raise E("retry.deadline_s veto ve lesson gerektirir")
+            raise E("retry.deadline_s haftalik_ozet ve lesson gerektirir")
         for s in SERVICES:
             _dec(r["deadline_s"][s], f"retry.deadline_s.{s}", allow_zero=False)
         p = self.prices_usd_per_mtok
@@ -390,7 +390,7 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, ev_key T
   acked INTEGER NOT NULL DEFAULT 0);
 """
 
-_SVC_TR = {"veto": "veto", "lesson": "ders"}
+_SVC_TR = {"haftalik_ozet": "haftalık özet", "lesson": "ders"}
 
 
 # --------------------------------------------------------------------------- guard
@@ -601,7 +601,7 @@ class BudgetGuard:
 
     def _stopped_event(self, conn, now, service, day, used) -> None:
         cap = self.config.cap_micro(service)
-        tail = "yeni giriş açılmayacak" if service == "veto" else "bugünkü ders atlandı"
+        tail = "haftalık özet atlandı" if service == "haftalik_ozet" else "bugünkü ders atlandı"
         self._event(conn, f"daily_stopped_100:{service}:{day}", "daily_stopped_100", service, day,
                     now, f"{_SVC_TR[service]} günlük bütçesi doldu: {tail} "
                     f"({used / 1e6:.3f} / {cap / 1e6:g} $)",
@@ -1057,7 +1057,7 @@ def ack_events(event_ids: Sequence[int]) -> None:
     return _get_guard().ack_events(event_ids)
 
 
-_DEFAULT_KEY_ENV = {"veto": "ANTHROPIC_API_KEY_VETO", "lesson": "ANTHROPIC_API_KEY_LESSON"}
+_DEFAULT_KEY_ENV = {"haftalik_ozet": "ANTHROPIC_API_KEY_HAFTALIK_OZET", "lesson": "ANTHROPIC_API_KEY_LESSON"}
 
 
 def api_key_env(service: Service) -> str:

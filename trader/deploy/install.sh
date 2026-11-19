@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Trader sunucu kurulumu (Ubuntu 22.04+/24.04, root olarak, etkilesimsiz, tekrar calistirilabilir).
-# Kullanim: COMMIT=<40 karakterlik surum kodu> bash install.sh [--no-twin] [--live | --no-live]
+# Kullanim: COMMIT=<40 karakterlik surum kodu> bash install.sh [--live | --no-live]
 #   COMMIT zorunludur (ortam degiskeni; yoksa /etc/trader-release icindeki COMMIT=). Kisa kod, dal ya da etiket adi KABUL EDILMEZ.
-#   Ikiz (twin) VARSAYILAN ACIK; --with-twin geriye uyumluluk icin kabul edilir, etkisizdir.
+#   Ikiz (twin) DD-12'de KALDIRILDI: ikiz birimleri durdurulur/devre disi birakilir, var/twin silinmez var/arsiv/twin-<tarih>/ altina tasinir.
 #   --live: CANLI motor birimini kurar (varsayilan KURULMAZ; kurulsa da KENDILIGINDEN BASLAMAZ). --no-live: canli birimi kaldirir.
 # Yalniz "trader" kullanicisina ve trader-* systemd birimlerine dokunur; baska projeye, guvenlik duvarina, acik porta dokunmaz.
 # Root'un calistirdigi her sey (bu betik, birim sablonlari, env ornekleri, root birimlerinin betikleri) root sahipli
@@ -25,17 +25,14 @@ SWAP_SIZE="4G"
 UNIT_DIR="/etc/systemd/system"
 ROOT_DIR="/usr/local/lib/trader-root"      # root sahipli kod/venv/klon agaci (/opt/trader-root KULLANILMAZ: render() sed'i onu bozar)
 RELEASE_FILE="/etc/trader-release"
-WITH_TWIN=1
 LIVE_FLAG=0
 NO_LIVE=0
 
 for arg in "$@"; do
   case "$arg" in
-    --with-twin) WITH_TWIN=1 ;;   # geriye uyumluluk: varsayilan zaten acik
-    --no-twin) WITH_TWIN=0 ;;
     --live) LIVE_FLAG=1 ;;
     --no-live) NO_LIVE=1 ;;
-    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--no-twin] [--live | --no-live])" >&2; exit 2 ;;
+    *) echo "Bilinmeyen secenek: $arg (kullanim: install.sh [--live | --no-live])" >&2; exit 2 ;;
   esac
 done
 if [ "$LIVE_FLAG" -eq 1 ] && [ "$NO_LIVE" -eq 1 ]; then
@@ -412,14 +409,14 @@ if ! grep -q '^DRIFT_CHECK_ENABLED=' /etc/trader-health.env; then
   echo "DRIFT_CHECK_ENABLED=1" >> /etc/trader-health.env
 fi
 sed -i "s#^DRIFT_CHECK_ENABLED=\$#DRIFT_CHECK_ENABLED=1#" /etc/trader-health.env
-# beklenen motorlar (ikiz varsayilan acik); her calistirmada guncellenir: --no-twin ile learner
-if [ "$WITH_TWIN" -eq 1 ]; then HEALTH_BOTS_VAL="learner,twin"; else HEALTH_BOTS_VAL="learner"; fi
+# beklenen motorlar (DD-12: ikiz yok, yalniz learner); her calistirmada guncellenir
+HEALTH_BOTS_VAL="learner"
 if grep -q '^HEALTH_BOTS=' /etc/trader-health.env; then
   sed -i "s#^HEALTH_BOTS=.*#HEALTH_BOTS=${HEALTH_BOTS_VAL}#" /etc/trader-health.env
 else
   echo "HEALTH_BOTS=${HEALTH_BOTS_VAL}" >> /etc/trader-health.env
 fi
-# /durdur her beklenen botun PAUSE dosyasina yazar (11 §9.5): --no-twin ile yalniz learner (olmayan ikize dosya acilmaz)
+# /durdur her beklenen botun PAUSE dosyasina yazar (11 §9.5): yalniz learner (DD-12: ikiz yok)
 if grep -q '^PAUSE_BOTS=' /etc/trader-telegram.env; then
   sed -i "s#^PAUSE_BOTS=.*#PAUSE_BOTS=${HEALTH_BOTS_VAL}#" /etc/trader-telegram.env
 else
@@ -460,17 +457,8 @@ for f in "$REL_DIR"/deploy/trader-*.service "$REL_DIR"/deploy/trader-*.timer; do
   if [ "$(basename "$f")" = "trader-engine-live.service" ] && [ "$LIVE" -ne 1 ]; then continue; fi
   render "$f" "${UNIT_DIR}/$(basename "$f")"
 done
-# ML golge deneyi: yalniz ogrenen kagit birimine drop-in (twin/testnet/live degismez).
-# ISTEGE BAGLI (TRADER_ML_SHADOW=1): ogrenen defteri strateji etiketi price_action_v1 iken drop-in motoru
-# strategy_mismatch ile durdurur; etiket gocu hazir olana kadar varsayilan KAPALI ve eski drop-in kaldirilir.
-if [ "${TRADER_ML_SHADOW:-0}" != "1" ]; then
-  rm -f "${UNIT_DIR}/trader-engine@learner.service.d/ml-shadow.conf"
-elif [ -d "$REL_DIR/deploy/trader-engine@learner.service.d" ]; then
-  mkdir -p "${UNIT_DIR}/trader-engine@learner.service.d"
-  for f in "$REL_DIR"/deploy/trader-engine@learner.service.d/*.conf; do
-    render "$f" "${UNIT_DIR}/trader-engine@learner.service.d/$(basename "$f")"
-  done
-fi
+# DD-12: eski ML golge drop-in'i (paper-ml katmani) artik yok; sunucuda kalan drop-in dizini kaldirilir
+rm -rf "${UNIT_DIR}/trader-engine@learner.service.d"
 if [ "$NO_LIVE" -eq 1 ]; then
   say "Canli kip kapatiliyor (--no-live)"
   systemctl disable --now trader-engine-env-retry@live.timer >/dev/null 2>&1 || true
@@ -496,11 +484,22 @@ fi
 
 # ---- 10. servisleri baslat --------------------------------------------------------
 say "Servisler"
+# DD-12 WP-07: ikiz kaldirma. Ikiz birimleri durdurulur ve devre disi birakilir; var/twin SILINMEZ, var/arsiv/twin-<tarih>/ altina tasinir (tekrar calistirmada no-op).
+for u in trader-engine@twin.service trader-engine-retry@twin.timer trader-counterfactual@twin.timer trader-drift@twin.timer; do
+  systemctl disable --now "$u" >/dev/null 2>&1 || true
+done
+if [ -d "$TRADER_DIR/var/twin" ]; then
+  safe_tree_path "$TRADER_DIR/var/twin" "$TRADER_DIR/var/arsiv"
+  TWIN_ARCH="$TRADER_DIR/var/arsiv/twin-$(date -u +%Y%m%d)"
+  install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/arsiv"
+  [ -e "$TWIN_ARCH" ] && TWIN_ARCH="${TWIN_ARCH}-$(date -u +%H%M%S)"
+  mv "$TRADER_DIR/var/twin" "$TWIN_ARCH" && echo "Ikiz verisi arsive tasindi (silinmedi): $TWIN_ARCH"
+fi
 LIVE_WARN=""
 # kod degistiyse yeniden baslatilacak, su an CALISAN motor birimleri (enable_now'dan once alinir; yeni acilanlar zaten yeni kodla baslar)
 ACTIVE_ENGINES=""
 if [ "$CODE_CHANGED" -eq 1 ]; then
-  ACTIVE_ENGINES="$(systemctl list-units 'trader-engine@*.service' 'trader-engine-testnet.service' 'trader-engine-live.service' --state=active --no-legend --plain 2>/dev/null | awk '{print $1}' || true)"
+  ACTIVE_ENGINES="$(systemctl list-units 'trader-engine@*.service' 'trader-engine-testnet.service' 'trader-engine-live.service' --state=active --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -v '@twin\.' || true)"
 fi
 enable_now() { systemctl enable --now "$1" >/dev/null 2>&1 && echo "Etkin: $1" || echo "UYARI: $1 baslatilamadi (systemctl status $1)"; }
 
@@ -514,10 +513,8 @@ if [ "$LIVE" -eq 1 ]; then
 else
   enable_now trader-engine@learner.service
 fi
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine@twin.service; else echo "Ikiz (twin) kapali (--no-twin): acmak icin 'COMMIT=<KOD> bash $ROOT_DIR/current/deploy/install.sh' (varsayilan acik)."; fi
 enable_now trader-health.timer
 if [ "$LIVE" -eq 0 ]; then enable_now trader-engine-retry@learner.timer; fi   # acilis kapisi (cikis 7) yeniden deneme: besleme saglikliyse, saatte en fazla 6
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-engine-retry@twin.timer; fi
 enable_now trader-backup.timer
 enable_now trader-oi.timer   # ML-G7: OI/long-short orani toplayici (5 dk; salt okunur Binance uclari, anahtar yok); var/market.sqlite positioning_5m
 drift_first_run() { # var/<bot> dizinini hazirla ve ilk olcumu hemen al (yoksa saglik 20:20'ye kadar yanlis drift_missing der)
@@ -527,7 +524,6 @@ drift_first_run() { # var/<bot> dizinini hazirla ve ilk olcumu hemen al (yoksa s
 }
 enable_now trader-drift@learner.timer; drift_first_run learner   # gunluk sapma izleyicisi (WP-2; 20:20 TSI, salt okunur; var/<bot>/drift.json tek yazar; Telegram'a mesaj atmaz)
 enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23:10 UTC); defter/market salt okunur, var/<bot>/counterfactual.sqlite tek yazar
-if [ "$WITH_TWIN" -eq 1 ]; then enable_now trader-counterfactual@twin.timer; enable_now trader-drift@twin.timer; drift_first_run twin; fi
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
 # WP-3: motor (yazar) yeni kodla yeniden baslar => defter sema gocu motor icinde, premigrate yedegiyle olur

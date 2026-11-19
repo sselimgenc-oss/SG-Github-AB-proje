@@ -205,9 +205,9 @@ class TelegramClient:
 # ---------------------------------------------------------------------------
 class TelegramConfig:
     def __init__(self, token: str, chat_id: int, var_dir: str, kill_file: str = "", status_path: str = "",
-                 lesson_run: str = "", health_state: str = "", ledger_path: str = "", twin_ledger_path: str = "",
+                 lesson_run: str = "", health_state: str = "", ledger_path: str = "",
                  budget_config: str = "", lesson_store: str = ""):
-        self.ledger_path, self.twin_ledger_path = ledger_path, twin_ledger_path
+        self.ledger_path = ledger_path
         self.budget_config, self.lesson_store = budget_config, lesson_store
         self.token, self.chat_id, self.var_dir = token, chat_id, var_dir
         self.kill_file, self.status_path = kill_file, status_path
@@ -232,7 +232,6 @@ class TelegramConfig:
                    env.get("LESSON_RUN_PATH") or str(here / "scripts" / "lesson_run.py"),
                    env.get("HEALTH_STATE_PATH", ""),
                    _abs_path(here, env.get("LEDGER_PATH") or "user_data/ledger_learner.sqlite"),
-                   _abs_path(here, env.get("TWIN_LEDGER_PATH") or "user_data/ledger_twin.sqlite"),
                    _abs_path(here, env.get("BUDGET_CONFIG_PATH") or "config/budget.json"),
                    _abs_path(here, env.get("LESSON_STORE_PATH") or "user_data/lesson.sqlite"))
 
@@ -1303,7 +1302,7 @@ def report_decision(now_utc: datetime, last_day: str | None) -> tuple[str, str]:
 AYRAC = "━━━━━━━━━━━━━━"
 KIP_TR = {"paper": "deneme parası", "testnet": "test ağı", "live": "GERÇEK PARA"}
 AY_TR = ("Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık")
-BOT_TR = {"learner": "ana bot", "twin": "ikiz bot"}
+BOT_TR = {"learner": "ana bot"}
 GUNLUK_ZARAR_ORANI = 0.05                    # günlük zarar bütçesi (risk kilidiyle aynı %5)
 BUTCE_GOSTER_ORANI = 0.5                     # yapay zekâ bütçesi satırı: sınırın en az yarısı harcanınca görünür
 
@@ -1587,12 +1586,6 @@ def section_ledger(cfg: TelegramConfig, day: str) -> str:
                      f"bütçe %5={lim:.2f}$")
     else:
         lines.append(f"  equity={_fnum(eq)} gün_başı=? günlük zarar={max(0.0, -pnl):.2f}$ / bütçe %5=?")
-    try:
-        tc, _to = _ledger_day(cfg.twin_ledger_path, "twin", day)
-        tp, tr = _sum(tc)
-        lines.append(f"  ikiz: kapanan={len(tc)} PnL={tp:+.2f}$ R={tr:+.2f} (fark PnL {pnl - tp:+.2f}$)")
-    except SectionError as e:
-        lines.append(f"  ikiz: okunamadı: {e.code}")
     return "\n" + "\n".join(lines)
 
 
@@ -1704,7 +1697,7 @@ def section_counterfactual(cfg: TelegramConfig, now: datetime) -> str:
 
 
 def rapor_defter(cfg: TelegramConfig, day: str) -> str:
-    """Rapor satırları: bugünün sonucu, kasa, kapanan işlemler (+ikiz botta işlem varsa tek satır)."""
+    """Rapor satırları: bugünün sonucu, kasa, kapanan işlemler."""
     closed, _opened = _ledger_day(cfg.ledger_path, "learner", day)
     pnl, r = _sum(closed)
     win = sum(1 for t in closed if (t.realized_pnl or 0) > 0)
@@ -1721,13 +1714,6 @@ def rapor_defter(cfg: TelegramConfig, day: str) -> str:
         lines.append(k)
     lines.append(f"🧾 Bugün kapanan işlem: {len(closed)} · kazanan {win} / kaybeden {loss}"
                  + (f" · {tr_isaretli(r)} R" if closed else ""))
-    try:
-        tc, _to = _ledger_day(cfg.twin_ledger_path, "twin", day)
-        if tc:
-            tp, tr = _sum(tc)
-            lines.append(f"👥 İkiz bot: {len(tc)} işlem kapandı · {tr_isaretli(tp)} $ · {tr_isaretli(tr)} R")
-    except SectionError as e:
-        log.info("rapor: ikiz defter okunamadı: %s", e.code)
     return "\n".join(lines)
 
 
@@ -1868,7 +1854,7 @@ def ml_line(cfg: TelegramConfig, ml: Any, now: datetime, bot: str = "learner") -
 
 
 def rapor_model(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, LadderFiles] | None = None) -> str:
-    """Bot başına tek satır; ikiz bot için sonuna ' (ikiz bot)'. Motor durumu okunamıyorsa boş (genel satırı build_report yazar)."""
+    """Bot başına tek satır. Motor durumu okunamıyorsa boş (genel satırı build_report yazar)."""
     kaynak: dict[str, str] = {"learner": cfg.status_path}
     for b, lf in (ladders or {}).items():
         if lf.status_path and lf.status_path != cfg.status_path and b not in kaynak:
@@ -1883,8 +1869,7 @@ def rapor_model(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, Ladder
             raise SectionError("durum")
         if not isinstance(st, Mapping):
             raise SectionError("durum")
-        satir = ml_line(cfg, st.get("ml"), now, bot)
-        out.append(satir + (" (ikiz bot)" if bot == "twin" else ""))
+        out.append(ml_line(cfg, st.get("ml"), now, bot))
     return "\n".join(out)
 
 
@@ -1913,22 +1898,13 @@ def _davranis_satirlari(path: Path, now: datetime) -> list[str]:
 
 
 def rapor_davranis(cfg: TelegramConfig, now: datetime, ladders: Mapping[str, LadderFiles] | None = None) -> str:
-    """Sapma izleyicisi satırları (docs/kagit-degerlendirme-plani.md 4.6): öğrenen her zaman, ikiz yalnız varsa
-    (' (ikiz bot)' eki). Asla istisna fırlatmaz."""
+    """Sapma izleyicisi satırları (docs/kagit-degerlendirme-plani.md 4.6): öğrenen. Asla istisna fırlatmaz."""
     try:
         base = Path(cfg.status_path).parent if cfg.status_path else (
             Path(cfg.ledger_path).parent if cfg.ledger_path else None)
         if base is None:
             return DAVRANIS_YOK
         out = _davranis_satirlari(base / "drift.json", now)
-        twin_dir = None
-        lf = (ladders or {}).get("twin")
-        if lf is not None and getattr(lf, "status_path", ""):
-            twin_dir = Path(lf.status_path).parent
-        elif cfg.twin_ledger_path:
-            twin_dir = Path(cfg.twin_ledger_path).parent
-        if twin_dir is not None and twin_dir.is_dir():
-            out += [x + " (ikiz bot)" for x in _davranis_satirlari(twin_dir / "drift.json", now)]
         return "\n".join(out)
     except Exception:  # noqa: BLE001
         return DAVRANIS_YOK

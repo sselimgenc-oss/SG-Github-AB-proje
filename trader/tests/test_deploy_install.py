@@ -50,10 +50,11 @@ def test_engine_unit():
     assert re.search(r"^MemoryMax=\d+M", t, re.M)
     assert re.search(r"^Nice=\d+", t, re.M)
     assert "Restart=on-failure" in t
-    assert "-m trader_engine run --bot %i" in t
+    assert "-m trader_engine run --bot %i --env paper" in t and "init-ledger --bot %i --env paper" in t   # DD-12
+    assert re.search(r"^MemoryHigh=600M$", t, re.M) and re.search(r"^MemoryMax=750M$", t, re.M)         # DD-12 §8
     assert (ROOT / "src/trader_engine/__main__.py").exists()
-    for bot in ("learner", "twin"):
-        assert (ROOT / f"config/engine.{bot}.json").exists()
+    assert (ROOT / "config/engine.learner.json").exists() and (ROOT / "config/engine.paper.json").exists()
+    assert not (ROOT / "config/engine.twin.json").exists()                                              # DD-12: ikiz kaldirildi
     assert (ROOT / "config/engine.base.json").exists()
 
 
@@ -62,7 +63,7 @@ def test_feed_unit_and_engine_ordering():
     assert "-m trader_engine feed --config-dir config" in f
     assert "User=trader" in f and "Restart=always" in f
     assert re.search(r"^OnFailure=trader-health-fail@%n\.service", f, re.M)
-    assert re.search(r"^MemoryMax=350M$", f, re.M) and re.search(r"^Nice=\d+", f, re.M)
+    assert re.search(r"^MemoryMax=260M$", f, re.M) and re.search(r"^MemoryHigh=200M$", f, re.M) and re.search(r"^Nice=\d+", f, re.M)
     assert re.search(r"^ReadWritePaths=.*/opt/trader/var", f, re.M)
     e = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
     for key in ("ProtectSystem=strict", "NoNewPrivileges=true", "PrivateTmp=true", "ProtectHome=read-only"):
@@ -133,17 +134,17 @@ def test_every_unit_handled_by_install():
                         "trader-engine-live.service", "trader-engine-env-retry@.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil)
     for u in UNITS:
         if u.name == "trader-engine@.service":
-            assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" in enabled
+            assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" not in enabled
         elif u.name in deliberately_not:
             continue
         elif u.name == "trader-engine-retry@.timer":
-            assert "trader-engine-retry@learner.timer" in enabled and "trader-engine-retry@twin.timer" in enabled
+            assert "trader-engine-retry@learner.timer" in enabled and "trader-engine-retry@twin.timer" not in enabled
         elif u.name == "trader-engine-env-retry@.timer":      # DD-9: testnet ornegi etkin; live ornegi yalniz --live (systemctl enable --now)
             assert "enable_now trader-engine-env-retry@testnet.timer" in t and "enable --now trader-engine-env-retry@live.timer" in t
         elif u.name == "trader-drift@.timer":
-            assert "trader-drift@learner.timer" in enabled and "trader-drift@twin.timer" in enabled
+            assert "trader-drift@learner.timer" in enabled and "trader-drift@twin.timer" not in enabled
         elif u.name == "trader-counterfactual@.timer":
-            assert "trader-counterfactual@learner.timer" in enabled and "trader-counterfactual@twin.timer" in enabled
+            assert "trader-counterfactual@learner.timer" in enabled and "trader-counterfactual@twin.timer" not in enabled
         else:
             assert u.name in enabled, u.name
 
@@ -164,12 +165,14 @@ def test_placeholder_gated_timers():
     assert re.search(r'has_value /etc/trader-lesson\.env ANTHROPIC_API_KEY_LESSON && \[ "\$TG_OK" -eq 1 \]', t)
 
 
-def test_twin_default_on_with_no_twin_opt_out():
+def test_twin_removed_options_gone_and_archived():
+    """DD-12 WP-07: ikiz birimleri durdurulur/devre disi, --with-twin/--no-twin kalkti, var/twin arsive tasinir (silinmez)."""
     t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
-    assert re.search(r"^WITH_TWIN=1$", t, re.M)
-    assert "--no-twin) WITH_TWIN=0" in t and "--with-twin) WITH_TWIN=1" in t      # eski secenek kabul edilir
-    assert "HEALTH_BOTS" in t and "learner,twin" in t
-    assert "HEALTH_BOTS=" in (DEPLOY / "trader-health.env.example").read_text(encoding="utf-8")
+    assert "WITH_TWIN" not in t and "--no-twin" not in t and "--with-twin" not in t
+    assert 'HEALTH_BOTS_VAL="learner"' in t and "learner,twin" not in t
+    assert re.search(r"systemctl disable --now \"\$u\"", t) and "trader-engine@twin.service" in t
+    assert "var/arsiv/twin-" in t and 'mv "$TRADER_DIR/var/twin"' in t
+    assert re.search(r"^HEALTH_BOTS=learner$", (DEPLOY / "trader-health.env.example").read_text(encoding="utf-8"), re.M)
 
 
 def test_install_sets_pause_bots_for_telegram():
@@ -324,7 +327,7 @@ def test_engine_retry_units_and_install():
     assert "OnUnitActiveSec=5min" in tm and "WantedBy=timers.target" in tm
     t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
     assert "enable_now trader-engine-retry@learner.timer" in t
-    assert re.search(r'if \[ "\$WITH_TWIN" -eq 1 \]; then enable_now trader-engine-retry@twin\.timer', t)
+    assert "enable_now trader-engine-retry@twin" not in t
     u = (DEPLOY / "uninstall.sh").read_text(encoding="utf-8")
     assert "trader-*.timer" in u                                   # sablon zamanlayici da kaldirilir
 
@@ -355,5 +358,5 @@ def test_counterfactual_units_and_install():
     assert "OnCalendar=*-*-* 23:10:00 UTC" in tm and "Persistent=true" in tm
     t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
     assert "enable_now trader-counterfactual@learner.timer" in t
-    assert re.search(r'if \[ "\$WITH_TWIN" -eq 1 \]; then enable_now trader-counterfactual@twin\.timer', t)
+    assert "enable_now trader-counterfactual@twin" not in t
     assert (ROOT / "scripts/counterfactual_run.py").exists() and (ROOT / "docs/alinmayan-sinyal-spec.md").exists()

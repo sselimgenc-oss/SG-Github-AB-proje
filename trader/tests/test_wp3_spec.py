@@ -1534,12 +1534,11 @@ def test_S14_backtest_flag_exists_and_forced_off():
     assert "shadow_blocks" in src
 
 
-def test_S15_twin_config_has_no_shadow_base_has_four():
+def test_S15_twin_removed_and_base_has_four():
     from trader_engine.config import load_engine_config
     base, twin = TRADER / "config" / "engine.base.json", TRADER / "config" / "engine.twin.json"
-    cfg_t = load_engine_config(base, twin)
+    assert not twin.exists()                      # DD-12: ikiz kaldirildi (kagit yapilandirmasinda shadow_blocks bos: engine.paper.json)
     cfg_b = load_engine_config(base, TRADER / "config" / "engine.learner.json")
-    assert list(cfg_t.shadow_blocks) == []
     assert set(cfg_b.shadow_blocks) == {"regime", "r1_disabled", "same_bar_reentry", "tf_15m"}
 
 
@@ -1971,9 +1970,9 @@ def test_T6_counterfactual_shadow_api_exists():
     # fixture whose format is defined by alinmayan-sinyal-spec.md, which is outside the allowed reading list)
 
 
-def test_T7_report_schema_check_accepts_4_rejects_5():
+def test_T7_report_schema_check_accepts_5_rejects_6():
     from trader_reports import inputs
-    for uv, ok in ((2, True), (3, True), (4, True), (5, False)):
+    for uv, ok in ((2, True), (3, True), (4, True), (5, True), (6, False)):
         con = sqlite3.connect(":memory:")
         con.execute(f"PRAGMA user_version={uv}")
         if ok:

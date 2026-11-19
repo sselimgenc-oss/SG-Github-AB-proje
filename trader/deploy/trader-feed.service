@@ -19,13 +19,13 @@ WorkingDirectory=/opt/trader
 Environment=PYTHONPATH=/opt/trader/src
 Environment=PYTHONUNBUFFERED=1
 # Acilista ag/5xx/bozuk JSON hatasi suresiz ustel geri cekilme (+jitter) ile beklenir; 418/451 ve eksik kural (yapilandirma) sifirdan farkli kodla cikar.
-ExecStart=/usr/bin/python3 -m trader_engine feed --config-dir config --startup-retry forever
+ExecStart=/usr/bin/python3 -m trader_engine feed --config-dir config --env paper --startup-retry forever
 Restart=always
 RestartSec=20
 # 6 = HTTP 451 (konum kisiti), 3 = ban (418 / ust siniri asan Retry-After / 6 ardisik ban): tekrar denemek yasagi uzatir; dogrudan 'failed' olup OnFailure alarmini tetikler
 RestartPreventExitStatus=3 6
-MemoryHigh=280M
-MemoryMax=350M
+MemoryHigh=200M
+MemoryMax=260M
 CPUQuota=60%
 Nice=10
 NoNewPrivileges=true

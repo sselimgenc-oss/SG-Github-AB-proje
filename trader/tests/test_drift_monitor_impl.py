@@ -388,8 +388,7 @@ def test_deploy_units_and_install_wiring():
     assert "OnFailure=trader-health-fail@%n.service" in svc and "Telegram" not in svc.replace("Telegram'a", "")
     assert "EnvironmentFile=/etc/trader-telegram.env" not in svc
     assert "Europe/Istanbul" in tm and "WantedBy=timers.target" in tm
-    for name in ("trader-drift@learner.timer", "trader-drift@twin.timer"):
-        assert f"enable_now {name}" in ins
+    assert "enable_now trader-drift@learner.timer" in ins and "enable_now trader-drift@twin.timer" not in ins   # DD-12
     assert "DRIFT_CHECK_ENABLED=1" in ins
     assert "DRIFT_CHECK_ENABLED=" in (dep / "trader-health.env.example").read_text(encoding="utf-8")
 

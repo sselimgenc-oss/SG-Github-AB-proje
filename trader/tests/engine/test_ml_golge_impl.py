@@ -21,12 +21,14 @@ F = RECIPE_NAMES["r03"]
 
 
 def test_learner_config_and_model_copy():
-    c = load_cli_config(ROOT / "config", "learner", "paper-ml")
-    assert (c.strategy, c.ml_mode, c.ml_features, c.ml_experimental) == ("price_action_v1_ml", "shadow", "r03", True)
+    c = load_cli_config(ROOT / "config", "learner", "paper")      # DD-12: paper-ml katmani engine.paper.json'a katildi
+    assert (c.strategy, c.ml_mode, c.ml_features, c.ml_experimental) == ("price_action_v1_full_ml", "active", "r03", True)
+    assert not (ROOT / "config/engine.paper-ml.json").exists()
     assert (ROOT / "models/ml1-r03.json").read_bytes() == SRC.read_bytes()
-    for n in ("base", "twin", "testnet", "live"):
+    for n in ("base", "testnet", "live"):
         assert "ml_experimental" not in json.loads((ROOT / f"config/engine.{n}.json").read_text())
-    assert load_cli_config(ROOT / "config", "twin").ml_mode == "off"
+    with pytest.raises(ConfigError):                               # ikiz kaldirildi
+        load_cli_config(ROOT / "config", "twin")
 
 
 @pytest.mark.parametrize("mode,ml,ok", [("paper", "shadow", True), ("paper", "off", False), ("paper", "active", False)])

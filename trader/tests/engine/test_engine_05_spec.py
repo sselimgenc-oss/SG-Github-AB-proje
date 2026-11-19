@@ -32,7 +32,7 @@ from trader_core import ledger as L
 from trader_engine.brokers.paper import PaperBroker, PaperConfig
 from trader_engine.clock import SimClock
 from trader_engine.config import load_engine_config
-from trader_engine.errors import DataError, StateError
+from trader_engine.errors import ConfigError, DataError, StateError
 from trader_engine.marketdata.sources import MinuteStep
 from trader_engine.order_manager import OrderManager
 from trader_engine.position_manager import ExitContext
@@ -432,8 +432,6 @@ def make_cfg(tmp: Path, bot="learner", mode="paper", pairs=PAIRS, wallet=1000.0,
     b = tmp / "base.json"
     b.write_text(json.dumps(raw))
     ov = {"bot": bot}
-    if bot == "twin":
-        ov["start_delay_s"] = 3.0
     o = tmp / f"{bot}.json"
     o.write_text(json.dumps(ov))
     return load_engine_config(b, o)
@@ -543,7 +541,7 @@ def only(decs, **match):
 class TestRegistry:
     def test_list_and_info_v1b(self):
         reg = mod("strategies.registry")
-        assert tuple(reg.list_strategies()) == ("price_action_v1", "price_action_v1_full", "price_action_v1_ml")
+        assert tuple(reg.list_strategies()) == ("price_action_v1", "price_action_v1_full", "price_action_v1_ml", "price_action_v1_full_ml")
         s = reg.get_strategy("price_action_v1")
         assert s.info.name == "price_action_v1" and s.info.version == "1b.0"
         assert tuple(s.info.setups) == ("T1",) and tuple(s.info.allowed_trigger_tfs) == ("1h",)
@@ -1654,14 +1652,12 @@ class TestStartup:
         assert "strategy_change_with_open_positions" in (str(ei.value) + str(getattr(ei.value, "code", "")))
         e2.close()
 
-    def test_twin_start_delay_and_learner_none(self, tmp_path):
+    def test_learner_has_no_start_delay_and_twin_rejected(self, tmp_path):
+        """DD-12: ikiz kaldirildi (bot="twin" => ConfigError); ogrenen bekleme gecikmesi yok."""
         (tmp_path / "a").mkdir()
         (tmp_path / "b").mkdir()
-        t = Env(tmp_path / "a", bot="twin")
-        t0 = t.clock.now()
-        t.start()
-        assert (t.clock.now() - t0).total_seconds() >= 3.0
-        t.close()
+        with pytest.raises(ConfigError):
+            Env(tmp_path / "a", bot="twin")
         le = Env(tmp_path / "b", bot="learner")
         l0 = le.clock.now()
         le.start()
@@ -1680,45 +1676,33 @@ class TestStartup:
 
 
 # =====================================================================================================
-# 11. Twin <-> learner (§12)
+# 11. Ikiz kaldirildi (DD-12 WP-07): yalniz ogrenen
 # =====================================================================================================
-class TestTwinLearner:
-    def test_config_differences_only_bot_and_delay(self, tmp_path):
+class TestTwinRemoved:
+    def test_twin_config_gone_and_rejected(self):
+        assert not (ROOT / "config" / "engine.twin.json").exists()
         a = load_engine_config(ROOT / "config" / "engine.base.json", ROOT / "config" / "engine.learner.json")
-        b = load_engine_config(ROOT / "config" / "engine.base.json", ROOT / "config" / "engine.twin.json")
-        da, db = dataclasses.asdict(a), dataclasses.asdict(b)
-        diff = {k for k in da if da[k] != db[k]}
-        assert diff == {"bot", "start_delay_s", "shadow_blocks"}      # WP-3 5.1: ikizde golge yok
-        assert a.ledger_path != b.ledger_path and a.state_path != b.state_path and a.status_path != b.status_path
-        assert a.market_db == b.market_db and a.kill_file == b.kill_file
+        assert a.bot == "learner" and a.start_delay_s == 0.0
 
-    def test_twin_params_never_change_and_same_decisions(self, tmp_path):
-        out = {}
-        for bot in ("learner", "twin"):
-            d = tmp_path / bot
+    def test_learner_params_never_change_and_decisions_deterministic(self, tmp_path):
+        out = []
+        for k in range(2):
+            d = tmp_path / str(k)
             d.mkdir()
-            e = Env(d, bot=bot)
+            e = Env(d, bot="learner")
             e.start()
-            for k in range(3):
-                Dk = T0 + k * H
+            for j in range(3):
+                Dk = T0 + j * H
                 e.signal(Dk, (BTC, ETH, SOL))
                 e.decide(Dk)
                 e.step(Dk)
             vers = e.real_ledger.list_versions()
             acts = e.real_ledger.list_activations()
-            out[bot] = ([(x.pair, x.bar_close_ts, x.final_action, x.skip_reason, x.size_qty) for x in e.decisions()],
-                        [dict(v.params) for v in vers], len(acts))
+            out.append(([(x.pair, x.bar_close_ts, x.final_action, x.skip_reason, x.size_qty) for x in e.decisions()],
+                        [dict(v.params) for v in vers], len(acts)))
             assert len(vers) == 1 and len(acts) == 1
             e.close()
-        assert out["learner"] == out["twin"]
-
-    def test_twin_ledger_cannot_change_params(self, tmp_path):
-        e = Env(tmp_path, bot="twin")
-        e.start()
-        with pytest.raises(L.LedgerError):
-            e.real_ledger.propose_change(base_version_id=e.version_id, changes={"trail_atr": 3.5}, rationale="x",
-                                         claimed_evidence={}, source="spec_test")
-        e.close()
+        assert out[0] == out[1]
 
 
 # =====================================================================================================

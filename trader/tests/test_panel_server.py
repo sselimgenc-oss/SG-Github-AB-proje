@@ -34,7 +34,7 @@ def test_binds_loopback_only(run):
 def test_config_rejects_other_host_and_unknown_keys(env, tmp_path):
     import json
     raw = json.loads(env.cfg_path.read_text())
-    for bad in ({"host": "0.0.0.0"}, {"host": "::"}, {"port": 0}, {"port": 70000}, {"max_concurrent": 9}, {"x": 1}):
+    for bad in ({"host": "0.0.0.0"}, {"host": "::"}, {"port": 0}, {"port": 70000}, {"max_concurrent": 17}, {"x": 1}):
         p = tmp_path / "bad.json"
         p.write_text(json.dumps({**raw, **bad}))
         with pytest.raises(ConfigError):

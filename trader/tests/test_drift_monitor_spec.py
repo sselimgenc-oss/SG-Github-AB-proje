@@ -902,11 +902,12 @@ def test_contract_overall_uyari_when_any_rule_uyari(w):
     assert r.level("F1") == "UYARI" and r.doc["overall"] == "UYARI"
 
 
-def test_contract_twin_bot_separate_output(tmp_path):
+def test_contract_twin_bot_rejected(tmp_path):
+    """DD-12: ikiz kaldirildi; `--bot twin` kabul edilmez (argparse cikis kodu 2)."""
     w = World(tmp_path, bot="twin")
     w.trades(3)
-    r = w.run()
-    assert r.doc["bot"] == "twin" and r.path == w.var / "twin" / "drift.json"
+    r = w.run(check=False)
+    assert r.rc == 2 and not (w.var / "twin" / "drift.json").exists()
 
 
 @pytest.mark.parametrize("n,nxt,rem", [(5, 30, 25), (30, 100, 70), (120, 150, 30), (200, 300, 100)])

@@ -58,7 +58,6 @@ def day_specs(day_utc: datetime, pattern):
 STD_LEARNER = (day_specs(datetime(2026, 11, 14, tzinfo=UTC), [(True, True), (False, True)])
                + day_specs(datetime(2026, 11, 15, tzinfo=UTC), [(True, True)])
                + day_specs(datetime(2026, 11, 16, tzinfo=UTC), [(True, True), (False, True), (True, False)]))
-STD_TWIN = day_specs(datetime(2026, 11, 16, tzinfo=UTC), [(True, True)])
 
 
 def status_doc(loop_at: datetime, **kw) -> dict:
@@ -75,9 +74,9 @@ def status_doc(loop_at: datetime, **kw) -> dict:
 class Env:
     """Gecici veri dizini + yapilandirma. Panel yolu: root/var/<bot>/{status.json,ledger.sqlite} ..."""
 
-    def __init__(self, root: Path, *, learner=True, twin=True, budget=True, lesson=True, health=True, status_age_s=5,
+    def __init__(self, root: Path, *, learner=True, twin=False, budget=True, lesson=True, health=True, status_age_s=5,
                  keep_open=False):
-        self.root = root
+        self.root = root                       # `twin` kabul edilir ama yok sayilir (DD-12: ikiz kaldirildi)
         for d in ("var/learner", "var/twin", "config", "user_data", "shared", "state"):
             (root / d).mkdir(parents=True, exist_ok=True)
         self.writers = []
@@ -86,11 +85,6 @@ class Env:
             if w:
                 self.writers.append(w)
             self.write_status("learner", status_age_s)
-        if twin:
-            w = mkledger(root / "var/twin/ledger.sqlite", "twin", STD_TWIN, keep_open)
-            if w:
-                self.writers.append(w)
-            self.write_status("twin", status_age_s, open_positions=[], open_trade_ids=[])
         (root / "config/engine.base.json").write_text(json.dumps({"wallet_start": 1000.0}))
         if budget:
             bj = json.loads((ROOT / "config/budget.json").read_text())
@@ -108,8 +102,8 @@ class Env:
         self.cfg_path = root / "config/panel.json"
         self.cfg_path.write_text(json.dumps({
             "schema": "panel/1", "host": "127.0.0.1", "port": free_port(),
-            "status_path": "var/learner/status.json", "twin_status_path": "var/twin/status.json",
-            "ledger_path": "var/learner/ledger.sqlite", "twin_ledger_path": "var/twin/ledger.sqlite",
+            "status_path": "var/learner/status.json",
+            "ledger_path": "var/learner/ledger.sqlite",
             "budget_config": "config/budget.json", "lesson_store": "user_data/lesson.sqlite",
             "health_state": str(root / "state/state.json"), "kill_file": "shared/KILL",
             "engine_config": "config/engine.base.json"}))

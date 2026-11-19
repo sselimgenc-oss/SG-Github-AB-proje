@@ -33,7 +33,7 @@ def _var_dir(arg: str | None) -> str:
 
 def main(argv=None, *, now_fn=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--bot", required=True, choices=("learner", "twin"))
+    ap.add_argument("--bot", required=True, choices=("learner",))
     ap.add_argument("--once", action="store_true", help="tek tur (tek kullanim modu)")
     ap.add_argument("--var-dir", "--var", dest="var_dir", help="varsayilan ENGINE_VAR_DIR, yoksa <repo>/var")
     ap.add_argument("--now", help="sabit zaman (UTC, ISO; testler icin); varsayilan simdi")

@@ -31,7 +31,6 @@ def build_api(data: PanelData) -> dict:
            "/api/ledger": lambda q: data.cached(("ledger", q.get("bot"), q.get("day")), lambda: data.ledger(q.get("bot"), q.get("day"))),
            "/api/curve": lambda q: data.cached(("curve", q.get("bot")), lambda: data.curve(q.get("bot"))),
            "/api/risk": lambda q: data.cached(("risk", q.get("bot")), lambda: data.risk(q.get("bot"))),
-           "/api/compare": lambda q: data.cached(("compare", q.get("day")), lambda: data.compare(q.get("day"))),
            "/api/budget": lambda q: data.cached(("budget",), data.budget),
            "/api/lesson": lambda q: data.cached(("lesson",), data.lesson),
            "/api/health": lambda q: data.cached(("health",), data.health),

@@ -640,7 +640,7 @@ def test_llm_no_change_and_bad_stop(env, tmp_path):
 
 def test_budget_denial_skips_but_deterministic_steps_run(env, tmp_path):
     cfg, snap, llm, bud = llm_env(env, tmp_path)
-    tiny = B.BudgetGuard(B.BudgetConfig(db_path=str(tmp_path / "b2.sqlite"), daily_cap_usd={"veto": 0.25, "lesson": 0.01}),
+    tiny = B.BudgetGuard(B.BudgetConfig(db_path=str(tmp_path / "b2.sqlite"), daily_cap_usd={"haftalik_ozet": 0.25, "lesson": 0.01}),
                          clock=env.clock)
     svc, store = mk_service(env, cfg, llm=llm, budget=tiny)
     res = svc.run_tick(RUN_NOW)
@@ -1273,8 +1273,9 @@ def test_deploy_files():
     for need in ("Type=oneshot", "User=trader", "EnvironmentFile=/etc/trader-lesson.env", "lesson_run.py --once",
                  "TimeoutStartSec=300", "MemoryMax=256M", "CPUQuota=30%", "Nice=10", "ProtectSystem=strict",
                  "NoNewPrivileges=true", "PrivateTmp=true", "OnFailure=trader-health-fail@%n.service",
-                 "/opt/trader/var/twin", "/opt/trader/user_data"):
+                 "/opt/trader/user_data"):
         assert need in svc
+    assert "var/twin" not in svc                                                  # DD-12: ikiz kaldirildi
     tm = (ROOT / "deploy" / "trader-lesson.timer").read_text()
     assert "OnCalendar=*-*-* *:17:00" in tm and "Persistent=true" in tm and "RandomizedDelaySec=60" in tm
     env = (ROOT / "deploy" / "trader-lesson.env.example").read_text()

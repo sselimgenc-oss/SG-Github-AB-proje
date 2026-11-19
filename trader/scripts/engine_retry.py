@@ -39,7 +39,7 @@ def systemctl(args):
 
 
 # DD-9 §2.3: yalniz bilinen motor birimleri yeniden baslatilabilir (baska ad -> hicbir systemctl cagrisi yok)
-UNIT_RE = re.compile(r"^trader-engine(@(learner|twin)|-testnet|-live)\.service$")
+UNIT_RE = re.compile(r"^trader-engine(@learner|-testnet|-live)\.service$")
 
 
 def unit_state(bot: str, ctl=systemctl, unit: str | None = None) -> dict:

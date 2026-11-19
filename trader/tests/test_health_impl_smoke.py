@@ -269,14 +269,14 @@ def test_backup_rotation_idempotent(tmp_path):
         (var / b).mkdir(parents=True)
         _mk_ledger(var / b / "ledger.sqlite", b)
         _mk_ft(var / b / "state.sqlite")
-    code, m = B.run_backup(bk, var, 14, now=NOW)
+    code, m = B.run_backup(bk, var, 14, now=NOW, bots=("learner", "twin"))
     assert code == 0 and m["ok"], m
     day = bk / "2026-11-16"
     assert (day / "ledger_learner.sqlite").exists() and not list(day.glob("*.partial"))
     assert m["files"]["state_twin.sqlite"]["positions"] == 1
     mf = json.loads((day / "MANIFEST.json").read_text())
     assert len(mf["files"]["ledger_learner.sqlite"]["sha256"]) == 64
-    code2, _ = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=1))
+    code2, _ = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=1), bots=("learner", "twin"))
     assert code2 == 0 and not list(bk.glob("*.failed*"))
     assert B.latest_ok_backup(bk) == NOW.replace(minute=30, second=0)
     # rotation
@@ -300,11 +300,11 @@ def test_backup_failures(tmp_path):
         (var / b).mkdir(parents=True)
         _mk_ledger(var / b / "ledger.sqlite", b)
         _mk_ft(var / b / "state.sqlite")
-    code, m = B.run_backup(bk, var, 14, now=NOW, free_bytes=lambda: int(0.8 * GIB))
+    code, m = B.run_backup(bk, var, 14, now=NOW, free_bytes=lambda: int(0.8 * GIB), bots=("learner", "twin"))
     assert code == 20 and all(f["error"] == "disk_low" for f in m["files"].values())
     # bozuk kaynak
     (var / "twin" / "ledger.sqlite").write_bytes(b"not a database" * 100)
-    code, m = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=3))
+    code, m = B.run_backup(bk, var, 14, now=NOW + timedelta(minutes=3), bots=("learner", "twin"))
     assert code == 20 and m["files"]["ledger_twin.sqlite"]["ok"] is False
     assert list(bk.glob("2026-11-16.failed-*"))
 

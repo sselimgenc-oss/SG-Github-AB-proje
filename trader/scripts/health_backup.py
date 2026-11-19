@@ -27,7 +27,7 @@ GIB = 1024 ** 3
 MIN_FREE_BYTES = 1 * GIB
 KEEP_MIN, KEEP_MAX, KEEP_DEFAULT = 3, 60, 14
 MIN_OK_AFTER_ROTATION = 3
-BOTS = ("learner", "twin")   # varsayilan; HEALTH_BOTS ile degistirilir
+BOTS = ("learner",)   # varsayilan; HEALTH_BOTS ile degistirilir
 
 
 def bots_from_env(env) -> tuple:

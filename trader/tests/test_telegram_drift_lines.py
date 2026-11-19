@@ -19,10 +19,9 @@ def z(d):
 
 
 class Cfg:
-    def __init__(self, base: Path, twin: Path | None = None):
+    def __init__(self, base: Path):
         self.status_path = str(base / "status.json")
         self.ledger_path = str(base / "ledger.sqlite")
-        self.twin_ledger_path = str(twin / "ledger.sqlite") if twin else ""
         self.health_state = ""
         self.var_dir = str(base)
 
@@ -33,11 +32,11 @@ def put(d: Path, age_h=1, lines=("📐 Bot beklendiği gibi davranıyor",), sche
                                               "report_lines": list(lines)}), encoding="utf-8")
 
 
-def test_lines_appended_learner_and_twin(tmp_path):
+def test_lines_learner_only_even_if_twin_dir_exists(tmp_path):
     put(tmp_path / "learner", lines=["📐 A", "📐 B"])
-    put(tmp_path / "twin", lines=["📐 C"])
-    out = T.rapor_davranis(Cfg(tmp_path / "learner", tmp_path / "twin"), NOW)
-    assert out.splitlines() == ["📐 A", "📐 B", "📐 C (ikiz bot)"]
+    put(tmp_path / "twin", lines=["📐 C"])               # DD-12: eski ikiz dizini yok sayilir
+    out = T.rapor_davranis(Cfg(tmp_path / "learner"), NOW)
+    assert out.splitlines() == ["📐 A", "📐 B"]
 
 
 def test_missing_stale_or_bad_file_gives_single_line(tmp_path):
@@ -57,7 +56,7 @@ def test_missing_stale_or_bad_file_gives_single_line(tmp_path):
 
 def test_twin_absent_adds_nothing(tmp_path):
     put(tmp_path / "learner", lines=["📐 A"])
-    assert T.rapor_davranis(Cfg(tmp_path / "learner", tmp_path / "twin"), NOW) == "📐 A"
+    assert T.rapor_davranis(Cfg(tmp_path / "learner"), NOW) == "📐 A"
 
 
 def test_default_sections_and_build_report_include_it(tmp_path):

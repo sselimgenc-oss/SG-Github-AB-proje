@@ -9,7 +9,7 @@
   var TOP_MS = 10000, TAB_MS = 30000;                       // spec §10.8: ust serit 10 sn, gerisi 30 sn
   var TABS = [['ozet', 'ÖZET'], ['pozisyonlar', 'POZİSYONLAR'], ['islemler', 'İŞLEMLER'], ['butce', 'BÜTÇE'],
               ['ders', 'DERS'], ['saglik', 'SAĞLIK']];
-  var BOT_AD = {learner: 'öğrenen', twin: 'ikiz'};
+  var BOT_AD = {learner: 'öğrenen'};
   var S = {bot: 'learner', tab: 'ozet', status: null, conn: true, gen: null, day: null, trades: null};
   var $ = function (i) { return document.getElementById(i); };
 
@@ -183,7 +183,7 @@
       return;
     }
     var kill = st.kill_file_exists === true;
-    ['learner', 'twin'].forEach(function (k) {
+    ['learner'].forEach(function (k) {
       var x = st.bots[k];
       if (x.state !== 'live') add(b, el('div', 'uyari bayat-bant', BOT_AD[k] + ' — ' + x.banner));
       else if (x.data.kill) kill = true;
@@ -216,13 +216,12 @@
     var ig = el('div', 'ig'), bot = S.bot;
     var pCurve = panel('Özsermaye eğrisi', '', 'g2 yuk'), pRisk = panel('Risk payı', 'limitler risk kilidi oranlarıyla'),
         pHealth = panel('Sağlık', ''), pDd = panel('Zirveden düşüş', ''), pKz = panel('Günlük K/Z', ''),
-        pCal = panel('Takvim (günlük K/Z ısı haritası)', 'gün seç: işlemler', 'g3'),
-        pCmp = panel('Öğrenen ↔ ikiz karşılaştırması', 'bugün · kapalı bölüm', 'g3');
+        pCal = panel('Takvim (günlük K/Z ısı haritası)', 'gün seç: işlemler', 'g3');
     var sag = el('div', 'sag s1');
     add(sag, pRisk, pHealth);
-    add(ig, pCurve, sag, pDd, pKz, pCal, pCmp);
+    add(ig, pCurve, sag, pDd, pKz, pCal);
     add(root, ig);
-    [pCurve, pRisk, pHealth, pDd, pKz, pCal, pCmp].forEach(function (p) { add(p._body, el('div', 'yok', 'yükleniyor…')); });
+    [pCurve, pRisk, pHealth, pDd, pKz, pCal].forEach(function (p) { add(p._body, el('div', 'yok', 'yükleniyor…')); });
 
     get('/api/curve?bot=' + bot).then(function (c) {
       [pCurve, pDd, pKz, pCal].forEach(function (p) { clear(p._body); });
@@ -277,26 +276,9 @@
           row('Açık uyarı', String(h.alerts.length), h.alerts.length ? 'uyarir' : 'iyi'));
       }
       var sc = S.status && S.status.ok ? S.status.bots : null;
-      if (sc) ['learner', 'twin'].forEach(function (k) {
+      if (sc) ['learner'].forEach(function (k) {
         add(pHealth._body, row('Döngü ' + BOT_AD[k], sc[k].state === 'live' ? ago(sc[k].age_s) + ' önce' : 'BAYAT/yok', sc[k].state === 'live' ? 'iyi' : 'kotu'));
       });
-    });
-
-    get('/api/compare').then(function (c) {
-      clear(pCmp._body);
-      if (!c.ok) { add(pCmp._body, nodata(c.code)); return; }
-      var det = el('details', 'ince'), sm = el('summary', '', 'Öğrenen ↔ ikiz — göster');
-      var L = c.learner, T = c.twin;
-      var rows = [];
-      function cell(o, f) { return o.ok ? f(o.summary) : 'okunamadı: ' + o.code; }
-      rows.push(['Kapanan işlem', cell(L, function (s) { return String(s.closed); }), cell(T, function (s) { return String(s.closed); }), '']);
-      rows.push(['PnL', cell(L, function (s) { return usd(s.pnl, true); }), cell(T, function (s) { return usd(s.pnl, true); }),
-        c.diff_pnl === null ? '—' : usd(c.diff_pnl, true)]);
-      rows.push(['R', cell(L, function (s) { return sgn(s.r); }), cell(T, function (s) { return sgn(s.r); }), '']);
-      rows.push(['Kazanan / kaybeden', cell(L, function (s) { return s.win + ' / ' + s.loss; }), cell(T, function (s) { return s.win + ' / ' + s.loss; }), '']);
-      rows.push(['Açık', cell(L, function (s) { return String(s.open); }), cell(T, function (s) { return String(s.open); }), '']);
-      add(det, sm, table(['Gün ' + c.day, 'Öğrenen', 'İkiz', 'Fark (öğrenen − ikiz)'], rows, {right: [1, 2, 3]}));
-      add(pCmp._body, det);
     });
   }
 
@@ -520,11 +502,6 @@
     try { localStorage.setItem('trader-sekme', t); } catch (e) { /* yok say */ }
     refreshTab();
   }
-  function setBot(b) {
-    S.bot = b;
-    $('bot-learner').classList.toggle('on', b === 'learner'); $('bot-twin').classList.toggle('on', b === 'twin');
-    renderTop(S.status); refreshTab(); refreshBadges();
-  }
 
   function init() {
     var nav = $('tabs');
@@ -533,8 +510,6 @@
       b.addEventListener('click', function () { showTab(t[0]); });
       nav.appendChild(b);
     });
-    $('bot-learner').addEventListener('click', function () { setBot('learner'); });
-    $('bot-twin').addEventListener('click', function () { setBot('twin'); });
     $('yenile').addEventListener('click', function () { if (SNAP) { location.reload(); return; } refreshTop(); refreshTab(); refreshBadges(); });
     snapBanner(); setInterval(snapBanner, 30000);
     // pano.py JS: tema dugmesi (uyarlandi)

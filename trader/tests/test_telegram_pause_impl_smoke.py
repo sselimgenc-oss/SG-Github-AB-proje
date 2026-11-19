@@ -168,7 +168,7 @@ def test_status_line_and_legacy_durdur(rig, tmp_path):
 
 
 # ---------------------------------------------------------------- F1 build_pauses == motor yollari
-def test_build_pauses_match_engine_paths_for_both_bots(tmp_path, monkeypatch):
+def test_build_pauses_match_engine_paths_learner_only(tmp_path, monkeypatch):
     import sys
     from types import SimpleNamespace
     root = Path(__file__).resolve().parents[1]
@@ -177,8 +177,8 @@ def test_build_pauses_match_engine_paths_for_both_bots(tmp_path, monkeypatch):
     from trader_engine.config import load_engine_config
     monkeypatch.chdir(tmp_path)                                  # cwd farkli: yollar yine kok-bagimli
     ps = TR.build_pauses({}, lambda: T0)
-    assert list(ps) == ["learner", "twin"]
-    for bot in ("learner", "twin"):
+    assert list(ps) == ["learner"]                               # DD-12: ikiz kaldirildi
+    for bot in ("learner",):
         cfg = load_engine_config(root / "config" / "engine.base.json", root / "config" / f"engine.{bot}.json")
         want_pause = str(root / (cfg.pause_file + "." + bot))
         want_audit = str(root / cfg.path("pause_audit.jsonl"))

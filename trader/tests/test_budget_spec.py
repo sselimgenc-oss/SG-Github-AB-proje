@@ -47,7 +47,7 @@ TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$")
 BASE_CFG = {
     "version": 1,
     "db_path": "placeholder",
-    "daily_cap_usd": {"veto": 0.25, "lesson": 0.10},
+    "daily_cap_usd": {"haftalik_ozet": 0.25, "lesson": 0.10},
     "monthly_cap_usd": 10.0,
     "monthly_warn_usd": 5.0,
     "warn_fraction": 0.70,
@@ -57,15 +57,15 @@ BASE_CFG = {
     "price_safety_factor": 1.0,
     "prices_verified_on": None,
     "batch_multiplier": 0.5,
-    "api_key_env": {"veto": "ANTHROPIC_API_KEY_VETO", "lesson": "ANTHROPIC_API_KEY_LESSON"},
-    "reservation_ttl_s": {"veto": 600, "lesson": 108000},
+    "api_key_env": {"haftalik_ozet": "ANTHROPIC_API_KEY_HAFTALIK_OZET", "lesson": "ANTHROPIC_API_KEY_LESSON"},
+    "reservation_ttl_s": {"haftalik_ozet": 600, "lesson": 108000},
     "retry": {
         "max_retries": 3,
         "base_s": 2.0,
         "factor": 2.0,
         "max_sleep_s": 20.0,
         "jitter": 0.2,
-        "deadline_s": {"veto": 60, "lesson": 300},
+        "deadline_s": {"haftalik_ozet": 60, "lesson": 300},
     },
     "prices_usd_per_mtok": {
         "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_write_5m": 0.125,
@@ -74,7 +74,7 @@ BASE_CFG = {
                                "cache_write_1h": 4.00, "cache_read": 0.10},
     },
 }
-CAPS = {"veto": 250_000, "lesson": 100_000}
+CAPS = {"haftalik_ozet": 250_000, "lesson": 100_000}
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
 
@@ -164,7 +164,7 @@ def fill_month(g, clock, target, start=None):
     rem = target
     while rem > 0:
         clock.set(d)
-        for svc in ("veto", "lesson"):
+        for svc in ("haftalik_ozet", "lesson"):
             m = min(CAPS[svc], rem)
             if m <= 0:
                 break
@@ -235,9 +235,9 @@ class TestCost:
         g = mk(env, lambda d: d.update(price_safety_factor=1.1))
         v = g.estimate_cost(HAIKU, input_tokens=4800, max_output_tokens=800, cache_read_tokens=1500)
         assert v == pytest.approx(985e-6, abs=1e-9)  # 895*1.1 = 984.5 -> 985
-        r = g.authorize("veto", v)
+        r = g.authorize("haftalik_ozet", v)
         assert isinstance(r, Grant)
-        s = g.record("veto", r, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        s = g.record("haftalik_ozet", r, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert s.cost_micro == 985
 
     def test_unknown_model_estimate_raises(self, env):
@@ -272,7 +272,7 @@ class TestCost:
         ],
     )
     def test_record_cost_from_usage(self, env, usage, batch, model, expected):
-        svc = "lesson" if model == SONNET else "veto"
+        svc = "lesson" if model == SONNET else "haftalik_ozet"
         g = env.g.authorize(svc, 0.05)
         assert isinstance(g, Grant)
         s = env.g.record(svc, g, usage, model, batch=batch)
@@ -287,32 +287,32 @@ class TestCost:
 
     def test_record_13_5_overrun_zero_and_frees_difference(self, env):
         est = env.g.estimate_cost(HAIKU, input_tokens=4800, max_output_tokens=1000, cache_read_tokens=1500)
-        g = env.g.authorize("veto", est)
+        g = env.g.authorize("haftalik_ozet", est)
         assert isinstance(g, Grant)
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.000995, abs=2e-6)
-        s = env.g.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.000995, abs=2e-6)
+        s = env.g.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert s.cost_micro == 895 and s.overrun_micro == 0
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.000895, abs=1e-9)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.000895, abs=1e-9)
 
     def test_record_overrun_written_and_event(self, env):
-        g = grant(env.g, "veto", 500)
-        s = env.g.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        g = grant(env.g, "haftalik_ozet", 500)
+        s = env.g.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert s.ok and s.cost_micro == 895 and s.overrun_micro == 395
         evs = events(env.g, "budget_overrun")
         assert len(evs) == 1
         assert g.grant_id in json.dumps(evs[0].payload, default=str) or g.grant_id in evs[0].message or True
 
     def test_overrun_may_exceed_cap_then_next_authorize_denied(self, env):
-        g = grant(env.g, "veto", 1000)
+        g = grant(env.g, "haftalik_ozet", 1000)
         # 600_000 output tokens * 0.5 = 300_000 > cap 250_000
-        s = env.g.record("veto", g, Usage(output_tokens=600_000), HAIKU)
+        s = env.g.record("haftalik_ozet", g, Usage(output_tokens=600_000), HAIKU)
         assert s.ok and s.cost_micro == 300_000 and s.overrun_micro == 299_000
-        st = env.g.status().services["veto"]
+        st = env.g.status().services["haftalik_ozet"]
         assert st.used_usd == pytest.approx(0.3, abs=1e-9)
         assert st.pct > 100
         assert st.remaining_usd == 0
         assert st.state == "stopped"
-        d = env.g.authorize("veto", usd(1))
+        d = env.g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
 
     @pytest.mark.parametrize(
@@ -329,49 +329,49 @@ class TestCost:
         ],
     )
     def test_record_bad_usage_counts_estimate(self, env, usage):
-        g = grant(env.g, "veto", 3000)
-        s = env.g.record("veto", g, usage, HAIKU)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        s = env.g.record("haftalik_ozet", g, usage, HAIKU)
         assert s.ok is False and s.estimated_instead is True and s.code == "bad_usage"
         assert s.cost_micro == 3000
-        st = env.g.status().services["veto"]
+        st = env.g.status().services["haftalik_ozet"]
         assert st.used_usd == pytest.approx(0.003, abs=1e-9)
         # row is not settled
         rows = q(env.db, "select state, charged_micro from reservations where grant_id=?", (g.grant_id,))
         assert rows[0][0] in ("open", "expired") and rows[0][1] == 3000
 
     def test_record_oversized_request_bad_usage(self, env):
-        g = grant(env.g, "veto", 3000)
-        s = env.g.record("veto", g, Usage(input_tokens=100_001), HAIKU)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        s = env.g.record("haftalik_ozet", g, Usage(input_tokens=100_001), HAIKU)
         assert s.code == "bad_usage" and s.estimated_instead and not s.ok and s.cost_micro == 3000
 
     def test_record_unknown_model_once_event(self, env):
-        g1 = grant(env.g, "veto", 3000)
-        g2 = grant(env.g, "veto", 2000)
-        s1 = env.g.record("veto", g1, Usage(input_tokens=10), "claude-mystery-1")
-        s2 = env.g.record("veto", g2, Usage(input_tokens=10), "claude-mystery-1")
+        g1 = grant(env.g, "haftalik_ozet", 3000)
+        g2 = grant(env.g, "haftalik_ozet", 2000)
+        s1 = env.g.record("haftalik_ozet", g1, Usage(input_tokens=10), "claude-mystery-1")
+        s2 = env.g.record("haftalik_ozet", g2, Usage(input_tokens=10), "claude-mystery-1")
         for s, e in ((s1, 3000), (s2, 2000)):
             assert s.code == "unknown_model" and not s.ok and s.estimated_instead and s.cost_micro == e
         assert len(events(env.g, "unknown_model")) == 1
 
     def test_record_duplicate_idempotent(self, env):
-        g = grant(env.g, "veto", 3000)
+        g = grant(env.g, "haftalik_ozet", 3000)
         u = Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500)
-        s1 = env.g.record("veto", g, u, HAIKU)
-        s2 = env.g.record("veto", g, u, HAIKU)
+        s1 = env.g.record("haftalik_ozet", g, u, HAIKU)
+        s2 = env.g.record("haftalik_ozet", g, u, HAIKU)
         assert s1.ok and not s1.duplicate
         assert s2.duplicate is True and s2.code == "duplicate"
         assert s2.cost_micro == 895
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.000895, abs=1e-9)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.000895, abs=1e-9)
         # a duplicate with different usage must not change anything
-        env.g.record("veto", g, Usage(output_tokens=100_000), HAIKU)
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.000895, abs=1e-9)
+        env.g.record("haftalik_ozet", g, Usage(output_tokens=100_000), HAIKU)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.000895, abs=1e-9)
 
     def test_record_unknown_grant(self, env):
-        fake = Grant(grant_id="ab" * 16, service="veto", est_micro=100, day="2026-11-16",
+        fake = Grant(grant_id="ab" * 16, service="haftalik_ozet", est_micro=100, day="2026-11-16",
                      created_at="2026-11-16T10:00:00.000Z", expires_at="2026-11-16T10:10:00.000Z")
-        s = env.g.record("veto", fake, Usage(input_tokens=10), HAIKU)
+        s = env.g.record("haftalik_ozet", fake, Usage(input_tokens=10), HAIKU)
         assert isinstance(s, Settlement) and s.ok is False and s.code == "unknown_grant"
-        assert env.g.status().services["veto"].used_usd == 0
+        assert env.g.status().services["haftalik_ozet"].used_usd == 0
 
 
 # ====================================================== 2. config / limits
@@ -379,7 +379,7 @@ class TestConfig:
     @pytest.mark.parametrize(
         "mutate",
         [
-            lambda d: d["daily_cap_usd"].update(veto=0.26),
+            lambda d: d["daily_cap_usd"].update(haftalik_ozet=0.26),
             lambda d: d["daily_cap_usd"].update(lesson=0.11),
             lambda d: d.update(monthly_cap_usd=10.5),
             lambda d: d.update(monthly_warn_usd=10.5),
@@ -409,7 +409,7 @@ class TestConfig:
     @pytest.mark.parametrize(
         "mutate",
         [
-            lambda d: d["daily_cap_usd"].update(veto=0.20, lesson=0.05),
+            lambda d: d["daily_cap_usd"].update(haftalik_ozet=0.20, lesson=0.05),
             lambda d: d.update(monthly_cap_usd=8.0, monthly_warn_usd=4.0),
             lambda d: d.update(warn_fraction=0.5),
             lambda d: d["retry"].update(max_retries=2),
@@ -428,9 +428,9 @@ class TestConfig:
         assert B.DEFAULT_PATH == "config/budget.json"
 
     def test_tighter_cap_enforced(self, env):
-        g = mk(env, lambda d: d["daily_cap_usd"].update(veto=0.10))
-        assert isinstance(g.authorize("veto", usd(100_000)), Grant)
-        d = g.authorize("veto", usd(1))
+        g = mk(env, lambda d: d["daily_cap_usd"].update(haftalik_ozet=0.10))
+        assert isinstance(g.authorize("haftalik_ozet", usd(100_000)), Grant)
+        d = g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
 
     def test_repo_config_file_loads_and_within_limits(self):
@@ -439,7 +439,7 @@ class TestConfig:
         load_config(str(p))
         raw = p.read_text()
         d = json.loads(raw)
-        assert d["daily_cap_usd"]["veto"] <= 0.25 and d["daily_cap_usd"]["lesson"] <= 0.10
+        assert d["daily_cap_usd"]["haftalik_ozet"] <= 0.25 and d["daily_cap_usd"]["lesson"] <= 0.10
         assert d["monthly_cap_usd"] <= 10.0 and d["monthly_warn_usd"] <= d["monthly_cap_usd"]
         assert 0 < d["warn_fraction"] <= 0.70
         assert d["price_safety_factor"] >= 1.0 and d["batch_multiplier"] >= 0.5
@@ -449,13 +449,13 @@ class TestConfig:
             assert re.fullmatch(r"[A-Z0-9_]+", v)
 
     def test_api_key_env_names_only(self, env, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY_VETO", "sk-ant-api03-FAKEVETOKEY")
+        monkeypatch.setenv("ANTHROPIC_API_KEY_HAFTALIK_OZET", "sk-ant-api03-FAKEVETOKEY")
         monkeypatch.setenv("ANTHROPIC_API_KEY_LESSON", "sk-ant-api03-FAKELESSONKEY")
-        assert env.g.api_key_env("veto") == "ANTHROPIC_API_KEY_VETO"
+        assert env.g.api_key_env("haftalik_ozet") == "ANTHROPIC_API_KEY_HAFTALIK_OZET"
         assert env.g.api_key_env("lesson") == "ANTHROPIC_API_KEY_LESSON"
-        assert env.g.api_key_env("veto") != env.g.api_key_env("lesson")
-        g = mk(env, lambda d: d["api_key_env"].update(veto="MY_VETO_KEY"))
-        assert g.api_key_env("veto") == "MY_VETO_KEY"
+        assert env.g.api_key_env("haftalik_ozet") != env.g.api_key_env("lesson")
+        g = mk(env, lambda d: d["api_key_env"].update(haftalik_ozet="MY_HAFTALIK_KEY"))
+        assert g.api_key_env("haftalik_ozet") == "MY_HAFTALIK_KEY"
         with pytest.raises(ValueError):
             env.g.api_key_env("other")
 
@@ -463,10 +463,10 @@ class TestConfig:
 # ============================================================== 3. authorize
 class TestAuthorize:
     def test_grant_fields(self, env):
-        g = env.g.authorize("veto", 0.003)
+        g = env.g.authorize("haftalik_ozet", 0.003)
         assert isinstance(g, Grant)
         assert re.fullmatch(r"[0-9a-f]{32}", g.grant_id)
-        assert g.service == "veto" and g.day == "2026-11-16"
+        assert g.service == "haftalik_ozet" and g.day == "2026-11-16"
         assert g.est_micro == 3000
         assert TS_RE.match(g.created_at) and TS_RE.match(g.expires_at)
         assert P(g.created_at) == T(2026, 11, 16, 10)
@@ -477,75 +477,75 @@ class TestAuthorize:
         assert l.grant_id != g.grant_id
 
     def test_est_micro_ceil(self, env):
-        g = env.g.authorize("veto", usd(1234))
+        g = env.g.authorize("haftalik_ozet", usd(1234))
         assert g.est_micro == 1234
         with pytest.raises(Exception):
             g.est_micro = 5  # frozen dataclass
 
     @pytest.mark.parametrize("bad", [0, 0.0, -0.1, float("nan"), float("inf"), True, None, "0.1"])
     def test_invalid_est(self, env, bad):
-        d = env.g.authorize("veto", bad)
+        d = env.g.authorize("haftalik_ozet", bad)
         assert isinstance(d, Denial) and d.reason == "invalid_request"
-        assert d.service == "veto"
+        assert d.service == "haftalik_ozet"
 
     def test_invalid_service_value_error(self, env):
         with pytest.raises(ValueError):
             env.g.authorize("trader", 0.01)
 
     def test_grant_for_other_service_value_error(self, env):
-        g = env.g.authorize("veto", 0.01)
+        g = env.g.authorize("haftalik_ozet", 0.01)
         with pytest.raises(ValueError):
             env.g.record("lesson", g, Usage(input_tokens=1), HAIKU)
         with pytest.raises(ValueError):
             env.g.report_error("lesson", g, 1, 500)
 
     def test_exact_cap_allowed_one_more_denied(self, env):
-        g = grant(env.g, "veto", 250_000)  # est == cap
+        g = grant(env.g, "haftalik_ozet", 250_000)  # est == cap
         assert isinstance(g, Grant)
-        d = env.g.authorize("veto", usd(1))
+        d = env.g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
         assert P(d.retry_after) == T(2026, 11, 17, 0)
         assert d.detail and isinstance(d.detail, str)
 
     def test_est_larger_than_cap_denied(self, env):
-        d = env.g.authorize("veto", 0.26)
+        d = env.g.authorize("haftalik_ozet", 0.26)
         assert isinstance(d, Denial) and d.reason == "daily_cap"
         d2 = env.g.authorize("lesson", 0.11)
         assert isinstance(d2, Denial) and d2.reason == "daily_cap"
 
     def test_reservation_counts_for_second_call(self, env):
-        grant(env.g, "veto", 200_000)
-        d = env.g.authorize("veto", usd(60_000))
+        grant(env.g, "haftalik_ozet", 200_000)
+        d = env.g.authorize("haftalik_ozet", usd(60_000))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
-        assert isinstance(env.g.authorize("veto", usd(50_000)), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", usd(50_000)), Grant)
 
     def test_denied_authorize_writes_no_reservation(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         n = q(env.db, "select count(*) from reservations")[0][0]
-        env.g.authorize("veto", usd(10))
+        env.g.authorize("haftalik_ozet", usd(10))
         assert q(env.db, "select count(*) from reservations")[0][0] == n
 
 
 # ================================================ 4. thresholds & events (13.6-13.8)
 class TestEvents:
     def test_13_6_warn_70_exactly_once(self, env):
-        grant(env.g, "veto", 174_000)
+        grant(env.g, "haftalik_ozet", 174_000)
         assert events(env.g, "daily_warn_70") == []
-        g = env.g.authorize("veto", usd(2000))
+        g = env.g.authorize("haftalik_ozet", usd(2000))
         assert isinstance(g, Grant)  # 176_000
         w = events(env.g, "daily_warn_70")
         assert len(w) == 1
-        assert w[0].service == "veto" and w[0].day == "2026-11-16"
-        assert "veto" in w[0].message and "%70" in w[0].message
+        assert w[0].service == "haftalik_ozet" and w[0].day == "2026-11-16"
+        assert "haftalık özet" in w[0].message and "%70" in w[0].message
         # later calls the same day do not repeat
-        grant(env.g, "veto", 1000)
-        env.g.record("veto", g, Usage(input_tokens=10), HAIKU)
+        grant(env.g, "haftalik_ozet", 1000)
+        env.g.record("haftalik_ozet", g, Usage(input_tokens=10), HAIKU)
         assert len(events(env.g, "daily_warn_70")) == 1
 
     def test_warn_exact_threshold_inclusive(self, env):
-        grant(env.g, "veto", 174_999)
+        grant(env.g, "haftalik_ozet", 174_999)
         assert events(env.g, "daily_warn_70") == []
-        grant(env.g, "veto", 1)  # 175_000 == 70%
+        grant(env.g, "haftalik_ozet", 1)  # 175_000 == 70%
         assert len(events(env.g, "daily_warn_70")) == 1
 
     def test_warn_exact_threshold_lesson(self, env):
@@ -557,45 +557,45 @@ class TestEvents:
 
     def test_custom_warn_fraction(self, env):
         g = mk(env, lambda d: d.update(warn_fraction=0.5))
-        grant(g, "veto", 124_999)
+        grant(g, "haftalik_ozet", 124_999)
         assert events(g, "daily_warn_70") == []
-        grant(g, "veto", 1)
+        grant(g, "haftalik_ozet", 1)
         assert len(events(g, "daily_warn_70")) == 1
 
     def test_13_6_cap_denial_emits_stopped_once(self, env):
-        grant(env.g, "veto", 249_000)
-        d = env.g.authorize("veto", usd(1500))
+        grant(env.g, "haftalik_ozet", 249_000)
+        d = env.g.authorize("haftalik_ozet", usd(1500))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
         st = events(env.g, "daily_stopped_100")
-        assert len(st) == 1 and st[0].service == "veto" and st[0].day == "2026-11-16"
+        assert len(st) == 1 and st[0].service == "haftalik_ozet" and st[0].day == "2026-11-16"
         for _ in range(3):
-            env.g.authorize("veto", usd(1500))
+            env.g.authorize("haftalik_ozet", usd(1500))
         assert len(events(env.g, "daily_stopped_100")) == 1
 
     def test_stopped_when_usage_reaches_cap(self, env):
-        grant(env.g, "veto", 250_000)  # usage == cap, no denial yet
+        grant(env.g, "haftalik_ozet", 250_000)  # usage == cap, no denial yet
         assert len(events(env.g, "daily_stopped_100")) == 1
-        env.g.authorize("veto", usd(1))
+        env.g.authorize("haftalik_ozet", usd(1))
         assert len(events(env.g, "daily_stopped_100")) == 1
 
     def test_events_per_day_repeat_next_day(self, env):
-        grant(env.g, "veto", 250_000)
-        env.g.authorize("veto", usd(1))
+        grant(env.g, "haftalik_ozet", 250_000)
+        env.g.authorize("haftalik_ozet", usd(1))
         env.clock.set(T(2026, 11, 17, 0, 0, 1))
-        grant(env.g, "veto", 250_000)
-        env.g.authorize("veto", usd(1))
+        grant(env.g, "haftalik_ozet", 250_000)
+        env.g.authorize("haftalik_ozet", usd(1))
         st = events(env.g, "daily_stopped_100")
         assert sorted(e.day for e in st) == ["2026-11-16", "2026-11-17"]
         assert len(events(env.g, "daily_warn_70")) == 2
 
     def test_stop_event_per_service(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         grant(env.g, "lesson", 100_000)
         st = events(env.g, "daily_stopped_100")
-        assert sorted(e.service for e in st) == ["lesson", "veto"]
+        assert sorted(e.service for e in st) == ["haftalik_ozet", "lesson"]
 
     def test_events_ordered_and_have_fields(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         grant(env.g, "lesson", 100_000)
         ev = env.g.pending_events()
         ids = [e.id for e in ev]
@@ -605,7 +605,7 @@ class TestEvents:
             assert e.payload is not None
 
     def test_ack_and_redelivery(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         first = env.g.pending_events()
         again = env.g.pending_events()
         assert [e.id for e in first] == [e.id for e in again]  # at-least-once
@@ -618,13 +618,13 @@ class TestEvents:
         assert env.g.pending_events() == []
         assert env.g.status().pending_event_count == 0
         # acked events are not regenerated
-        env.g.authorize("veto", usd(1))
-        grant(env.g, "veto", 0) if False else None
+        env.g.authorize("haftalik_ozet", usd(1))
+        grant(env.g, "haftalik_ozet", 0) if False else None
         assert env.g.pending_events() == []
 
     def test_ack_empty_and_repeat(self, env):
         env.g.ack_events([])
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         ids = [e.id for e in env.g.pending_events()]
         env.g.ack_events(ids)
         env.g.ack_events(ids)
@@ -634,18 +634,18 @@ class TestEvents:
         grant(env.g, "lesson", 100_000)
         d = env.g.authorize("lesson", 0.0135)
         assert isinstance(d, Denial) and d.reason == "daily_cap"
-        g = env.g.authorize("veto", 0.001)
+        g = env.g.authorize("haftalik_ozet", 0.001)
         assert isinstance(g, Grant)
         st = env.g.status()
-        assert st.services["veto"].used_usd == pytest.approx(0.001, abs=1e-6)
-        assert st.services["veto"].state == "ok"
+        assert st.services["haftalik_ozet"].used_usd == pytest.approx(0.001, abs=1e-6)
+        assert st.services["haftalik_ozet"].state == "ok"
         assert st.services["lesson"].state == "stopped"
         # no veto events at all
-        assert [e for e in env.g.pending_events() if e.service == "veto"] == []
+        assert [e for e in env.g.pending_events() if e.service == "haftalik_ozet"] == []
 
     def test_veto_exhaustion_does_not_affect_lesson(self, env):
-        grant(env.g, "veto", 250_000)
-        assert isinstance(env.g.authorize("veto", usd(1)), Denial)
+        grant(env.g, "haftalik_ozet", 250_000)
+        assert isinstance(env.g.authorize("haftalik_ozet", usd(1)), Denial)
         g = grant(env.g, "lesson", 100_000)
         assert isinstance(g, Grant)
         assert env.g.status().services["lesson"].used_usd == pytest.approx(0.10, abs=1e-9)
@@ -654,8 +654,8 @@ class TestEvents:
         grant(env.g, "lesson", 100_000)
         for _ in range(5):
             assert isinstance(env.g.authorize("lesson", usd(10)), Denial)
-        grant(env.g, "veto", 250_000)
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.25, abs=1e-9)
+        grant(env.g, "haftalik_ozet", 250_000)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.25, abs=1e-9)
 
     def test_lesson_not_carried_to_next_day(self, env):
         grant(env.g, "lesson", 100_000)
@@ -667,14 +667,14 @@ class TestEvents:
         nxt = fill_month(env.g, env.clock, 4_999_000)
         assert events(env.g, "monthly_warn_5usd") == []
         env.clock.set(nxt)
-        grant(env.g, "veto", 1000)  # 5_000_000 exactly: not "> 5 USD"
+        grant(env.g, "haftalik_ozet", 1000)  # 5_000_000 exactly: not "> 5 USD"
         assert events(env.g, "monthly_warn_5usd") == []
-        g = env.g.authorize("veto", usd(1))  # 5_000_001
+        g = env.g.authorize("haftalik_ozet", usd(1))  # 5_000_001
         assert isinstance(g, Grant)
         w = events(env.g, "monthly_warn_5usd")
         assert len(w) == 1
         for _ in range(3):
-            grant(env.g, "veto", 100)
+            grant(env.g, "haftalik_ozet", 100)
         assert len(events(env.g, "monthly_warn_5usd")) == 1
 
     def test_13_8_monthly_warn_example(self, env):
@@ -688,7 +688,7 @@ class TestEvents:
         nxt = fill_month(env.g, env.clock, 9_999_000)
         assert len(events(env.g, "monthly_warn_5usd")) == 1
         env.clock.set(nxt)
-        d1 = env.g.authorize("veto", 0.002)
+        d1 = env.g.authorize("haftalik_ozet", 0.002)
         d2 = env.g.authorize("lesson", 0.002)
         assert isinstance(d1, Denial) and d1.reason == "monthly_cap"
         assert isinstance(d2, Denial) and d2.reason == "monthly_cap"
@@ -698,8 +698,8 @@ class TestEvents:
     def test_monthly_cap_exact_edge(self, env):
         nxt = fill_month(env.g, env.clock, 9_999_000)
         env.clock.set(nxt)
-        assert isinstance(grant(env.g, "veto", 1000), Grant)  # == 10_000_000
-        d = env.g.authorize("veto", usd(1))
+        assert isinstance(grant(env.g, "haftalik_ozet", 1000), Grant)  # == 10_000_000
+        d = env.g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "monthly_cap"
         assert env.g.status().month_state == "stopped"
 
@@ -707,18 +707,18 @@ class TestEvents:
         nxt = fill_month(env.g, env.clock, 9_900_000)
         env.clock.set(nxt)
         # est violates both daily (>250k) and monthly
-        d = env.g.authorize("veto", usd(240_000))
+        d = env.g.authorize("haftalik_ozet", usd(240_000))
         assert isinstance(d, Denial) and d.reason == "monthly_cap"
 
     def test_monthly_resets_on_month_change(self, env):
         nxt = fill_month(env.g, env.clock, 9_999_000)
         env.clock.set(nxt)
-        grant(env.g, "veto", 1000)
-        assert isinstance(env.g.authorize("veto", usd(1)), Denial)
+        grant(env.g, "haftalik_ozet", 1000)
+        assert isinstance(env.g.authorize("haftalik_ozet", usd(1)), Denial)
         env.clock.set(T(2027, 1, 1, 0, 0, 1))
         st = env.g.status()
         assert st.month == "2027-01" and st.month_used_usd == 0 and st.month_state == "ok"
-        assert isinstance(env.g.authorize("veto", usd(250_000)), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", usd(250_000)), Grant)
         # monthly_warn is again possible in the new month
         fill_month(env.g, env.clock, 5_000_000, start=T(2027, 1, 2, 1))
         assert len([e for e in events(env.g, "monthly_warn_5usd")]) == 2
@@ -727,14 +727,14 @@ class TestEvents:
         nxt = fill_month(env.g, env.clock, 6_999_000)
         assert events(env.g, "credit_low") == []
         env.clock.set(nxt)
-        grant(env.g, "veto", 2000)  # 7_001_000 -> remaining 2.999 < 3
+        grant(env.g, "haftalik_ozet", 2000)  # 7_001_000 -> remaining 2.999 < 3
         cl = events(env.g, "credit_low")
         assert len(cl) == 1
-        grant(env.g, "veto", 100)
+        grant(env.g, "haftalik_ozet", 100)
         grant(env.g, "lesson", 100)
         assert len(events(env.g, "credit_low")) == 1
         env.clock.set(nxt + timedelta(days=1))
-        grant(env.g, "veto", 100)
+        grant(env.g, "haftalik_ozet", 100)
         assert len(events(env.g, "credit_low")) == 2
         assert env.g.status().credit_estimate_usd == pytest.approx(10 - 7.001_000 - 0.0003, abs=1e-5)
 
@@ -743,70 +743,70 @@ class TestEvents:
 class TestCrash:
     def test_13_9_open_expired_late_record(self, env):
         env.clock.set(T(2026, 11, 16, 10, 0, 0))
-        g = env.g.authorize("veto", usd(3000))
+        g = env.g.authorize("haftalik_ozet", usd(3000))
         assert g.est_micro == 3000
         # "crash": drop guard, restart at 10:05
         env.clock.set(T(2026, 11, 16, 10, 5, 0))
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        assert g2.status().services["veto"].unsettled_usd == pytest.approx(0.003, abs=1e-9)
+        assert g2.status().services["haftalik_ozet"].unsettled_usd == pytest.approx(0.003, abs=1e-9)
         # 10:11 > TTL: next authorize expires it, amount stays counted
         env.clock.set(T(2026, 11, 16, 10, 11, 0))
-        g3 = g2.authorize("veto", usd(1000))
+        g3 = g2.authorize("haftalik_ozet", usd(1000))
         assert isinstance(g3, Grant)
         row = q(env.db, "select state, charged_micro from reservations where grant_id=?", (g.grant_id,))[0]
         assert row == ("expired", 3000)
-        st = g2.status().services["veto"]
+        st = g2.status().services["haftalik_ozet"]
         assert st.unsettled_usd == pytest.approx(0.004, abs=1e-9) and st.used_usd == pytest.approx(0.004, abs=1e-9)
         # 10:20 late record with real usage
         env.clock.set(T(2026, 11, 16, 10, 20, 0))
-        s = g2.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        s = g2.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert s.ok and s.cost_micro == 895
         row = q(env.db, "select state, charged_micro from reservations where grant_id=?", (g.grant_id,))[0]
         assert row == ("settled", 895)
-        st = g2.status().services["veto"]
+        st = g2.status().services["haftalik_ozet"]
         assert st.settled_usd == pytest.approx(0.000895, abs=1e-9)
         assert st.used_usd == pytest.approx(0.001895, abs=1e-9)
 
     def test_crash_without_record_stays_counted_all_day_and_month(self, env):
-        g = env.g.authorize("veto", usd(3000))
+        g = env.g.authorize("haftalik_ozet", usd(3000))
         env.clock.set(T(2026, 11, 16, 23, 59, 0))
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        assert isinstance(g2.authorize("veto", usd(1)), Grant)
+        assert isinstance(g2.authorize("haftalik_ozet", usd(1)), Grant)
         st = g2.status()
-        assert st.services["veto"].used_usd == pytest.approx(0.003001, abs=1e-9)
+        assert st.services["haftalik_ozet"].used_usd == pytest.approx(0.003001, abs=1e-9)
         assert st.month_used_usd == pytest.approx(0.003001, abs=1e-9)
         assert q(env.db, "select state from reservations where grant_id=?", (g.grant_id,))[0][0] == "expired"
 
     def test_ttl_expiry_does_not_free_amount_for_cap(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         env.clock.adv(hours=2)
-        d = env.g.authorize("veto", usd(1))
+        d = env.g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
 
     def test_release_frees_reservation(self, env):
-        g = grant(env.g, "veto", 250_000)
+        g = grant(env.g, "haftalik_ozet", 250_000)
         env.g.release(g)
-        assert env.g.status().services["veto"].used_usd == 0
+        assert env.g.status().services["haftalik_ozet"].used_usd == 0
         row = q(env.db, "select state, charged_micro from reservations where grant_id=?", (g.grant_id,))[0]
         assert row == ("released", 0)
-        assert isinstance(grant(env.g, "veto", 250_000), Grant)
+        assert isinstance(grant(env.g, "haftalik_ozet", 250_000), Grant)
 
     def test_release_no_effect_on_settled_and_idempotent(self, env):
-        g = grant(env.g, "veto", 3000)
-        env.g.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        env.g.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert env.g.release(g) is None
         assert env.g.release(g) is None
         assert q(env.db, "select state, charged_micro from reservations where grant_id=?", (g.grant_id,))[0] == ("settled", 895)
 
     def test_release_unknown_grant_no_raise(self, env):
-        fake = Grant("cd" * 16, "veto", 10, "2026-11-16", "2026-11-16T10:00:00.000Z", "2026-11-16T10:10:00.000Z")
+        fake = Grant("cd" * 16, "haftalik_ozet", 10, "2026-11-16", "2026-11-16T10:00:00.000Z", "2026-11-16T10:10:00.000Z")
         assert env.g.release(fake) is None
 
     def test_charged_micro_rule_by_state(self, env):
-        a = grant(env.g, "veto", 1000)
-        b = grant(env.g, "veto", 2000)
-        c = grant(env.g, "veto", 3000)
-        env.g.record("veto", b, Usage(input_tokens=1000), HAIKU)  # 100
+        a = grant(env.g, "haftalik_ozet", 1000)
+        b = grant(env.g, "haftalik_ozet", 2000)
+        c = grant(env.g, "haftalik_ozet", 3000)
+        env.g.record("haftalik_ozet", b, Usage(input_tokens=1000), HAIKU)  # 100
         env.g.release(c)
         rows = {r[0]: r[1:] for r in q(env.db, "select grant_id, state, est_micro, charged_micro from reservations")}
         assert rows[a.grant_id] == ("open", 1000, 1000)
@@ -814,7 +814,7 @@ class TestCrash:
         assert rows[c.grant_id] == ("released", 3000, 0)
 
     def test_status_is_read_only(self, env):
-        grant(env.g, "veto", 175_000)
+        grant(env.g, "haftalik_ozet", 175_000)
         n_ev = len(env.g.pending_events())
         n_rows = q(env.db, "select count(*) from reservations")[0][0]
         env.clock.adv(hours=5)  # reservation TTL passed; status must not change state
@@ -823,50 +823,50 @@ class TestCrash:
         assert len(env.g.pending_events()) == n_ev
         assert q(env.db, "select count(*) from reservations")[0][0] == n_rows
         assert q(env.db, "select state from reservations")[0][0] == "open"
-        assert env.g.status().services["veto"].unsettled_usd == pytest.approx(0.175, abs=1e-9)
+        assert env.g.status().services["haftalik_ozet"].unsettled_usd == pytest.approx(0.175, abs=1e-9)
 
 
 # ========================================= 6. time: day/month boundary, monotonic
 class TestTime:
     def test_13_11_reservation_day_and_monotonic_clock(self, env):
         env.clock.set(T(2026, 11, 16, 23, 59, 59, 900))
-        g = env.g.authorize("veto", usd(3000))
+        g = env.g.authorize("haftalik_ozet", usd(3000))
         assert g.day == "2026-11-16"
         env.clock.set(T(2026, 11, 17, 0, 0, 3))
-        s = env.g.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        s = env.g.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert s.ok and s.day == "2026-11-16"
         st = env.g.status()
         assert st.day == "2026-11-17"
-        assert st.services["veto"].used_usd == 0  # D+1 starts at 0
-        g2 = env.g.authorize("veto", usd(1000))
+        assert st.services["haftalik_ozet"].used_usd == 0  # D+1 starts at 0
+        g2 = env.g.authorize("haftalik_ozet", usd(1000))
         assert g2.day == "2026-11-17"
         # clock goes back to D: effective day must not regress
         env.clock.set(T(2026, 11, 16, 23, 50, 0))
-        g3 = env.g.authorize("veto", usd(1000))
+        g3 = env.g.authorize("haftalik_ozet", usd(1000))
         assert isinstance(g3, Grant) and g3.day == "2026-11-17"
         assert env.g.status().day == "2026-11-17"
         # D's spend stays at D, D+1 spend only 2000
-        assert env.g.status().services["veto"].used_usd == pytest.approx(0.002, abs=1e-9)
+        assert env.g.status().services["haftalik_ozet"].used_usd == pytest.approx(0.002, abs=1e-9)
 
     def test_clock_rollback_cannot_reset_counter(self, env):
         env.clock.set(T(2026, 11, 17, 5))
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         env.clock.set(T(2026, 11, 16, 5))  # one day back
-        d = env.g.authorize("veto", usd(1))
+        d = env.g.authorize("haftalik_ozet", usd(1))
         assert isinstance(d, Denial) and d.reason == "daily_cap"
 
     def test_monotonic_persists_across_restart(self, env):
         env.clock.set(T(2026, 11, 17, 5))
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         env.clock.set(T(2026, 11, 16, 5))
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        assert isinstance(g2.authorize("veto", usd(1)), Denial)
+        assert isinstance(g2.authorize("haftalik_ozet", usd(1)), Denial)
 
     def test_day_rollover_resets_cap(self, env):
-        grant(env.g, "veto", 250_000)
-        assert isinstance(env.g.authorize("veto", usd(1)), Denial)
+        grant(env.g, "haftalik_ozet", 250_000)
+        assert isinstance(env.g.authorize("haftalik_ozet", usd(1)), Denial)
         env.clock.set(T(2026, 11, 17, 0, 0, 0))
-        g = env.g.authorize("veto", usd(250_000))
+        g = env.g.authorize("haftalik_ozet", usd(250_000))
         assert isinstance(g, Grant) and g.day == "2026-11-17"
 
     def test_exactly_midnight_is_new_day(self, env):
@@ -877,15 +877,15 @@ class TestTime:
 
     def test_month_key_and_ttl_across_midnight_charges_reservation_month(self, env):
         env.clock.set(T(2026, 11, 30, 23, 59, 59, 900))
-        g = env.g.authorize("veto", usd(3000))
+        g = env.g.authorize("haftalik_ozet", usd(3000))
         env.clock.set(T(2026, 12, 1, 0, 0, 2))
-        env.g.record("veto", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        env.g.record("haftalik_ozet", g, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
         assert q(env.db, "select day, month from reservations")[0] == ("2026-11-30", "2026-11")
         st = env.g.status()
         assert st.month == "2026-12" and st.month_used_usd == 0
 
     def test_timestamps_format(self, env):
-        grant(env.g, "veto", 250_000)
+        grant(env.g, "haftalik_ozet", 250_000)
         for e in env.g.pending_events():
             assert TS_RE.match(e.ts)
         assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", env.g.status().generated_at)
@@ -897,7 +897,7 @@ class TestStatus:
         st = env.g.status()
         assert st.store_ok and st.config_ok
         assert st.day == "2026-11-16" and st.month == "2026-11"
-        for svc, cap in (("veto", 0.25), ("lesson", 0.10)):
+        for svc, cap in (("haftalik_ozet", 0.25), ("lesson", 0.10)):
             s = st.services[svc]
             assert s.cap_usd == pytest.approx(cap)
             assert s.used_usd == 0 and s.settled_usd == 0 and s.unsettled_usd == 0
@@ -915,49 +915,49 @@ class TestStatus:
         assert g.status().prices_verified is True
 
     def test_values_and_states(self, env):
-        grant(env.g, "veto", 100_000)
-        s = env.g.status().services["veto"]
+        grant(env.g, "haftalik_ozet", 100_000)
+        s = env.g.status().services["haftalik_ozet"]
         assert s.state == "ok" and s.calls_today == 1
         assert s.used_usd == pytest.approx(0.1, abs=1e-9) and s.pct == pytest.approx(40.0)
-        grant(env.g, "veto", 76_000)  # 176_000
-        s = env.g.status().services["veto"]
+        grant(env.g, "haftalik_ozet", 76_000)  # 176_000
+        s = env.g.status().services["haftalik_ozet"]
         assert s.state == "warn" and s.pct == pytest.approx(70.4) and s.calls_today == 2
         assert s.remaining_usd == pytest.approx(0.074, abs=1e-9)
         assert s.unsettled_usd == pytest.approx(0.176, abs=1e-9) and s.settled_usd == 0
-        grant(env.g, "veto", 74_000)
-        s = env.g.status().services["veto"]
+        grant(env.g, "haftalik_ozet", 74_000)
+        s = env.g.status().services["haftalik_ozet"]
         assert s.state == "stopped" and s.pct == pytest.approx(100.0) and s.remaining_usd == 0
 
     def test_settled_vs_unsettled(self, env):
-        a = grant(env.g, "veto", 5000)
-        grant(env.g, "veto", 2000)
-        env.g.record("veto", a, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
-        s = env.g.status().services["veto"]
+        a = grant(env.g, "haftalik_ozet", 5000)
+        grant(env.g, "haftalik_ozet", 2000)
+        env.g.record("haftalik_ozet", a, Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), HAIKU)
+        s = env.g.status().services["haftalik_ozet"]
         assert s.settled_usd == pytest.approx(0.000895, abs=1e-9)
         assert s.unsettled_usd == pytest.approx(0.002, abs=1e-9)
         assert s.used_usd == pytest.approx(0.002895, abs=1e-9)
 
     def test_released_not_counted_in_used(self, env):
-        a = grant(env.g, "veto", 5000)
+        a = grant(env.g, "haftalik_ozet", 5000)
         env.g.release(a)
-        s = env.g.status().services["veto"]
+        s = env.g.status().services["haftalik_ozet"]
         assert s.used_usd == 0 and s.unsettled_usd == 0
 
     def test_blocked_precedes_stopped_and_to_dict(self, env):
-        g = grant(env.g, "veto", 250_000)
-        assert env.g.status().services["veto"].state == "stopped"
-        env.g.report_error("veto", g, 1, 429, error_type="rate_limit_error",
+        g = grant(env.g, "haftalik_ozet", 250_000)
+        assert env.g.status().services["haftalik_ozet"].state == "stopped"
+        env.g.report_error("haftalik_ozet", g, 1, 429, error_type="rate_limit_error",
                            error_code="enforced_spend_limit_reached", message="spend limit")
         st = env.g.status()
-        assert st.services["veto"].state == "blocked" and st.services["lesson"].state == "blocked"
+        assert st.services["haftalik_ozet"].state == "blocked" and st.services["lesson"].state == "blocked"
         assert st.provider_blocked_until is not None
         d = st.to_dict()
         json.dumps(d)  # JSON serialisable
-        assert d["services"]["veto"]["state"] == "blocked"
+        assert d["services"]["haftalik_ozet"]["state"] == "blocked"
         assert d["store_ok"] is True
 
     def test_credit_estimate(self, env):
-        grant(env.g, "veto", 176_000)
+        grant(env.g, "haftalik_ozet", 176_000)
         grant(env.g, "lesson", 13_500)
         assert env.g.status().credit_estimate_usd == pytest.approx(10 - 0.1895, abs=1e-6)
 
@@ -973,13 +973,13 @@ LIMIT400 = "You have reached your specified API usage limits. You will regain ac
 
 class TestReportError:
     def test_13_12a_400_own_limit_stop_global_block(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 400, error_type="invalid_request_error", message=LIMIT400)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 400, error_type="invalid_request_error", message=LIMIT400)
         assert isinstance(a, ErrorAction) and a.kind == "stop"
         assert P(a.blocked_until) == T(2026, 11, 17, 0)
         # release automatic
-        assert env.g.status().services["veto"].unsettled_usd == 0
-        for svc in ("veto", "lesson"):
+        assert env.g.status().services["haftalik_ozet"].unsettled_usd == 0
+        for svc in ("haftalik_ozet", "lesson"):
             d = env.g.authorize(svc, 0.001)
             assert isinstance(d, Denial) and d.reason == "provider_blocked"
             assert P(d.retry_after) == T(2026, 11, 17, 0)
@@ -993,14 +993,14 @@ class TestReportError:
             assert a.kind == "stop"
 
     def test_400_limit_probe_next_day_and_reblock(self, env):
-        g = grant(env.g, "veto", 3000)
-        env.g.report_error("veto", g, 1, 400, error_type="invalid_request_error", message=LIMIT400)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        env.g.report_error("haftalik_ozet", g, 1, 400, error_type="invalid_request_error", message=LIMIT400)
         env.clock.set(T(2026, 11, 17, 0, 0, 1))
-        probe = env.g.authorize("veto", 0.001)
+        probe = env.g.authorize("haftalik_ozet", 0.001)
         assert isinstance(probe, Grant)  # single probing call allowed
-        a = env.g.report_error("veto", probe, 1, 400, error_type="invalid_request_error", message=LIMIT400)
+        a = env.g.report_error("haftalik_ozet", probe, 1, 400, error_type="invalid_request_error", message=LIMIT400)
         assert a.kind == "stop" and P(a.blocked_until) == T(2026, 11, 18, 0)
-        d = env.g.authorize("veto", 0.001)
+        d = env.g.authorize("haftalik_ozet", 0.001)
         assert isinstance(d, Denial) and d.reason == "provider_blocked"
 
     def test_13_12b_429_enforced_spend_limit(self, env):
@@ -1009,24 +1009,24 @@ class TestReportError:
         a = env.g.report_error("lesson", g, 1, 429, error_type="rate_limit_error",
                                error_code="enforced_spend_limit_reached", message="hit")
         assert a.kind == "stop" and P(a.blocked_until) == T(2027, 1, 1, 0)
-        d = env.g.authorize("veto", 0.001)  # global: veto blocked too
+        d = env.g.authorize("haftalik_ozet", 0.001)  # global: veto blocked too
         assert isinstance(d, Denial) and d.reason == "provider_blocked"
         assert P(d.retry_after) == T(2027, 1, 1)
         env.clock.set(T(2026, 12, 31, 23, 59, 0))
-        assert isinstance(env.g.authorize("veto", 0.001), Denial)
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.001), Denial)
         env.clock.set(T(2027, 1, 1, 0, 0, 1))
-        assert isinstance(env.g.authorize("veto", 0.001), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.001), Grant)
         assert len(events(env.g, "provider_limit_hit")) == 1
 
     def test_429_enforced_mid_year_month_boundary(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 429, error_code="enforced_spend_limit_reached")
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 429, error_code="enforced_spend_limit_reached")
         assert P(a.blocked_until) == T(2026, 12, 1, 0)
 
     def test_provider_limit_event_once_per_day_status(self, env):
-        g = grant(env.g, "veto", 1000)
+        g = grant(env.g, "haftalik_ozet", 1000)
         for _ in range(2):
-            env.g.report_error("veto", g, 1, 429, error_code="enforced_spend_limit_reached")
+            env.g.report_error("haftalik_ozet", g, 1, 429, error_code="enforced_spend_limit_reached")
         assert len(events(env.g, "provider_limit_hit")) == 1
 
     @pytest.mark.parametrize(
@@ -1034,10 +1034,10 @@ class TestReportError:
         [(1, 1.6, 2.4), (2, 3.2, 4.8), (3, 6.4, 9.6)],
     )
     def test_13_12c_backoff_with_jitter(self, env, attempt, lo, hi):
-        g = grant(env.g, "veto", 3000)
+        g = grant(env.g, "haftalik_ozet", 3000)
         seen = set()
         for _ in range(30):
-            a = env.g.report_error("veto", g, attempt, 429, error_type="rate_limit_error")
+            a = env.g.report_error("haftalik_ozet", g, attempt, 429, error_type="rate_limit_error")
             assert a.kind == "retry"
             assert lo - 1e-9 <= a.sleep_s <= hi + 1e-9
             seen.add(round(a.sleep_s, 6))
@@ -1046,65 +1046,65 @@ class TestReportError:
         assert isinstance(env.g.authorize("lesson", 0.001), Grant)
 
     def test_13_12c_attempt_over_max_fails(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 4, 429, error_type="rate_limit_error")
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 4, 429, error_type="rate_limit_error")
         assert a.kind == "fail"
         assert env.g.authorize("lesson", 0.001).__class__ is Grant  # no block
 
     def test_13_12d_retry_after_capped_by_max_sleep(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 529, retry_after_s=40)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 529, retry_after_s=40)
         assert a.kind == "retry" and a.sleep_s == pytest.approx(20.0)
 
     def test_retry_after_raises_minimum(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 529, retry_after_s=5)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 529, retry_after_s=5)
         assert a.kind == "retry" and 5.0 - 1e-9 <= a.sleep_s <= 20.0
 
     def test_sleep_capped_by_max_sleep(self, env):
         cfgm = lambda d: d["retry"].update(base_s=10.0, factor=3.0)
         g_ = mk(env, cfgm)
-        g = g_.authorize("veto", 0.003)
-        a = g_.report_error("veto", g, 3, 500)  # 10*9=90 -> capped at 20 (+-jitter)
+        g = g_.authorize("haftalik_ozet", 0.003)
+        a = g_.report_error("haftalik_ozet", g, 3, 500)  # 10*9=90 -> capped at 20 (+-jitter)
         assert a.kind == "retry" and a.sleep_s <= 20.0 * 1.2 + 1e-9 and a.sleep_s >= 20.0 * 0.8 - 1e-9
 
     @pytest.mark.parametrize("status", [408, 409, 500, 502, 503, 504, 529, None])
     def test_retryable_statuses(self, env, status):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, status)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, status)
         assert a.kind == "retry" and 1.6 - 1e-9 <= a.sleep_s <= 2.4 + 1e-9
 
     @pytest.mark.parametrize("code", ["rate_limit_error", "ramp_limit_exceeded"])
     def test_other_429_retry(self, env, code):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 429, error_type=code, error_code=code)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 429, error_type=code, error_code=code)
         assert a.kind == "retry"
 
     @pytest.mark.parametrize("status", [401, 402, 403, 404, 413])
     def test_fail_statuses_no_block_and_release(self, env, status):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, status, error_type="x_error", message="nope")
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, status, error_type="x_error", message="nope")
         assert a.kind == "fail"
         assert env.g.status().provider_blocked_until is None
-        assert env.g.status().services["veto"].unsettled_usd == 0  # released
-        assert isinstance(env.g.authorize("veto", 0.001), Grant)
+        assert env.g.status().services["haftalik_ozet"].unsettled_usd == 0  # released
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.001), Grant)
 
     def test_13_12e_400_schema_error_fail(self, env):
-        g = grant(env.g, "veto", 3000)
-        a = env.g.report_error("veto", g, 1, 400, error_type="invalid_request_error",
+        g = grant(env.g, "haftalik_ozet", 3000)
+        a = env.g.report_error("haftalik_ozet", g, 1, 400, error_type="invalid_request_error",
                                message="messages.0.content: Input should be a valid list")
         assert a.kind == "fail" and a.blocked_until in (None,)
         assert env.g.status().provider_blocked_until is None
         assert isinstance(env.g.authorize("lesson", 0.001), Grant)
 
     def test_unknown_status_fails(self, env):
-        g = grant(env.g, "veto", 3000)
-        assert env.g.report_error("veto", g, 1, 418).kind == "fail"
+        g = grant(env.g, "haftalik_ozet", 3000)
+        assert env.g.report_error("haftalik_ozet", g, 1, 418).kind == "fail"
 
     def test_deadline_exceeded_fails(self, env):
-        g = grant(env.g, "veto", 3000)
-        env.clock.adv(seconds=61)  # veto deadline 60 s
-        a = env.g.report_error("veto", g, 1, 529)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        env.clock.adv(seconds=301)  # haftalik_ozet deadline 300 s
+        a = env.g.report_error("haftalik_ozet", g, 1, 529)
         assert a.kind == "fail"
 
     def test_lesson_deadline_longer(self, env):
@@ -1115,38 +1115,38 @@ class TestReportError:
         assert env.g.report_error("lesson", g, 1, 529).kind == "fail"
 
     def test_report_error_after_no_response_keeps_reservation(self, env):
-        g = grant(env.g, "veto", 3000)
-        env.g.report_error("veto", g, 1, None)  # timeout: retry, no release
-        assert env.g.status().services["veto"].unsettled_usd == pytest.approx(0.003, abs=1e-9)
+        g = grant(env.g, "haftalik_ozet", 3000)
+        env.g.report_error("haftalik_ozet", g, 1, None)  # timeout: retry, no release
+        assert env.g.status().services["haftalik_ozet"].unsettled_usd == pytest.approx(0.003, abs=1e-9)
 
 
 # ============================================ 9. fail-closed store behaviour
 class TestFailClosed:
     def _all_calls_safe(self, g, clock):
-        fake = Grant("ef" * 16, "veto", 100, "2026-11-16", "2026-11-16T10:00:00.000Z",
+        fake = Grant("ef" * 16, "haftalik_ozet", 100, "2026-11-16", "2026-11-16T10:00:00.000Z",
                      "2026-11-16T10:10:00.000Z")
-        r = g.record("veto", fake, Usage(input_tokens=1), HAIKU)
+        r = g.record("haftalik_ozet", fake, Usage(input_tokens=1), HAIKU)
         assert isinstance(r, Settlement) and r.ok is False
         assert g.release(fake) is None
-        a = g.report_error("veto", fake, 1, 500)
+        a = g.report_error("haftalik_ozet", fake, 1, 500)
         assert isinstance(a, ErrorAction)
         assert isinstance(g.pending_events(), list)
         assert g.ack_events([1, 2]) is None
         st = g.status()
         assert st.store_ok is False
-        for s in ("veto", "lesson"):
+        for s in ("haftalik_ozet", "lesson"):
             assert st.services[s].state == "unavailable"
         json.dumps(st.to_dict())
 
     def test_first_use_creates_db_marker_and_perms(self, env):
         assert not env.db.exists()
-        assert isinstance(env.g.authorize("veto", 0.001), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.001), Grant)
         assert env.db.exists()
         assert Path(str(env.db) + ".initialized").exists()
         assert (env.db.stat().st_mode & 0o777) == 0o600
 
     def test_pragmas_and_schema(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         c = sqlite3.connect(str(env.db))
         try:
             assert c.execute("pragma user_version").fetchone()[0] == 1
@@ -1164,25 +1164,25 @@ class TestFailClosed:
     def test_corrupt_file_denied_never_raises_and_untouched(self, env):
         junk = b"this is definitely not a sqlite database\x00" * 200
         env.db.write_bytes(junk)
-        d = env.g.authorize("veto", 0.001)
-        assert isinstance(d, Denial) and d.reason == "store_unavailable" and d.service == "veto"
+        d = env.g.authorize("haftalik_ozet", 0.001)
+        assert isinstance(d, Denial) and d.reason == "store_unavailable" and d.service == "haftalik_ozet"
         assert isinstance(env.g.authorize("lesson", 0.001), Denial)
         self._all_calls_safe(env.g, env.clock)
         assert env.db.read_bytes() == junk  # not deleted / recreated
 
     def test_corrupt_after_use(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         g2 = BudgetGuard(env.cfg, clock=env.clock)
         env.db.write_bytes(b"\xff" * 4096)
-        d = g2.authorize("veto", 0.001)
+        d = g2.authorize("haftalik_ozet", 0.001)
         assert isinstance(d, Denial) and d.reason == "store_unavailable"
         assert env.db.read_bytes() == b"\xff" * 4096
 
     def test_missing_with_marker_store_missing(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         os.remove(env.db)
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        d = g2.authorize("veto", 0.001)
+        d = g2.authorize("haftalik_ozet", 0.001)
         assert isinstance(d, Denial) and d.reason == "store_missing"
         assert not env.db.exists()  # not silently recreated (counter not reset)
         assert Path(str(env.db) + ".initialized").exists()
@@ -1192,35 +1192,35 @@ class TestFailClosed:
     def test_missing_dir_and_marker_is_first_install(self, tmp_path):
         cfg = make_cfg(tmp_path, db_name="sub_ok.sqlite")
         g = BudgetGuard(cfg, clock=Clock(T(2026, 11, 16, 10)))
-        assert isinstance(g.authorize("veto", 0.001), Grant)
+        assert isinstance(g.authorize("haftalik_ozet", 0.001), Grant)
 
     def test_newer_schema_version(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         c = sqlite3.connect(str(env.db))
         c.execute("pragma user_version=99")
         c.commit()
         c.close()
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        d = g2.authorize("veto", 0.001)
+        d = g2.authorize("haftalik_ozet", 0.001)
         assert isinstance(d, Denial) and d.reason == "store_unavailable"
 
     def test_meta_missing(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         c = sqlite3.connect(str(env.db))
         c.execute("drop table meta")
         c.commit()
         c.close()
         g2 = BudgetGuard(env.cfg, clock=env.clock)
-        d = g2.authorize("veto", 0.001)
+        d = g2.authorize("haftalik_ozet", 0.001)
         assert isinstance(d, Denial) and d.reason in ("store_unavailable", "store_missing")
 
     def test_locked_store_denies_then_recovers(self, env):
-        env.g.authorize("veto", 0.001)
+        env.g.authorize("haftalik_ozet", 0.001)
         lock = sqlite3.connect(str(env.db), timeout=0, isolation_level=None)
         lock.execute("BEGIN EXCLUSIVE")
         try:
             t0 = time.monotonic()
-            d = env.g.authorize("veto", 0.001)
+            d = env.g.authorize("haftalik_ozet", 0.001)
             dt = time.monotonic() - t0
             assert isinstance(d, Denial) and d.reason == "store_unavailable"
             assert dt < 30
@@ -1228,21 +1228,21 @@ class TestFailClosed:
         finally:
             lock.execute("ROLLBACK")
             lock.close()
-        assert isinstance(env.g.authorize("veto", 0.001), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.001), Grant)
 
     def _locked_calls(self, env):
-        fake = Grant("ef" * 16, "veto", 100, "2026-11-16", "2026-11-16T10:00:00.000Z",
+        fake = Grant("ef" * 16, "haftalik_ozet", 100, "2026-11-16", "2026-11-16T10:00:00.000Z",
                      "2026-11-16T10:10:00.000Z")
-        assert isinstance(env.g.record("veto", fake, Usage(input_tokens=1), HAIKU), Settlement)
+        assert isinstance(env.g.record("haftalik_ozet", fake, Usage(input_tokens=1), HAIKU), Settlement)
         assert env.g.release(fake) is None
-        assert isinstance(env.g.report_error("veto", fake, 1, 500), ErrorAction)
+        assert isinstance(env.g.report_error("haftalik_ozet", fake, 1, 500), ErrorAction)
         assert isinstance(env.g.status().store_ok, bool)
 
     def test_store_error_event_not_required_but_no_raise_on_unwritable_dir(self, tmp_path):
         ro = tmp_path / "nodir" / "deeper"
         cfg = make_cfg(tmp_path, lambda d: d.update(db_path=str(ro / "b.sqlite")))
         g = BudgetGuard(cfg, clock=Clock(T(2026, 11, 16, 10)))
-        r = g.authorize("veto", 0.001)
+        r = g.authorize("haftalik_ozet", 0.001)
         assert isinstance(r, (Grant, Denial))
         if isinstance(r, Denial):
             assert r.reason in ("store_unavailable", "store_missing")
@@ -1252,7 +1252,7 @@ class TestFailClosed:
             "import json, sys\n"
             "import trader_core.budget as b\n"
             "b.DEFAULT_PATH = sys.argv[1]\n"
-            "r = b.authorize('veto', 0.001)\n"
+            "r = b.authorize('haftalik_ozet', 0.001)\n"
             "st = b.status()\n"
             "print(json.dumps([type(r).__name__, getattr(r,'reason',None), st.config_ok, st.store_ok]))\n"
         )
@@ -1282,11 +1282,11 @@ class TestFailClosed:
             "import trader_core.budget as b\n"
             "b.DEFAULT_PATH = sys.argv[1]\n"
             "est = b.estimate_cost('claude-haiku-5-5', input_tokens=4800, max_output_tokens=1000, cache_read_tokens=1500)\n"
-            "g = b.authorize('veto', est)\n"
-            "s = b.record('veto', g, b.Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), 'claude-haiku-5-5')\n"
+            "g = b.authorize('haftalik_ozet', est)\n"
+            "s = b.record('haftalik_ozet', g, b.Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), 'claude-haiku-5-5')\n"
             "st = b.status()\n"
             "print(json.dumps([round(est*1e6), type(g).__name__, s.cost_micro, s.ok, b.api_key_env('lesson'),\n"
-            "                  st.services['veto'].used_usd, len(b.pending_events())]))\n"
+            "                  st.services['haftalik_ozet'].used_usd, len(b.pending_events())]))\n"
         )
         env = dict(os.environ, PYTHONPATH=str(SRC_DIR))
         out = subprocess.run([sys.executable, "-c", code, str(tmp_path / "config" / "budget.json")],
@@ -1308,7 +1308,7 @@ while not os.path.exists(go) and time.time() < deadline:
     time.sleep(0.001)
 out = []
 for _ in range(n):
-    for svc, est in (("veto", est_veto), ("lesson", est_lesson)):
+    for svc, est in (("haftalik_ozet", est_veto), ("lesson", est_lesson)):
         if est <= 0:
             continue
         r = g.authorize(svc, est)
@@ -1344,7 +1344,7 @@ class TestConcurrency:
         res = _run_workers(tmp_path, tmp_path / "budget.json", 4, usd(20_000), usd(20_000), 12)
         days = {r[3] for r in res if r[1] == "Grant"}
         assert len(days) == 1  # (UTC midnight during the test would be a freak event)
-        for svc, expect in (("veto", 12), ("lesson", 5)):
+        for svc, expect in (("haftalik_ozet", 12), ("lesson", 5)):
             grants = [r for r in res if r[0] == svc and r[1] == "Grant"]
             assert len(grants) == expect, (svc, len(grants))
             assert all(r[4] == 20_000 for r in grants)
@@ -1358,7 +1358,7 @@ class TestConcurrency:
     def test_13_10_two_processes_race_for_last_slot(self, tmp_path):
         cfg = make_cfg(tmp_path)
         g = BudgetGuard(cfg)
-        r = g.authorize("veto", usd(240_000))
+        r = g.authorize("haftalik_ozet", usd(240_000))
         assert isinstance(r, Grant)
         res = _run_workers(tmp_path, tmp_path / "budget.json", 2, usd(8000), 0, 1)
         grants = [x for x in res if x[1] == "Grant"]
@@ -1378,7 +1378,7 @@ class TestConcurrency:
             g = BudgetGuard(cfg)
             barrier.wait()
             for _ in range(10):
-                for svc in ("veto", "lesson"):
+                for svc in ("haftalik_ozet", "lesson"):
                     r = g.authorize(svc, usd(10_000))
                     with lock:
                         results.append((svc, r))
@@ -1405,7 +1405,7 @@ class TestConcurrency:
             g = BudgetGuard(cfg)
             barrier.wait()
             for _ in range(10):
-                r = g.authorize("veto", usd(15_000))
+                r = g.authorize("haftalik_ozet", usd(15_000))
                 with lock:
                     out.append(r)
 
@@ -1442,14 +1442,14 @@ class TestKeyLeak:
     def test_no_key_in_outputs(self, env, monkeypatch, caplog):
         caplog.set_level(logging.DEBUG)
         kv, kl = "sk-ant-api03-FAKEVETOKEY1234567890", "sk-ant-api03-FAKELESSONKEY0987654321"
-        monkeypatch.setenv("ANTHROPIC_API_KEY_VETO", kv)
+        monkeypatch.setenv("ANTHROPIC_API_KEY_HAFTALIK_OZET", kv)
         monkeypatch.setenv("ANTHROPIC_API_KEY_LESSON", kl)
         leak = "invalid x-api-key sk-ant-api03-LEAKEDINMESSAGE-abc123 and again sk-ant-zzzz"
         collected = []
-        g1 = env.g.authorize("veto", 0.2)
+        g1 = env.g.authorize("haftalik_ozet", 0.2)
         collected.append(repr(g1))
-        collected.append(repr(env.g.authorize("veto", 0.2)))  # denial
-        a = env.g.report_error("veto", g1, 1, 401, error_type="authentication_error", message=leak)
+        collected.append(repr(env.g.authorize("haftalik_ozet", 0.2)))  # denial
+        a = env.g.report_error("haftalik_ozet", g1, 1, 401, error_type="authentication_error", message=leak)
         collected.append(repr(a))
         g2 = env.g.authorize("lesson", 0.05)
         a = env.g.report_error("lesson", g2, 1, 400, error_type="invalid_request_error",
@@ -1481,9 +1481,9 @@ class TestKeyLeak:
 
     def test_module_does_not_read_keys(self, env, monkeypatch):
         # works with the env vars absent: module is key-agnostic
-        monkeypatch.delenv("ANTHROPIC_API_KEY_VETO", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY_HAFTALIK_OZET", raising=False)
         monkeypatch.delenv("ANTHROPIC_API_KEY_LESSON", raising=False)
-        assert isinstance(env.g.authorize("veto", 0.01), Grant)
+        assert isinstance(env.g.authorize("haftalik_ozet", 0.01), Grant)
         assert isinstance(env.g.authorize("lesson", 0.01), Grant)
 
 
@@ -1520,7 +1520,7 @@ def _invariants(db, caps, tainted_days, tainted_months, g, clock):
             assert v <= 10_000_000, ("monthly cap exceeded", m, v)
     st = g.status()
     assert st.store_ok and st.config_ok
-    for svc in ("veto", "lesson"):
+    for svc in ("haftalik_ozet", "lesson"):
         exp = day_sum.get((svc, st.day), 0)
         assert st.services[svc].used_usd == pytest.approx(exp / 1e6, abs=6e-7), (svc, st.day)
         assert st.services[svc].settled_usd + st.services[svc].unsettled_usd == pytest.approx(
@@ -1550,7 +1550,7 @@ def _run_sequence(rng, tmp_path, idx):
             clock.adv(seconds=rng.choice([0, 1, 5, 30, 700, 1000, 3600, 3600 * rng.randint(2, 20), 86400 + rng.randint(0, 5000)]))
         r = rng.random()
         if r < 0.45 or not grants:
-            svc = rng.choice(["veto", "lesson"])
+            svc = rng.choice(["haftalik_ozet", "lesson"])
             micro = rng.choice([1, 500, 2000, 8000, 20_000, 60_000, 120_000, 260_000])
             used_before = {k: v for k, v in [
                 ((row[1], row[2]), 0) for row in []]}

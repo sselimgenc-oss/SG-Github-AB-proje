@@ -3,9 +3,7 @@
   "host": "127.0.0.1",
   "port": 8787,
   "status_path": "var/learner/status.json",
-  "twin_status_path": "var/twin/status.json",
   "ledger_path": "var/learner/ledger.sqlite",
-  "twin_ledger_path": "var/twin/ledger.sqlite",
   "budget_config": "config/budget.json",
   "lesson_store": "user_data/lesson.sqlite",
   "health_state": "/var/lib/trader-health/state.json",
@@ -14,5 +12,5 @@
   "health_stale_s": 900,
   "cache_s": 5,
   "request_timeout_s": 3,
-  "max_concurrent": 8
+  "max_concurrent": 16
 }

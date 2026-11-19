@@ -180,7 +180,7 @@ class TestStructures:
     def test_config_defaults(self):
         c = h.DEFAULT_CFG
         assert c.warmup_s == 600
-        assert tuple(c.require_bots) == ("learner", "twin")
+        assert tuple(c.require_bots) == ("learner",)
         assert c.veto_max_age_s is None
         assert c.budget_check_enabled is False
         with pytest.raises(dataclasses.FrozenInstanceError):
@@ -704,7 +704,7 @@ class TestSpecExamples:
         assert rep.overall == Status.UNKNOWN and not rep.healthy
 
     def test_missing_one_bot_only(self):
-        rep = ev(api={"learner": good_api()})
+        rep = ev(api={"learner": good_api()}, cfg=h.HealthConfig(require_bots=("learner", "twin")))   # DD-12: varsayilan yalniz learner; genel coklu bot kurali
         assert any(r.code == "missing_check" and "twin" in r.name for r in rep.results)
         assert not rep.healthy
 
@@ -1395,6 +1395,7 @@ def backup_mod():
 
 def run_backup(mod, env: Env, monkeypatch, keep=None, extra_env=None):
     """health_backup.main'i ortam degiskenleriyle calistirir; cikis kodunu dondurur."""
+    monkeypatch.setenv("HEALTH_BOTS", "learner,twin")      # DD-12: varsayilan yalniz learner; bu fikstur iki botlu (genel) yedegi dener
     for k, v in {**env.environ(keep), **(extra_env or {})}.items():
         monkeypatch.setenv(k, v)
     if keep is None:

@@ -23,16 +23,16 @@ Environment=PYTHONUNBUFFERED=1
 # Feed market.sqlite'i olusturana kadar (en fazla 60 sn) bekler; sonrasinda motorun kendi acilis kapisi (kural + taze veri) devreye girer
 ExecStartPre=/bin/sh -c 'i=0; while [ ! -e var/market.sqlite ] && [ $i -lt 60 ]; do i=$((i+1)); sleep 1; done; [ -e var/market.sqlite ]'
 # Defter yoksa olusturur; varsa dokunmaz (idempotent)
-ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot %i --config-dir config
-ExecStart=/usr/bin/python3 -m trader_engine run --bot %i --config-dir config
+ExecStartPre=/usr/bin/python3 -m trader_engine init-ledger --bot %i --env paper --config-dir config
+ExecStart=/usr/bin/python3 -m trader_engine run --bot %i --env paper --config-dir config
 Restart=on-failure
 RestartSec=20
 # 7 = acilis kapisi (kural/veri 10/10 degil), 8 = kalici ret (DD-8: yabanci/eksik damga, state_missing...): yeniden dene dongusu
 # yerine 'failed' olup OnFailure Telegram alarmi gitsin
 RestartPreventExitStatus=7 8
-# 2 GB'lik sunucuda baska bir proje de calisiyor: sert tavan + yumusak tavan (ogrenen once, ikiz sonra)
-MemoryHigh=280M
-MemoryMax=350M
+# 2 GB'lik sunucuda baska bir proje de calisiyor: sert tavan + yumusak tavan (DD-12 §8: ogrenen 600M/750M; ikiz kaldirildi)
+MemoryHigh=600M
+MemoryMax=750M
 CPUQuota=60%
 Nice=10
 NoNewPrivileges=true

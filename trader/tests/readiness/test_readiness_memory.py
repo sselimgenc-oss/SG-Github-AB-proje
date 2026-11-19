@@ -29,13 +29,13 @@ def test_every_long_running_and_heavy_unit_has_memory_max():
 
 
 def test_memory_budget_sums():
-    always = _mem("trader-feed.service") + 2 * _mem("trader-engine@.service") + _mem("trader-panel.service") + _mem("trader-telegram.service")
+    always = _mem("trader-feed.service") + _mem("trader-engine@.service") + _mem("trader-panel.service") + _mem("trader-telegram.service")
     transient = sum(_mem(n) for n in ONESHOTS)
-    cf = 2 * _mem("trader-counterfactual@.service")      # gece isi: ogrenen + ikiz ayni anda (RandomizedDelaySec ile kayabilir ama en kotu durum ust uste)
+    cf = _mem("trader-counterfactual@.service")          # gece isi: yalniz ogrenen (DD-12: ikiz kaldirildi)
     worst = always + transient + cf
-    assert always == 350 + 2 * 350 + 64 + 96 == 1210
+    assert always == 260 + 750 + 64 + 96 == 1170        # DD-12 §8: feed 260, ogrenen 750
     assert _mem("trader-counterfactual@.service") == 128
-    assert worst == 1210 + 64 + 96 + 256 + 256 + 400 + 2 * 128 == 2538
+    assert worst == 1170 + 64 + 96 + 256 + 256 + 400 + 128 == 2370
     # her zaman acik birimlerin SERT tavan toplami RAM'in %60'ini gecmez; boylece baska proje icin >= 800 MB kalir (OS ~150 MB dahil degil)
     assert always <= 0.6 * RAM_MB
     # en kotu ust uste binme bile RAM + takas icinde (OOM yerine takas); RAM'i asar -> swappiness=10 ve takas 4 GB sart
@@ -46,13 +46,13 @@ def test_memory_budget_sums():
 
 
 def test_dd9_budget_with_live_and_testnet_units():
-    """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + ikiz + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
+    """DD-9 duzenegi: butce = feed + max(kagit learner, canli) + testnet (+ pano, telegram); canli ile kagit learner AYNI ANDA calismaz.
     Toplam sert tavanlar trader.slice MemoryMax (1300M) ile sinirlanir; RAM+takas icinde kalir."""
     live, paper, testnet = _mem("trader-engine-live.service"), _mem("trader-engine@.service"), _mem("trader-engine-testnet.service")
     assert (live, testnet) == (350, 320)
-    budget = (_mem("trader-feed.service") + max(paper, live) + paper + testnet + _mem("trader-panel.service")
+    budget = (_mem("trader-feed.service") + max(paper, live) + testnet + _mem("trader-panel.service")
               + _mem("trader-telegram.service"))
-    assert budget == 350 + 350 + 350 + 320 + 64 + 96 == 1530
+    assert budget == 260 + 750 + 320 + 64 + 96 == 1490
     assert budget < RAM_MB + SWAP_MB
     slice_max = int(dict(unit_kv((DEPLOY / "trader.slice").read_text(encoding="utf-8")))["MemoryMax"][:-1])
     assert slice_max < budget            # slice tavani toplam sert tavanlardan kucuk: birlikte asilamaz
@@ -66,11 +66,11 @@ def test_soft_cap_below_hard_cap_and_swap_not_unbounded():
         assert kv["CPUQuota"] == "60%"
 
 
-def test_budget_assumes_twin_default_on_and_installed_units_unchanged():
-    """OPEN-4: ikiz varsayilan acik -> 2 motor tavani her zaman acik toplama zaten dahil (yukaridaki 1210 MB)."""
+def test_budget_assumes_twin_removed_and_installed_units_unchanged():
+    """DD-12 WP-07: ikiz kaldirildi -> tek motor tavani (yukaridaki 1170 MB); install.sh ikizi etkinlestirmez, devre disi birakir."""
     t = install_text()
-    assert re.search(r"^WITH_TWIN=1$", t, re.M) and "--no-twin) WITH_TWIN=0" in t
-    assert "enable_now trader-engine@twin.service" in t
+    assert "WITH_TWIN" not in t and "enable_now trader-engine@twin.service" not in t
+    assert "trader-engine@twin.service" in t and "systemctl disable --now" in t
     # yeni birimler (veto-hmac env) bellek tavanlarini degistirmez; telegram-report hala sinirsiz hafif tek seferlik
     assert _mem("trader-telegram.service") == 96
 

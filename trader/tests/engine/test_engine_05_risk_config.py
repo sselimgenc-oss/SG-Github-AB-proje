@@ -45,23 +45,21 @@ def test_apply_overrides_cannot_loosen(tmp_path):
         apply_overrides(cfg, target_trade_risk=0.0141)
 
 
-def test_twin_and_learner_share_same_risk_config(tmp_path):
+def test_learner_risk_config_and_twin_rejected(tmp_path):
     raw = json.loads((ROOT / "config" / "engine.base.json").read_text())
     raw.update(target_trade_risk=0.005, var_dir=str(tmp_path / "var"))
     base = tmp_path / "base.json"
     base.write_text(json.dumps(raw))
-    cfgs = {}
-    for name in ("learner", "twin"):
-        ov = tmp_path / f"{name}.json"
-        ov.write_text((ROOT / "config" / f"engine.{name}.json").read_text())
-        cfgs[name] = load_engine_config(base, ov)
-    assert cfgs["learner"].risk_config == cfgs["twin"].risk_config
-    assert cfgs["learner"].risk_config.target_trade_risk == 0.005
+    ov = tmp_path / "learner.json"
+    ov.write_text((ROOT / "config" / "engine.learner.json").read_text())
+    cfg = load_engine_config(base, ov)
+    assert cfg.risk_config.target_trade_risk == 0.005
+    assert not (ROOT / "config" / "engine.twin.json").exists()      # DD-12: ikiz kaldirildi
 
 
 def test_shipped_configs_keep_locked_default():
     assert json.loads((ROOT / "config" / "engine.base.json").read_text())["target_trade_risk"] == 0.005
-    for name in ("engine.learner.json", "engine.twin.json"):
+    for name in ("engine.learner.json",):
         assert "target_trade_risk" not in json.loads((ROOT / "config" / name).read_text())
 
 

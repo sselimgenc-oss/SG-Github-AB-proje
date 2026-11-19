@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Saglik runner (docs/saglik-spec.md Bolum 8). Her 5 dk systemd timer ile calisir; daemon degildir.
 
-Salt okuma: motorun `status.json` dosyasi (learner + twin), salt okunur sqlite. Islem acmaz, defter yazmaz, bot baslatmaz.
+Salt okuma: motorun `status.json` dosyasi (learner), salt okunur sqlite. Islem acmaz, defter yazmaz, bot baslatmaz.
 Cikis kodlari: 0 saglikli+nabiz gitti; 10 CRIT/UNKNOWN (nabiz yok); 11 saglikli ama nabiz gonderilemedi;
 12 uyari iletilemedi; 1 beklenmeyen hata.
 """
@@ -31,7 +31,7 @@ TOTAL_BUDGET_S = 60.0
 STATUS_SCHEMA = "engine-status/1"
 STATUS_MAX_BYTES = 2_000_000
 PING_MAX_AGE_S = 120  # docs/motor/05 8.2: ping_ok = (simdi - loop_at) <= 120 sn
-DEFAULT_BOTS = ("learner", "twin")
+DEFAULT_BOTS = ("learner",)
 BOTS = DEFAULT_BOTS   # geriye uyum; calisma zamani listesi: bots_from_env(env)
 DEFAULT_VETO_MAX_AGE_S = 5400
 _ROOT = _HERE.parent
@@ -46,7 +46,7 @@ def data_root(env) -> Path:
 
 
 def bots_from_env(env) -> tuple[str, ...]:
-    """HEALTH_BOTS (virgullu; varsayilan "learner,twin"). Bos/gecersiz -> varsayilan."""
+    """HEALTH_BOTS (virgullu; varsayilan "learner"). Bos/gecersiz -> varsayilan."""
     raw = (env.get("HEALTH_BOTS") or "").strip()
     bots = tuple(dict.fromkeys(b for b in (x.strip() for x in raw.split(",")) if b))
     return bots or DEFAULT_BOTS

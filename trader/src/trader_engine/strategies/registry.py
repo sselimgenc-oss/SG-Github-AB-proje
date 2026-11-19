@@ -7,7 +7,7 @@ from collections.abc import Mapping
 
 from .base import ParamSpec, Strategy, StrategyError
 from .price_action_v1 import make_v1_full, make_v1b
-from .price_action_v1_ml import make_v1b_ml
+from .price_action_v1_ml import make_v1_full_ml, make_v1b_ml
 
 __all__ = ["StrategyError", "list_strategies", "get_strategy", "parse_label", "make_label"]
 
@@ -15,6 +15,7 @@ _FACTORIES = {
     "price_action_v1": make_v1b,
     "price_action_v1_full": make_v1_full,
     "price_action_v1_ml": make_v1b_ml,
+    "price_action_v1_full_ml": make_v1_full_ml,
 }
 _NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,39}")
 _LABEL_RE = re.compile(r"strategy:([a-z][a-z0-9_]{0,39})@(\S+)")

@@ -167,8 +167,8 @@ def test_alert_texts_and_thresholds():
     sh = [x for x in alerts(mlp(mode="shadow", expires_at=NOW + 2 * D))[0]]
     a2, _ = alerts(mlp(mode="shadow", expires_at=NOW + 2 * D), alerts(mlp(mode="shadow", expires_at=NOW + 2 * D))[1])
     assert any("gölge izleme durur" in x.body for x in a2)
-    # ikiz bot eki
-    assert H._health_tr("ml_package:twin", "ml_restart_needed")[0].endswith("(ikiz bot)")
+    # DD-12: ikiz eki yok
+    assert "ikiz" not in H._health_tr("ml_package:twin", "ml_restart_needed")[0]
     for code, (s_, d_, _a) in H._HEALTH_TR_CODE.items():
         assert len(s_) <= 68 and len(d_) <= 68, code
 
@@ -311,7 +311,7 @@ def mkcfg(tmp_path, ml, **extra):
     (tmp_path / "status.json").write_text(json.dumps(st))
     hs = tmp_path / "hs.json"
     return T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), "", str(tmp_path / "status.json"), health_state=str(hs),
-                            ledger_path=str(tmp_path / "l.sqlite"), twin_ledger_path=str(tmp_path / "t.sqlite"),
+                            ledger_path=str(tmp_path / "l.sqlite"),
                             budget_config=str(tmp_path / "b.json"), lesson_store=str(tmp_path / "ls.sqlite"))
 
 

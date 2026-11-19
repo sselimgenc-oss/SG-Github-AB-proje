@@ -21,6 +21,7 @@ from .bars import floor_tf, is_tf_close, tf_delta
 from .brokers.base import Broker
 from .clock import Clock
 from .config import EngineConfig
+from .arm_guard import asset_class, session_tag
 from .errors import ClockError, ConfigError, DataError, EngineExit, FailClosed, StateError
 from .holdout import check_holdout
 from .gates import EntryGate, EntryOutcome, FileVeto, NoVeto, VetoSource, _tf_of, entry_leverage
@@ -356,6 +357,7 @@ class Engine:
             "counters": {"rules_missing": 0, "data_stale": 0, **self.counters()}, "last_minute_ts": self._last_minute,
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
+            "cluster_counts": self.cluster_counts(),
             "last_marks": dict(self._last_marks),
             "records": self.records_block(),
             "pause": self._pause_status(),
@@ -460,7 +462,20 @@ class Engine:
 
     def _ml_status(self, now: datetime) -> dict | None:
         f = getattr(self.signals, "ml_status", None)
-        return f(now) if callable(f) else None
+        m = f(now) if callable(f) else None
+        if m is not None and getattr(self.strategy, "fail_open", False):
+            m = {**m, "entries_blocked": False, "pass_through": True}      # DD-12 spec 5: model yok => aday gecer (`ml_no_model`)
+        return m
+
+    def cluster_counts(self) -> dict | None:
+        """status.json `clusters` (DD-12 §4.1): kume basina acik + acilmakta pozisyon sayisi ve tavan; hesap geneli. Yalniz kagit."""
+        if self.cfg.mode != "paper" or not self.cfg.clusters:
+            return None
+        held = [p.pair for p in self.state.open_positions()]
+        out = {name: {"open": sum(1 for h in held if h in spec.pairs), "max": spec.max_positions}
+               for name, spec in self.cfg.clusters.items()}
+        return {"account": {"open": len(held), "max": self.cfg.max_positions}, "clusters": out,
+                "optional_waiting": int(self._c.get("optional_waiting", 0))}
 
     def summary(self) -> RunSummary:
         c = self.counters()
@@ -632,14 +647,30 @@ class Engine:
         self._c["rules_missing"], self._c["data_stale"] = len(missing), len(stale)
         return missing, stale
 
+    def _required_pairs(self) -> list[str]:
+        """DD-12 §2: `optional_pairs` (hisse/emtia) disindaki ciftler. Isteğe bagli cift kurali/verisi eksik ya da bayat olsa da
+        kapiyi ve dakika/karar adimlarini BEKLETMEZ (yalniz o cift giris yapmaz). Hepsi istege bagliysa hepsi sayilir; testnet/canli/
+        geri testte `optional_pairs` bostur => tum ciftler (davranis ayni)."""
+        opt = set(self.cfg.optional_pairs)
+        req = [p for p in self.cfg.pairs if p not in opt]
+        return req or list(self.cfg.pairs)
+
     def _startup_gate(self) -> None:
-        """10/10 ya da hicbiri: tum ciftlerde kural + taze 1m last/mark yoksa sinirli bekler, sonra EngineExit(7)."""
+        """Zorunlu ciftlerde (kripto) kural + taze 1m last/mark yoksa sinirli bekler, sonra EngineExit(7); isteğe bagli
+        (hisse/emtia) ciftlerdeki eksik/bayat durum yalniz uyari + sayac (`optional_waiting`) olur."""
         waited = 0.0
         step = max(1.0, min(15.0, self.cfg.loop_sleep_s * (1 if not self.is_paper else 3)))   # DD-6: canlida kapi beklerken KILL/bekci sik calissin
         while True:
             missing, stale = self.check_inputs()
+            req = set(self._required_pairs())
+            opt_wait = sorted((set(missing) | set(stale)) - req)
+            self._c["optional_waiting"] = len(opt_wait)
+            missing = [p for p in missing if p in req]
+            stale = [p for p in stale if p in req]
             if not missing and not stale:
-                log.info("acilis kapisi tamam: %d/%d cift kural+taze veri", len(self.cfg.pairs), len(self.cfg.pairs))
+                if opt_wait:
+                    log.warning("acilis kapisi: isteğe bagli cift(ler) bekliyor (giris yok, motor calisir): %s", opt_wait)
+                log.info("acilis kapisi tamam: %d/%d zorunlu cift kural+taze veri", len(req), len(self.cfg.pairs))
                 return
             if waited >= self.cfg.startup_wait_s:
                 msg = (f"acilis kapisi: {self.cfg.startup_wait_s:.0f} sn sonra hazir degil; "
@@ -700,8 +731,6 @@ class Engine:
             self.protect_first()
         if cfg.mode == "paper" or (live_loop and cfg.mode in ("testnet", "live")):
             self._startup_gate()                                  # 11 §6.2: canlida protect_first'ten SONRA, ayni 10/10 kapisi
-        if cfg.bot == "twin" and cfg.start_delay_s > 0:
-            self.clock.sleep(cfg.start_delay_s)
         if not self.state.integrity_check():
             raise StateError("state integrity_check basarisiz")
         now = self.clock.now()
@@ -735,6 +764,8 @@ class Engine:
             log.critical("baslangic mutabakati ölümcül: girisler kapali; cikislar calisir")
         self._started = True
         mins, decs = 0, 0
+        if cfg.mode == "paper":
+            self._adopt_new_pairs()
         if cfg.mode in FEED_MODES and self._init_cursors():
             c0 = self._c["decisions"]
             mins = self.advance_to(self.clock.now())
@@ -781,13 +812,28 @@ class Engine:
             self._after_live_reconcile(rep)
         return rep
 
+    def _adopt_new_pairs(self) -> None:
+        """DD-12 D-T12 (10 -> 44 gecis): yapilandirmaya sonradan eklenen cifte (imleci yok) mevcut imlecin en gerisi verilir; boylece
+        imlec sifirlanmaz/ileri atlanmaz, acik pozisyon ve defter ayni kalir. Hicbir cift imleci yoksa (ilk kurulum) dokunmaz."""
+        for kind in ("minute", "decision"):
+            cur = {p: self.state.get_cursor(p, kind) for p in self.cfg.pairs}
+            have = [c for c in cur.values() if c is not None]
+            if not have or len(have) == len(cur):
+                continue
+            base = min(have)
+            with self.state.tx():
+                for p, c in cur.items():
+                    if c is None:
+                        self.state.set_cursor(p, kind, base)
+            log.info("yeni cift imleci %s: %s", kind, [p for p, c in cur.items() if c is None])
+
     def _init_cursors(self) -> bool:
         """True: imlec var (oynatma). Ilk kurulumda son kapanmis dakikaya ayarlanir, gecmis oynatilmaz."""
         cur = self._cursor("minute")
         if cur is not None:
             return True
         lasts = []
-        for p in self.cfg.pairs:
+        for p in self._required_pairs():                          # istege bagli cift imleci geri cekmez / bekletmez (DD-12 §2)
             lm = self.view.last_closed_minute(p)
             if lm is None:
                 return False
@@ -1518,11 +1564,11 @@ class Engine:
                 return n
             steps = list(self.view.minute_steps(self.cfg.pairs, nxt, end))
             have = steps[0].bars if steps else {}
-            if len(have) < len(self.cfg.pairs):
+            if any(p not in have for p in self._required_pairs()):
                 if now < end + timedelta(seconds=self.cfg.minute_wait_s):
                     return n
                 if not have:
-                    latest = [self.view.last_closed_minute(p) for p in self.cfg.pairs]
+                    latest = [self.view.last_closed_minute(p) for p in self._required_pairs()]
                     if not any(t is not None and t > nxt for t in latest):
                         return n                                  # veri bayat: dakika ilerlemez
             self.process_step(steps[0] if steps else MinuteStep(nxt, {}))
@@ -1534,7 +1580,7 @@ class Engine:
             return False
         if now >= D + timedelta(seconds=self.cfg.bar_wait_s):
             return True
-        for p in self.cfg.pairs:
+        for p in self._required_pairs():
             rng = self.view.data_range(p, self.tf)
             if rng is None or rng[1] < D - tf_delta(self.tf):
                 return False
@@ -1932,6 +1978,10 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
         from .config import load_keys
         load_keys(env)                               # ConfigError("keys_missing: ...") aynen (11 §3.2)
     strategy = get_strategy(cfg.strategy, mode=cfg.mode, ml_mode=cfg.ml_mode)
+    if cfg.mode == "paper" and hasattr(strategy, "fail_open"):
+        strategy.fail_open = True                               # DD-12 spec 5 / D-T8: kagitta model yok => aday GECER (`ml_no_model`)
+    if cfg.mode == "paper" and cfg.ml_pairs and hasattr(strategy, "set_ml_universe"):
+        strategy.set_ml_universe(cfg.ml_pairs)                  # DD-12 spec 5.1: r03 yalniz ml_pairs'i puanlar/eler
     clock = clock or SystemClock()
     view = view or StoreSource(cfg.market_db)
     if live_mode:
@@ -1975,9 +2025,11 @@ def build_engine(cfg: EngineConfig, *, clock: Clock | None = None, view: MarketV
                 led.close()
             raise
     if broker is None:
-        broker = PaperBroker(PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate,
-                                         wallet_start=cfg.wallet_start),
-                             view.rules, view.funding, clock)
+        pcfg = PaperConfig(cost=cfg.cost, mmr=K.LOCKED_CFG.maint_margin_rate, wallet_start=cfg.wallet_start)
+        if cfg.mode == "paper" and cfg.cost_overrides:
+            broker = session_cost_broker(cfg, pcfg, view.rules, view.funding, clock)       # DD-12 §4.3: seansa gore kayma
+        else:
+            broker = PaperBroker(pcfg, view.rules, view.funding, clock)
     for p in (cfg.ledger_path, cfg.state_path, cfg.status_path, cfg.kill_file, f"{cfg.pause_file}.{cfg.bot}"):
         Path(p).parent.mkdir(parents=True, exist_ok=True)
     led = L.open_ledger(cfg.ledger_path, cfg.bot, create=True, clock=(None if cfg.mode == "paper" else clock.now))
@@ -2002,16 +2054,18 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
     ladder = _build_ladder(cfg, clock, pause, broker, led)
     ml_model, ml_error = None, None
     ml_v2 = None
+    ml_ctx_pairs = list(cfg.ml_pairs) if (cfg.mode == "paper" and cfg.ml_pairs) else list(cfg.pairs)   # DD-12: r03 baglami 10 cift
+    paper_active = cfg.mode == "paper" and bool(cfg.ml_pairs)
     v2_on = getattr(strategy, "ml_mode", "off") != "off" and cfg.ml_features != "v1"     # ML-G5 bayragi (varsayilan kapali)
     if getattr(strategy, "ml_mode", "off") != "off":
         if v2_on:
             from trader_core.ml_live_v2 import RECIPE_NAMES, LiveContextV2, funding_frame_from_points
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
                                                    expected_features=RECIPE_NAMES[cfg.ml_features],
-                                                   experimental=cfg.ml_experimental)
+                                                   experimental=cfg.ml_experimental, paper_active=paper_active)
             # >= 200 gun kapanmis 1s mum (r02/r03 1g baglam): cift basina 5000 mum tutulur (~2 MB / 10 cift); ilk karar adiminda yuklenir
             ml_v2 = LiveContextV2(
-                cfg.ml_features, cfg.pairs,
+                cfg.ml_features, ml_ctx_pairs,
                 lambda p, D, n: view.bars(p, "1h", D, n),
                 lambda p, a, b: funding_frame_from_points(view.funding(p, a, b)))
             try:
@@ -2020,10 +2074,51 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
                 log.warning("ML v2 baslangic gecmisi yuklenemedi: %s: %s", type(e).__name__, e)
         else:
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
-                                                   experimental=cfg.ml_experimental)
+                                                   experimental=cfg.ml_experimental, paper_active=paper_active)
     signals = WindowedSignalSource(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
-                                   ml_v2=ml_v2, pairs=cfg.pairs if ml_v2 is not None else None)
+                                   ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None)
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
                   strategy=strategy, veto=vsrc, kill=kill, status=status, pause=pause, ladder=ladder)
+
+
+# ====================================================================== DD-12 §4.3: seansa gore kayma (yalniz kagit)
+def session_cost(cfg: EngineConfig, base, pair: str, ts: datetime):
+    """`cost_overrides[cift][seans]` (varsa) ile temel CostModel'in kayma alanlarini ezer; yoksa (kripto, eksik cift/seans) temel
+    maliyetin kendisini dondurur. Seans, dolum mumunun acilis zamanindan ve cift sinifindan (kume adlari) bulunur."""
+    ov = cfg.cost_overrides.get(pair)
+    if not ov:
+        return base
+    tag = session_tag(asset_class(pair, cfg.clusters), ts)
+    slips = ov.get(tag)
+    return replace(base, **slips) if slips else base
+
+
+def session_cost_broker(cfg: EngineConfig, pcfg, rules_fn, funding_fn, clock):
+    """`PaperBroker` + dolum anina (mum acilisi) gore cift/seans kaymasi. Brokerin kendisi degismez: her mum/cift icin `_cfg.cost`
+    gecici olarak seans maliyetiyle degistirilir (is parcacigi yok; try/finally ile geri alinir)."""
+    from .brokers.paper import PaperBroker
+
+    class _SessionPaperBroker(PaperBroker):
+        def __init__(self, *a, **k) -> None:
+            super().__init__(*a, **k)
+            self._base_pcfg = self._cfg
+
+        def _with_session(self, pair, bar, fn):
+            cost = session_cost(cfg, self._base_pcfg.cost, pair, bar.open_ts)
+            if cost is self._base_pcfg.cost:
+                return fn(pair, bar)
+            self._cfg = replace(self._base_pcfg, cost=cost)
+            try:
+                return fn(pair, bar)
+            finally:
+                self._cfg = self._base_pcfg
+
+        def _fills_pair(self, pair, bar):
+            return self._with_session(pair, bar, super()._fills_pair)
+
+        def _triggers_pair(self, pair, bar):
+            return self._with_session(pair, bar, super()._triggers_pair)
+
+    return _SessionPaperBroker(pcfg, rules_fn, funding_fn, clock)

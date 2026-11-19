@@ -74,7 +74,7 @@ def snap(var, prev=None):
 
 
 def results(var, prev=None):
-    rep = H.evaluate(snap(var, prev))
+    rep = H.evaluate(snap(var, prev), H.HealthConfig(require_bots=("learner", "twin")))   # DD-12: varsayilan yalniz learner; genel coklu bot denetimi
     return {r.name: r for r in rep.results if r.name in (
         "feed_status_age", "market_bar_age", "rules_coverage", "rules_age", "rules_missing:learner",
         "rules_missing:twin")}
@@ -168,7 +168,7 @@ def test_rules_missing_increase_alerts_immediately():
 def test_runner_collect_and_state_delta(tmp_path):
     var = make_world(tmp_path, rm=1)
     env = {"ENGINE_VAR_DIR": str(var), "BACKUP_DIR": str(tmp_path), "MARKET_DB": str(var / "market.sqlite"),
-           "MARKET_PAIRS": ",".join(PAIRS)}
+           "MARKET_PAIRS": ",".join(PAIRS), "HEALTH_BOTS": "learner,twin"}
     st = H.empty_state()
     st["rules_missing"] = {"learner": 0, "twin": 1}
     s = R.collect(env, st, NOW)

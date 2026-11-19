@@ -55,11 +55,11 @@ def _abs(root: Path, p: str) -> str:
 def build_pauses(env, now_fn, root: Path | None = None) -> dict:
     """bot -> EntryPause (11 §9.5). Yollar MUTLAK (cwd'ye bagli degil; systemd cwd=/ olabilir): goreli degerler repo
     kokune (trader/) gore cozulur, motor (WorkingDirectory=/opt/trader) ile ayni dosya. PAUSE_FILE (varsayilan
-    shared/PAUSE) + `.<bot>`; PAUSE_BOTS (varsayilan learner,twin); denetim ENGINE_VAR_DIR/<bot>/pause_audit.jsonl."""
+    shared/PAUSE) + `.<bot>`; PAUSE_BOTS (varsayilan learner); denetim ENGINE_VAR_DIR/<bot>/pause_audit.jsonl."""
     root = root or _HERE.parent
     base = _abs(root, env.get("PAUSE_FILE") or "shared/PAUSE")
     var = _abs(root, (env.get("ENGINE_VAR_DIR") or "var")).rstrip("/")
-    bots = [b.strip() for b in (env.get("PAUSE_BOTS") or "learner,twin").split(",") if b.strip()]
+    bots = [b.strip() for b in (env.get("PAUSE_BOTS") or "learner").split(",") if b.strip()]
     clk = _Clk(now_fn)
     out = {}
     for b in bots:                      # DD-9 §6.2: canli bot LIVE_VAR_DIR / LIVE_PAUSE_FILE; kagit bot tabaninda (LIVE_BOTS bos -> ayni)

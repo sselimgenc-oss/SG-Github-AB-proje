@@ -267,7 +267,8 @@ def test_cli_exit_codes(tmp_path, capsys):
     base = ["--bot", "learner", "--ledger", str(lpath), "--out", str(tmp_path / "cf.sqlite")]
     assert _main()(base, now_fn=lambda: NOW_OK) == 1                             # --once yok
     assert _main()(base + ["--once", "--market", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW_OK) == 3
-    assert _main()(["--bot", "twin", "--once", "--ledger", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW_OK) == 0
+    with pytest.raises(SystemExit):                                              # DD-12: ikiz kaldirildi; --bot twin gecersiz
+        _main()(["--bot", "twin", "--once", "--ledger", str(tmp_path / "yok.sqlite")], now_fn=lambda: NOW_OK)
     capsys.readouterr()
 
 

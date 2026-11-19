@@ -270,7 +270,7 @@ class HealthConfig:
     backup_crit_s: int = 50 * 3600
     warmup_s: int = 600
     clock_skew_tolerance_s: int = 5
-    require_bots: tuple[str, ...] = ("learner", "twin")
+    require_bots: tuple[str, ...] = ("learner",)
     veto_max_age_s: int | None = None
     veto_strict: bool = False   # True: veto belgesi yok -> CRIT; yas > veto_max_age_s -> CRIT (WARN bandi yok)
     budget_check_enabled: bool = False
@@ -1352,7 +1352,7 @@ _HEALTH_TR_GENERIC = ("Bir sistem kontrolü sorunlu", "Sistem kontrolü yeniden 
 def _health_tr(name: str, code: str, detail: str = "") -> tuple[str, str, str]:
     """(sorun, düzeldi, anlamı) - ham kontrol adı/kodu kullanıcıya sızdırılmaz.
     `detail` yalnız gölge kipteki süre uyarısının anlam cümlesini ayırmak için okunur."""
-    base, _, suffix = name.partition(":")
+    base, _, _suffix = name.partition(":")
     sorun, duzeldi, anlam = _HEALTH_TR_CODE.get(code) or _HEALTH_TR.get(base) or _HEALTH_TR_GENERIC
     if base == "exchange_ban" and code in ("exchange_ban_open_positions", "exchange_ban"):
         m = _BAN_DETAIL.search(detail or "")
@@ -1360,8 +1360,6 @@ def _health_tr(name: str, code: str, detail: str = "") -> tuple[str, str, str]:
             anlam = f"Borsa: {m.group(1)}, kalan yaklaşık {m.group(2)} dk. {anlam}"
     if base == "ml_package" and code.startswith("ml_expiring_") and "kip=shadow" in detail:
         anlam = "Yenilenmezse gölge izleme durur; işlemler etkilenmez."
-    if suffix == "twin":
-        sorun, duzeldi = f"{sorun} (ikiz bot)", f"{duzeldi} (ikiz bot)"
     return sorun, duzeldi, anlam
 
 

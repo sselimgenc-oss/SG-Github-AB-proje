@@ -398,14 +398,14 @@ TERMINAL = {"skipped_no_data", "skipped_gate", "skipped_budget", "no_change", "p
             "needs_user", "rolled_back", "failed"}
 
 BUDGET_CFG = {
-    "version": 1, "db_path": "x", "daily_cap_usd": {"veto": 0.25, "lesson": 0.10}, "monthly_cap_usd": 10.0,
+    "version": 1, "db_path": "x", "daily_cap_usd": {"haftalik_ozet": 0.25, "lesson": 0.10}, "monthly_cap_usd": 10.0,
     "monthly_warn_usd": 5.0, "warn_fraction": 0.70, "prepaid_credit_usd": 10.0,
     "credit_start_ts": "2026-11-16T00:00:00.000Z", "credit_low_usd": 3.0, "price_safety_factor": 1.0,
     "prices_verified_on": None, "batch_multiplier": 0.5,
-    "api_key_env": {"veto": "ANTHROPIC_API_KEY_VETO", "lesson": "ANTHROPIC_API_KEY_LESSON"},
-    "reservation_ttl_s": {"veto": 600, "lesson": 108000},
+    "api_key_env": {"haftalik_ozet": "ANTHROPIC_API_KEY_HAFTALIK_OZET", "lesson": "ANTHROPIC_API_KEY_LESSON"},
+    "reservation_ttl_s": {"haftalik_ozet": 3600, "lesson": 108000},
     "retry": {"max_retries": 3, "base_s": 2.0, "factor": 2.0, "max_sleep_s": 20.0, "jitter": 0.2,
-              "deadline_s": {"veto": 60, "lesson": 300}},
+              "deadline_s": {"haftalik_ozet": 300, "lesson": 300}},
     "prices_usd_per_mtok": {
         "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_write_5m": 0.125, "cache_write_1h": 0.20, "cache_read": 0.01},
         "claude-sonnet-5-5": {"input": 2.00, "output": 10.00, "cache_write_5m": 2.50, "cache_write_1h": 4.00, "cache_read": 0.10},

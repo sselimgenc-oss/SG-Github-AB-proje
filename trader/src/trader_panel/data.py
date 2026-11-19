@@ -17,12 +17,12 @@ from typing import Any
 
 from trader_core import panel_data as P
 
-BOTS = ("learner", "twin")
+BOTS = ("learner",)
 DEFAULT_PORT = 8787
-_PATH_KEYS = ("status_path", "twin_status_path", "ledger_path", "twin_ledger_path", "budget_config", "lesson_store",
+_PATH_KEYS = ("status_path", "ledger_path", "budget_config", "lesson_store",
               "health_state", "kill_file", "engine_config")
 _NUM_KEYS = {"health_stale_s": (60, 86400), "cache_s": (0, 60), "request_timeout_s": (0.5, 30),
-             "max_concurrent": (1, 8), "max_response_bytes": (1024, 4 * 1024 * 1024),
+             "max_concurrent": (1, 16), "max_response_bytes": (1024, 4 * 1024 * 1024),
              "closed_limit": (1, P.CLOSED_MAX), "curve_limit": (1, P.CLOSED_MAX)}
 _ALLOWED = {"schema", "host", "port", *_PATH_KEYS, *_NUM_KEYS}
 
@@ -67,7 +67,7 @@ def load_config(path: str | os.PathLike) -> PanelConfig:
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
         raise ConfigError("port 1..65535 olmali")
     cfg = PanelConfig(raw, p.parent.parent)
-    for k in ("status_path", "twin_status_path", "ledger_path", "twin_ledger_path", "lesson_store"):
+    for k in ("status_path", "ledger_path", "lesson_store"):
         d = os.path.dirname(getattr(cfg, k) or "")
         if d and os.path.isdir(d) and os.access(d, os.W_OK):
             print(f"trader_panel: UYARI: yazilabilir dizin gosteriliyor ({k}); panel hesabina yalniz okuma izni verin",
@@ -87,10 +87,10 @@ class PanelData:
         return self._clock()
 
     def _status_path(self, bot: str) -> str:
-        return self.cfg.status_path if bot == "learner" else self.cfg.twin_status_path
+        return self.cfg.status_path
 
     def _ledger_path(self, bot: str) -> str:
-        return self.cfg.ledger_path if bot == "learner" else self.cfg.twin_ledger_path
+        return self.cfg.ledger_path
 
     def _live(self, bot: str) -> dict:
         return P.read_status(self._status_path(bot), self.now(), P.STALE_S)
@@ -188,21 +188,6 @@ class PanelData:
             d = s["data"]
             return P.risk_usage(self._ledger_path(b), b, d.get("equity"), d.get("day_start_equity"),
                                 P.today_tr(self.now()))
-        return self._wrap(fn)
-
-    def compare(self, day: str | None) -> dict:
-        def fn() -> dict:
-            dy = self._day(day)
-            out: dict[str, Any] = {"day": dy}
-            for b in BOTS:
-                try:
-                    closed, opened = P.ledger_day(self._ledger_path(b), b, dy)
-                    out[b] = {"ok": True, "summary": P.day_summary(closed, opened, self._dse(b))}
-                except P.SectionError as e:
-                    out[b] = {"ok": False, "code": e.code}
-            ok = out["learner"]["ok"] and out["twin"]["ok"]
-            out["diff_pnl"] = (out["learner"]["summary"]["pnl"] - out["twin"]["summary"]["pnl"]) if ok else None
-            return out
         return self._wrap(fn)
 
     def budget(self) -> dict:

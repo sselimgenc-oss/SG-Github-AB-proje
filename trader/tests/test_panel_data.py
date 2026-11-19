@@ -38,7 +38,7 @@ def test_status_fields_one_to_one(run, env):
 
 @pytest.mark.parametrize("age,stale", [(120, False), (120.5, True), (121, True), (5, False)])
 def test_stale_boundary(tmp_path, age, stale):
-    e = Env(tmp_path, twin=False)
+    e = Env(tmp_path)
     e.write_status("learner", age)
     b = Running(e).get("/api/status")["bots"]["learner"]
     assert (b["state"] == "stale") is stale
@@ -63,7 +63,7 @@ def test_stale_banner_and_no_last_known_values(tmp_path):
 @pytest.mark.parametrize("content,code", [(None, "status_yok"), ("{bozuk", "status_bozuk"), ("[1]", "status_bozuk"),
                                           ('{"equity": 5}', "status_bozuk"), ('{"loop_at": "dun"}', "status_bozuk")])
 def test_status_missing_or_corrupt(tmp_path, content, code):
-    e = Env(tmp_path, twin=False)
+    e = Env(tmp_path)
     p = e.root / "var/learner/status.json"
     if content is None:
         p.unlink()
@@ -74,7 +74,7 @@ def test_status_missing_or_corrupt(tmp_path, content, code):
     b = j["bots"]["learner"]
     assert b["state"] in ("missing", "bad") and b["code"] == code and b["data"] is None
     assert b["banner"].startswith("BAYAT")
-    assert j["bots"]["twin"]["state"] == "missing"                    # twin fiksturu yok
+    assert "twin" not in j["bots"]                                    # DD-12: ikiz kaldirildi
     r.stop()
     e.close()
 
@@ -90,7 +90,7 @@ def test_kill_file_is_only_read(tmp_path):
 
 
 def test_thresholds_come_from_config_not_literals(tmp_path, monkeypatch):
-    e = Env(tmp_path, twin=False, status_age_s=60)
+    e = Env(tmp_path, status_age_s=60)
     monkeypatch.setattr(P, "STALE_S", 30)
     r = Running(e, cache_s=0)
     assert r.get("/api/status")["bots"]["learner"]["state"] == "stale"
@@ -139,7 +139,7 @@ def test_curve(run):
 
 
 def test_curve_without_engine_config_falls_back_to_pnl(tmp_path):
-    e = Env(tmp_path, twin=False)
+    e = Env(tmp_path)
     (e.root / "config/engine.base.json").unlink()
     r = Running(e)
     c = r.get("/api/curve?bot=learner")
@@ -156,10 +156,11 @@ def test_risk_rows_use_ledger_and_risk_config(run):
     assert rows["Günlük zarar"]["limit"] == pytest.approx(LOCKED_CFG.daily_max_loss * 1000.0)
 
 
-def test_compare(run):
-    j = run.get(f"/api/compare?day={DAY}")
-    assert j["learner"]["summary"]["closed"] == 2 and j["twin"]["summary"]["closed"] == 1
-    assert j["diff_pnl"] == pytest.approx(j["learner"]["summary"]["pnl"] - j["twin"]["summary"]["pnl"])
+def test_compare_and_twin_endpoints_removed(run):
+    """DD-12: ikiz karsilastirmasi kalkti; bot=twin gecersiz."""
+    assert run.req(f"/api/compare?day={DAY}")[0] == 404
+    j = run.get("/api/ledger?bot=twin")
+    assert j["ok"] is False and j["code"] == "gecersiz_bot"
 
 
 # ---------------- /api/budget, lesson, health, system ----------------
@@ -190,7 +191,7 @@ def test_health_and_system(run):
 
 
 def test_health_stale_check(tmp_path):
-    e = Env(tmp_path, twin=False)
+    e = Env(tmp_path)
     st = json.loads((e.root / "state/state.json").read_text())
     st["last_run_at"] = z(NOW - timedelta(hours=3))
     (e.root / "state/state.json").write_text(json.dumps(st))
@@ -202,14 +203,13 @@ def test_health_stale_check(tmp_path):
 
 # ---------------- eksik kaynak: yalniz o widget "okunamadi" ----------------
 def test_missing_sources_isolated(tmp_path):
-    e = Env(tmp_path, learner=False, twin=False, budget=False, lesson=False, health=False)
+    e = Env(tmp_path, learner=False, budget=False, lesson=False, health=False)
     r = Running(e)
-    for path, code in (("/api/ledger?bot=learner", "defter_yok"), ("/api/curve?bot=twin", "defter_yok"),
+    for path, code in (("/api/ledger?bot=learner", "defter_yok"), ("/api/curve?bot=learner", "defter_yok"),
                        ("/api/budget", "yapilandirma_gecersiz"), ("/api/lesson", "depo_yok"), ("/api/health", "state_yok")):
         j = r.get(path)
         assert j["ok"] is False and j["code"] == code, path
     assert r.get("/api/status")["ok"] is True and r.get("/api/system")["ok"] is True
-    assert r.get("/api/compare")["ok"] is True                       # bot basina okunamadi, uc nokta ayakta
     assert not (e.root / "var/learner/ledger.sqlite").exists()       # okuma dosya olusturmaz
     assert not (e.root / "user_data/lesson.sqlite").exists()
     r.stop()
@@ -226,7 +226,6 @@ def test_corrupt_sources_do_not_crash(tmp_path):
     for p in ("/api/ledger?bot=learner", "/api/curve?bot=learner", "/api/lesson", "/api/budget", "/api/health"):
         j = r.get(p)
         assert j["ok"] is False and j["code"], p
-    assert r.get("/api/ledger?bot=twin")["ok"] is True               # saglam kaynak etkilenmez
     assert r.get("/healthz")["ok"] is True
     r.stop()
     e.close()

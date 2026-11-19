@@ -419,7 +419,7 @@ def test_telegram_daily_report_renders_from_ledger(off, tmp_path):
     exit_tr = datetime.fromisoformat(closed[0]["exit_ts"].replace("Z", "+00:00")) + timedelta(hours=3)
     day = exit_tr.strftime("%Y-%m-%d")
     cfg = T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), "", str(tmp_path / "status.json"),
-                           ledger_path=off.cfg.ledger_path, twin_ledger_path=str(tmp_path / "t.sqlite"),
+                           ledger_path=off.cfg.ledger_path,
                            budget_config=str(tmp_path / "b.json"), lesson_store=str(tmp_path / "l.sqlite"))
     now = datetime.fromisoformat(day).replace(tzinfo=UTC) + timedelta(hours=18)      # 21:00 TR
     out = T.build_report(cfg, now, day, {"Defter": lambda: T.rapor_defter(cfg, day)})

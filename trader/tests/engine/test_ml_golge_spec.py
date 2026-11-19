@@ -241,7 +241,7 @@ class TestG4HashAndExpiry:
 
 # ------------------------------------------------------------------------------------------------ G-T5
 class TestG5Configs:
-    """Spec duzeltme notu (18 Kasim 2026): engine.learner.json == {"bot":"learner"}; ML anahtarlari engine.paper-ml.json'da."""
+    """Spec duzeltme notu (18 Kasim 2026): engine.learner.json == {"bot":"learner"}; ML anahtarlari engine.paper.json'da (DD-12)."""
 
     def test_learner_config_unchanged(self):
         assert json.loads((CFG / "engine.learner.json").read_text()) == {"bot": "learner"}
@@ -249,39 +249,43 @@ class TestG5Configs:
         assert cfg.ml_mode == "off" and cfg.ml_experimental is False and cfg.ml_model_path is None
 
     def test_paper_ml_config(self):
-        raw = json.loads((CFG / "engine.paper-ml.json").read_text())
-        assert raw["strategy"] == "price_action_v1_ml" and raw["ml_mode"] == "shadow" and raw["ml_experimental"] is True
+        """DD-12: paper-ml katmani engine.paper.json'a katildi (ml_mode active; dosya engine.paper-ml.json silindi)."""
+        assert not (CFG / "engine.paper-ml.json").exists()
+        raw = json.loads((CFG / "engine.paper.json").read_text())
+        assert raw["strategy"] == "price_action_v1_full_ml" and raw["ml_mode"] == "active" and raw["ml_experimental"] is True
         assert raw["ml_model_path"] == "models/ml1-r03.json" and raw["ml_features"] == "r03"
-        cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.paper-ml.json")
+        cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / "engine.paper.json")
         assert (cfg.mode, cfg.bot, cfg.strategy, cfg.ml_mode, cfg.ml_experimental, cfg.ml_features) == \
-               ("paper", "learner", "price_action_v1_ml", "shadow", True, "r03")
+               ("paper", "learner", "price_action_v1_full_ml", "active", True, "r03")
         assert cfg.ml_model_path == "models/ml1-r03.json"
 
     def test_paper_ml_loads_via_cli_loader(self):
         from trader_engine.config import load_cli_config
-        cfg = load_cli_config(CFG, "learner", "paper-ml")
-        assert cfg.mode == "paper" and cfg.ml_mode == "shadow" and cfg.ml_experimental is True and cfg.bot == "learner"
+        cfg = load_cli_config(CFG, "learner", "paper")
+        assert cfg.mode == "paper" and cfg.ml_mode == "active" and cfg.ml_experimental is True and cfg.bot == "learner"
 
     def test_paper_ml_features_match_r03_package(self):
-        key = json.loads((CFG / "engine.paper-ml.json").read_text())["ml_features"]
+        key = json.loads((CFG / "engine.paper.json").read_text())["ml_features"]
         assert key in RECIPE_NAMES
         meta = json.loads(R03_SRC.read_text())["meta"]
         assert list(RECIPE_NAMES[key]) == meta["features"]
 
-    @pytest.mark.parametrize("name", ["base", "learner", "twin", "testnet", "live"])
+    @pytest.mark.parametrize("name", ["base", "learner", "testnet", "live"])
     def test_other_configs_have_no_experimental(self, name):
         assert "ml_experimental" not in json.loads((CFG / f"engine.{name}.json").read_text())
 
-    def test_base_ml_off_and_twin_unaffected(self):
+    def test_base_ml_off_and_twin_removed(self):
         assert json.loads((CFG / "engine.base.json").read_text())["ml_mode"] == "off"
-        cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.twin.json")
-        assert cfg.ml_mode == "off" and cfg.ml_experimental is False
+        assert not (CFG / "engine.twin.json").exists()
+        from trader_engine.config import load_cli_config
+        with pytest.raises(ConfigError):
+            load_cli_config(CFG, "twin")
 
     @pytest.mark.parametrize("env", ["testnet", "live"])
     def test_learner_testnet_live_stay_ml_free(self, env):
         cfg = load_engine_config(CFG / "engine.base.json", CFG / "engine.learner.json", overlay_path=CFG / f"engine.{env}.json")
         assert cfg.mode == env and cfg.ml_mode == "off" and cfg.ml_experimental is False and cfg.ml_model_path is None
-        with pytest.raises(ConfigError, match="ml_experimental"):       # paper-ml katmani testnet/live ustune bindirilemez
+        with pytest.raises(ConfigError, match="ml_experimental"):       # paper katmani testnet/live ustune bindirilemez
             _stack(env)
 
 
@@ -289,8 +293,10 @@ def _stack(env):
     import tempfile
     d = Path(tempfile.mkdtemp())
     raw = json.loads((CFG / "engine.base.json").read_text())
-    for n in ("learner", env, "paper-ml"):
+    for n in ("learner", env):
         raw.update(json.loads((CFG / f"engine.{n}.json").read_text()))
+    paper = json.loads((CFG / "engine.paper.json").read_text())             # yalniz ML anahtarlari testnet/live uzerine binsin
+    raw.update({k: paper[k] for k in ("strategy", "ml_mode", "ml_features", "ml_model_path", "ml_experimental")})
     (d / "x.json").write_text(json.dumps(raw))
     return load_engine_config(d / "x.json")
 

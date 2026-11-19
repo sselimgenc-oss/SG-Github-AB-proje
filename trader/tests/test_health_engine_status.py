@@ -70,7 +70,7 @@ def evaluate(api, ledger=None, containers=None, tf=3600, **kw):
             f"trader-{b}": H.ContainerProbe("running", 4, NOW - timedelta(hours=5), None) for b in bots},
         prev_restart_counts={"trader-learner": 4, "trader-twin": 4},
         last_backup_at=NOW - timedelta(hours=3), **kw)
-    return H.evaluate(snap)
+    return H.evaluate(snap, H.HealthConfig(require_bots=bots))   # DD-12: varsayilan yalniz learner; genel coklu bot denetimi
 
 
 def by(rep, name):
@@ -253,7 +253,8 @@ def test_twin_probe_missing_entirely_is_missing_check():
 # --------------------------------------------------------------------------- toplayici (collect)
 def _env(tmp_path):
     (tmp_path / "bk").mkdir(exist_ok=True)
-    return {"ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://h/x"}
+    return {"ENGINE_VAR_DIR": str(tmp_path / "var"), "BACKUP_DIR": str(tmp_path / "bk"), "HEARTBEAT_URL": "https://h/x",
+            "HEALTH_BOTS": "learner,twin"}
 
 
 def test_collect_reads_both_instances(tmp_path):
@@ -324,12 +325,12 @@ def test_recover_r7_r8_from_status(tmp_path):
     d = status_doc()
     d["open_positions"][0]["stop"] = None
     put(tmp_path / "var", "learner", d)
-    put(tmp_path / "var", "twin", status_doc("twin", dry_run=False))
+    env.pop("HEALTH_BOTS")                                    # DD-12: varsayilan yalniz learner
     snap = R.collect(env, H.empty_state(), NOW)
     rows = {(r["step"], r["detail"].split()[0]): r["status"]
             for r in Rec.run_checks(env, snap, H.empty_state(), run=lambda *a, **k: (_ for _ in ()).throw(OSError()))}
-    assert rows[("R7", "learner")] == "FAIL" and rows[("R7", "twin")] == "PASS"
-    assert rows[("R8", "twin")] == "FAIL" and rows[("R8", "learner")] == "PASS"
+    assert rows[("R7", "learner")] == "FAIL" and rows[("R8", "learner")] == "PASS"
+    assert not [k for k in rows if k[1] == "twin"]
 
 
 # --------------------------------------------------------------------------- freqtrade yok

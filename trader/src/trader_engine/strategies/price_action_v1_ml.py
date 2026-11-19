@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from trader_core.ml_features import FEATURE_NAMES, feature_frame
-from trader_core.ml_package import MlModelView, load_model_view, ml_score_from_reasons
+from trader_core.ml_package import MlModelView, load_model_view, load_package, ml_score_from_reasons, view_from_package
 
 from .base import ExitPolicy, StrategyContext, StrategyError
 from .price_action_v1 import PriceActionV1, make_v1b
@@ -27,13 +27,23 @@ ML_MODES = ("off", "shadow", "active")
 
 
 def load_engine_model(path: str | None, ml_mode: str, now: datetime,
-                      expected_features=None, *, experimental: bool = False) -> tuple[MlModelView | None, str | None]:
+                      expected_features=None, *, experimental: bool = False,
+                      paper_active: bool = False) -> tuple[MlModelView | None, str | None]:
     """Motor tarafi yukleme: kapi (gate_passed True) + hash + 21 gun + ozellik listesi (+ active icin kullanici onayi).
     `experimental=True` (yalniz shadow; aksi ValueError -> (None, kod)): kapi denetimi atlanir, hash/sure kalir.
-    Hata -> (None, kod): `active`te yeni giris yok, `shadow`da yalniz uyari (log + sayac)."""
+    DD-12 WP-05: `paper_active=True` (yalniz kagit; sahip karari: ML ilk islemden etkin) deneysel paketi `active` kipte de yukler:
+    kapi ve kullanici onayi aranmaz, hash + 21 gun + ozellik listesi kalir. Hata -> (None, kod): eski stratejide `active`te yeni
+    giris yok; `price_action_v1_full_ml`de aday gecer (`ml_no_model`). `shadow`da yalniz uyari (log + sayac)."""
     if not path:
         return None, "ml_model_path_missing"
     try:
+        if paper_active and experimental and ml_mode == "active":
+            log.info("ML modeli DENEYSEL + ETKIN yukleniyor (kagit, sahip karari; kapi/onay atlandi): %s", path)
+            pkg = load_package(path, now=now, require_gate=False)
+            feats = FEATURE_NAMES if expected_features is None else expected_features
+            if list(pkg["meta"]["features"]) != list(feats):
+                raise ValueError("model ozellik listesi canli ozellik ureticisiyle ayni degil")
+            return view_from_package(pkg, experimental=True), None
         if experimental:
             log.info("ML modeli DENEYSEL yukleniyor (ml_exp=1, kapi atlandi, yalniz shadow): %s", path)
         return load_model_view(path, expected_features=FEATURE_NAMES if expected_features is None else expected_features, ml_mode=ml_mode, now=now,
@@ -44,9 +54,14 @@ def load_engine_model(path: str | None, ml_mode: str, now: datetime,
 
 
 class PriceActionV1Ml:
-    def __init__(self, inner: PriceActionV1, *, name: str, version: str) -> None:
+    def __init__(self, inner: PriceActionV1, *, name: str, version: str, fail_open: bool = False) -> None:
         self._inner = inner
         self.ml_mode = "off"
+        # DD-12 WP-05 (yalniz `price_action_v1_full_ml`): ml_universe = puanlanan cift kumesi (None = hepsi; motor `cfg.ml_pairs`i verir);
+        # evren disi aday puanlanmaz ve ELENMEZ (`ml_out_of_universe`). fail_open: model yok/suresi dolmus/puanlanamamis => aday GECER
+        # (`ml_no_model`/`ml_expired`/`ml_unscored`); esik alti puan yine eler (`ml_filter`). Eski strateji: fail_open=False (fail-closed).
+        self.ml_universe: frozenset[str] | None = None
+        self.fail_open = bool(fail_open)
         self.score_history = False                          # True: tablodaki TUM aday satirlari puanlanir (onhesapli backtest)
         self.counters = inner.counters                      # ayni Counter: shadow_r1/shadow_reentry + ml_* tek yerde
         self.info = dataclasses.replace(inner.info, name=name, version=version)
@@ -55,6 +70,12 @@ class PriceActionV1Ml:
         if mode not in ML_MODES:
             raise StrategyError("bad_ml_mode", f"ml_mode gecersiz: {mode!r} (izinli: {ML_MODES})")
         self.ml_mode = mode
+
+    def set_ml_universe(self, pairs) -> None:
+        self.ml_universe = frozenset(pairs) if pairs else None
+
+    def _in_universe(self, pair: str) -> bool:
+        return self.ml_universe is None or pair in self.ml_universe
 
     def __getattr__(self, item: str):                       # setups_enabled, block_same_bar_reentry ...
         if item == "_inner":
@@ -73,8 +94,8 @@ class PriceActionV1Ml:
     # ------------------------------------------------------------------ compute (puanlama)
     def compute(self, ctx: StrategyContext) -> pd.DataFrame:
         sig = self._inner.compute(ctx)
-        if self.ml_mode == "off":
-            return sig
+        if self.ml_mode == "off" or not self._in_universe(ctx.pair):
+            return sig                                      # evren disi: puanlanmaz (post_filter gecirir)
         cand = sig["signal"].astype(bool)
         if not self.score_history:                          # canli yol: yalniz karar barinin adayi puanlanir (maliyet)
             cand = cand & (sig.index == sig.index[-1])
@@ -128,6 +149,11 @@ class PriceActionV1Ml:
         row = self._inner.post_filter(row, ctx)
         if self.ml_mode == "off" or not bool(row["signal"]):
             return row
+        if not self._in_universe(ctx.pair):
+            self.counters["ml_out_of_universe"] += 1
+            r = row.copy()
+            r["reasons"] = "ml:out_of_universe|" + str(row["reasons"])
+            return r
         model = ctx.model
         if model is None:
             return self._decide(row, "no_model")
@@ -143,6 +169,13 @@ class PriceActionV1Ml:
 
     def _decide(self, row: pd.Series, why: str) -> pd.Series:
         """why: no_model | expired | unscored | filter. shadow'da yalniz sayac/uyari; active'te aday notrlenir."""
+        if self.fail_open and why in ("no_model", "expired", "unscored"):
+            self.counters["ml_no_model" if why == "no_model" else f"ml_{why}"] += 1      # puan uretilemedi: aday GECER (spec 5)
+            if self.ml_mode != "active":
+                return row
+            r = row.copy()
+            r["reasons"] = f"ml_{why}|" + str(row["reasons"])
+            return r
         self.counters[f"ml_{why}"] += 1
         if self.ml_mode != "active":
             return row
@@ -155,3 +188,11 @@ class PriceActionV1Ml:
 
 def make_v1b_ml() -> PriceActionV1Ml:
     return PriceActionV1Ml(make_v1b(), name="price_action_v1_ml", version="1b.0-ml0")
+
+
+def make_v1_full_ml() -> PriceActionV1Ml:
+    """DD-12 WP-05: kagit botun T1 + R1 (1s) sarmalayicisi + r03 suzgeci (yalniz `ml_pairs` puanlanir/elenir; digerleri gecer).
+    Ayni-mum yasagi (v1b) korunur; `paper_allowed` kapali olan `price_action_v1_full`den ayri bir ornektir."""
+    inner = PriceActionV1(name="price_action_v1_full", version="1.0", setups_enabled=("T1", "R1"),
+                          allowed_trigger_tfs=("1h",), block_same_bar_reentry=True, paper_allowed=True)
+    return PriceActionV1Ml(inner, name="price_action_v1_full_ml", version="1.0-ml1", fail_open=True)

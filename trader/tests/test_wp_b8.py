@@ -125,7 +125,7 @@ def test_testnet_unit_has_memory_cap_and_fits_slice_soft_cap():
     sl = kv("trader.slice")
     assert sl["MemoryHigh"] == "1100M" and sl["MemoryMax"] == "1300M"   # ayrilmis 2 GB sunucu: degismez
     hi = lambda n: int(kv(n)["MemoryHigh"][:-1])  # noqa: E731
-    soft = hi("trader-feed.service") + 2 * hi("trader-engine@.service") + hi("trader-engine-testnet.service")
+    soft = hi("trader-feed.service") + hi("trader-engine@.service") + hi("trader-engine-testnet.service")   # DD-12: ikiz yok
     assert soft <= int(sl["MemoryHigh"][:-1]), soft
     assert int(kv("trader-engine-testnet.service")["MemoryMax"][:-1]) <= 350
 

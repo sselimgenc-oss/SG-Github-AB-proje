@@ -70,10 +70,10 @@ def test_run_once_with_empty_heartbeat_does_not_return_hb_failed(tmp_path):
 
 # ------------------------------------------------------------------ OPEN-4
 def test_health_bots_default_and_override():
-    assert R.bots_from_env({}) == ("learner", "twin") == B.bots_from_env({})
+    assert R.bots_from_env({}) == ("learner",) == B.bots_from_env({})                    # DD-12: ikiz yok
     assert R.bots_from_env({"HEALTH_BOTS": "learner"}) == ("learner",) == B.bots_from_env({"HEALTH_BOTS": "learner"})
     assert R.bots_from_env({"HEALTH_BOTS": " learner , twin ,learner"}) == ("learner", "twin")
-    assert R.bots_from_env({"HEALTH_BOTS": " , "}) == ("learner", "twin")
+    assert R.bots_from_env({"HEALTH_BOTS": " , "}) == ("learner",)
 
 
 def test_make_cfg_uses_health_bots_and_veto_age():

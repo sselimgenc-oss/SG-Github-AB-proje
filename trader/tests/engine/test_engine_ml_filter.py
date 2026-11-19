@@ -157,13 +157,13 @@ def test_registry_ml_strategy_and_mode_plumbing():
 
 
 def test_configs_ship_ml_mode_off_and_validation():
-    for name in ("engine.base.json", "engine.learner.json", "engine.twin.json"):
+    for name in ("engine.base.json", "engine.learner.json"):
         raw = json.loads((ROOT / "config" / name).read_text())
         if name == "engine.base.json":
             assert raw["ml_mode"] == "off" and raw["ml_model_path"] is None
         else:
             assert raw.get("ml_mode", "off") == "off"
-    for bot in ("learner", "twin"):
+    for bot in ("learner",):
         cfg = load_engine_config(ROOT / "config" / "engine.base.json", ROOT / "config" / f"engine.{bot}.json")
         assert cfg.ml_mode == "off" and cfg.ml_model_path is None and cfg.strategy == "price_action_v1"
     assert apply_overrides(cfg, ml_mode="shadow", ml_model_path="m.json").ml_mode == "shadow"

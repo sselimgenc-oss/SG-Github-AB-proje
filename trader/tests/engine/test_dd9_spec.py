@@ -428,11 +428,15 @@ def _git_base(rel: str) -> str | None:
     return None
 
 
-def test_u_09_paper_engine_unit_is_byte_identical_to_base_commit():
+def test_u_09_paper_engine_unit_differs_from_base_commit_only_by_dd12_changes():
+    """DD-12 WP-07: kagit motor birimi yalniz `--env paper` ve bellek tavanlari (600M/750M) ile tabandan ayrilir (yorum satirlari haric)."""
     base = _git_base("deploy/trader-engine@.service")
     if base is None:
         pytest.skip("git/taban commit yok")
-    assert (DEPLOY / "trader-engine@.service").read_bytes() == base.encode("utf-8")
+    want = (base.replace("--bot %i --config-dir config", "--bot %i --env paper --config-dir config")
+            .replace("MemoryHigh=280M", "MemoryHigh=600M").replace("MemoryMax=350M", "MemoryMax=750M"))
+    strip = lambda t: [ln for ln in t.splitlines() if not ln.lstrip().startswith("#")]  # noqa: E731
+    assert strip((DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")) == strip(want)
 
 
 class _Ctl:
@@ -498,7 +502,7 @@ def test_u_10_engine_retry_unit_option(tmp_path, monkeypatch):
     assert ctl.restarts == [["restart", "trader-engine@learner.service"]]
 
 
-@pytest.mark.parametrize("unit", ["trader-engine-testnet.service", "trader-engine@learner.service", "trader-engine@twin.service"])
+@pytest.mark.parametrize("unit", ["trader-engine-testnet.service", "trader-engine@learner.service"])
 def test_u_10b_engine_retry_accepts_whitelisted_units(tmp_path, monkeypatch, unit):
     R = load_script("engine_retry")
     _retry_env(tmp_path, monkeypatch)

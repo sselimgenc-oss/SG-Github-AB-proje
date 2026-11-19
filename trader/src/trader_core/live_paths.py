@@ -1,6 +1,6 @@
 """Canli yollar: tek kaynak (DD-9 §6.1). Yalniz stdlib; `trader_engine` ice aktarilmaz.
 
-Canli bot (`LIVE_BOTS`) icin Telegram, saglik ve yedek `LIVE_VAR_DIR` / `LIVE_PAUSE_FILE` yollarini kullanir; kagit bot (ikiz)
+Canli bot (`LIVE_BOTS`) icin Telegram, saglik ve yedek `LIVE_VAR_DIR` / `LIVE_PAUSE_FILE` yollarini kullanir; kagit bot
 `ENGINE_VAR_DIR` / `PAUSE_FILE` yollarinda kalir. `check_against_config` env dosyalarini `config/engine.live.json` ile
 karsilastirir (yanlis dosyaya KILL/duraklatma yazilmasin). `LIVE_BOTS` bos iken hicbir islev davranis degistirmez."""
 from __future__ import annotations

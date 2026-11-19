@@ -15,8 +15,8 @@ import pytest
 from panel_support import DAY, PARAMS, ROOT, Env, Running, STD_LEARNER, mkledger
 from trader_core import panel_data as P
 
-ENDPOINTS = ["/api/status", "/api/ledger?bot=learner", f"/api/ledger?bot=learner&day={DAY}", "/api/ledger?bot=twin",
-             "/api/curve?bot=learner", "/api/curve?bot=twin", "/api/risk?bot=learner", "/api/compare", "/api/budget",
+ENDPOINTS = ["/api/status", "/api/ledger?bot=learner", f"/api/ledger?bot=learner&day={DAY}",
+             "/api/curve?bot=learner", "/api/risk?bot=learner", "/api/budget",
              "/api/lesson", "/api/health", "/api/system", "/healthz", "/", "/static/panel.js"]
 
 

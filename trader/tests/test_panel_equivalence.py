@@ -19,7 +19,7 @@ def env(tmp_path_factory):
 def tcfg(env):
     r = env.root
     return T.TelegramConfig("1:tok", 5, str(r / "tg"), "", str(r / "var/learner/status.json"),
-                            ledger_path=str(r / "var/learner/ledger.sqlite"), twin_ledger_path=str(r / "var/twin/ledger.sqlite"),
+                            ledger_path=str(r / "var/learner/ledger.sqlite"),
                             budget_config=str(r / "config/budget.json"), lesson_store=str(r / "user_data/lesson.sqlite"))
 
 
@@ -39,9 +39,7 @@ def test_ledger_numbers_equal_section_ledger(env, tcfg):
     assert (f"kapanan={s['closed']} PnL={s['pnl']:+.2f}$ R={s['r']:+.2f} kazanan/kaybeden={s['win']}/{s['loss']} "
             f"açık={s['open']}") in text
     assert f"günlük zarar={s['daily_loss']:.2f}$ / bütçe %5={s['daily_limit']:.2f}$" in text
-    tc, to = P.ledger_day(tcfg.twin_ledger_path, "twin", DAY)
-    ts = P.day_summary(tc, to)
-    assert f"ikiz: kapanan={ts['closed']} PnL={ts['pnl']:+.2f}$ R={ts['r']:+.2f} (fark PnL {s['pnl'] - ts['pnl']:+.2f}$)" in text
+    assert "ikiz" not in text                                  # DD-12: ikiz satiri yok
     # telegram'in eski yolu (_trades) ile ayni kume ve toplam
     from trader_core import ledger as L
     led = L.open_ledger(tcfg.ledger_path, "learner", create=False, read_only=True, migrate=False)

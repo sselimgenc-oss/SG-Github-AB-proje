@@ -17,7 +17,7 @@ PARAMS = {"range_width_atr": 4.0, "vol_ratio_max": 1.5, "edge_zone_atr": 0.25, "
 
 
 def mkcfg(tmp_path, **kw):
-    d = dict(ledger_path=str(tmp_path / "l.sqlite"), twin_ledger_path=str(tmp_path / "t.sqlite"),
+    d = dict(ledger_path=str(tmp_path / "l.sqlite"),
              budget_config=str(tmp_path / "config" / "budget.json"), lesson_store=str(tmp_path / "lesson.sqlite"))
     d.update(kw)
     return T.TelegramConfig("1:tok", 5, str(tmp_path / "tg"), "", str(tmp_path / "status.json"), **d)
@@ -52,16 +52,14 @@ def write_status(tmp_path):
 
 def test_ledger_normal_day(tmp_path):
     mkledger(tmp_path / "l.sqlite", "learner", [(True, True), (False, True), (True, False)])
-    mkledger(tmp_path / "t.sqlite", "twin", [(True, True)])
     write_status(tmp_path)
     s = T.section_ledger(mkcfg(tmp_path), DAY)
     assert "kapanan=2" in s and "kazanan/kaybeden=1/1" in s and "açık=1" in s
-    assert "equity=1000.00" in s and "bütçe %5=50.00$" in s and "ikiz: kapanan=1" in s
+    assert "equity=1000.00" in s and "bütçe %5=50.00$" in s and "ikiz" not in s
 
 
 def test_ledger_no_trades(tmp_path):
     mkledger(tmp_path / "l.sqlite", "learner", [])
-    mkledger(tmp_path / "t.sqlite", "twin", [])
     s = T.section_ledger(mkcfg(tmp_path), DAY)
     assert "kapanan=0" in s and "PnL=+0.00$" in s and "açık=0" in s
 
@@ -129,7 +127,6 @@ def _status(tmp_path, now=NOW, **kw):
 
 def _paper_cfg(tmp_path):
     mkledger(tmp_path / "l.sqlite", "learner", [])
-    mkledger(tmp_path / "t.sqlite", "twin", [])
     (tmp_path / "tg").mkdir(exist_ok=True)
     return mkcfg(tmp_path)
 
@@ -151,9 +148,8 @@ def test_report_paper_is_plain_turkish(tmp_path):
     assert "İkiz" not in out                                   # ikizde işlem yok -> satır yok
 
 
-def test_report_open_positions_and_twin_line(tmp_path):
+def test_report_open_positions_and_no_twin_line(tmp_path):
     mkledger(tmp_path / "l.sqlite", "learner", [(True, True), (False, True)])
-    mkledger(tmp_path / "t.sqlite", "twin", [(True, True)])
     (tmp_path / "tg").mkdir(exist_ok=True)
     cfg = mkcfg(tmp_path)
     pos = [{"pair": f"P{i}/USDT", "side": "long" if i % 2 else "short", "entry_price": 2000.0 + i, "stop": 1960.0}
@@ -163,7 +159,7 @@ def test_report_open_positions_and_twin_line(tmp_path):
     assert "📌 Açık pozisyonlar (8):" in out and "… ve 2 pozisyon daha" in out
     assert "P1/USDT · uzun · giriş 2.001,00 · stop 1.960,00" in out and "P0/USDT · kısa" in out
     assert "🧾 Bugün kapanan işlem: 2 · kazanan 1 / kaybeden 1" in out and " R" in out
-    assert "👥 İkiz bot: 1 işlem kapandı" in out
+    assert "İkiz" not in out and "ikiz" not in out               # DD-12: ikiz satırı yok
 
 
 def test_report_risk_closed_lines(tmp_path):

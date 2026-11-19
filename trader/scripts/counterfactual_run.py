@@ -66,7 +66,7 @@ def _read_v3_skipped(path: str, bot: str, since) -> list:
 
 def main(argv=None, *, now_fn=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--bot", required=True, choices=("learner", "twin"))
+    ap.add_argument("--bot", required=True, choices=("learner",))
     ap.add_argument("--once", action="store_true", help="tek tur (tek kullanim modu)")
     ap.add_argument("--since", help="yalniz bu zamandan (UTC, ISO) sonraki kararlar")
     ap.add_argument("--dry-run", action="store_true", help="hesapla, yazma")

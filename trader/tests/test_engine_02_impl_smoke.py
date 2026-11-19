@@ -102,8 +102,8 @@ def test_clock():
 def test_config():
     cfg = config.load_engine_config(ROOT / "config/engine.base.json", ROOT / "config/engine.learner.json")
     assert len(cfg.pairs) == 10 and cfg.ledger_path == "var/learner/ledger.sqlite"
-    tw = config.load_engine_config(ROOT / "config/engine.base.json", ROOT / "config/engine.twin.json")
-    assert tw.start_delay_s == 3.0 and tw.state_path == "var/twin/state.sqlite"
+    assert cfg.start_delay_s == 0.0 and cfg.state_path == "var/learner/state.sqlite"
+    assert not (ROOT / "config/engine.twin.json").exists()      # DD-12: ikiz kaldirildi
     with pytest.raises(errors.ConfigError):
         config.load_engine_config(ROOT / "config/engine.base.json")  # bot eksik
     with pytest.raises(errors.ConfigError, match="live blogu"):  # 11 B2: faz_b reddi kalkti

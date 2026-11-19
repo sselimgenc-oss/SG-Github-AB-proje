@@ -507,12 +507,12 @@ class TestAlertTexts:
         rec = [x for x in last if x.level is Status.OK]
         assert rec and duzeldi in rec[0].title and len(rec[0].title) <= 80
 
-    def test_twin_suffix(self):
+    def test_no_twin_suffix(self):
         steps = [(at_min(i * 5), manual_report("ml_expired", Status.CRIT, "ml_package:twin", at_min(i * 5)))
                  for i in range(2)]
         out, _ = run_turns(steps)
         sent = [a for _, al in out for a in al]
-        assert sent and "(ikiz bot)" in sent[0].title
+        assert sent and "ikiz" not in sent[0].title                     # DD-12: ikiz eki kalkti
 
     def test_generic_text_for_unlisted_code(self):
         a, _ = first_alert("ml_something_new", Status.WARN)

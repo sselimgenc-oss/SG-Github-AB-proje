@@ -47,7 +47,7 @@ def _atomic(path: Path, text: str) -> None:
 def main(argv=None, *, now_fn=None, notifier=None) -> int:
     t0 = time.perf_counter()
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--bot", choices=("learner", "twin"))
+    ap.add_argument("--bot", choices=("learner",))
     ap.add_argument("--run-dir")
     ap.add_argument("--history")
     ap.add_argument("--ledger")

@@ -26,7 +26,8 @@ def _write(tmp_path: Path, over: dict, bot: str = "learner") -> tuple[Path, Path
     b = tmp_path / "engine.base.json"
     b.write_text(json.dumps(base))
     p = tmp_path / f"engine.{bot}.json"
-    p.write_text(json.dumps(json.loads((CFG_DIR / f"engine.{bot}.json").read_text())))
+    src = CFG_DIR / f"engine.{bot}.json"
+    p.write_text(json.dumps(json.loads(src.read_text()) if src.exists() else {"bot": bot}))   # DD-12: engine.twin.json yok; bot="twin" reddedilmeli
     return b, p
 
 
@@ -152,6 +153,13 @@ def test_live_with_twin_refused(tmp_path, monkeypatch, mode):
     with pytest.raises(ConfigError):
         _load(tmp_path, {"mode": mode, "live": LIVE_OK}, bot="twin", env={"LIVE_CONFIRM": "sub-acct-01"},
               monkeypatch=monkeypatch)
+
+
+def test_twin_overlay_rejected_everywhere(tmp_path):
+    """DD-12: ikiz kaldirildi; engine.twin.json yok ve bot="twin" her kipte ConfigError."""
+    assert not (CFG_DIR / "engine.twin.json").exists()
+    with pytest.raises(ConfigError):
+        _load(tmp_path, {}, bot="twin")
 
 
 def test_live_requires_veto_required(tmp_path, monkeypatch):
@@ -381,7 +389,7 @@ _FROM_JSON = ("wallet_start", "stale_factor", "loop_sleep_s", "bar_wait_s", "min
               "record_filtered_candidates")
 
 
-@pytest.mark.parametrize("bot,start_delay", [("learner", 0.0), ("twin", 3.0)])
+@pytest.mark.parametrize("bot,start_delay", [("learner", 0.0)])
 def test_paper_config_loads_unchanged(bot, start_delay):
     cfg = load_engine_config(CFG_DIR / "engine.base.json", CFG_DIR / f"engine.{bot}.json")
     raw = json.loads((CFG_DIR / "engine.base.json").read_text())
