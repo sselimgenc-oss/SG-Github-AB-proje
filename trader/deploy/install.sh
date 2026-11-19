@@ -556,6 +556,7 @@ if has_value /etc/trader-lesson.env ANTHROPIC_API_KEY_LESSON && [ "$TG_OK" -eq 1
 else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON ve Telegram anahtarlari (ders servisi; ikisi de dolu olmadan acilmaz)"); fi
 # DD-12 WP-09: gece islem notu (kodla; anahtar/ag gerekmez) ve haftalik ozet (anahtar yoksa no-op; butce payi haftalik_ozet)
 enable_now trader-notes.timer
+enable_now trader-ml-retrain.timer
 enable_now trader-weekly-summary.timer
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then

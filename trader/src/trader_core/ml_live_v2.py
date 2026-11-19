@@ -31,7 +31,7 @@ import pandas as pd
 from .ml_features import BAR, BTC, ETH
 from .ml_features_v2 import LOOKBACK_1D_DAYS, R02_FEATURE_NAMES, R03_FEATURE_NAMES, RECIPES, feature_frame_v2
 
-__all__ = ["WINDOW_1H_V2", "MIN_1H_BARS", "RECIPE_NAMES", "LiveContextV2", "BarFeatures", "HistoryShort", "HistoryGap", "internal_key"]
+__all__ = ["SETUP_BASE_FEATURES", "setup_feature_dict", "setup_feature_vector", "guess_asset_class", "WINDOW_1H_V2", "MIN_1H_BARS", "RECIPE_NAMES", "LiveContextV2", "BarFeatures", "HistoryShort", "HistoryGap", "internal_key"]
 
 MIN_1H_BARS = 24 * LOOKBACK_1D_DAYS      # 4800: 200 gunluk 1g baglam
 WINDOW_1H_V2 = 5000                      # motorun cift basina tuttugu 1s mum (4800 + ~8 gun pay)
@@ -205,3 +205,74 @@ def funding_frame_from_points(points) -> pd.DataFrame | None:
     idx = pd.DatetimeIndex([pd.Timestamp(p.ts).tz_convert("UTC") if pd.Timestamp(p.ts).tzinfo else pd.Timestamp(p.ts, tz="UTC")
                             for p in points]).round("1h")
     return pd.DataFrame({"funding_rate": np.array([float(p.rate) for p in points])}, index=idx)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DD-12 WP-10: kurulum (arm_id) bazli suzgec ozellikleri. EGITIM VE MOTOR AYNI FONKSIYONU kullanir (parite). Yalniz KARAR ANINDA
+# bilinenler; islem sonrasi not etiketleri / sonuc yok. trader_core ML kutuphanesi ice aktarmaz (yalniz stdlib).
+# ---------------------------------------------------------------------------------------------------------------------
+_REGIMES = ("trend_up", "trend_down", "range", "volatile", "unclear")
+_SESSIONS = ("open", "closed", "weekend")
+_CLASSES = ("kripto", "hisse", "emtia")
+_COMMODITY_BASES = frozenset({"XAU", "XAG", "XPT", "XPD", "WTI", "BRENT", "CL", "NG", "HG", "OIL", "GOLD", "SILVER", "COPPER", "NATGAS"})
+SETUP_BASE_FEATURES = tuple(
+    ["atr_ratio", "stop_dist_pct", "rr_plan", "rh_touches", "rl_touches", "side_long"]
+    + [f"regime_{r}" for r in _REGIMES] + [f"sess_{s}" for s in _SESSIONS] + [f"cls_{c}" for c in _CLASSES])
+
+
+def guess_asset_class(pair: str) -> str:
+    """Motor `arm_guard.asset_class(pair, clusters)` verebiliyorsa o kullanilir; bu yalniz kume bilgisi olmayan egitim yolu icin yedek."""
+    s = str(pair).upper()
+    base = s.split("/")[0].split(":")[0]
+    if base in _COMMODITY_BASES:
+        return "emtia"
+    if "USDT" in s or "USDC" in s or "BUSD" in s:
+        return "kripto"
+    return "hisse"
+
+
+def _fnum(x) -> float:
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return float("nan")
+    return v if np.isfinite(v) else float("nan")
+
+
+def setup_feature_dict(*, side: str, regime: str, atr_ratio, session_tag, asset_class: str | None, pair: str | None = None,
+                       planned_entry, planned_stop, planned_target=None, rh_touches=0, rl_touches=0,
+                       lesson_ids: Sequence[str] | None = None, features: Mapping | None = None) -> dict[str, float]:
+    """Bir aday icin ozellik sozlugu: sabit taban + `f_<anahtar>` (kararin sayisal `features` alanlari) + `ders:<kimlik>` (0/1).
+    Eksik/bilinmeyen -> NaN (taban) ya da 0 (kategori ve ders). `session_tag` None -> hicbir sess_* yanmaz."""
+    e, st = _fnum(planned_entry), _fnum(planned_stop)
+    risk = abs(e - st)
+    tgt = _fnum(planned_target)
+    cls = asset_class or (guess_asset_class(pair) if pair else None)
+    d: dict[str, float] = {
+        "atr_ratio": _fnum(atr_ratio),
+        "stop_dist_pct": risk / e if e > 0 and np.isfinite(risk) else float("nan"),
+        "rr_plan": abs(tgt - e) / risk if risk > 0 and np.isfinite(tgt) else float("nan"),
+        "rh_touches": _fnum(rh_touches), "rl_touches": _fnum(rl_touches),
+        "side_long": 1.0 if str(side).lower() == "long" else 0.0}
+    for r in _REGIMES:
+        d[f"regime_{r}"] = 1.0 if regime == r else 0.0
+    for s in _SESSIONS:
+        d[f"sess_{s}"] = 1.0 if session_tag == s else 0.0
+    for c in _CLASSES:
+        d[f"cls_{c}"] = 1.0 if cls == c else 0.0
+    for k, v in (features or {}).items():
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        d[f"f_{k}"] = _fnum(v)
+    for lid in (lesson_ids or ()):
+        d[f"ders:{lid}"] = 1.0
+    return d
+
+
+def setup_feature_vector(names: Sequence[str], fdict: Mapping[str, float]) -> np.ndarray:
+    """Paket ozellik sirasina gore vektor. Eksik `ders:*` -> 0 (ders eslesmedi); diger eksikler NaN (modelin `fill` degeri)."""
+    out = np.empty(len(names), dtype=np.float64)
+    for i, n in enumerate(names):
+        v = fdict.get(n)
+        out[i] = (0.0 if n.startswith("ders:") else float("nan")) if v is None else v
+    return out

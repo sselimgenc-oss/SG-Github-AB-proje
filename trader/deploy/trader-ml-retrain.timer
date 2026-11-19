@@ -1,0 +1,10 @@
+[Unit]
+Description=Trader gece kurulum suzgeci egitimi (her gun 03:10 UTC; ders 02:40 ve not 02:55 sonrasi)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00 UTC
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

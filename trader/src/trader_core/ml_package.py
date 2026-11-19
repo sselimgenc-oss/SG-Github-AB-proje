@@ -133,3 +133,98 @@ def ml_score_from_reasons(reasons: str | None) -> float | None:
         return None
     v = float(m.group(1))
     return v if 0.0 <= v <= 1.0 else None
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# DD-12 WP-10: CELI PAKET (arm_id basina) + SICAK YUKLEME. Motor API'si:
+#   ps = PackageSet(models_dir)                 # models_dir/<guvenli_arm_id>.json ; <...>.prev.json yedektir (yuklenmez)
+#   ps.reload(now=...)        -> {"loaded": [...], "removed": [...], "rejected": {arm: neden}}   (bar kapanisinda cagir; dosya
+#                                degismediyse (mtime_ns, size) ucuz atlanir; bozuk/suresi dolmus paket YALNIZ o kolu `ml_no_model` yapar,
+#                                oncekini silmez ama suresi dolmussa kullanmaz; motor hic durmaz)
+#   ps.decide(arm_id, fdict, now=...) -> SetupDecision(passed, score, code)   # code: "ok" | "ml_below_threshold" | "ml_no_model"
+# `ml_no_model` => aday GECER (esiksiz kural, spec 5); puan yok. Puan > esik kosulu: score >= threshold gecer.
+# `paper_only` paketler (meta.paper_only) yalniz `allow_paper_only=True` ile yuklenir (testnet/canliya kapidan gecmemis model yuklenmez).
+# ---------------------------------------------------------------------------------------------------------------------
+def safe_arm_name(arm_id: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9._@-]", "_", str(arm_id))
+    if not s or s.startswith("."):
+        raise ValueError(f"gecersiz arm_id: {arm_id!r}")
+    return s
+
+
+@dataclass(frozen=True)
+class SetupDecision:
+    passed: bool
+    score: float | None
+    code: str
+
+
+class PackageSet:
+    def __init__(self, models_dir: str | Path, *, allow_paper_only: bool = True) -> None:
+        self.dir = Path(models_dir)
+        self.allow_paper_only = allow_paper_only
+        self._views: dict[str, MlModelView] = {}
+        self._sig: dict[str, tuple] = {}
+        self._rejected: dict[str, str] = {}
+
+    def arms(self) -> list[str]:
+        return sorted(self._views)
+
+    def rejected(self) -> dict[str, str]:
+        return dict(self._rejected)
+
+    def view(self, arm_id: str) -> MlModelView | None:
+        return self._views.get(arm_id)
+
+    def reload(self, *, now: datetime | None = None) -> dict:
+        loaded, removed = [], []
+        files = {}
+        if self.dir.is_dir():
+            for p in sorted(self.dir.glob("*.json")):
+                if p.name.endswith(".prev.json") or p.name.startswith("."):
+                    continue
+                files[p.name] = p
+        new_views: dict[str, MlModelView] = {}
+        new_sig: dict[str, tuple] = {}
+        rejected: dict[str, str] = {}
+        by_file = {self._file_of(a): a for a in self._views}
+        for name, p in files.items():
+            try:
+                st = p.stat()
+                sig = (st.st_mtime_ns, st.st_size)
+                prev_arm = by_file.get(name)
+                if prev_arm is not None and self._sig.get(prev_arm) == sig and not is_expired(
+                        {"meta": {"expires_at": self._views[prev_arm].expires_at.isoformat()}}, now):
+                    new_views[prev_arm], new_sig[prev_arm] = self._views[prev_arm], sig
+                    continue
+                pkg = load_package(p, now=now)
+                meta = pkg["meta"]
+                if meta.get("paper_only") is True and not self.allow_paper_only:
+                    raise PackageError("paper_only paket bu modda yuklenemez")
+                arm = meta.get("arm_id")
+                if not arm or safe_arm_name(arm) + ".json" != name:
+                    raise PackageError("meta.arm_id dosya adiyla uyusmuyor")
+                new_views[arm], new_sig[arm] = view_from_package(pkg), sig
+                loaded.append(arm)
+            except (PackageError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as e:
+                rejected[name[:-5]] = f"{type(e).__name__}: {e}"
+        removed = sorted(set(self._views) - set(new_views))
+        self._views, self._sig, self._rejected = new_views, new_sig, rejected      # referans atamasi: okuyucular eski ya da yeni gorur
+        return {"loaded": sorted(loaded), "removed": removed, "rejected": dict(rejected)}
+
+    @staticmethod
+    def _file_of(arm_id: str) -> str:
+        return safe_arm_name(arm_id) + ".json"
+
+    def decide(self, arm_id: str, fdict, *, now: datetime | None = None) -> SetupDecision:
+        """Tek adayin kararini ver. Paket yok/suresi dolmus/ozellik hatasi -> (True, None, "ml_no_model")."""
+        v = self._views.get(arm_id)
+        now = now or datetime.now(timezone.utc)
+        if v is None or v.expired(now):
+            return SetupDecision(True, None, "ml_no_model")
+        try:
+            from .ml_live_v2 import setup_feature_vector
+            p = float(v.score(setup_feature_vector(v.features, fdict))[0])
+        except (ValueError, KeyError, TypeError):
+            return SetupDecision(True, None, "ml_no_model")
+        return SetupDecision(p >= v.threshold, p, "ok" if p >= v.threshold else "ml_below_threshold")
