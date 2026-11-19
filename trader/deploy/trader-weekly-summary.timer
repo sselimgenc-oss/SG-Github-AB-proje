@@ -1,0 +1,10 @@
+[Unit]
+Description=Trader haftalik ozet (pazar 18:10 UTC)
+
+[Timer]
+OnCalendar=Sun *-*-* 18:10:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

@@ -2633,6 +2633,21 @@ def evaluate_monitor(ledger_ro, twin_ro, monitor: Monitor, as_of: datetime, cfg:
     return MonitorVerdict("wait", "state", st, "bekle")
 
 
+def candidate_lessons(state_path, cfg: "LessonConfig") -> list[str]:
+    """DD-12 WP-09 (spec 6.2): islem notlarindan dogan aday/yasayan dersler (emekliler haric), istemde en cok
+    `cfg.lesson_candidate_max_in_prompt`. Yasam dongusu `trade_notes.lifecycle_tick` ile gece olculur (etki <= 0 => emekli)."""
+    from trader_core import trade_notes as _tn  # noqa: PLC0415
+    return _tn.active_lessons(state_path, cfg.lesson_candidate_max_in_prompt) if cfg.notes_enabled else []
+
+
+def lesson_lifecycle_hook(ledger, cfg: "LessonConfig", run_day: str, state_path) -> dict:
+    """Gece ders yasam dongusu kancasi: aday dogumu + etki olcumu + emeklilik (`cfg.shrink_n` ile sonumlu)."""
+    from trader_core import trade_notes as _tn  # noqa: PLC0415
+    if not cfg.notes_enabled:
+        return {"born": [], "alive": [], "retired": []}
+    return _tn.lifecycle_tick(ledger, state_path, run_day, cfg.shrink_n)
+
+
 @dataclass(frozen=True)
 class BrakeVerdict:
     tripped: bool
