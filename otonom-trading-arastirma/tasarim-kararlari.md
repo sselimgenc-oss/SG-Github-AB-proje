@@ -179,3 +179,16 @@ Kaynak: `dis-denetim/triyaj-2026-11-17.md` (mentor). Kullanıcı: "Cloudflare i�
 - **Kullanıcı (19 Kasım):** "Makine hiçbir işlemi engellemesin." → ML (r03 süzgeci ve kurulum süzgeçleri) adaylara yalnız PUAN yazar, hiçbir adayı elemez; M1 kendi adaylarını önermeye devam eder. Puanlar ve "alınsaydı" sonuçları öğrenme verisidir.
 
 - **19 Kasım 2026 — Takvim ve dur/devam şartları kaldırıldı (kullanıcı, kesin):** Kâğıt testin bitiş tarihi yok, kullanıcı bildirene kadar sürer. Canlı tarihi yok; 30 Kasım, 14 Aralık testnet koşusu, 27 Aralık ve aralık sonu/ocak başı hedefleri kalktı. "Dönem biter, devam mı dur mu" karar noktaları ve "en az N kapanmış işlem / süre" şartları kaldırıldı; proje zarar etse de devam eder, kullanıcı geliştirir. Gerçek paraya geçişin zamanı ve şekli yalnız kullanıcının kararıdır. Kalan teknik ölçümler: ML kalite kapısı, ders emekliliği, −3 R geri alma, −10 R ders freni, risk limitleri. Kodda tarih ya da işlem sayısına bağlı otomatik durdurma yok; tek işlem sayısı şartı `risk_ladder.STEP_UP_MIN_TRADES=60` (risk basamağı yükseltme, gerçek para tarafı; askıdaki gerçek para kararıyla birlikte ele alınacak).
+
+- **19 Kasım 2026 — Temkin ara adımları kaldırıldı (kullanıcı, orkestratör üzerinden; kalıcı kural):** "Sanki milyon eurolar yönetiyorum, her şeye risksiz temkinli." Kâğıt ve sanal aşamada şu ara adımlar artık önerilmez:
+  - deneme süresi,
+  - gölge çalıştırma,
+  - yan yana bekleme,
+  - "birkaç gün gözleyelim",
+  - "önce şu kadar veri birikmeli".
+
+  Özellikler doğrudan devreye alınır; hata çıkarsa düzeltilir. **Değişmeyenler:**
+  - kullanıcının sert limitleri: günlük %5 kayıp, 3–5x kaldıraç, canlı kasa tavanı 1.500 $;
+  - gerçek paraya geçişin zamanı ve şekli yalnız kullanıcıya aittir;
+  - otomatik güncellemenin "yalnız yeşil test" şartı (kullanıcının kendi şartı);
+  - PBO/holdout ve tutarlılık raporları yalnız rapordur, işlemi engellemez.
