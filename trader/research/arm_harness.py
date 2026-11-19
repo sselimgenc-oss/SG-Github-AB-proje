@@ -47,7 +47,9 @@ from trader_engine.strategies.arms import ArmInput, find_arm  # noqa: E402
 from trader_core.arm_time import arm_tf_delta  # noqa: E402
 
 CUT = HOLDOUT[0]
+GRID_START = pd.Timestamp("2021-01-01", tz="UTC")   # gun izgarasinin baslangici; daha eski mumlar (2020 listelenen cift) okunmaz, tum ciftlerde ayni baslangic
 HISTORY = ROOT / "var" / "history"
+HISTORY_PRE = ROOT / "var" / "history_pre"   # research/pbo_veri_indir.py: kagit evreninin geri kalani; holdout satiri YOK (muhurlu var/history'ye dokunulmaz)
 OUT_DIR = ROOT / "research" / "arm_series"
 TAKER_FEE = 0.0005                       # config/engine.base.json cost.taker_fee
 CFG_SLIP = (2.0, 2.0, 5.0)               # config: slip_entry/exit/stop bp (yalniz referans satiri; deneme sayilmaz)
@@ -128,10 +130,12 @@ def load_pre_holdout(history_dir: Path, pair: str, tf: str) -> pd.DataFrame | No
     import pyarrow as pa
     import pyarrow.dataset as ds
     path = Path(history_dir) / f"{history_stem(pair)}-{tf}-futures.feather"
+    if not path.exists() and Path(history_dir) == HISTORY:
+        path = HISTORY_PRE / path.name
     if not path.exists():
         return None
     cut = pa.scalar(CUT, type=pa.timestamp("ms", tz="UTC"))
-    t = ds.dataset(str(path), format="feather").to_table(columns=["date", *OHLC, "volume"], filter=ds.field("date") < cut)
+    t = ds.dataset(str(path), format="feather").to_table(columns=["date", *OHLC, "volume"], filter=(ds.field("date") < cut) & (ds.field("date") >= pa.scalar(GRID_START, type=pa.timestamp("ms", tz="UTC"))))
     df = t.to_pandas()
     df["date"] = pd.to_datetime(df["date"], utc=True)
     df = df.set_index("date").sort_index()
@@ -396,14 +400,17 @@ def _merge(parts: list[dict], days: pd.DatetimeIndex) -> tuple[pd.DataFrame, dic
     return pd.DataFrame(acc, index=days).sort_index(axis=1), ntr
 
 
-def day_grid(start: pd.Timestamp = pd.Timestamp("2021-01-01", tz="UTC")) -> pd.DatetimeIndex:
+def day_grid(start: pd.Timestamp = GRID_START) -> pd.DatetimeIndex:
     end = (pd.Timestamp(CUT) - pd.Timedelta(days=1)).floor("D")
     check_holdout(start.to_pydatetime(), (end + pd.Timedelta(days=1)).to_pydatetime())
     return pd.date_range(start, end, freq="D")
 
 
 def available_pairs(history_dir: Path, config_pairs: list[str]) -> tuple[list[str], list[str]]:
-    have = [p for p in config_pairs if (Path(history_dir) / f"{history_stem(p)}-4h-futures.feather").exists()]
+    def _has(p: str) -> bool:
+        name = f"{history_stem(p)}-4h-futures.feather"
+        return (Path(history_dir) / name).exists() or (Path(history_dir) == HISTORY and (HISTORY_PRE / name).exists())
+    have = [p for p in config_pairs if _has(p)]
     return have, [p for p in config_pairs if p not in have]
 
 
