@@ -282,7 +282,7 @@ def test_dt2_paper_yeni_anahtar_ham_json_listesi():
         assert k in raw, k
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw)
-    assert raw["shadow_blocks"] == ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"] and raw["max_positions"] == 16 and raw["ml_mode"] == "off"
+    assert raw["shadow_blocks"] == ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"] and raw["max_positions"] == 16 and raw["ml_mode"] == "active"
 
 
 # --------------------------------------------------------------------------- D-T2 (yalniz --env paper)
