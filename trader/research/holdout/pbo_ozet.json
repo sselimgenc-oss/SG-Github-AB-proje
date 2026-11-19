@@ -1,0 +1,260 @@
+{
+  "parametreler": {
+    "n_splits": 16,
+    "max_combinations": 2000,
+    "seed": 0,
+    "esikler": [
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7
+    ],
+    "holdout_oncesi_sinir": "2026-05-01"
+  },
+  "aileler": [
+    {
+      "aile": "Kural R1",
+      "tur": "kural",
+      "kaynak": "var/backtests/*/trades.csv (5 defter, IS 2024-11-01..2025-10-31)",
+      "n_yapilandirma": 5,
+      "T": 365,
+      "n_kullanilan": 5,
+      "durum": "tamam",
+      "pbo": 0.5165,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5,
+      "prob_oos_kayip": 0.736,
+      "en_iyi_yapilandirma": "R1:15m_IS_f1_s0_compat",
+      "en_iyi_sr_yillik": 0.0632180041130384,
+      "dsr": 0.20922395573437969,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "Kural T1",
+      "tur": "kural",
+      "kaynak": "var/backtests/*/trades.csv (7 defter, IS 2024-11-01..2025-10-31)",
+      "n_yapilandirma": 7,
+      "T": 365,
+      "n_kullanilan": 7,
+      "durum": "tamam",
+      "pbo": 0.2505,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.75,
+      "prob_oos_kayip": 0.2555,
+      "en_iyi_yapilandirma": "T1:s2_base_v1b",
+      "en_iyi_sr_yillik": 0.8293004021660374,
+      "dsr": 0.31248414088473836,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "ML 19c",
+      "tur": "ml",
+      "kaynak": "research/ml/19c/oof_predictions.parquet (ml1-r01-v1b-native33 (19c); model x esik)",
+      "n_yapilandirma": 12,
+      "T": 240,
+      "n_kullanilan": 3,
+      "durum": "tamam",
+      "pbo": 0.3225,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.75,
+      "prob_oos_kayip": 0.456,
+      "en_iyi_yapilandirma": "p_lgbm@0.45",
+      "en_iyi_sr_yillik": 0.8012741400736564,
+      "dsr": 0.023646168438990083,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "aile": "ML r02",
+      "tur": "ml",
+      "kaynak": "research/ml/r02/oof_predictions.parquet (ml1-r02-long-ctx-1r; model x esik)",
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "n_kullanilan": 9,
+      "durum": "tamam",
+      "pbo": 0.5805,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5,
+      "prob_oos_kayip": 0.848,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": -0.12219690886894083,
+      "dsr": 0.08475821252711058,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "ML r03",
+      "tur": "ml",
+      "kaynak": "research/ml/r03/oof_predictions.parquet (ml1-r03-long-regime8; model x esik)",
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "n_kullanilan": 8,
+      "durum": "tamam",
+      "pbo": 0.6645,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.3333333333333333,
+      "prob_oos_kayip": 0.77,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": 0.2130324596312616,
+      "dsr": 0.3037151011744526,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "aile": "TUM KUME",
+      "tur": "tum",
+      "kaynak": "yukaridaki tum yapilandirmalar, ortak gun izgarasinda (etkin olmayan gun = 0 R)",
+      "n_yapilandirma": 48,
+      "T": 1574,
+      "n_kullanilan": 32,
+      "durum": "tamam",
+      "pbo": 0.6075,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.42424242424242425,
+      "prob_oos_kayip": 0.8045,
+      "en_iyi_yapilandirma": "T1:s2_base_v1b",
+      "en_iyi_sr_yillik": 0.3994834337518284,
+      "dsr": 0.09990599127928589,
+      "yorum": "asiri uyum riski yuksek"
+    }
+  ],
+  "kurulumlar": [
+    {
+      "kurulum": "T1@15m",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "T1@1h",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "T1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "T1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "R1@15m",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "R1@1h",
+      "kayit": "var"
+    },
+    {
+      "kurulum": "R1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "R1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "TF1@15m",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "TF1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "TF1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "TF1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "B1@15m",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "B1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "B1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "B1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "H2@15m",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "H2@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "H2@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "H2@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "S1@15m",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "S1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "S1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "S1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "F1@15m",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "F1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "F1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "F1@1d",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "M1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "M1@4h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "C1@1h",
+      "kayit": "yok"
+    },
+    {
+      "kurulum": "C1@4h",
+      "kayit": "yok"
+    }
+  ],
+  "atlanan_defterler": [
+    {
+      "kosu": "1h_WF_f1_s0_compat",
+      "neden": "donem 2025-11-01..2026-05-01 ortak IS penceresini kapsamiyor"
+    },
+    {
+      "kosu": "s2_explore_tmp",
+      "neden": "trades.csv/meta.json yok"
+    }
+  ]
+}

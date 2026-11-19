@@ -1,0 +1,572 @@
+{
+  "muhur_tarihi": "2026-11-19T15:08:49Z",
+  "holdout": {
+    "baslangic": "2026-05-01",
+    "bitis": "2026-11-01"
+  },
+  "dosya_sayisi": 80,
+  "dosyalar": [
+    {
+      "dosya": "ADA_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "c3af2cfa22c4b2bf63368abf30efbaebb04668840cb2368a8728806964494dde"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "5320ea3e66282780bb690b00a41a53c3f2f5ab841f612f29b2b92df64cc6d83c"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "fa6b1a5590eb8bfaf63a7fce8677d93b32e69b4094698e4c7dabafaa11700fce"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "ddf43a21fa662b83c629f7134a4acc151f0c73d058107221bba20684093e9ce8"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "aeb62662e0b080232538dbaebe60de77eeca726d953bf12ce1708bf7f5be470c"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "ADA_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "04dd3599ef67405ecbdb23190118884f8ae151a88ae25f2ae72e3faef839388c"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "332a86f2e07373848e3a01f494490a3a6ed8ae6ded3966d541944d17a5fbfa8b"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "ec1149ac01ba248f4e860b3d4202aa6d25589630f0ac0b08e9660d1871480e56"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "81112e09a81b54a667a6d854c79730cdde7c53d1b3bad543d7399b8b95ff9542"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "ba5bbdba454b19f2de63c710cf62246d0e417d003dfb4693a6442ad9e7ffcbf3"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "ddfdada0030370e75ff7a1d45005ff87ce60b7af76b788dd1c145e286b2b253c"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "AVAX_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "5fa7b9fad753e35f3b3b55521ef587173db910db7f5db7aab22e973b3ca2a4ff"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "46a6df109e8363401461d946b8e929b5c25d1518ae1992c3024fafea4be07140"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "6357141310685687d4b8262a8faafa0fa610030f40ffc71ba63d82fc43f52deb"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "a0fea72e6484bdad4c06235213ae4a108e8ca126a16e279860245f1b1b67ab3b"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "065af9a0c2aac45a79f55af8c4ca00efe1f06e0ac0a8b5193916e3f3c9b50968"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "91d59aa0c6c0aa24ce90b77f91288eaf14bda5b426f6f532c90e3763b754a561"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "BNB_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "334064fa5564d20365662b41b82465123063a005047cd4d4b599b7e065b0ea65"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "4ed743219de9d9a164c548cf8ea0ccdf85b77207483632f1016118a5a6df1556"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "b8f06bb50a12ed72cf7927816b69dcf2bf81ca5d8d150fc8e45b3fc832cf1de4"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "d1f4a2989c3b63cb08dcae251c9f4719b86f13fcf7824951c2a205df296d2d8e"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "b2eed3925353076c8047d6e3bd80274e6c8392bf5985472f837f159f11ca481d"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "4050d11bfe13873cd35fb0cae68957d3a60e985d310bce4e0e018f2a3bf9d427"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "BTC_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "51afd8e36b4cb15f6cef2114d14749698c60f50a14ae668f1a7cfe2c05f868ca"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "e1994e56465bf0a2a8428086fabf8a1c41482bb98a7615557ad8438aa1e13e23"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "4849fd189467e556e1775983b8057935abc9974d217f2806d398f0aae3dfd0f1"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "494d718bc19d177e82c6916f3a848393c42da8d04dbf5307b8cf3c196f5e0f7c"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "f94e092edec9fd1644d0fb174411857792e5e437741b3dc6404301b6cda851e6"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "0b5dafbdb6ec915b07d2b92bd830576d9b076b81d85319e9a479d3d0b197b456"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "DOGE_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "54b7aede56f03c26a69e05c8da846efdbbcd5c6028e351aec34ad27ceb0e9920"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "dc0465b6a22fe607becdcdf7d96fee9ce483c0c165df5cb96d5dfc1dda72770c"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "09274406fee0f7efb6bc0aaa98233ac3a5ca4de910bb3df9c0265814ba0bee22"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "56fe5850805683951c786fe9a45d2c2b9fa552795eaa1dca136f1db16612b94f"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "4ba589167ff176d6f1bd284fd3762e8abffadca468ddffa48968b4cbbed645ad"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "9f79a84fd7a943b07a281ebf1989c4cac1217911b15ba5f11d324cd55b1a6f2d"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "ETH_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "4e563dd8454bf133b671e7f5834ccc2b88115308161d33f1aa5684f128a1ca6f"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "125c9277911d5fc1f68b99cd9b714db3a4f7946e4f9d74be933ef6ded6f632a6"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "f22ceaae1467d159a36fea7b1712490666f2d5c1af1bd2bd32d878cb242eb3fa"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "0889c44983a1d6af20dc963dd3aeb4d79d24d5e15b66855f8af44a7a00fef09e"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "7a4d3d84f9117aa0bd311780c3459c5144a4713ba3cb3e1bbe4d640b1de3d7e6"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "e3e7f7862be67bbe2d0ae1beef2da116efeb83c0de49b6d79c323542d2dcc867"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "LINK_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "7b8fd0f612d34ed64afba6594fb4cee30f2537f494b72ddbcaf1ef05e263a077"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "d113b8898e402beffbb3fd0dd43fb61c95c4a88975832f6dcaab4cb4dbfec7cd"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "9c40eb27ecdcb05d3cd9123bef36fb782747258c5281e3281960e28f5e5e024d"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "6351b9b592c726d36e4c9703f9af1d3ddefc42a42a357f7778d1f34fe1e496db"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "c4e4285b38e75f58cce5972b92154078cf212dc3624f6ca568ec28da9a6d5910"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "6e6362bc15fc991e375c644ea6045ee934bf6899a5b23b0dcb914b84d99fc40d"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "SOL_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "00b517229e5a3adeef0aec7a0d083bf8e768c9ea9eecb9251c17559be36b4cc2"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "cba41fda032cf89c5acceff32ee708303c2de75148f857855a743760c4587f50"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "5202da35d8583e688265ca022e4f509a9f5ad61c1ae0056ca008efee79e5ced7"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "47fa6d44b06310206eb906ff97b20664551e4c974ef2b89277dc6484ae33a0e4"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "3c0315f5f6b98751299d3b9239200249a43bb7b44f96c6ae2e0c79151db2b850"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "a55b721259f7168a970ac1afd0aca59fd3601698dad95cfc9c47c1adcf0e9696"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "TRX_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "53f640567b08a65885ac431638921428ed814d072ec008351aa6f9229a8793aa"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-15m-futures.feather",
+      "satir": 17664,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:45:00Z",
+      "sha256": "67b7896abfa8cddca8aa093d09ccc6228c03726e40cb63b99e409f8fc54e8897"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1d-futures.feather",
+      "satir": 184,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T00:00:00Z",
+      "sha256": "0ce4713e068d4d80f44b9202fe79dd8902a0c6d682ddd93e20e4d62a4fc86ed3"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1h-funding_rate.feather",
+      "satir": 552,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T16:00:00Z",
+      "sha256": "f10f87c67873660e5218434e6ea152d855deb4ea9878d49578df3da567cb93ff"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1h-futures.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "9e9c5d849a28a2b4f950841dc8ab4a80eb72205b558926952fa0cef48adc72ee"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1h-mark.feather",
+      "satir": 4416,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T23:00:00Z",
+      "sha256": "ba826c215f2f0b52286dfdeab4941f2497451152878191649b02a290f2f7960f"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1m-futures.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-1m-mark.feather",
+      "satir": 0,
+      "ilk_ts": null,
+      "son_ts": null,
+      "sha256": "981e47f5ad95f52f1ab630b15070b939f68ec8ce2a285c12a49970caaab8303d"
+    },
+    {
+      "dosya": "XRP_USDT_USDT-4h-futures.feather",
+      "satir": 1104,
+      "ilk_ts": "2026-05-01T00:00:00Z",
+      "son_ts": "2026-10-31T20:00:00Z",
+      "sha256": "577916f195ebf81240891643845671c82174e86ceb06848a468d41f04454b977"
+    }
+  ],
+  "birlesik_sha256": "499d54b12cde62683a3becf51561b1e3ebafb9fa475a418908dfe6a5fae9a45e",
+  "acildi": false
+}
