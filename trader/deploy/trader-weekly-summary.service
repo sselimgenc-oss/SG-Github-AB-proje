@@ -1,5 +1,5 @@
 [Unit]
-Description=Trader haftalik ozet (LLM; haftalik_ozet butce payi; anahtar yoksa no-op; DD-12 WP-09)
+Description=Trader haftalik ozet (LLM; haftalik_ozet butce payi; sabit bolum her hafta, LLM yorumu yalniz anahtar varsa; DD-12 WP-09)
 Documentation=file:///opt/trader/docs/motor/dd12-capraz-varlik-spec.md
 After=network-online.target
 Wants=network-online.target
