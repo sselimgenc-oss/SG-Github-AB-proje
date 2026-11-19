@@ -38,7 +38,8 @@ RESPONSE_SCHEMA = "lesson_response_v1"
 RULES_VERSION = "RULES_V1"
 STORE_SCHEMA_VERSION = 1
 LESSON_PARAMS = L.LESSON_PARAMS
-ALWAYS_USER = frozenset({"stop_buffer_atr:up"})
+# DD-12 WP-08: kagitta "her zaman kullaniciya sorulur" kurali yok (stop_buffer_atr:up dahil, onaysiz uygulanir)
+ALWAYS_USER: frozenset = frozenset()
 MAX_RATIONALE = 400
 CITE_TOL_ABS, CITE_TOL_REL = 5e-4, 1e-3
 
@@ -187,6 +188,13 @@ def quantile_nr(sorted_x: Sequence[float], p: float) -> float:
     return sorted_x[max(0, min(n - 1, math.ceil(p * n - 1e-12) - 1))]
 
 
+def _pv(params: Mapping[str, Any], key: str) -> float:
+    """Surum parametresi; istege bagli parametreler (session_off, post_stop_wait) eski surumlerde yoktur => varsayilan."""
+    if key in params:
+        return float(params[key])
+    return float(L.PARAM_DEFAULTS[key])
+
+
 def _step_of(param: str) -> float:
     return float(L.LESSON_STEP[param])
 
@@ -199,8 +207,8 @@ def _clip(v: float, bounds: tuple[float, float]) -> float:
 # Yapilandirma
 # ---------------------------------------------------------------------------
 
-_CAL_NUM = ("min_z", "min_gap_r", "min_affected", "monitor_z", "monitor_margin_r", "twin_z", "twin_margin_r")
-_CHECKPOINTS_DEFAULT = (30, 45, 60)
+_CAL_NUM = ("min_z", "min_gap_r", "min_affected", "monitor_z", "monitor_margin_r")
+_CHECKPOINTS_DEFAULT: tuple = ()
 _MAX_CHECKPOINTS = 8
 
 
@@ -213,13 +221,13 @@ class LessonConfig:
     mode: str = "llm"
     model: str = "claude-sonnet-5-5"
     max_output_tokens: int = 1500
-    checkpoints: tuple = _CHECKPOINTS_DEFAULT
+    checkpoints: tuple = _CHECKPOINTS_DEFAULT        # DD-12 WP-08: bos => kontrol noktasi yok, her gece tum orneklem
     checkpoint_valid_days: int = 7
-    min_affected: int = 8
-    min_gap_r: float = 0.50
-    min_z: float = 2.0
-    min_distinct_days: int = 8
-    max_pair_share: float = 0.5
+    min_affected: int = 1                            # esiksiz (kagit): en az 1 islem
+    min_gap_r: float = 0.0
+    min_z: float = 0.0                               # 0 => z sarti aranmaz
+    min_distinct_days: int = 1
+    max_pair_share: float = 1.0
     recent_trades_n: int = 15
     history_n: int = 5
     monitor_k: int = 20
@@ -227,31 +235,34 @@ class LessonConfig:
     monitor_z: float = 1.0
     monitor_recheck_n: int = 30
     recheck_max_days: int = 42
-    early_min_n: int = 10
+    early_min_n: int = 1
     early_mean_r: float = -0.6
     early_z: float = 1.645
-    early_min_days: int = 4
+    early_min_days: int = 1
     monitor_max_days: int = 28
     ref_max_n: int = 60
     blacklist_days: int = 14
     user_request_ttl_days: int = 3
     pending_ttl_days: int = 3
-    max_user_requests_per_week: int = 1
+    max_user_requests_per_week: int | None = None    # DD-12 WP-08: haftalik kullanici istegi siniri yok
     allow_off_menu: bool = False
     proxy_include_ask_user: bool = False
     batch_max_age_h: int = 25
     prompt_max_est_tokens: int = 12000
-    shadow_weeks: int = 4
+    shadow_weeks: int = 0                            # DD-12 WP-08: golge donem yok (ders ilk islemden etkin)
     paper_start_day: str | None = None
-    twin_enabled: bool = True
-    twin_ledger_path: str = "user_data/ledger_twin.sqlite"
-    twin_min_keys: int = 10
-    twin_z: float = 1.0
-    twin_margin_r: float = 0.10
-    max_steps_from_twin: int = 2
+    max_steps_from_ref: int = 2                      # referans surumden en cok 2 adim (ikiz yok)
     blind_days: int = 3
     calibration: Mapping[str, Any] | None = field(default=None, compare=False)
-    report_show_twin: bool = False
+    # --- DD-12 WP-08: ikizsiz, esiksiz olcum
+    shrink_n: int = 0                                # sonumlu ortalama: toplam R / (n + shrink_n); 0 => sonumsuz
+    rollback_effect_r: float = 3.0                   # tek degisiklik: sonumlu etki <= -3 R => geri al
+    brake_effect_r: float = 10.0                     # referanstan beri toplam etki <= -10 R => referansa don, otomatik dur
+    ref_version: int | None = None                   # None => son kullanici onayli (baslangic) surum
+    max_changes_per_night: int | None = None         # None => sinirsiz
+    notes_enabled: bool = True
+    notes_model: str = "claude-haiku-5-5"
+    lesson_candidate_max_in_prompt: int = 8
     notifier: str | None = None                      # Revizyon 3: NOTIFIER_FACTORIES adi (orn. "telegram")
     reject_cooldown_days: int = 7                    # Revizyon 3: acik kullanici reddinden sonra ayni oneri beklemesi
     calibration_file: str | None = field(default=None, compare=False)   # Revizyon 3: kalibrasyon sonuc dosyasi
@@ -290,7 +301,7 @@ class LessonConfig:
 
         if self.bot != "learner":
             bad("bot yalnizca 'learner' olabilir")
-        for n in ("ledger_path", "store_path", "twin_ledger_path", "model"):
+        for n in ("ledger_path", "store_path", "model", "notes_model"):
             isstr(getattr(self, n), n)
         if not isinstance(self.run_at_utc, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", self.run_at_utc):
             bad("run_at_utc HH:MM olmali")
@@ -301,54 +312,55 @@ class LessonConfig:
         if isinstance(cps, (str, bytes)) or not isinstance(cps, Iterable):
             bad("checkpoints dizi olmali")
         cps = tuple(cps)
-        if not cps:
-            bad("checkpoints bos olamaz")
         for c in cps:
             isint(c, "checkpoints", 1, 120)
-        if cps[0] < 30:
-            bad("checkpoints[0] >= 30 olmali")
         if len(cps) > _MAX_CHECKPOINTS:
             bad(f"checkpoints en fazla {_MAX_CHECKPOINTS} eleman olabilir")
         if any(b <= a for a, b in zip(cps, cps[1:])):
             bad("checkpoints artan olmali")
         object.__setattr__(self, "checkpoints", cps)
         isint(self.checkpoint_valid_days, "checkpoint_valid_days", 1)
-        isint(self.min_affected, "min_affected", 8)
-        isnum(self.min_gap_r, "min_gap_r", 0.50)
-        isnum(self.min_z, "min_z", 1.64)
-        isint(self.min_distinct_days, "min_distinct_days", 8)
-        isnum(self.max_pair_share, "max_pair_share", 0.0, 0.5)
+        isint(self.min_affected, "min_affected", 0)
+        isnum(self.min_gap_r, "min_gap_r", 0.0)
+        isnum(self.min_z, "min_z", 0.0)
+        isint(self.min_distinct_days, "min_distinct_days", 1)
+        isnum(self.max_pair_share, "max_pair_share", 0.0, 1.0)
         isint(self.recent_trades_n, "recent_trades_n", 0)
         isint(self.history_n, "history_n", 0)
-        isint(self.monitor_k, "monitor_k", 15)
+        isint(self.monitor_k, "monitor_k", 1)
         isnum(self.monitor_margin_r, "monitor_margin_r", 0.0, 0.50)
         isnum(self.monitor_z, "monitor_z", 0.0, 1.64)
-        isint(self.monitor_recheck_n, "monitor_recheck_n", self.monitor_k if isinstance(self.monitor_k, int) else 15)
+        isint(self.monitor_recheck_n, "monitor_recheck_n", self.monitor_k if isinstance(self.monitor_k, int) else 1)
         isint(self.monitor_max_days, "monitor_max_days", 1)
         isint(self.recheck_max_days, "recheck_max_days", self.monitor_max_days)
         isint(self.early_min_n, "early_min_n", 1)
         isnum(self.early_mean_r, "early_mean_r")
         isnum(self.early_z, "early_z", 0.0)
-        isint(self.early_min_days, "early_min_days", 3)
+        isint(self.early_min_days, "early_min_days", 1)
         isint(self.ref_max_n, "ref_max_n", 1)
-        isint(self.blacklist_days, "blacklist_days", 14)
+        isint(self.blacklist_days, "blacklist_days", 0)
         isint(self.user_request_ttl_days, "user_request_ttl_days", 1)
         isint(self.pending_ttl_days, "pending_ttl_days", 1)
-        isint(self.max_user_requests_per_week, "max_user_requests_per_week", 1, 2)
+        if self.max_user_requests_per_week is not None:
+            isint(self.max_user_requests_per_week, "max_user_requests_per_week", 1, 2)
         isbool(self.allow_off_menu, "allow_off_menu")
         isbool(self.proxy_include_ask_user, "proxy_include_ask_user")
         isint(self.batch_max_age_h, "batch_max_age_h", 24)
         isint(self.prompt_max_est_tokens, "prompt_max_est_tokens", 1, 20000)
-        isint(self.shadow_weeks, "shadow_weeks", 4, 6)
+        isint(self.shadow_weeks, "shadow_weeks", 0, 6)
         if self.paper_start_day is not None and not _valid_day(self.paper_start_day):
             bad("paper_start_day YYYY-MM-DD ya da null olmali")
-        isbool(self.twin_enabled, "twin_enabled")
-        isint(self.twin_min_keys, "twin_min_keys", 8)
-        isnum(self.twin_z, "twin_z", 0.0, 1.64)
-        isnum(self.twin_margin_r, "twin_margin_r", 0.0, 0.30)
-        isint(self.max_steps_from_twin, "max_steps_from_twin", 1)
+        isint(self.max_steps_from_ref, "max_steps_from_ref", 1)
         isint(self.blind_days, "blind_days", 2)
-        isbool(self.report_show_twin, "report_show_twin")
+        isint(self.shrink_n, "shrink_n", 0)
+        isnum(self.rollback_effect_r, "rollback_effect_r", 0.0)
+        isnum(self.brake_effect_r, "brake_effect_r", 0.0)
+        if self.ref_version is not None:
+            isint(self.ref_version, "ref_version", 1)
+        if self.max_changes_per_night is not None:
+            isint(self.max_changes_per_night, "max_changes_per_night", 1)
+        isbool(self.notes_enabled, "notes_enabled")
+        isint(self.lesson_candidate_max_in_prompt, "lesson_candidate_max_in_prompt", 0)
         isint(self.reject_cooldown_days, "reject_cooldown_days", 0)
         isbool(self.counterfactual_enabled, "counterfactual_enabled")
         if self.counterfactual_path is not None:
@@ -363,14 +375,7 @@ class LessonConfig:
             if not isinstance(self.calibration, Mapping):
                 bad("calibration nesne ya da null olmali")
             cal = self.calibration
-            if cal.get("ok") is True:
-                # kalibre degerlerden GEVSEK olamaz (daha siki serbest)
-                for k in ("min_z", "min_gap_r", "min_affected"):
-                    if k in cal and getattr(self, k) < cal[k] - 1e-12:
-                        bad(f"{k} kalibre degerden gevsek olamaz")
-                for k in ("monitor_z", "monitor_margin_r", "twin_z", "twin_margin_r"):
-                    if k in cal and getattr(self, k) > cal[k] + 1e-12:
-                        bad(f"{k} kalibre degerden gevsek olamaz")
+            # DD-12 WP-08: kalibrasyon bilgi icindir; yapilandirma esikleri kalibre degerlerle baglanmaz
 
     # -- yardimcilar
     def shadow_end(self, start_day: str) -> str:
@@ -380,6 +385,15 @@ class LessonConfig:
         d = dataclasses.asdict(self)
         d["checkpoints"] = list(self.checkpoints)
         return d
+
+    # ikiz kaldirildi (DD-12 WP-07/08): eski kod yollari icin degismez, yalniz-okunur karsiliklar
+    twin_enabled = property(lambda self: False)
+    twin_ledger_path = property(lambda self: "")
+    twin_min_keys = property(lambda self: 10)
+    twin_z = property(lambda self: 1.0)
+    twin_margin_r = property(lambda self: 0.10)
+    report_show_twin = property(lambda self: False)
+    max_steps_from_twin = property(lambda self: self.max_steps_from_ref)
 
 
 def resolve_shadow_start(cfg: LessonConfig, ledger_ro, run_day: str) -> str:
@@ -435,6 +449,8 @@ def _repo_root() -> Path:
 
 
 DEFAULT_CONFIG_PATH = "config/lesson.json"
+REMOVED_CONFIG_KEYS = frozenset({"twin_enabled", "twin_ledger_path", "twin_min_keys", "twin_z", "twin_margin_r",
+                                 "report_show_twin", "max_steps_from_twin"})
 
 
 def load_config(path=None, *, budget_config_path=None) -> LessonConfig:
@@ -453,6 +469,14 @@ def load_config(path=None, *, budget_config_path=None) -> LessonConfig:
     elif path is not None:
         raise LessonConfigError("yapilandirma dosyasi yok")
     names = {f.name for f in dataclasses.fields(LessonConfig)}
+    # DD-12 WP-07/08: kaldirilan ikiz anahtarlari eski yapilandirmalarda gormezden gelinir (uyari); yeni ad: max_steps_from_ref
+    removed = set(raw) & REMOVED_CONFIG_KEYS
+    if removed:
+        log.warning("lesson yapilandirmasinda kaldirilan anahtarlar yok sayildi: %s", sorted(removed))
+        if "max_steps_from_twin" in raw and "max_steps_from_ref" not in raw:
+            raw["max_steps_from_ref"] = raw["max_steps_from_twin"]
+        for k in removed:
+            raw.pop(k)
     unknown = set(raw) - names
     if unknown:
         raise LessonConfigError(f"bilinmeyen anahtar: {sorted(unknown)}")
@@ -1056,6 +1080,11 @@ def diverge_ts(ledger_ro, twin_ro, param: str) -> datetime | None:
     return start
 
 
+def steps_from_ref(value: float, ref_value: float, param: str) -> int:
+    """Referans surumden adim uzakligi (ikizsiz ders): ceil(|deger - referans| / adim)."""
+    return int(math.ceil(abs(value - ref_value) / _step_of(param) - 1e-9))
+
+
 def steps_from_twin(learner_value: float, twin_value: float, param: str) -> int:
     return int(math.ceil(abs(learner_value - twin_value) / _step_of(param) - 1e-9))
 
@@ -1112,9 +1141,9 @@ def _eval_ab(rule: Rule, a: list[TradeRow], b: list[TradeRow], cfg: LessonConfig
              sample: Sequence[TradeRow], need_cost_gap: bool = False, need_sign: bool = False) -> dict:
     fails: list[str] = []
     n_a, n_b = len(a), len(b)
-    if n_a < cfg.min_affected:
+    if n_a < max(1, cfg.min_affected):
         fails.append("n_a_low")
-    if n_b < cfg.min_affected:
+    if n_b < max(1, cfg.min_affected):
         fails.append("n_b_low")
     ma = _mean_or_none([r.r for r in a])
     mb = _mean_or_none([r.r for r in b])
@@ -1128,13 +1157,14 @@ def _eval_ab(rule: Rule, a: list[TradeRow], b: list[TradeRow], cfg: LessonConfig
             zr = cluster_diff(_fmt_pair(a), _fmt_pair(b), cfg.min_distinct_days)
             if gap + _EPS < cfg.min_gap_r:
                 fails.append("gap_low")
-        if zr.z is None:
-            fails.append("z_undefined")
-        elif zr.z + _EPS < cfg.min_z:
-            fails.append("z_low")
+        if cfg.min_z > 0:                      # esiksiz kagit: z sarti yok (min_z = 0)
+            if zr.z is None:
+                fails.append("z_undefined")
+            elif zr.z + _EPS < cfg.min_z:
+                fails.append("z_low")
     if need_sign and n_a:
         if loosen:
-            if ma + _EPS < 0.30:
+            if ma <= _EPS:
                 fails.append("sign")
         elif ma >= -_EPS:
             fails.append("sign")
@@ -1142,7 +1172,7 @@ def _eval_ab(rule: Rule, a: list[TradeRow], b: list[TradeRow], cfg: LessonConfig
     if need_cost_gap and n_a and n_b:
         cg = mean([r.cost_r for r in a]) - mean([r.cost_r for r in b])
         extra["cost_gap"] = r4(cg)
-        if cg + _EPS < 0.10:
+        if cg <= _EPS:
             fails.append("cost_gap_low")
     if not cluster_guard_info(sample, cfg)["ok"]:
         fails.append("cluster_guard")
@@ -1214,7 +1244,7 @@ def _eval_exit_mix(rule: Rule, sample: Sequence[TradeRow], cfg: LessonConfig) ->
             fails.append("share_low")
         if share_tg > 0.30 + _EPS:
             fails.append("target_share_high")
-        if len(ts) < 8:
+        if len(ts) < max(1, cfg.min_affected):
             fails.append("n_a_low")
         if ts and mean([r.r for r in ts]) + _EPS < -0.25:
             fails.append("mean_low")
@@ -1222,7 +1252,7 @@ def _eval_exit_mix(rule: Rule, sample: Sequence[TradeRow], cfg: LessonConfig) ->
     else:
         if share_tg + _EPS < 0.55:
             fails.append("share_low")
-        if len(tg) < 8:
+        if len(tg) < max(1, cfg.min_affected):
             fails.append("n_a_low")
         if mean_all is None or mean_all + _EPS < 0.20:
             fails.append("mean_low")
@@ -1240,7 +1270,7 @@ def _eval_mfe(rule: Rule, sample: Sequence[TradeRow], cfg: LessonConfig) -> dict
     a = [r for r in rows if r.exit_reason == "trail_stop" and r.mfe_r >= 1.0]
     runners = [r for r in rows if r.exit_reason == "trail_stop" and r.mfe_r >= 2.0]
     fails: list[str] = []
-    if len(a) < cfg.min_affected:
+    if len(a) < max(1, cfg.min_affected):
         fails.append("n_a_low")
     gb_pairs = [(r.mfe_r - r.gross_r, r.day) for r in a]
     gb_mean = mean([v for v, _ in gb_pairs]) if a else None
@@ -1252,10 +1282,11 @@ def _eval_mfe(rule: Rule, sample: Sequence[TradeRow], cfg: LessonConfig) -> dict
             fails.append("giveback_low")
         if capture > 0.45 + _EPS:
             fails.append("capture_high")
-        if zr.z is None:
-            fails.append("z_undefined")
-        elif zr.z + _EPS < cfg.min_z:
-            fails.append("z_low")
+        if cfg.min_z > 0:
+            if zr.z is None:
+                fails.append("z_undefined")
+            elif zr.z + _EPS < cfg.min_z:
+                fails.append("z_low")
     cap_r = None
     if len(runners) >= 5:
         dr = math.fsum(r.mfe_r for r in runners)
@@ -1373,7 +1404,9 @@ def evaluate_checkpoints(inp: CheckpointInput, cfg: LessonConfig) -> list[Checkp
     out: list[CheckpointResult] = []
     units = list(inp.units)
     valid_until = fmt_ts(as_of_for(inp.run_day) + timedelta(days=cfg.checkpoint_valid_days))
-    for c in cfg.checkpoints:
+    # DD-12 WP-08: kontrol noktasi yoksa (bos) her gece TUM orneklem (n >= 1) tek "nokta" olarak sinanir (c = n)
+    points = tuple(cfg.checkpoints) or ((len(units),) if units else ())
+    for c in points:
         if len(units) < c or c in inp.known:
             continue
         sample = units[:c]
@@ -1391,10 +1424,15 @@ def evaluate_checkpoints(inp: CheckpointInput, cfg: LessonConfig) -> list[Checkp
     return out
 
 
-def select_checkpoint(results: Mapping[int, CheckpointResult], menu_id: str, as_of: datetime):
+def select_checkpoint(results: Mapping[int, CheckpointResult], menu_id: str, as_of: datetime, *,
+                      latest_only: bool = False):
     """(sonuc | None, yon sonucu | None, durum): 'passed' | 'failed' | 'expired' | 'none'.
-    Gecen en buyuk gecerli c tercih edilir."""
+    Gecen en buyuk gecerli c tercih edilir. `latest_only` (kontrol noktasiz kip): yalniz en son (en buyuk c) sonuc."""
     now_s = fmt_ts(as_of)
+    if latest_only:
+        results = {c: r for c, r in results.items() if menu_id in r.directions}
+        if results:
+            results = {max(results): results[max(results)]}
     valid = [r for r in results.values() if r.directions.get(menu_id, {}).get("passed") and r.valid_until > now_s]
     if valid:
         best = max(valid, key=lambda r: r.c)
@@ -1551,12 +1589,12 @@ def _history_from_ledger(ledger_ro, cfg: LessonConfig, as_of: datetime, src: _Sr
         if v is None or v.author != "lesson" or v.parent_version_id is None:
             continue
         par = versions.get(v.parent_version_id)
-        diff = [p for p in LESSON_PARAMS if par is not None and abs(float(v.params[p]) - float(par.params[p])) > _EPS]
+        diff = [p for p in LESSON_PARAMS if par is not None and abs(_pv(v.params, p) - _pv(par.params, p)) > _EPS]
         if len(diff) != 1:
             continue
         p = diff[0]
         rolled = any(e.kind == "rollback" and e.prev_version_id == v.id and e.activated_at < as_of for e in acts)
-        out.append({"param": p, "from": float(par.params[p]), "to": float(v.params[p]),
+        out.append({"param": p, "from": _pv(par.params, p), "to": _pv(v.params, p),
                     "class": "auto" if ev.actor == "lesson" else "ask_user",
                     "outcome": "rolled_back" if rolled else ("monitoring" if active_vid == v.id else "confirmed"),
                     "age_days": int((as_of - ev.activated_at).total_seconds() // 86400)})
@@ -1756,6 +1794,8 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
     V = active.version_id
     params = {k: (float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
               for k, v in active.params.items()}
+    for _k, _dv in L.PARAM_DEFAULTS.items():       # istege bagli parametreler eski surumlerde yok => varsayilan
+        params.setdefault(_k, float(_dv))
     bounds = {k: (float(v[0]), float(v[1])) for k, v in active.lesson_bounds.items()}
     feats = FeatureCache(ledger_ro)
     known: dict[str, dict[int, CheckpointResult]] = {}
@@ -1878,11 +1918,20 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
         for r in sorted(res.values(), key=lambda r: r.c):
             cp_summary.append({"stream": r.stream_key, "c": r.c, "passed": r.passed, "valid_until": r.valid_until})
     cf = build_counterfactual(cfg, as_of, rr_min=params.get("rr_min"))
+    try:
+        ref_id = cfg.ref_version or rollback_target_user_approved(ledger_ro)
+        ref_params = {k: (float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
+                      for k, v in ledger_ro.get_version(ref_id).params.items()}
+        for k, dv in L.PARAM_DEFAULTS.items():
+            ref_params.setdefault(k, float(dv))
+    except Exception:  # noqa: BLE001  referans yoksa adim siniri uygulanmaz
+        ref_params = None
     menu: list[MenuEntry] = []
     for pl in plans:
         rule, p, from_v, to_v, eclass = pl["rule"], pl["p"], pl["from"], pl["to"], pl["eclass"]
         n_scope, units, stream, scope = pl["n_scope"], pl["units"], pl["stream"], pl["scope"]
-        sel, dres, state = select_checkpoint(results_by_stream[stream], rule.menu_id, as_of)
+        sel, dres, state = select_checkpoint(results_by_stream[stream], rule.menu_id, as_of,
+                                             latest_only=not cfg.checkpoints)
         fails: list[str] = []
         stats: Mapping[str, Any] = dres["stats"] if dres is not None else {}
         if sel is None or state == "expired":
@@ -1896,9 +1945,21 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
                   "not_blacklisted": "blacklisted" not in fails}
         eligible = not fails
         always_user = rule.menu_id in ALWAYS_USER
-        auto_cap = (eligible and eclass in ("observed_subset", "twin_observed") and not always_user
-                    and checks["checkpoint_passed"] and cg_ok and n_scope >= cfg.checkpoints[0])
+        # DD-12 WP-08: ref surumden en cok max_steps_from_ref adim (ikiz yok); asilirsa aday uygun degil
+        if ref_params is not None and p in ref_params:
+            sa = steps_from_ref(to_v, float(ref_params[p]), p)
+            sn = steps_from_ref(from_v, float(ref_params[p]), p)
+            extra_ref = {"steps_from_ref_now": sn, "steps_from_ref_after": sa}
+            if sa > sn and sa > cfg.max_steps_from_ref:
+                fails.append("max_steps_from_ref")
+                checks["ref_steps_ok"] = False
+        else:
+            extra_ref = {}
+        eligible = not fails
+        auto_cap = (eligible and not always_user
+                    and checks["checkpoint_passed"] and cg_ok and n_scope >= (cfg.checkpoints[0] if cfg.checkpoints else 1))
         extra = dict(stats.get("extra", {})) if stats else {}
+        extra.update(extra_ref)
         extra.update(counterfactual_extra(cf, rule.menu_id))
         if pl["twin"]:
             extra["n_twin"] = n_scope
@@ -1907,7 +1968,10 @@ def _build_snapshot(ledger_ro, cfg: LessonConfig, run_day: str, *, twin_ro=None,
             extra["steps_from_twin_now"] = steps_from_twin(from_v, float(twin_params[p]), p)
             extra["steps_from_twin_after"] = steps_from_twin(to_v, float(twin_params[p]), p)
         z = stats.get("z") if stats else None
-        score = float(z) if (z is not None and eclass != "exit_mix_weak") else 0.0
+        gap_v = stats.get("gap") if stats else None
+        # esiksiz kagit: kucuk orneklemde z tanimsiz olabilir; o zaman fark (gap) siralama olcusudur
+        score = (float(z) if z is not None else (float(gap_v) if gap_v is not None else 0.0)) \
+            if eclass != "exit_mix_weak" else 0.0
         menu.append(MenuEntry(
             menu_id=rule.menu_id, param=p, direction=rule.direction, scope=scope_str(scope),
             semantics=rule.semantics, evidence_class=eclass, from_value=round(from_v, 6), to_value=round(to_v, 6),
@@ -2194,7 +2258,8 @@ def _required_cites(entry: MenuEntry) -> list[str]:
         return [b + "n_scope", b + ("share_time_stop" if entry.direction == "down" else "share_target")]
     if c == "exit_mfe_mae":
         return [b + k for k in ("n_scope", "giveback_mean", "capture_ratio")]
-    return [b + k for k in ("n_scope", "gap", "z")]
+    # esiksiz kagit: kucuk orneklemde z (ve gap) tanimsiz olabilir; olmayan olgu alinti sarti degildir
+    return [b + k for k in ("n_scope", "gap", "z") if k == "n_scope" or getattr(entry, k, None) is not None]
 
 
 def _validate_obj(obj, snapshot: Snapshot, cfg: LessonConfig, source: str) -> ProposalDraft | Invalid:
@@ -2240,8 +2305,9 @@ def _validate_obj(obj, snapshot: Snapshot, cfg: LessonConfig, source: str) -> Pr
         if not entry.eligible:
             return Invalid("candidate_ineligible", mid)
     # G5 alintilar
-    if len(cl) < 3:
-        return Invalid("cited_missing", "en az 3 alinti")
+    need_cites = min(3, len(_required_cites(entry))) if entry is not None else 3
+    if len(cl) < need_cites:
+        return Invalid("cited_missing", f"en az {need_cites} alinti")
     keys = {k for k, _ in cl}
     if entry is not None:
         for rk in _required_cites(entry):
@@ -2308,37 +2374,19 @@ class Route:
 
 
 def classify_route(snapshot: Snapshot, draft: ProposalDraft, cfg: LessonConfig) -> Route:
-    """Sinif `propose_change`'den ONCE hesaplanir. Kucuk (auto) yalnizca tum 8.3 kosullari saglanirsa."""
+    """DD-12 WP-08 (kagit): ders ilk gunden onaysiz uygulanir; kullanicidan onay istenen tek hal menu disi oneridir.
+    Golge donem, kalibrasyon sarti, ikiz yoklugu, `always_user`, defter vol_ratio kurali, 'alinsaydi' ve zayif kanit
+    sinifi artik onay nedeni degildir (gercek para icin askida)."""
     reasons: set[str] = set()
     shadow = bool(snapshot.shadow["active"])
     cal_ok = bool(snapshot.calibration["ok"])
     if shadow:
         reasons.add("shadow_period")
-    if not cal_ok:
-        reasons.add("calibration_required")
-    if not snapshot.twin["available"]:
-        reasons.add("twin_unavailable")
     entry = snapshot.entry(draft.menu_id) if draft.menu_id else None
     if draft.off_menu or entry is None:
         reasons.add("off_menu")
-    else:
-        if entry.always_user or entry.menu_id in ALWAYS_USER:
-            reasons.add("always_user")
-        if entry.param == "vol_ratio_max" and entry.to_value > entry.from_value:
-            reasons.add("ledger_needs_user")
-        if entry.evidence_class == "exit_mfe_mae":
-            reasons.add("exit_proxy")
-        if entry.evidence_class == "exit_mix_weak":
-            reasons.add("weak_evidence")
-        if entry.evidence_class == "extrapolated":
-            reasons.add("extrapolated")
-        if entry.extra.get("cf_n") is not None:
-            reasons.add("counterfactual_support")          # varsayimsal kanit (herhangi hukum) ASLA otomatik yol acmaz
-        now_s, after = entry.extra.get("steps_from_twin_now"), entry.extra.get("steps_from_twin_after")
-        if now_s is not None and after is not None and after > now_s and after > cfg.max_steps_from_twin:
-            reasons.add("ratchet_guard")
-        if not reasons and not entry.auto_capable:
-            reasons.add("weak_evidence")
+    elif not entry.auto_capable:
+        reasons.add("weak_evidence")        # menu girdisi uygun degil (kanit akisi gecmedi): otomatik yol yok
     code = next((r for r in REASON_PRIORITY if r in reasons), None)
     return Route("ask_user" if reasons else "auto", code, tuple(r for r in REASON_PRIORITY if r in reasons),
                  not cal_ok, shadow)
@@ -2390,15 +2438,15 @@ def monitor_from_ledger(ledger_ro, cfg: LessonConfig, origin: str = "reconcile")
     if v.author != "lesson" or v.parent_version_id is None:
         return None
     par = ledger_ro.get_version(v.parent_version_id)
-    diff = [p for p in LESSON_PARAMS if abs(float(v.params[p]) - float(par.params[p])) > _EPS]
+    diff = [p for p in LESSON_PARAMS if abs(_pv(v.params, p) - _pv(par.params, p)) > _EPS]
     if len(diff) != 1:
         return None
     p = diff[0]
     ev = next((e for e in ledger_ro.list_activations() if e.version_id == v.id and e.kind == "apply"), None)
     if ev is None:
         return None
-    return Monitor(version_id=v.id, base_version_id=par.id, param=p, from_value=float(par.params[p]),
-                   to_value=float(v.params[p]), scope=scope_str(scope_of(p)), proposal_id=v.proposal_id,
+    return Monitor(version_id=v.id, base_version_id=par.id, param=p, from_value=_pv(par.params, p),
+                   to_value=_pv(v.params, p), scope=scope_str(scope_of(p)), proposal_id=v.proposal_id,
                    started_at=fmt_ts(ev.activated_at), k=cfg.monitor_k, recheck_n=cfg.monitor_recheck_n,
                    origin="user" if ev.actor == "user" and origin == "reconcile" else origin)
 
@@ -2437,85 +2485,207 @@ def time_arm_early(p_rows, sample, cfg: LessonConfig, twin_v: str):
     return arm, tv, zr, diff
 
 
+# ---------------------------------------------------------------------------
+# DD-12 WP-08: ikizsiz iyilesme olcumu (botun kendi kayitlari) - ders etkisi, sonum, geri alma, 10 R freni
+# ---------------------------------------------------------------------------
+
+LOOSE_ERR = 1e-9
+_SESSION_OFF_TAGS = {0: (), 1: ("weekend",), 2: ("weekend", "closed"), 3: ("weekend", "closed", "open")}
+
+
+def damped_mean(sum_r: float, n: int, shrink_n: int = 10) -> float:
+    """Sonumlu ortalama (spec 6.3): `toplam R / (n + shrink_n)`; shrink_n = 0 => sonumsuz ortalama; payda 0 => 0."""
+    den = n + max(0, int(shrink_n))
+    return float(sum_r) / den if den > 0 else 0.0
+
+
+def lesson_effect(added_real_r: Iterable[float], removed_cf_r: Iterable[float]) -> float:
+    """Ders etkisi (R): `Sigma R(bugunku ayarin alip referansin almayacagi; gercek) - Sigma R(referansin alip bugunku
+    ayarin eledigi; 'alinsaydi')`. Tavan ve sira etkilesimleri hesaba girmez (yaklasik)."""
+    return math.fsum(float(x) for x in added_real_r) - math.fsum(float(x) for x in removed_cf_r)
+
+
+def damped_effect(effect_sum: float, n: int, shrink_n: int = 10) -> float:
+    """Sonumlu etki (R birimi): `effect * n / (n + shrink_n)` (= n * damped_mean(effect, n, shrink_n) ... n = farkli karar
+    verilen aday sayisi). shrink_n = 0 => etki aynen; n = 0 => 0. Esikler (-3 R, -10 R) bu birimle karsilastirilir."""
+    if n <= 0:
+        return 0.0
+    return float(effect_sum) * n / (n + max(0, int(shrink_n)))
+
+
+def would_take(params: Mapping[str, Any], dec) -> bool:
+    """Karar kaydinin ozellikleri verilen ayarlarla alinir miydi (yalniz kapi ayarlari: vol_ratio_max, rr_min, session_off)."""
+    ar = dec.atr_ratio
+    if ar is not None and float(ar) > _pv(params, "vol_ratio_max") + _EPS:
+        return False
+    rr = _feat(dec.features, "rr")
+    if rr is not None and rr < _pv(params, "rr_min") - _EPS:
+        return False
+    tag = getattr(dec, "session_tag", None)
+    if tag is not None and tag in _SESSION_OFF_TAGS.get(int(_pv(params, "session_off")), ()):
+        return False
+    return True
+
+
+def _cf_r_by_decision(cfg: LessonConfig, as_of: datetime) -> dict[int, float]:
+    """`counterfactual.sqlite`ten karar kimligi -> net R ('plan' yontemi once, yoksa 'barrier'); salt okunur; yok => {}."""
+    path = counterfactual_path(cfg)
+    if not cfg.counterfactual_enabled or not os.path.exists(path):
+        return {}
+    out: dict[int, tuple[int, float]] = {}
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+        try:
+            for did, method, r in conn.execute(
+                    "SELECT decision_id, method, hyp_r_net FROM cf_outcomes WHERE bot=? AND hyp_r_net IS NOT NULL "
+                    "AND window_end_ts<=?", (cfg.bot, fmt_ts(as_of))):
+                rank = 1 if method == "plan" else 0
+                if did not in out or rank > out[did][0]:
+                    out[did] = (rank, float(r))
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        log.warning("counterfactual okunamadi (ders etkisi): %s", scrub(e))
+        return {}
+    return {k: v[1] for k, v in out.items()}
+
+
+@dataclass(frozen=True)
+class EffectResult:
+    effect: float                # ham etki (R)
+    damped: float                # sonumlu etki (R)
+    n: int                       # farkli karar verilen aday sayisi (kosuldaki R'si bilinen)
+    n_added: int
+    n_removed: int
+    n_unresolved: int            # R'si henuz bilinmeyen farkli-karar adaylari (acik islem / hesaplanmamis)
+    sum_added: float
+    sum_removed: float
+
+    def to_dict(self) -> dict:
+        return {"effect": r4(self.effect), "damped_effect": r4(self.damped), "n": self.n, "n_added": self.n_added,
+                "n_removed": self.n_removed, "n_unresolved": self.n_unresolved, "sum_added": r4(self.sum_added),
+                "sum_removed": r4(self.sum_removed)}
+
+
+def measure_effect(ledger_ro, cfg: LessonConfig, cur_params: Mapping[str, Any], ref_params: Mapping[str, Any],
+                   since: datetime, as_of: datetime, *, caps: Caps | None = None, feats: FeatureCache | None = None,
+                   cf_r: Mapping[int, float] | None = None, trade_rows: Mapping[int, TradeRow] | None = None,
+                   decisions: Sequence | None = None) -> EffectResult:
+    """Ders etkisi: `[since, as_of)` araligindaki kararlar icin bugunku ayarlarin (`cur_params`) referansla (`ref_params`)
+    FARKLI karar verdigi adaylar. Alinan-ama-referansin almayacagi: gercek sonuc (kapanmis islem R'si); referansin alacagi ama
+    bugunku ayarin eledigi: 'alinsaydi' (karsi-olgusal net R; yoksa gercek islem varsa o). Ikiz defteri gerekmez; ikiz yokken
+    hata yoktur. Sonuc sonumludur (`cfg.shrink_n`)."""
+    as_of = _aware(as_of)
+    since = _aware(since)
+    caps = caps or detect_caps(ledger_ro)
+    feats = feats or FeatureCache(ledger_ro)
+    tmap = trade_rows if trade_rows is not None else _trade_map(ledger_ro, caps, feats)
+    cfr = cf_r if cf_r is not None else _cf_r_by_decision(cfg, as_of)
+    decs = decisions if decisions is not None else ledger_ro.list_decisions(since_ts=since, until_ts=as_of)
+    added: list[float] = []
+    removed: list[float] = []
+    unresolved = 0
+    for d in decs:
+        if d.final_action != "entered" and d.skip_reason not in ("rr_below_min", "session_closed", "other"):
+            continue                                   # parametre disi nedenle atlananlar (kapi, tavan, ML ...) olcuye girmez
+        tc, tr = would_take(cur_params, d), would_take(ref_params, d)
+        if tc == tr:
+            continue
+        r = None
+        row = tmap.get(d.id)
+        if d.final_action == "entered":
+            if row is not None and row.exit_ts is not None and row.exit_ts < fmt_ts(as_of):
+                r = row.r
+        elif d.id in cfr:
+            r = cfr[d.id]
+        if r is None:
+            unresolved += 1
+            continue
+        (added if tc else removed).append(r)
+    n = len(added) + len(removed)
+    eff = lesson_effect(added, removed)
+    return EffectResult(eff, damped_effect(eff, n, cfg.shrink_n), n, len(added), len(removed), unresolved,
+                        math.fsum(added), math.fsum(removed))
+
+
 def evaluate_monitor(ledger_ro, twin_ro, monitor: Monitor, as_of: datetime, cfg: LessonConfig, *,
                      twin_code: str | None = None, caps: Caps | None = None,
                      twin_report: TwinReport | None = None) -> MonitorVerdict:
-    """Saf degerlendirme (10.2-10.4): sabit noktalar (erken / M1 / M2 / sure sonu); ayni ornek => ayni sonuc."""
+    """DD-12 WP-08: tek degisikligin geri alinmasi. O degisiklikten sonra (bugunku ayar vs degisiklik oncesi ayar) FARKLI karar
+    verilen adaylarda sonumlu etki <= -`cfg.rollback_effect_r` (3 R) ise geri alinir. Asgari aday sayisi YOK; her gece olculur.
+    Etki sonumsuz esige ulasmadikca bekler; `monitor_max_days` sonra kalici (veri gelmedi diye geri alinmaz). Ikiz yok."""
     caps = caps or detect_caps(ledger_ro)
     as_of = _aware(as_of)
-    active = ledger_ro.get_active_params()
-    if active.version_id != monitor.version_id:
-        flags = ("recheck_incomplete",) if monitor.state == "confirmed_pending_recheck" else ()
-        return MonitorVerdict("superseded", "state", {}, "etkin surum degisti", False, flags)
-    feats = FeatureCache(ledger_ro)
-    n_all, p_all = _time_sample(ledger_ro, caps, feats, monitor, as_of)
-    p_all = p_all[-cfg.ref_max_n:]
-    n = len(n_all)
+    try:
+        ver = ledger_ro.get_version(monitor.version_id)
+        base = ledger_ro.get_version(monitor.base_version_id)
+    except L.LedgerError:
+        return MonitorVerdict("superseded", "state", {}, "surum yok")
     started = parse_ts(monitor.started_at)
     age_days = (as_of - started).total_seconds() / 86400.0
-    k, rn = monitor.k, monitor.recheck_n
-    trep = twin_report if twin_report is not None else build_twin_report(
-        ledger_ro, twin_ro, (started, as_of), cfg, unavailable_code=twin_code, caps=caps, feats=feats,
-        version_id=monitor.version_id)   # Revizyon 3: yalniz izlenen surumle alinan (degisiklik sonrasi) farklar
-    twin_v = trep.verdict
-
-    def stats_for(sample: Sequence[TradeRow], tv: str, zr, diff, extra=None) -> dict:
-        rs = [r.r for r in sample]
-        d = {"n": len(sample), "n_N": len(sample), "mean": r4(mean(rs)) if rs else None,
-             "sd": r4(sd(rs)) if rs else None, "n_P": len(p_all),
-             "mean_P": r4(mean([r.r for r in p_all])) if p_all else None, "diff": r4(diff),
-             "z_cl": r4(zr.z) if zr is not None and zr.z is not None else None,
-             "G": zr.g if zr is not None else 0, "time_verdict": tv, "twin_verdict": twin_v,
-             "twin_n_keys": trep.n_keys, "twin_adv_mean": r4(trep.adv_mean), "twin_z": r4(trep.z_twin),
-             "twin_code": trep.code, "exit_days_N": len({r.day for r in sample}),
-             "sample_hash": sha256_hex(",".join(str(r.trade_id) for r in sample))}
-        if extra:
-            d.update(extra)
-        return d
-
-    def early_check(sample: Sequence[TradeRow]):
-        a, tv, zr, diff = time_arm_early(p_all, sample, cfg, twin_v)
-        arm_b = (trep.available and trep.n_keys >= cfg.twin_min_keys and trep.g >= cfg.early_min_days
-                 and trep.adv_mean is not None and trep.adv_mean <= -cfg.twin_margin_r + _EPS
-                 and trep.z_twin is not None and trep.z_twin <= -cfg.early_z + _EPS)
-        return a, arm_b, tv, zr, diff
-
-    if monitor.state == "confirmed_pending_recheck" and n >= rn:
-        sample = n_all[:rn]
-        tv, zr, diff = _time_verdict(p_all, sample, cfg)
-        st = stats_for(sample, tv, zr, diff)
-        if twin_v == "harm" or (tv == "harm" and twin_v != "benefit"):
-            return MonitorVerdict("rolled_back", "M2", st, "yeniden denetim: geri alma kosulu", False)
-        conflict = tv == "harm" and twin_v == "benefit"
-        return MonitorVerdict("confirmed", "M2", st, "yeniden denetim gecti", conflict)
-    if monitor.state == "open" and n >= k:
-        sample = n_all[:k]
-        tv, zr, diff = _time_verdict(p_all, sample, cfg)
-        st = stats_for(sample, tv, zr, diff)
-        if twin_v == "harm" or (tv == "harm" and twin_v != "benefit"):
-            return MonitorVerdict("rolled_back", "M1", st, "M1: geri alma kosulu", False)
-        conflict = tv == "harm" and twin_v == "benefit"
-        return MonitorVerdict("confirmed_pending_recheck", "M1", st,
-                              "M1: zaman farki ikiz tarafindan rejim kaymasi sayildi" if conflict else "M1 gecti",
-                              conflict)
-    # erken kural (n < K ya da yeniden denetim beklerken)
-    if n >= 1:
-        sample = n_all[:min(n, rn)]
-        a, b, tv, zr, diff = early_check(sample)
-        if a or b:
-            st = stats_for(sample, tv, zr, diff, {"early_arm": "time" if a else "twin"})
-            return MonitorVerdict("early_rolled_back", "early", st, "erken geri alma", False)
-        st = stats_for(sample, tv, zr, diff)
-    else:
-        st = stats_for([], "unavailable", None, None)
-    if monitor.state == "open":
-        if age_days >= cfg.monitor_max_days:
-            return MonitorVerdict("expired_rolled_back", "expiry", st,
-                                  "sure doldu, yeterli veri gelmedi (kalici olmaz)")
-    elif age_days >= cfg.recheck_max_days:
-        return MonitorVerdict("confirmed", "expiry", st, "yeniden denetim suresi doldu", False,
-                              ("recheck_timeout",))
+    eff = measure_effect(ledger_ro, cfg, dict(ver.params), dict(base.params), started, as_of, caps=caps)
+    st = {**eff.to_dict(), "param": monitor.param, "age_days": r4(age_days), "shrink_n": cfg.shrink_n,
+          "threshold_r": -cfg.rollback_effect_r}
+    if eff.n > 0 and eff.damped <= -cfg.rollback_effect_r + LOOSE_ERR:
+        return MonitorVerdict("rolled_back", "effect", st, f"ders etkisi {eff.damped:+.2f} R <= -{cfg.rollback_effect_r:g} R")
+    if age_days >= cfg.monitor_max_days:
+        return MonitorVerdict("confirmed", "expiry", st, "olcum suresi doldu; geri alma kosulu olusmadi")
     return MonitorVerdict("wait", "state", st, "bekle")
+
+
+@dataclass(frozen=True)
+class BrakeVerdict:
+    tripped: bool
+    ref_version_id: int | None
+    active_version_id: int | None
+    since: str | None
+    effect: EffectResult | None
+    active: bool = False               # fren daha once cekilmis ve kullanici yeni surum etkinlestirmemis (oto uygulama durdu)
+
+    def to_dict(self) -> dict:
+        return {"tripped": self.tripped, "ref_version_id": self.ref_version_id,
+                "active_version_id": self.active_version_id, "since": self.since, "brake_active": self.active,
+                **(self.effect.to_dict() if self.effect else {})}
+
+
+BRAKE_REASON_PREFIX = "lesson_brake"
+
+
+def brake_active(ledger_ro) -> bool:
+    """10 R freni cekilmis mi: en yeni etkinlestirme `lesson` tarafindan fren nedeniyle yapilmis bir geri alma ise otomatik
+    uygulama durur; kullanici yeni surum etkinlestirince (daha yeni bir etkinlestirme) fren kalkar. Durum defterden turetilir."""
+    acts = ledger_ro.list_activations(limit=1)
+    if not acts:
+        return False
+    a = acts[0]
+    return a.kind == "rollback" and a.actor == "lesson" and str(a.reason or "").startswith(BRAKE_REASON_PREFIX)
+
+
+def _ref_activation(ledger_ro, cfg: LessonConfig):
+    """(ref_version_id, ref_activated_at): son kullanici onayli surum (ya da `cfg.ref_version`) ve etkinlestirme zamani."""
+    ref_id = cfg.ref_version or rollback_target_user_approved(ledger_ro)
+    for e in ledger_ro.list_activations():
+        if e.version_id == ref_id and e.kind in ("initial", "apply", "rollback"):
+            return ref_id, e.activated_at
+    return ref_id, None
+
+
+def evaluate_brake(ledger_ro, cfg: LessonConfig, as_of: datetime, *, caps: Caps | None = None) -> BrakeVerdict:
+    """Referans surumden (son kullanici onayli) beri TOPLAM ders etkisi <= -`cfg.brake_effect_r` (10 R) ise fren (referansa
+    don, otomatik uygulama dur). Etki: bugunku ayar vs referans ayari, farkli karar verilen adaylar; sonumlu."""
+    as_of = _aware(as_of)
+    active = ledger_ro.get_active_params()
+    was_active = brake_active(ledger_ro)
+    try:
+        ref_id, since = _ref_activation(ledger_ro, cfg)
+    except LessonError:
+        return BrakeVerdict(False, None, active.version_id, None, None, was_active)
+    if ref_id == active.version_id or since is None:
+        return BrakeVerdict(False, ref_id, active.version_id, fmt_ts(since) if since else None, None, was_active)
+    ref = ledger_ro.get_version(ref_id)
+    eff = measure_effect(ledger_ro, cfg, dict(active.params), dict(ref.params), since, as_of, caps=caps)
+    tripped = eff.n > 0 and eff.damped <= -cfg.brake_effect_r + LOOSE_ERR
+    return BrakeVerdict(tripped, ref_id, active.version_id, fmt_ts(since), eff, was_active)
 
 
 def rollback_target_user_approved(ledger_ro) -> int:
@@ -3482,7 +3652,8 @@ class LessonService:
             ctx.owned.append(ctx.led_ro)
             if write:
                 ctx.led_rw = L.open_ledger(self.cfg.ledger_path, "learner", create=False, read_only=False,
-                                           migrate=False, clock=self._clock)
+                                           migrate=False, clock=self._clock, min_evidence_trades=0,
+                                           paper_lesson=True)
                 ctx.owned.append(ctx.led_rw)
         if want_store:
             if self._store is not None:
@@ -3816,14 +3987,14 @@ class LessonService:
             if v.author != "lesson" or v.parent_version_id is None or store.monitor_by_version(v.id) is not None:
                 continue
             par = versions.get(v.parent_version_id)
-            diff = [p for p in LESSON_PARAMS if par is not None and abs(float(v.params[p]) - float(par.params[p])) > _EPS]
+            diff = [p for p in LESSON_PARAMS if par is not None and abs(_pv(v.params, p) - _pv(par.params, p)) > _EPS]
             ev = next((e for e in reversed(acts) if e.version_id == v.id and e.kind == "apply"), None)
             if len(diff) != 1 or ev is None:
                 continue
             p = diff[0]
             origin = "user" if ev.actor == "user" else "reconcile"
-            m = Monitor(version_id=v.id, base_version_id=par.id, param=p, from_value=float(par.params[p]),
-                        to_value=float(v.params[p]), scope=scope_str(scope_of(p)), proposal_id=v.proposal_id,
+            m = Monitor(version_id=v.id, base_version_id=par.id, param=p, from_value=_pv(par.params, p),
+                        to_value=_pv(v.params, p), scope=scope_str(scope_of(p)), proposal_id=v.proposal_id,
                         started_at=fmt_ts(ev.activated_at), k=cfg.monitor_k, recheck_n=cfg.monitor_recheck_n,
                         origin=origin)
             mid = store.add_monitor(m)
@@ -3919,12 +4090,54 @@ class LessonService:
         until = fmt_ts(now + timedelta(days=self.cfg.blacklist_days))
         store.add_blacklist(m.param, m.direction, until, "rolled_back")
 
+    # -- DD-12 WP-08: 10 R freni (referans = son kullanici onayli surum) ---------------
+    def _step_brake(self, ctx: _Ctx, run: RunRow, as_of: datetime, now: datetime) -> TickResult | None:
+        """Referanstan beri toplam ders etkisi <= -10 R ise referans surume doner, otomatik uygulama durur, bildirim gider."""
+        cfg, store = self.cfg, ctx.store
+        bv = evaluate_brake(ctx.led_ro, cfg, as_of, caps=ctx.caps)
+        if not bv.tripped or bv.active:
+            return None
+        e = bv.effect
+        reason = sanitize_text(f"{BRAKE_REASON_PREFIX}: toplam ders etkisi {e.damped:+.2f} R <= -{cfg.brake_effect_r:g} R "
+                               f"(n={e.n}); referans surum {bv.ref_version_id}", 400)
+        res = ctx.led_rw.rollback(to_version_id=bv.ref_version_id, actor="lesson", reason=reason)
+        if not res.ok:
+            log.error("fren geri almasi basarisiz: %s", res.code)
+            return None
+        for m in store.open_monitors():
+            store.add_monitor_event(m.monitor_id, "superseded", {"brake": True}, run.run_day)
+        self._notify(ctx, "brake", "warn", "Ders freni: referans surume donuldu",
+                     f"Toplam ders etkisi {e.damped:+.2f} R (esik -{cfg.brake_effect_r:g} R); surum {bv.active_version_id} -> "
+                     f"{bv.ref_version_id}. Otomatik uygulama durdu; yeni surum etkinlestirilene kadar degisiklik yok.",
+                     run.run_day, f"brake-{bv.active_version_id}", now)
+        return self._finish(ctx, run, "rolled_back", "brake", {"brake": bv.to_dict()})
+
+    def _revert_change(self, ctx: _Ctx, m: Monitor, reason: str) -> bool:
+        """Tek degisikligi geri al. Etkin surum o degisikligin surumuyse defter geri almasi; degilse (sonradan baska
+        degisiklikler geldi) yalniz o parametre bir adim geri alinir (`propose_change` + `apply_proposal`)."""
+        led = ctx.led_rw
+        active = led.get_active_params()
+        if active.version_id == m.version_id:
+            return bool(led.rollback(to_version_id=m.base_version_id, actor="lesson", reason=reason).ok)
+        cur = _pv(active.params, m.param)
+        if abs(cur - m.from_value) < _EPS:
+            return True
+        step = _step_of(m.param)
+        target = m.from_value if abs(cur - m.from_value) <= step + _EPS else (cur - step if cur > m.from_value else cur + step)
+        pres = led.propose_change(base_version_id=active.version_id, changes={m.param: target}, rationale=reason,
+                                  claimed_evidence={"revert_of_version": m.version_id}, source="lesson-revert")
+        if not pres.ok:
+            return False
+        return bool(led.apply_proposal(pres.proposal_id, actor="lesson", reason=reason).ok)
+
     def _step_a(self, ctx: _Ctx, run: RunRow, as_of: datetime, now: datetime) -> TickResult | None:
         store, cfg = ctx.store, self.cfg
+        r = self._step_brake(ctx, run, as_of, now)
+        if r is not None:
+            return r
+        rolled: list[dict] = []
         for m in store.open_monitors():
-            twin_rep = None
-            v = evaluate_monitor(ctx.led_ro, ctx.twin, m, as_of, cfg, twin_code=ctx.twin_code, caps=ctx.caps,
-                                 twin_report=twin_rep)
+            v = evaluate_monitor(ctx.led_ro, None, m, as_of, cfg, caps=ctx.caps)
             stats = dict(v.stats)
             stats.update({"action": v.action, "stage": v.stage, "conflict": v.conflict, "reason": v.reason})
             store.add_monitor_event(m.monitor_id, "evaluated", stats, run.run_day)
@@ -3932,27 +4145,16 @@ class LessonService:
                 continue
             if v.action == "superseded":
                 store.add_monitor_event(m.monitor_id, "superseded", stats, run.run_day)
-                if "recheck_incomplete" in v.flags:
-                    self._notify(ctx, "recheck_incomplete", "warn", "Yeniden denetim tamamlanamadi",
-                                 f"{m.param}: etkin surum degisti", run.run_day, m.version_id, now)
                 continue
             if v.action in ("confirmed_pending_recheck", "confirmed"):
                 store.add_monitor_event(m.monitor_id, v.action, stats, run.run_day)
-                if v.conflict:
-                    self._notify(ctx, "monitor_conflict", "warn", "Zaman farki ikiz tarafindan rejim kaymasi sayildi",
-                                 f"{m.param}: n={stats.get('n')} diff={stats.get('diff')} ikiz={stats.get('twin_verdict')}",
-                                 run.run_day, f"{m.version_id}-{v.stage}", now)
-                if "recheck_timeout" in v.flags:
-                    self._notify(ctx, "confirmed", "info", "Yeniden denetim suresi doldu",
-                                 f"{m.param}: M1 kanitiyla kalici", run.run_day, m.version_id, now)
                 continue
-            # geri alma kollari
+            # geri alma (sonumlu etki <= -3 R)
             reason = sanitize_text(
-                f"{v.reason}; n={stats.get('n')} mean={stats.get('mean')} diff={stats.get('diff')} "
-                f"z_cl={stats.get('z_cl')} time={stats.get('time_verdict')} twin={stats.get('twin_verdict')}", 400)
-            res = ctx.led_rw.rollback(to_version_id=m.base_version_id, actor="lesson", reason=reason)
-            if not res.ok:
-                store.add_monitor_event(m.monitor_id, "superseded", {**stats, "rollback_code": res.code}, run.run_day)
+                f"{v.reason}; n={stats.get('n')} etki={stats.get('effect')} sonumlu={stats.get('damped_effect')}", 400)
+            if not self._revert_change(ctx, m, reason):
+                store.add_monitor_event(m.monitor_id, "superseded", {**stats, "rollback_code": "revert_failed"},
+                                        run.run_day)
                 continue
             store.add_monitor_event(m.monitor_id, v.action, stats, run.run_day)
             self._blacklist(store, m, now)
@@ -3960,7 +4162,9 @@ class LessonService:
                          f"{m.param} {m.to_value} -> {m.from_value}: {reason}"
                          + (" (kullanici onayli degisiklik)" if m.origin == "user" else ""),
                          run.run_day, m.version_id, now)
-            return self._finish(ctx, run, "rolled_back", v.action, {"version_id": m.version_id, **stats})
+            rolled.append({"version_id": m.version_id, **stats, "action": v.action})
+        if rolled:
+            return self._finish(ctx, run, "rolled_back", rolled[0]["action"], rolled[0])
         return None
 
     # -- zaman asimi yeniden deneme (8.4) -----------------------------------------
@@ -4056,24 +4260,19 @@ class LessonService:
     def _pre_gates(self, ctx: _Ctx, snap: Snapshot, now: datetime) -> tuple[str, str] | None:
         store, cfg = ctx.store, self.cfg
         shadow = bool(snap.shadow["active"])
-        if store.open_monitors():
-            return "skipped_gate", "monitor_open"
-        pend = [p for p in ctx.led_ro.list_proposals() if p.status in _OPEN_STATUS]
-        if pend:
-            return "skipped_gate", "pending_proposal"
-        cutoff = now - timedelta(days=L.LESSON_MIN_INTERVAL_DAYS)
-        if any(a.kind == "apply" and a.actor == "lesson" and a.activated_at >= cutoff
-               for a in ctx.led_ro.list_activations()):
-            return "skipped_gate", "weekly_limit"
-        c0 = cfg.checkpoints[0]
+        # DD-12 WP-08: izleyici acikken / haftada bir degisiklik / bekleyen oneri / haftalik istek kotasi kapilari YOK;
+        # tek fren: 10 R freni cekildiyse otomatik uygulama durur (kullanici yeni surum etkinlestirene kadar).
+        if brake_active(ctx.led_ro):
+            return "skipped_gate", "brake_active"
+        c0 = cfg.checkpoints[0] if cfg.checkpoints else 1
         if snap.menu and not any(m.n_scope >= c0 or m.checkpoint_c is not None for m in snap.menu):
             return "skipped_no_data", "no_data"
         if not any(m.eligible for m in snap.menu):
             return "skipped_gate", "no_candidates"
-        eff = 2 if shadow else cfg.max_user_requests_per_week
-        n_req = store.count_requests_since(fmt_ts(now - timedelta(days=7)))
-        if n_req >= eff and (shadow or not any(m.eligible and m.auto_capable for m in snap.menu)):
-            return "skipped_gate", "user_request_quota"
+        if cfg.max_user_requests_per_week is not None:
+            n_req = store.count_requests_since(fmt_ts(now - timedelta(days=7)))
+            if n_req >= cfg.max_user_requests_per_week and not any(m.eligible and m.auto_capable for m in snap.menu):
+                return "skipped_gate", "user_request_quota"
         return None
 
     def _after_stats(self, ctx: _Ctx, run: RunRow, snap: Snapshot, now: datetime) -> TickResult:
@@ -4251,9 +4450,12 @@ class LessonService:
         # yapisal engel: golge donemde otomatik yol hic kurulmaz
         if snap.shadow["active"] and route.klass == "auto":
             route = dataclasses.replace(route, klass="ask_user", reason_code="shadow_period")
-        # yapisal engel: karsi-olgusal destek tasiyan oneri hicbir zaman otomatik uygulanmaz
-        if route.klass == "auto" and entry is not None and entry.extra.get("cf_n") is not None:
-            route = dataclasses.replace(route, klass="ask_user", reason_code="counterfactual_support")
+        if entry is not None and not draft.off_menu and not entry.eligible:
+            # DD-12 WP-08: kanit/adim/kara liste kapisindan gecmeyen oneri uygulanmaz, kullaniciya da sorulmaz
+            store.add_decision(run.id, "primary", draft.source, menu_id=draft.menu_id, param=draft.param,
+                               to_value=draft.to, gate_code="not_eligible", klass="auto", proposal_id=None,
+                               outcome="no_change")
+            return self._finish(ctx, run, "no_change", "not_eligible")
         require_user = route.klass != "auto"
         ev = self._evidence(snap, entry)
         claimed = {"n_closed": entry.n_scope if entry else None, "scope": entry.scope if entry else None,
@@ -4295,8 +4497,10 @@ class LessonService:
                               evidence=ev)
             store.add_decision(run.id, "primary", draft.source, gate_code=None, klass="auto",
                                proposal_id=pres.proposal_id, outcome="applied", **base_dec)
+            more = self._apply_more(ctx, run, snap, {draft.param}, now)
             return self._finish(ctx, run, "applied", None, {"proposal_id": pres.proposal_id,
-                                                            "version_id": ares.version_id})
+                                                            "version_id": ares.version_id,
+                                                            **({"extra_applied": more} if more else {})})
         if ares.code in _TRANSIENT_APPLY_CODES:
             store.add_decision(run.id, "primary", draft.source, gate_code=ares.code, klass="auto",
                                proposal_id=pres.proposal_id, outcome="apply_pending", **base_dec)
@@ -4305,13 +4509,53 @@ class LessonService:
                            proposal_id=pres.proposal_id, outcome="proposal_rejected", **base_dec)
         return self._finish(ctx, run, "proposal_rejected", ares.code, {"proposal_id": pres.proposal_id})
 
+    def _apply_more(self, ctx, run, snap, done_params: set, now) -> list[dict]:
+        """DD-12 WP-08: haftalik/gecelik sinir yok (`max_changes_per_night=None`): ayni gece birden cok ayar uygulanir (her biri
+        kendi izleyicisiyle olculur). Ilk uygulanan disindaki uygun + otomatik-yetenekli menu girdileri, parametre basina en iyi
+        (z, menu_id), sirayla yeni etkin surum tabaninda uygulanir."""
+        cfg, store, led = self.cfg, ctx.store, ctx.led_rw
+        if cfg.max_changes_per_night == 1:
+            return []
+        done = set(done_params)
+        out: list[dict] = []
+        cands = sorted((m for m in snap.menu if m.eligible and m.auto_capable and not m.always_user),
+                       key=lambda m: (-m.score, m.menu_id))
+        for m in cands:
+            if m.param in done:
+                continue
+            if cfg.max_changes_per_night is not None and len(done) >= cfg.max_changes_per_night:
+                break
+            done.add(m.param)
+            if brake_active(led):
+                break
+            try:
+                active = led.get_active_params()
+                if abs(_pv(active.params, m.param) - m.from_value) > _EPS:
+                    continue                                    # parametre bu arada degisti
+                claimed = {"n_closed": m.n_scope, "scope": m.scope, "menu_id": m.menu_id,
+                           **({"z": m.z, "gap": m.gap} if m.z is not None else {})}
+                pres = led.propose_change(
+                    base_version_id=active.version_id, changes={m.param: m.to_value},
+                    rationale=f"kural-vekili: {m.menu_id} ({m.scope}) n={m.n_scope}", claimed_evidence=claimed,
+                    source="rule-proxy")
+                if not pres.ok:
+                    continue
+                ares = led.apply_proposal(pres.proposal_id, actor="lesson", reason=f"auto: {m.menu_id}")
+            except L.LedgerError as e:
+                log.warning("ek ders uygulamasi basarisiz: %s", scrub(e))
+                continue
+            if not ares.ok:
+                continue
+            self._after_apply(ctx, run, pres.proposal_id, ares, m.param, active.version_id, now, origin="auto",
+                              scope=m.scope)
+            store.add_decision(run.id, "primary", "rule-proxy", m.menu_id, m.param, m.to_value, None, "auto",
+                               pres.proposal_id, "applied")
+            out.append({"menu_id": m.menu_id, "proposal_id": pres.proposal_id, "version_id": ares.version_id})
+        return out
+
     def _pre_gates_apply(self, ctx, now) -> str | None:
-        cutoff = now - timedelta(days=L.LESSON_MIN_INTERVAL_DAYS)
-        if any(a.kind == "apply" and a.actor == "lesson" and a.activated_at >= cutoff
-               for a in ctx.led_ro.list_activations()):
-            return "weekly_limit"
-        if ctx.store.open_monitors():
-            return "monitor_open"
+        if brake_active(ctx.led_ro):
+            return "brake_active"
         return None
 
     def _adopt_or_propose(self, ctx, run, snap, kw):
@@ -4701,7 +4945,11 @@ def _shift_a(rule: Rule, rows, to_eff, delta: float):
 
 def calibrate(replay_ledger, twin_replay, cfg: LessonConfig, seed: int = 0, *, B: int = 1000,
               today: str | None = None) -> Calibration:
-    """Deterministik (tohumlu) kalibrasyon; LLM ve butce yok. Kabul olcutleri 7.3.6, secim 7.3.7."""
+    """Deterministik (tohumlu) kalibrasyon; LLM ve butce yok. Kabul olcutleri 7.3.6, secim 7.3.7.
+    DD-12 WP-08: yalniz BILGI (otomatik uygulamanin on sarti degil); eski kanit esikleriyle simule eder."""
+    cfg = dataclasses.replace(cfg, min_distinct_days=max(8, cfg.min_distinct_days),
+                              early_min_n=max(10, cfg.early_min_n), early_min_days=max(4, cfg.early_min_days),
+                              monitor_k=max(15, cfg.monitor_k), monitor_recheck_n=max(30, cfg.monitor_recheck_n))
     rng = random.Random(seed)
     day = today or datetime.now(UTC).date().isoformat()
     caps = detect_caps(replay_ledger)

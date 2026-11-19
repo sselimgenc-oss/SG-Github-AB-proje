@@ -58,7 +58,7 @@ def test_registry_examples():
 def test_param_specs_follow_ledger():
     specs = {p.name: p for p in get_strategy("price_action_v1").info.param_specs}
     assert set(specs) == set(L.PARAM_SPECS)
-    assert {n for n, p in specs.items() if p.lesson_adjustable} == set(L.LESSON_PARAMS)
+    assert {n for n, p in specs.items() if p.lesson_adjustable} == set(L.CORE_LESSON_PARAMS)
     assert specs["trail_atr"].lesson_bounds == tuple(L.LESSON_BOUNDS_DEFAULT["trail_atr"])
     assert specs["trail_atr"].step == L.LESSON_STEP["trail_atr"] and specs["trail_atr"].scope == ("T1",)
 
@@ -215,8 +215,8 @@ def test_gate_example_a_enter(gate_env):
     assert out.action == "enter" and out.mandatory_record and out.leverage == 3
     assert out.size.qty == pytest.approx(6.369) and out.size.risk_amount == pytest.approx(13.999062)
     ev = out.event
-    assert (ev.final_action, ev.veto_status, ev.risk_allowed, ev.leverage) == ("entered", "allowed", True, 3)
-    assert ev.veto_reason == "ok:2026-12-01T08:50:03.120Z" and ev.bar_close_ts == T0
+    assert (ev.final_action, ev.veto_status, ev.risk_allowed, ev.leverage) == ("entered", "not_evaluated", True, 3)
+    assert ev.veto_reason == "not_evaluated:paper" and ev.bar_close_ts == T0
     gate_env.ledger.record_decision(ev)               # ledger kabul eder
 
 
@@ -273,14 +273,15 @@ def test_gate_rules_veto_and_risk_rows(gate_env):
         raise DataError("yok")
     out = _decide(e, _frame(), e.mk(rules_fn=no_rules))
     assert (out.action, out.event.skip_reason, out.event.veto_reason) == ("skip", "other", "gate:rules_missing")
-    out = _decide(e, _frame(), e.mk(_Veto("blocked", "funding asiri negatif")))
-    assert (out.event.skip_reason, out.event.veto_status, out.event.risk_allowed) == ("veto_blocked", "blocked", None)
-    out = _decide(e, _frame(), e.mk(_Veto("missing", "file_missing")))
-    assert out.event.skip_reason == "veto_missing"
+    # DD-12 WP-06a: kagitta veto sorgulanmaz; engelli/yok veto girisi durdurmaz (testnet/canli veto kapisi wp04 spec'te)
+    for st_, rs_ in (("blocked", "funding asiri negatif"), ("missing", "file_missing")):
+        v = _Veto(st_, rs_)
+        out = _decide(e, _frame(), e.mk(v))
+        assert (out.action, out.event.veto_status, out.event.skip_reason) == ("enter", "not_evaluated", None)
     with e.state.tx():
         e.state.kv_set("day_start:2026-12-01", 1000.0)
     out = _decide(e, _frame(), e.mk(equity=960.0))
-    assert (out.event.skip_reason, out.event.veto_status, out.event.risk_allowed) == ("risk_denied", "allowed", False)
+    assert (out.event.skip_reason, out.event.veto_status, out.event.risk_allowed) == ("risk_denied", "not_evaluated", False)
     e.ledger.record_decision(out.event)
 
 

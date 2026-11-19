@@ -16,8 +16,6 @@ Type=simple
 User=trader
 Group=trader
 WorkingDirectory=/opt/trader
-# Veto belgesini dogrulayan HMAC anahtari (root:root 0600; systemd root olarak okur). Anthropic API anahtari BURADA degil.
-EnvironmentFile=/etc/trader-veto-hmac.env
 Environment=PYTHONPATH=/opt/trader/src
 Environment=PYTHONUNBUFFERED=1
 # Feed market.sqlite'i olusturana kadar (en fazla 60 sn) bekler; sonrasinda motorun kendi acilis kapisi (kural + taze veri) devreye girer

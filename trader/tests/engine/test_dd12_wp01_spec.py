@@ -47,7 +47,7 @@ COMMODITY4 = METAL | ENERJI
 CAPS = {"kripto_buyuk": 4, "kripto_diger": 6, "hisse": 5, "hisse_teknoloji": 3, "metal": 2, "enerji_sanayi": 2}
 
 PINNED_SHA = {
-    "engine.base.json": "e619743a540b53bd539c4141506026095e5a27de15380abac35dc569295edf88",
+    "engine.base.json": "ba218ea0404803c9e5af7ffbd276fad79b6d0af714c94150172f7d56e674c328",   # WP-06a: yalniz veto_config yolu
     "engine.learner.json": "30ca2842c40cacafbf6cdd90c9e6f1f54fc62b9a9ec913476d1399ac5352cb12",
     "engine.testnet.json": "4411ff38fcbe987ef6445c6f9b5c0c614aa36eb2604bb060a110cfc73ffef926",
     "engine.live.json": "feb22c1c4db3b705d44d793836139d588d999fb44095c0bed1812e90c037b47e",
@@ -157,7 +157,10 @@ def test_dt1_dt13_config_dosyalari_degismedi(name):
     """engine.base/learner/testnet/live: sabit karma ve HEAD ile ayni bayt."""
     p = CONFIG / name
     assert _sha(p) == PINNED_SHA[name]
-    assert p.read_bytes() == _git_show(f"config/{name}")
+    head = _git_show(f"config/{name}")
+    if name == "engine.base.json":      # DD-12 WP-06a: config/veto.json -> config/veto.live.json (testnet/canli veto yapilandirmasi); baska fark yok
+        head = head.replace(b'"config/veto.json"', b'"config/veto.live.json"')
+    assert p.read_bytes() == head
 
 
 @pytest.mark.parametrize("name", sorted(UNIT_SHA))

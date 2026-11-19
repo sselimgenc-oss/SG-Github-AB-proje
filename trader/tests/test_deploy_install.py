@@ -128,7 +128,7 @@ def test_every_unit_handled_by_install():
     # etkinlestirme politikasi: her zamanlayici ve servis ya acikca etkinlestirilir ya da bilincli olarak etkinlestirilmez
     enabled = set(re.findall(r"enable_now (trader-[\w@.-]+)", t))
     deliberately_not = {"trader-health-fail@.service", "trader-health.service", "trader-backup.service", "trader-lesson.service",
-                        "trader-veto.service", "trader-telegram-report.service", "trader-engine@.service",
+                        "trader-telegram-report.service", "trader-engine@.service",
                         "trader-panel-publish.service", "trader-engine-retry@.service", "trader-counterfactual@.service",
                         "trader-oi.service", "trader-drift@.service",
                         "trader-engine-live.service", "trader-engine-env-retry@.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil)
@@ -158,11 +158,20 @@ def test_env_examples_installed():
 
 def test_placeholder_gated_timers():
     t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
-    for key in ("ANTHROPIC_API_KEY_LESSON", "ANTHROPIC_API_KEY_VETO", "TRADER_VETO_HMAC_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+    for key in ("ANTHROPIC_API_KEY_LESSON", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         assert re.search(rf"has_value \S+ {key}", t), key
-    # veto: API anahtari VE HMAC (ayri dosya); ders: Anthropic anahtari VE Telegram anahtarlari
-    assert re.search(r"has_value /etc/trader-veto\.env ANTHROPIC_API_KEY_VETO && has_value /etc/trader-veto-hmac\.env TRADER_VETO_HMAC_KEY", t)
+    # DD-12 WP-06a: veto zamanlayicisi artik anahtara bagli degil (kagitta veto yok): has_value ile etkinlestirilmez
+    assert "ANTHROPIC_API_KEY_VETO" not in t and "enable_now trader-veto" not in t
+    # ders: Anthropic anahtari VE Telegram anahtarlari
     assert re.search(r'has_value /etc/trader-lesson\.env ANTHROPIC_API_KEY_LESSON && \[ "\$TG_OK" -eq 1 \]', t)
+
+
+def test_veto_units_removed_and_disabled_on_install():
+    """DD-12 WP-06a: veto birimi/ornek env dosyasi dagitimda yok; install.sh mevcut birimleri durdurur/devre disi birakir."""
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert not (DEPLOY / "trader-veto.service").exists() and not (DEPLOY / "trader-veto.timer").exists()
+    assert not (DEPLOY / "trader-veto.env.example").exists()
+    assert re.search(r"for u in trader-veto\.timer trader-veto\.service", t) and "disable --now" in t
 
 
 def test_twin_removed_options_gone_and_archived():

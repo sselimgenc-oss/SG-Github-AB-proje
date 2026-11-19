@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Mapping, NamedTuple, Sequence
 
-DEFAULT_PATH = "config/veto.json"
+DEFAULT_PATH = "config/veto.live.json"
 SCHEMA = "veto/1"
 ALG = "hmac-sha256"
 SIDES = ("long", "short")

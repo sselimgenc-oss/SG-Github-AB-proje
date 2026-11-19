@@ -2,6 +2,8 @@
 """Ders servisi kontrol noktasi istatistikleri icin capraz kontrol raporu (YALNIZ RAPOR; karara etkisi yok).
 
 `python3 -I scripts/lesson_stats_check.py --ledger PATH [--checkpoints 30,45,60] [--json] [--out PATH]`.
+DD-12 WP-08: kontrol noktasi/esik sarti yok; `--checkpoints` verilmezse her kapsam icin TUM kapanmis islemler (c = n, n >= 1)
+tek hucre olarak raporlanir.
 Defter SALT OKUNUR acilir; hicbir sey yazilmaz (yalniz `--out` raporu), LLM/butce kullanilmaz.
 
 Her kapsam (tum islemler + her setup) ve kontrol noktasi `c` (kapsamda ilk `c` kapanmis islem, cikis sirasi) icin:
@@ -27,7 +29,7 @@ from trader_core.stats import (  # noqa: E402
     adjust_pvalues, deflated_sharpe, min_track_record_length, probabilistic_sharpe, return_moments, sharpe,
 )
 
-DEFAULT_CHECKPOINTS = (30, 45, 60)
+DEFAULT_CHECKPOINTS: tuple = ()
 
 
 def load_rows(led) -> list[tuple[str, float, str]]:
@@ -45,7 +47,7 @@ def build_report(rows, checkpoints=DEFAULT_CHECKPOINTS) -> dict:
         scopes.setdefault(f"setup:{s}", []).append((s, r, d))
     cells = []
     for name, items in scopes.items():
-        for c in checkpoints:
+        for c in (tuple(checkpoints) or ((len(items),) if items else ())):
             if len(items) < c:
                 continue
             sub = items[:c]
@@ -101,7 +103,7 @@ def render_text(rep: dict) -> str:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="lesson_stats_check.py")
     ap.add_argument("--ledger", required=True)
-    ap.add_argument("--checkpoints", default=",".join(map(str, DEFAULT_CHECKPOINTS)))
+    ap.add_argument("--checkpoints", default=",".join(map(str, DEFAULT_CHECKPOINTS)))   # bos => tum islemler
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--out")
     try:
@@ -110,10 +112,10 @@ def main(argv=None) -> int:
         return 1 if e.code else 0
     try:
         cps = tuple(int(x) for x in args.checkpoints.split(",") if x.strip())
-        if not cps or any(c < 2 for c in cps):
+        if any(c < 2 for c in cps):
             raise ValueError
     except ValueError:
-        print("--checkpoints: virgullu tamsayilar (>= 2) olmali", file=sys.stderr)
+        print("--checkpoints: virgullu tamsayilar (>= 2) olmali (bos => tum islemler)", file=sys.stderr)
         return 1
     try:
         led = L.open_ledger(args.ledger, "learner", create=False, read_only=True, migrate=False)

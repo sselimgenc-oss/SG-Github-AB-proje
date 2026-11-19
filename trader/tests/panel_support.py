@@ -90,7 +90,7 @@ class Env:
             bj = json.loads((ROOT / "config/budget.json").read_text())
             bj["db_path"] = str(root / "user_data/budget.sqlite")
             (root / "config/budget.json").write_text(json.dumps(bj))
-            B.BudgetGuard(B.load_config(root / "config/budget.json")).authorize("veto", 0.01)
+            B.BudgetGuard(B.load_config(root / "config/budget.json")).authorize("haftalik_ozet", 0.01)
         if lesson:
             self._lesson(root / "user_data/lesson.sqlite")
         if health:

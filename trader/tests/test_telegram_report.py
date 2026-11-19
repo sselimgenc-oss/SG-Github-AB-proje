@@ -83,7 +83,7 @@ def test_budget_ok_and_corrupt(tmp_path):
     cfg = mkcfg(tmp_path)
     _budget(tmp_path)
     from trader_core import budget as B
-    B.BudgetGuard(B.load_config(tmp_path / "config" / "budget.json")).authorize("veto", 0.01)   # deposu başlat
+    B.BudgetGuard(B.load_config(tmp_path / "config" / "budget.json")).authorize("haftalik_ozet", 0.01)   # deposu başlat
     assert (tmp_path / "b.sqlite").exists()
     s = T.section_budget(cfg)
     assert "/10.00$" in s and "/0.25$" in s and "ders 0.00$/0.10$" in s
@@ -190,7 +190,7 @@ def test_report_budget_line_threshold(tmp_path):
     _budget(tmp_path)
     from trader_core import budget as B
     guard = B.BudgetGuard(B.load_config(tmp_path / "config" / "budget.json"))
-    guard.authorize("veto", 0.01)                                   # depo başlar, harcama %50'nin çok altında
+    guard.authorize("haftalik_ozet", 0.01)                                   # depo başlar, harcama %50'nin çok altında
     assert T.rapor_butce(cfg) == ""
     assert "Yapay zekâ" not in T.build_report(cfg, NOW, DAY, T.default_sections(cfg, NOW, DAY))
     import dataclasses

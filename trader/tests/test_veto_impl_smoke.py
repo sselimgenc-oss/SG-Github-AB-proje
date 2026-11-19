@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 KEY = "k" * 40
 T0 = datetime(2026, 12, 1, 9, 50, 3, 120000, tzinfo=timezone.utc)
 PAIRS = ["BTC/USDT", "ETH/USDT"]
-CFG = V.load_config(ROOT / "config/veto.json")
+CFG = V.load_config(ROOT / "config/veto.live.json")
 
 spec = importlib.util.spec_from_file_location("veto_run", ROOT / "scripts/veto_run.py")
 RUN = importlib.util.module_from_spec(spec)
@@ -207,7 +207,7 @@ class FakeClient:
 @pytest.fixture
 def env(tmp_path):
     (tmp_path / "config").mkdir()
-    (tmp_path / "config/veto.json").write_text((ROOT / "config/veto.json").read_text())
+    (tmp_path / "config/veto.live.json").write_text((ROOT / "config/veto.live.json").read_text())
     (tmp_path / "config/engine.base.json").write_text(
         json.dumps({"pairs": ["BTC/USDT:USDT", "ETH/USDT:USDT"]}))
     bcfg = B.BudgetConfig(db_path=str(tmp_path / "b.sqlite"))
@@ -222,79 +222,13 @@ def run(e, client, market=None, envv=None):
                     env=e.envv if envv is None else envv)
 
 
-def test_run_success(env, capsys):
-    c = FakeClient(Resp(out_text()))
-    assert run(env, c) == 0
-    st = V.read_veto_file(env.path, KEY, T0, CFG)
-    assert st.ok and V.lookup(st, "ETH/USDT", "short", T0).blocks
-    kw = c.calls[0]
-    assert kw["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
-    assert kw["model"] == "claude-haiku-5-5" and kw["max_tokens"] == 2000
-    log = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
-    assert log["blocked"] == 1 and log["cost_micro"] == 895
-    assert env.guard.status().services["veto"].calls_today == 1
-
-
-def test_run_parse_retry_then_fail(env):
-    c = FakeClient(Resp("garbage"), Resp(out_text(), stop="max_tokens"))
-    assert run(env, c) == 10 and len(c.calls) == 2 and not env.path.exists()
-
-
-def test_run_parse_retry_ok(env):
-    c = FakeClient(Resp("garbage"), Resp(out_text()))
-    assert run(env, c) == 0 and len(c.calls) == 2
-
-
-def test_run_denial_writes_unavailable(env):
-    assert isinstance(env.guard.authorize("veto", 0.2495), B.Grant)  # gunluk sinira yakin rezervasyon
-    c = FakeClient()
-    assert run(env, c) == 11 and c.calls == []
-    assert V.read_veto_file(env.path, KEY, T0, CFG).code == "unavailable:budget_daily_cap"
-
-
-def test_run_no_keys_no_call(env):
-    c = FakeClient(Resp(out_text()))
-    assert run(env, c, envv={"TRADER_VETO_HMAC_KEY": KEY}) == 12
-    assert run(env, c, envv={"ANTHROPIC_API_KEY_VETO": "sk-ant-x"}) == 12
-    assert run(env, c, envv={"ANTHROPIC_API_KEY_VETO": "sk-ant-x", "TRADER_VETO_HMAC_KEY": "short"}) == 12
-    assert c.calls == [] and not env.path.exists()
-
-
-def test_run_market_failure(env):
-    c = FakeClient()
-    assert run(env, c, market=FakeMarket(fail=True)) == 10 and c.calls == []
-
-
-def test_run_no_response_error_no_release(env, monkeypatch):
-    released = []
-    monkeypatch.setattr(env.guard, "release", lambda g: released.append(g))
-    monkeypatch.setattr(env.guard, "report_error", lambda *a, **k: B.ErrorAction("fail"))
-    assert run(env, FakeClient(APIErr(None, "timeout"))) == 10 and released == []
-
-
-def test_run_response_error_release(env, monkeypatch):
-    released = []
-    monkeypatch.setattr(env.guard, "release", lambda g: released.append(g))
-    monkeypatch.setattr(env.guard, "report_error", lambda *a, **k: B.ErrorAction("fail"))
-    assert run(env, FakeClient(APIErr(500))) == 10 and len(released) == 1
-
-
-def test_run_stop_and_retry(env, monkeypatch):
-    acts = iter([B.ErrorAction("retry", 1.0), B.ErrorAction("stop")])
-    monkeypatch.setattr(env.guard, "report_error", lambda *a, **k: next(acts))
-    c = FakeClient(APIErr(529), APIErr(401))
-    assert run(env, c) == 11 and len(c.calls) == 2
-    assert V.read_veto_file(env.path, KEY, T0, CFG).code == "unavailable:budget_provider_blocked"
-
-
-def test_run_record_before_parse_and_no_key_leak(env, caplog, capsys):
-    caplog.set_level("INFO")
-    c = FakeClient(Resp("garbage"), Resp("garbage"))
-    run(env, c)
-    assert env.guard.status().services["veto"].calls_today == 2
-    c2 = FakeClient(APIErr(None, "boom sk-ant-api03-LEAK"))
-    run(env, c2)
-    assert "LEAK" not in caplog.text and "LEAK" not in capsys.readouterr().out
+def test_run_disabled_exits_zero(env, caplog):
+    """DD-12 WP-06a: runner devre disi; eski test_run_* (butce/yazma/yeniden deneme) emekliye ayrildi."""
+    with caplog.at_level("INFO"):
+        assert RUN.main(["--root", str(env.root)], client=None, market=None, budget=env.guard,
+                        now_fn=lambda: T0, sleep_fn=lambda s: None, env=env.envv) == 0
+    assert "veto devre disi" in caplog.text
+    assert not env.path.exists()
 
 
 def test_cost_arithmetic():

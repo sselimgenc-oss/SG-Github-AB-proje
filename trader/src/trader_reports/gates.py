@@ -121,7 +121,8 @@ def build(trades: list[dict], decisions: list[dict], cf: dict | None, *, mode_ba
     # ---- 7.3 veto (veto:claude satirina sutun olarak da eklenir)
     veto: dict = {}
     veto_blocks: list = []
-    if mode_backtest or (decisions and all((d.get("veto_reason") or "").startswith("not_evaluated") for d in decisions)):
+    if mode_backtest or (decisions and all((d.get("veto_status") == "not_evaluated" or (d.get("veto_reason") or "").startswith("not_evaluated"))
+                                          for d in decisions)):
         veto = {"durum": "degerlendirilmedi"}
         veto_blocks.append({"kind": "text", "text": "2.3 Claude veto satırı: veto bu koşuda değerlendirilmedi."})
     else:

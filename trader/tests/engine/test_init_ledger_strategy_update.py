@@ -42,7 +42,7 @@ def test_strategy_update_moves_label_keeps_params_hash(tmp_path, capsys):
     assert a1.version_id == a0.version_id
     assert _run(d, "--env", "paper", "--reason", "strategy_update") == 0
     a2, r2 = _active(tmp_path)
-    assert parse_label(r2)[0] == "price_action_v1_ml"
+    assert parse_label(r2)[0] == "price_action_v1_full_ml"   # DD-12: engine.paper.json strategy
     assert a2.version_id != a0.version_id and a2.params_hash == a0.params_hash
     assert _run(d, "--env", "paper", "--reason", "strategy_update") == 0   # tekrar: degisiklik yok
     a3, _ = _active(tmp_path)

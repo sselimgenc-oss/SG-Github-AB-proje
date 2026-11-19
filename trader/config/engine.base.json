@@ -17,5 +17,5 @@
   "start_delay_s": 0.0,
   "shadow_blocks": ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"],
   "var_dir": "var", "market_db": "var/market.sqlite", "history_dir": "var/history",
-  "veto_config": "config/veto.json", "kill_file": "shared/KILL"
+  "veto_config": "config/veto.live.json", "kill_file": "shared/KILL"
 }

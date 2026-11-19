@@ -1615,7 +1615,7 @@ def section_budget(cfg: TelegramConfig) -> str:
     """Teknik (ham) bütçe satırı; panel eşdeğerlik testi için. Kullanıcı raporu `rapor_butce` kullanır."""
     st = section_budget_status(cfg)
     sv = st.services
-    names = {"veto": "veto", "lesson": "ders"}
+    names = {"haftalik_ozet": "haftalık özet", "lesson": "ders"}
     parts = [f"{names.get(k, k)} {v.used_usd:.2f}$/{v.cap_usd:.2f}$ ({v.state})" for k, v in sv.items()]
     out = f"ay {st.month_used_usd:.2f}$/{st.monthly_cap_usd:.2f}$ ({st.month_state}); bugün: " + ", ".join(parts)
     if not st.prices_verified:
@@ -1732,7 +1732,7 @@ def rapor_butce(cfg: TelegramConfig) -> str:
                      + (" — doldu, yeni istek yapılmaz" if ay >= ay_sinir else ""))
     for k, v in s.services.items():
         if v.cap_usd > 0 and v.used_usd >= BUTCE_GOSTER_ORANI * v.cap_usd:
-            ad = {"veto": "veto", "lesson": "ders"}.get(k, "yapay zekâ")
+            ad = {"haftalik_ozet": "haftalık özet", "lesson": "ders"}.get(k, "yapay zekâ")
             lines.append(f"🤖 Yapay zekâ bütçesi: bugün {ad} {tr_sayi(v.used_usd)} $ / {_usd(v.cap_usd)} $"
                          + (" — doldu" if v.used_usd >= v.cap_usd else ""))
     return "\n".join(lines)

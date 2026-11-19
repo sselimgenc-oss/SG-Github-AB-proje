@@ -334,12 +334,12 @@ def test_compat_with_ledger_and_regime():
         assert getattr(DEFAULT_SIGNAL_PARAMS, k) == dv
     assert tuple(specs["pullback_ema"]["choices"]) == (20, 50)
     assert tuple(specs["trigger_tf"]["choices"]) == ("1h", "15m")
-    assert set(ledger.LESSON_PARAMS) == {"vol_ratio_max", "stop_buffer_atr", "trail_atr",
+    assert set(ledger.CORE_LESSON_PARAMS) == {"vol_ratio_max", "stop_buffer_atr", "trail_atr",
                                          "range_target_frac", "rr_min"}
-    assert dict(ledger.LESSON_BOUNDS_DEFAULT) == {
+    assert {k: v for k, v in ledger.LESSON_BOUNDS_DEFAULT.items() if k in ledger.CORE_LESSON_PARAMS} == {
         "vol_ratio_max": (1.3, 1.7), "stop_buffer_atr": (0.2, 0.5), "trail_atr": (2.5, 3.5),
         "range_target_frac": (0.6, 0.9), "rr_min": (1.2, 2.0)}
-    assert dict(ledger.LESSON_STEP) == {"vol_ratio_max": 0.25, "stop_buffer_atr": 0.1, "trail_atr": 0.5,
+    assert {k: v for k, v in ledger.LESSON_STEP.items() if k in ledger.CORE_LESSON_PARAMS} == {"vol_ratio_max": 0.25, "stop_buffer_atr": 0.1, "trail_atr": 0.5,
                                         "range_target_frac": 0.125, "rr_min": 0.25}
     # regime params ranges identical
     for k in ("range_width_atr", "vol_ratio_max", "edge_zone_atr"):

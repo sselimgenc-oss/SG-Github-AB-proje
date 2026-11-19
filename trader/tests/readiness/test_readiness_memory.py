@@ -7,7 +7,7 @@ from readiness_support import DEPLOY, install_text, unit_kv
 
 RAM_MB, SWAP_MB = 2048, 4096
 DAEMONS = ["trader-feed.service", "trader-engine@.service", "trader-panel.service", "trader-telegram.service"]
-ONESHOTS = ["trader-health.service", "trader-backup.service", "trader-veto.service", "trader-lesson.service", "trader-panel-publish.service"]
+ONESHOTS = ["trader-health.service", "trader-backup.service", "trader-lesson.service", "trader-panel-publish.service"]
 
 
 def _mem(name: str):
@@ -35,7 +35,7 @@ def test_memory_budget_sums():
     worst = always + transient + cf
     assert always == 260 + 750 + 64 + 96 == 1170        # DD-12 §8: feed 260, ogrenen 750
     assert _mem("trader-counterfactual@.service") == 128
-    assert worst == 1170 + 64 + 96 + 256 + 256 + 400 + 128 == 2370
+    assert worst == 1170 + 64 + 96 + 256 + 400 + 128 == 2114   # DD-12 WP-06a: veto birimi (256 MB) kalkti
     # her zaman acik birimlerin SERT tavan toplami RAM'in %60'ini gecmez; boylece baska proje icin >= 800 MB kalir (OS ~150 MB dahil degil)
     assert always <= 0.6 * RAM_MB
     # en kotu ust uste binme bile RAM + takas icinde (OOM yerine takas); RAM'i asar -> swappiness=10 ve takas 4 GB sart

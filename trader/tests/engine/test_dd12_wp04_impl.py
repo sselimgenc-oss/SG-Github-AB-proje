@@ -94,7 +94,7 @@ def _go(e, pair="BTC/USDT", bar=(110.0, 99.0, 5.0)):
 
 def test_gate_paper_rows(env):
     out = _go(env)
-    assert out.action == "enter" and out.event.session_tag == "open" and out.event.veto_status == "allowed"
+    assert out.action == "enter" and out.event.session_tag == "open" and out.event.veto_status == "not_evaluated"
     out = _go(env, "NVDA/USDT")
     assert out.event.session_tag == "closed" and out.action == "enter"       # seans giris engellemez
     out = _go(env, bar=(100.0, 100.0, 5.0))

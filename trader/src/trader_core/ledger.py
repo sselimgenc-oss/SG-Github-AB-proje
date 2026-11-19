@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("trader_core.ledger")
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 BOTS = ("learner", "twin")
 MIN_FREE_BYTES = 50 * 1024 * 1024
 MAX_REASON = 500
@@ -83,11 +83,22 @@ PARAM_SPECS: dict[str, dict[str, Any]] = {
     "trigger_tf": dict(kind="choice", choices=("1h", "15m"), lesson=False, step=None, scope=None),
 }
 PARAM_KEYS = tuple(PARAM_SPECS)
-LESSON_PARAMS = ("vol_ratio_max", "stop_buffer_atr", "trail_atr", "range_target_frac", "rr_min")
+# DD-12 WP-08: ders servisinin dokunabildigi iki ek (istege bagli) parametre. Eski surumlerde yoktur; yokluk = varsayilan.
+#   session_off: kapali-seans merdiveni (0 hepsi acik, 1 hafta sonu kapali, 2 hafta sonu + 'closed' kapali, 3 hepsi kapali)
+#   post_stop_wait: stop sonrasi yeniden giris icin beklenen mum sayisi (0-3)
+OPTIONAL_PARAM_SPECS: dict[str, dict[str, Any]] = {
+    "session_off": dict(kind="int", lo=0, hi=3, lesson=True, step=1, scope=("T1", "R1"), bounds=(0, 3), default=0),
+    "post_stop_wait": dict(kind="int", lo=0, hi=3, lesson=True, step=1, scope=("T1", "R1"), bounds=(0, 3), default=0),
+}
+OPTIONAL_PARAM_KEYS = tuple(OPTIONAL_PARAM_SPECS)
+_ALL_SPECS: dict[str, dict[str, Any]] = {**PARAM_SPECS, **OPTIONAL_PARAM_SPECS}
+CORE_LESSON_PARAMS = ("vol_ratio_max", "stop_buffer_atr", "trail_atr", "range_target_frac", "rr_min")
+LESSON_PARAMS = CORE_LESSON_PARAMS + OPTIONAL_PARAM_KEYS
 LESSON_BOUNDS_DEFAULT: Mapping[str, tuple[float, float]] = MappingProxyType(
-    {k: tuple(PARAM_SPECS[k]["bounds"]) for k in LESSON_PARAMS})
-LESSON_STEP: Mapping[str, float] = MappingProxyType({k: PARAM_SPECS[k]["step"] for k in LESSON_PARAMS})
-LESSON_SCOPE: Mapping[str, tuple[str, ...]] = MappingProxyType({k: PARAM_SPECS[k]["scope"] for k in LESSON_PARAMS})
+    {k: tuple(_ALL_SPECS[k]["bounds"]) for k in LESSON_PARAMS})
+LESSON_STEP: Mapping[str, float] = MappingProxyType({k: _ALL_SPECS[k]["step"] for k in LESSON_PARAMS})
+LESSON_SCOPE: Mapping[str, tuple[str, ...]] = MappingProxyType({k: _ALL_SPECS[k]["scope"] for k in LESSON_PARAMS})
+PARAM_DEFAULTS: Mapping[str, Any] = MappingProxyType({k: v["default"] for k, v in OPTIONAL_PARAM_SPECS.items()})
 
 _TRIGGER_TFS = ("15m", "1h", "4h", "1d")     # sema 5 (DD-12 WP-02): karar/islem zaman dilimleri
 _SHADOW_TFS = ("1h", "15m")                  # golge satirlari (sema 4 tablosu) eski kalir
@@ -284,11 +295,17 @@ def _norm_params(params) -> dict[str, Any]:
     if not isinstance(params, Mapping):
         raise LedgerValidationError("params Mapping olmali")
     keys = set(params)
-    if keys != set(PARAM_KEYS):
+    if not set(PARAM_KEYS) <= keys <= set(PARAM_KEYS) | set(OPTIONAL_PARAM_KEYS):
         missing = sorted(set(PARAM_KEYS) - keys, key=str)
-        extra = sorted((k for k in keys if k not in PARAM_SPECS), key=str)
+        extra = sorted((k for k in keys if k not in _ALL_SPECS), key=str)
         raise LedgerValidationError(f"params 9 anahtar olmali; eksik={missing} fazla={extra}")
     out: dict[str, Any] = {}
+    for k in OPTIONAL_PARAM_KEYS:
+        if k in keys:
+            spec = OPTIONAL_PARAM_SPECS[k]
+            n = _int(params[k], k)
+            if n < spec["lo"] or n > spec["hi"]:
+                raise LedgerValidationError(f"{k}={n} tarama araligi disinda [{spec['lo']}, {spec['hi']}]")
     for k in PARAM_KEYS:
         spec = PARAM_SPECS[k]
         v = params[k]
@@ -306,26 +323,31 @@ def _norm_params(params) -> dict[str, Any]:
             if not isinstance(v, str) or v not in spec["choices"]:
                 raise LedgerValidationError(f"{k} {spec['choices']} icinden olmali")
             out[k] = v
+    for k in OPTIONAL_PARAM_KEYS:
+        if k in keys:
+            out[k] = _int(params[k], k)
     return out
 
 
 def _norm_bounds(bounds, params: Mapping[str, Any], *, require_contain: bool) -> dict[str, list[float]]:
     if bounds is None:
-        return {k: list(v) for k, v in LESSON_BOUNDS_DEFAULT.items()}
-    if not isinstance(bounds, Mapping) or set(bounds) != set(LESSON_PARAMS):
-        raise LedgerValidationError(f"lesson_bounds anahtarlari {LESSON_PARAMS} olmali")
+        return {k: list(LESSON_BOUNDS_DEFAULT[k]) for k in CORE_LESSON_PARAMS}
+    if not isinstance(bounds, Mapping) or not set(CORE_LESSON_PARAMS) <= set(bounds) <= set(LESSON_PARAMS):
+        raise LedgerValidationError(f"lesson_bounds anahtarlari {CORE_LESSON_PARAMS} (+ istege bagli) olmali")
     out: dict[str, list[float]] = {}
     for k in LESSON_PARAMS:
+        if k not in bounds:
+            continue                                      # istege bagli parametre: okurken varsayilan sinir
         b = bounds[k]
         if not isinstance(b, (list, tuple)) or len(b) != 2:
             raise LedgerValidationError(f"lesson_bounds[{k}] [alt, ust] olmali")
         lo, hi = round(_num(b[0], k), 6), round(_num(b[1], k), 6)
-        spec = PARAM_SPECS[k]
+        spec = _ALL_SPECS[k]
         if lo > hi:
             raise LedgerValidationError(f"lesson_bounds[{k}] alt <= ust olmali")
         if lo < spec["lo"] - _TOL or hi > spec["hi"] + _TOL:
             raise LedgerValidationError(f"lesson_bounds[{k}] tarama araligi disinda")
-        if require_contain and not (lo - _TOL <= params[k] <= hi + _TOL):
+        if require_contain and not (lo - _TOL <= params.get(k, PARAM_DEFAULTS.get(k)) <= hi + _TOL):
             raise LedgerValidationError(f"lesson_bounds[{k}] baslangic degerini icermeli")
         out[k] = [lo, hi]
     return out
@@ -1193,9 +1215,40 @@ def _migration_4_to_5(bot: str, now_s: str) -> str:
             + _V_DECISIONS + _VIEWS_V5 + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
 
 
+def _decision_events_ddl_v6(name: str) -> str:
+    """Sema 6 (DD-12 WP-06a): kagit botta veto yok; girilen/risk_denied/order_failed satirlari veto_status='not_evaluated'
+    yazabilir. Yalniz iki CHECK degisir; sutunlar v5 ile ayni."""
+    d = _decision_events_ddl_v5(name)
+    d = d.replace("CHECK (final_action <> 'entered' OR (veto_status = 'allowed' AND risk_allowed = 1",
+                  "CHECK (final_action <> 'entered' OR (veto_status IN ('allowed','not_evaluated') AND risk_allowed = 1", 1)
+    old = d[d.index("    CHECK (veto_status <> 'not_evaluated' OR (risk_allowed IS NULL"):]
+    new = ("    CHECK (veto_status <> 'not_evaluated' OR final_action = 'entered'\n"
+           "        OR skip_reason IN ('risk_denied','order_failed')\n"
+           "        OR (risk_allowed IS NULL AND skip_reason IN ('stop_width','rr_below_min','other','entry_gate_closed',\n"
+           "                            'ml_filter',{_NEW_SKIPS_SQL}))));\n").replace("{_NEW_SKIPS_SQL}", _NEW_SKIPS_SQL)
+    return d.replace(old, new)
+
+
+def _migration_5_to_6(bot: str, now_s: str) -> str:
+    """Sema 6 (DD-12 WP-06a): decision_events yeniden kurulur (CHECK gevsemesi); satirlar/id'ler korunur."""
+    drops = "\n".join(f"DROP TRIGGER IF EXISTS trg_{t}_{k};" for t in _APPEND_ONLY_TABLES
+                      for k in ("no_update", "no_delete"))
+    cols = _DECISION_COLS_V3 + ", arm_id, session_tag, lesson_ids, source"
+    return ("DROP VIEW IF EXISTS v_closed_trades;\nDROP VIEW IF EXISTS v_trades;\n"
+            "DROP VIEW IF EXISTS v_decisions;\n" + drops + "\n"
+            + _decision_events_ddl_v6("decision_events_v6") + "\n"
+            f"INSERT INTO decision_events_v6 ({cols}) SELECT {cols} FROM decision_events;\n"
+            "DROP TABLE decision_events;\n"
+            "ALTER TABLE decision_events_v6 RENAME TO decision_events;\n"
+            "CREATE UNIQUE INDEX ux_decision_key ON decision_events\n"
+            "    (bot, pair, side, setup, trigger_tf, bar_close_ts) WHERE supersedes_id IS NULL;\n"
+            "CREATE INDEX ix_decision_supersedes ON decision_events (supersedes_id);\n"
+            + _V_DECISIONS + _VIEWS_V5 + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
+
+
 MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3,
-                                                _migration_3_to_4, _migration_4_to_5]
-_FK_OFF_MIGRATIONS = frozenset({2, 4})     # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
+                                                _migration_3_to_4, _migration_4_to_5, _migration_5_to_6]
+_FK_OFF_MIGRATIONS = frozenset({2, 4, 5})     # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
 
 
 def _map_sqlite_error(e: sqlite3.Error) -> LedgerError:
@@ -1253,20 +1306,25 @@ def peek_meta(path, key: str) -> str | None:
 
 def open_ledger(path, bot: str, *, create: bool = True, read_only: bool = False,
                 migrate: bool | None = None, clock: Callable[[], datetime] | None = None,
-                min_evidence_trades: int = 20) -> "Ledger":
+                min_evidence_trades: int = 20, paper_lesson: bool = False) -> "Ledger":
     return Ledger(path, bot, create=create, read_only=read_only, migrate=migrate, clock=clock,
-                  min_evidence_trades=min_evidence_trades)
+                  min_evidence_trades=min_evidence_trades, paper_lesson=paper_lesson)
 
 
 class Ledger:
     def __init__(self, path, bot: str, *, create: bool = True, read_only: bool = False,
                  migrate: bool | None = None, clock: Callable[[], datetime] | None = None,
-                 min_evidence_trades: int = 20):
+                 min_evidence_trades: int = 20, paper_lesson: bool = False):
         if bot not in BOTS:
             raise LedgerValidationError("bot 'learner' veya 'twin' olmali")
+        if not isinstance(paper_lesson, bool):
+            raise LedgerValidationError("paper_lesson bool olmali")
+        # DD-12 WP-08 (kagit): `paper_lesson=True` => kanit esigi 0 olabilir, haftalik sinir ve vol_ratio_max artirimi
+        # onay kurali yoktur (ders ilk islemden etkin, esiksiz). Varsayilan (testnet/canli) davranis aynen.
         if isinstance(min_evidence_trades, bool) or not isinstance(min_evidence_trades, int) \
-                or min_evidence_trades < 20:
+                or min_evidence_trades < (0 if paper_lesson else 20):
             raise LedgerValidationError("min_evidence_trades >= 20 olmali")
+        self.paper_lesson = paper_lesson
         self.bot = bot
         self.min_evidence_trades = min_evidence_trades
         self.path = os.fspath(path)
@@ -1571,8 +1629,8 @@ class Ledger:
         if ra == 1 and any(s is None for s in sizes):
             raise LedgerValidationError("risk_allowed=True iken size_* ve leverage dolu olmali")
         if final == "entered":
-            if veto != "allowed" or ra != 1 or skip is not None:
-                raise LedgerValidationError("entered => veto allowed, risk_allowed True, skip_reason NULL")
+            if veto not in ("allowed", "not_evaluated") or ra != 1 or skip is not None:
+                raise LedgerValidationError("entered => veto allowed|not_evaluated, risk_allowed True, skip_reason NULL")
         else:
             if skip is None:
                 raise LedgerValidationError("skipped => skip_reason zorunlu")
@@ -1585,7 +1643,10 @@ class Ledger:
             raise LedgerValidationError("risk_allowed=False => skipped, skip_reason=risk_denied")
         if skip in _NEW_SKIP and veto != "not_evaluated":
             raise LedgerValidationError(f"skip_reason={skip} => veto_status='not_evaluated' (veto kagit botta yok)")
-        if veto == "not_evaluated" and (ra is not None or skip not in _NOT_EVAL_SKIP):
+        if veto == "not_evaluated" and ra is not None and not (
+                final == "entered" or skip in ("risk_denied", "order_failed")):
+            raise LedgerValidationError("not_evaluated + risk_allowed dolu => entered | risk_denied | order_failed")
+        if veto == "not_evaluated" and ra is None and skip not in _NOT_EVAL_SKIP:
             raise LedgerValidationError("not_evaluated => risk_allowed None, skip_reason stop_width/rr_below_min/other")
         vals = dict(bar_close_ts=_fmt_ts(bar), trigger_tf=tf, pair=pair, side=side, setup=setup, regime=regime,
                     atr_ratio=atr_ratio, rh=rh, rl=rl, rh_touches=rht, rl_touches=rlt, features=feats,
@@ -2120,7 +2181,7 @@ class Ledger:
         if len(changes) > 1:
             return "multiple_changes", "tek oneride yalnizca bir parametre degisebilir", None
         k, raw = next(iter(changes.items()))
-        if not isinstance(k, str) or k not in PARAM_SPECS:
+        if not isinstance(k, str) or k not in _ALL_SPECS:
             return "unknown_param", f"bilinmeyen parametre: {k!r}", None
         if k not in LESSON_PARAMS:
             return "immutable_param", f"{k} ders servisine kapali", None
@@ -2128,10 +2189,10 @@ class Ledger:
             v = round(_num(raw, k), 6)
         except LedgerValidationError as e:
             return "bad_value", str(e), None
-        lo, hi = bounds[k]
+        lo, hi = bounds[k] if k in bounds else LESSON_BOUNDS_DEFAULT[k]
         if v < lo - _TOL or v > hi + _TOL:
             return "out_of_bounds", f"{k}={v} sinir [{lo}, {hi}] disinda", None
-        old = params[k]
+        old = params[k] if k in params else PARAM_DEFAULTS[k]
         if abs(v - old) > LESSON_STEP[k] + _TOL:
             return "step_too_large", f"|{v}-{old}| > {LESSON_STEP[k]}", None
         if abs(v - old) < _TOL:
@@ -2168,7 +2229,7 @@ class Ledger:
                                                       json.loads(v["lesson_bounds"]))
                 if bad is not None:
                     status, code, reason = "rejected", bad, why
-                elif parsed[0] == "vol_ratio_max" and parsed[1] > parsed[2]:
+                elif parsed[0] == "vol_ratio_max" and parsed[1] > parsed[2] and not self.paper_lesson:
                     status, code, reason = "needs_user", "needs_user", "vol_ratio_max artirimi kullanici onayi ister"
                 elif require_user:
                     status, code, reason = ("needs_user", "user_approval_required",
@@ -2184,17 +2245,17 @@ class Ledger:
     def _pool(self, c, base_row, key: str) -> tuple[int, ...]:
         """Bolum 5.4 POOL(base, key): kapsami etkileyen tum parametreleri base ile esit olan surumler."""
         bp = json.loads(base_row["params"])
-        affecting = [q for q in PARAM_KEYS if _affects(q, key)]
+        affecting = [q for q in PARAM_KEYS + OPTIONAL_PARAM_KEYS if _affects(q, key)]
         out = []
         for r in c.execute("SELECT id, params FROM param_versions WHERE bot=? ORDER BY id", (self.bot,)):
             vp = json.loads(r["params"])
-            if all(vp[q] == bp[q] for q in affecting):
+            if all(vp.get(q, PARAM_DEFAULTS.get(q)) == bp.get(q, PARAM_DEFAULTS.get(q)) for q in affecting):
                 out.append(r["id"])
         return tuple(out)
 
     def pool_version_ids(self, base_version_id: int, param: str) -> tuple[int, ...]:
         base = _int(base_version_id, "base_version_id")
-        if not isinstance(param, str) or param not in PARAM_SPECS:
+        if not isinstance(param, str) or param not in _ALL_SPECS:
             raise LedgerValidationError(f"bilinmeyen parametre: {param!r}")
         with self._read() as c:
             row = c.execute("SELECT * FROM param_versions WHERE id=? AND bot=?", (base, self.bot)).fetchone()
@@ -2256,7 +2317,7 @@ class Ledger:
             if n < self.min_evidence_trades:
                 return ActivationResult(False, "insufficient_evidence",
                                         f"kanit yetersiz: {n} < {self.min_evidence_trades}", None, None, pid)
-            if actor == "lesson":
+            if actor == "lesson" and not self.paper_lesson:
                 since = _fmt_ts(now - timedelta(days=LESSON_MIN_INTERVAL_DAYS))
                 if c.execute("SELECT 1 FROM param_activations WHERE bot=? AND kind='apply' AND actor='lesson' "
                              "AND activated_at>=?", (self.bot, since)).fetchone():
@@ -2269,9 +2330,10 @@ class Ledger:
                 by_ver[str(r["param_version_id"])] = by_ver.get(str(r["param_version_id"]), 0) + 1
             evidence = {"n_closed": n, "scope": "+".join(scope), "base_version_id": base["id"],
                         "pooled_version_ids": list(pool), "n_by_version": by_ver,
-                        "first_exit_ts": rows[0]["exit_ts"], "last_exit_ts": rows[-1]["exit_ts"],
-                        "mean_r": sum_r / n, "sum_r": sum_r,
-                        "win_rate": sum(1 for r in rows if r["realized_pnl"] > 0) / n,
+                        "first_exit_ts": rows[0]["exit_ts"] if n else None,
+                        "last_exit_ts": rows[-1]["exit_ts"] if n else None,
+                        "mean_r": sum_r / n if n else 0.0, "sum_r": sum_r,
+                        "win_rate": sum(1 for r in rows if r["realized_pnl"] > 0) / n if n else 0.0,
                         "claimed_mismatch": claimed is not None and claimed != n}
             newp = dict(params)
             newp[key] = newv
@@ -2337,7 +2399,10 @@ class Ledger:
 
     @staticmethod
     def _bounds_out(s: str) -> Mapping[str, tuple[float, float]]:
-        return MappingProxyType({k: (v[0], v[1]) for k, v in json.loads(s).items()})
+        d = {k: (v[0], v[1]) for k, v in json.loads(s).items()}
+        for k in OPTIONAL_PARAM_KEYS:
+            d.setdefault(k, tuple(LESSON_BOUNDS_DEFAULT[k]))
+        return MappingProxyType(d)
 
     def _version_from(self, r) -> ParamVersion:
         return ParamVersion(

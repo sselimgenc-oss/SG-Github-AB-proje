@@ -55,7 +55,6 @@ def _build_cfg(args, env):
         over["mode"] = args.mode
     over["ledger_path"] = _resolve(env.get("LEDGER_PATH") or cfg.ledger_path)
     over["store_path"] = _resolve(env.get("LESSON_STORE_PATH") or cfg.store_path)
-    over["twin_ledger_path"] = _resolve(env.get("TWIN_LEDGER_PATH") or cfg.twin_ledger_path)
     return dataclasses.replace(cfg, **over)
 
 

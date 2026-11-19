@@ -413,8 +413,8 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
     if raw["target_mode"] != "bar_close":
         raise ConfigError(f"target_mode yalniz 'bar_close': {raw['target_mode']!r}")
     veto_mode = _choice("veto_mode", raw["veto_mode"], ("required", "off"))
-    if veto_mode == "off" and mode != "backtest":
-        raise ConfigError("veto_mode='off' yalniz mode='backtest' ile gecerli")
+    if veto_mode == "off" and mode not in ("backtest", "paper"):
+        raise ConfigError("veto_mode='off' yalniz mode='backtest'|'paper' ile gecerli")
     if not isinstance(raw["record_filtered_candidates"], bool):
         raise ConfigError("record_filtered_candidates bool olmali")
     for n in _STR:

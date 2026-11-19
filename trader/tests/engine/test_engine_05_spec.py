@@ -427,7 +427,7 @@ def make_cfg(tmp: Path, bot="learner", mode="paper", pairs=PAIRS, wallet=1000.0,
     if mode in ("testnet", "live"):
         raw["pause_file"] = str(tmp / "PAUSE")           # DD-8: testnet/live'de paylasimli `shared/PAUSE` yasak (yol kurali)
     raw["target_trade_risk"] = 0.014     # testler kilitli varsayilanla (shipped base 0.005); sevk edilen deger ayri test edilir
-    raw["veto_mode"] = veto_mode or ("off" if mode == "backtest" else "required")
+    raw["veto_mode"] = veto_mode or ("off" if mode in ("backtest", "paper") else "required")   # DD-12 WP-06a: kagitta veto yok
     raw.update(over)
     b = tmp / "base.json"
     b.write_text(json.dumps(raw))
@@ -1079,22 +1079,18 @@ class TestGateChain:
         assert e.pos(BTC) is None
         e.close()
 
-    @pytest.mark.parametrize("status,skip", [("blocked", "veto_blocked"), ("missing", "veto_missing"),
-                                             ("stale", "veto_stale")])
-    def test_row10_veto(self, tmp_path, monkeypatch, status, skip):
-        calls = []
-        real = risk.check_entry
-        monkeypatch.setattr(risk, "check_entry", lambda *a, **k: calls.append(1) or real(*a, **k))
-        e = Env(tmp_path, veto_obj=FakeVeto(status, "funding asiri negatif"))
+    @pytest.mark.parametrize("status", ["blocked", "missing", "stale"])
+    def test_row10_veto_not_consulted_in_paper(self, tmp_path, status):
+        """DD-12 WP-06a: kagitta veto adimi yok; veto engelli/yok/eski olsa da aday girilir, veto sorgulanmaz."""
+        fv = FakeVeto(status, "funding asiri negatif")
+        e = Env(tmp_path, veto_obj=fv)
         e.start()
         e.signal(T0)
         e.decide(T0)
         d = e.decisions()
-        assert len(d) == 1 and d[0].skip_reason == skip and d[0].veto_status == status
-        assert d[0].risk_allowed is None and d[0].final_action == "skipped"
-        if status == "blocked":
-            assert d[0].veto_reason == "funding asiri negatif"
-        assert calls == [] and e.pos(BTC) is None and e.broker.counts["market_order"] == 0
+        assert len(d) == 1 and d[0].final_action == "entered" and d[0].skip_reason is None
+        assert d[0].veto_status == "not_evaluated" and d[0].risk_allowed is True
+        assert fv.lookups == []
         e.close()
 
     def test_row11_risk_denied_daily_budget(self, tmp_path):
@@ -1107,7 +1103,7 @@ class TestGateChain:
         e.signal(T0)
         e.decide(T0)
         d = e.decisions()
-        assert len(d) == 1 and d[0].skip_reason == "risk_denied" and d[0].veto_status == "allowed"
+        assert len(d) == 1 and d[0].skip_reason == "risk_denied" and d[0].veto_status == "not_evaluated"
         assert d[0].risk_allowed is False and d[0].risk_reason and d[0].final_action == "skipped"
         assert e.pos(BTC) is None and e.broker.counts["market_order"] == 0
         e.close()
@@ -1118,8 +1114,8 @@ class TestGateChain:
         d = env.decisions()
         assert len(d) == 1
         x = d[0]
-        assert x.final_action == "entered" and x.skip_reason is None and x.veto_status == "allowed"
-        assert x.veto_reason == "ok:2026-12-01T08:50:03.120Z" and x.risk_allowed is True
+        assert x.final_action == "entered" and x.skip_reason is None and x.veto_status == "not_evaluated"
+        assert x.veto_reason == "not_evaluated:paper" and x.risk_allowed is True
         assert x.size_qty == pytest.approx(6.369) and x.size_notional == pytest.approx(636.9)
         assert x.size_margin == pytest.approx(212.3) and x.size_risk_amount == pytest.approx(13.999062)
         assert x.leverage == 3 and x.bar_close_ts == T0 and x.setup == "T1" and x.side == "long"
@@ -1175,7 +1171,7 @@ class TestGateChain:
         by = {d.pair: d for d in env.decisions()}
         assert by[BTC].final_action == "entered" and by[ETH].final_action == "entered"
         assert by[SOL].skip_reason == "risk_denied" and by[SOL].risk_allowed is False
-        assert by[SOL].veto_status == "allowed"
+        assert by[SOL].veto_status == "not_evaluated"
         assert env.pos(SOL) is None
 
     def test_pairs_processed_in_config_order(self, env):
@@ -1238,12 +1234,9 @@ def _gate_closers():
     def ledger_degraded(e):
         e.ledger.health = L.Health(False, "degraded", "x")
 
-    def veto_missing(e):
-        e.veto.status = "missing"
-
     def blocked_reason(e):
         _hold_block(e, "order_unknown")
-    return {"ledger_degraded": ledger_degraded, "veto_missing": veto_missing, "blocked_reason": blocked_reason}
+    return {"ledger_degraded": ledger_degraded, "blocked_reason": blocked_reason}   # DD-12 WP-06a: veto_missing kapatici kagitta yok
 
 
 class TestExitsUngated:

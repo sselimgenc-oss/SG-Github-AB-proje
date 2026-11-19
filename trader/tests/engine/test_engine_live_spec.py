@@ -238,7 +238,7 @@ def make_live_cfg(tmp: Path, *, mode="testnet", leverage=None, live_over=None, p
     live.update(live_over or {})
     raw.update(pairs=list(pairs), wallet_start=100.0, mode=mode, var_dir=str(tmp / ("var-live" if mode == "live" else "var-testnet")),   # DD-8: testnet/live var_dir son bileseni `var` olamaz
                market_db=str(tmp / "market.sqlite"), history_dir=str(tmp / "hist"),
-               veto_config=str(ROOT / "config" / "veto.json"), kill_file=str(tmp / "KILL"),
+               veto_config=str(ROOT / "config" / "veto.live.json"), kill_file=str(tmp / "KILL"),
                pause_file=str(tmp / "PAUSE"), live=live, veto_mode="required", target_trade_risk=0.014)
     if leverage is not None:
         raw["leverage"] = leverage
@@ -1046,7 +1046,7 @@ def test_live_spec_build_engine_testnet_and_paper_need_no_live_confirm(tmp_path)
         eng.state.close()
         eng.ledger.close()
     (tmp_path / "p").mkdir()
-    pcfg = make_cfg(tmp_path / "p", "learner", "paper", (BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.json"))
+    pcfg = make_cfg(tmp_path / "p", "learner", "paper", (BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.live.json"))
     peng = build_engine(pcfg, clock=SimClock(BOOT), view=SynthView((BTC,), BOOT - timedelta(days=1), BOOT + timedelta(days=1),
                                                                      clock=None), env={})
     try:

@@ -409,9 +409,9 @@ def test_paper_config_loads_unchanged(bot, start_delay):
     assert cfg.ledger_path == f"var/{bot}/ledger.sqlite" and cfg.state_path == f"var/{bot}/state.sqlite"
 
 
-def test_paper_still_refuses_veto_off_and_unknown_keys(tmp_path):
-    with pytest.raises(ConfigError):
-        _load(tmp_path, {"veto_mode": "off"})
+def test_paper_accepts_veto_off_and_still_refuses_unknown_keys(tmp_path):
+    """DD-12 WP-06a: kagitta veto yok -> veto_mode='off' gecerli (testnet/canli icin hala yasak: ayri testler)."""
+    assert _load(tmp_path, {"veto_mode": "off"}).veto_mode == "off"
     with pytest.raises(ConfigError):
         _load(tmp_path, {"nonsense_key": 1})
 

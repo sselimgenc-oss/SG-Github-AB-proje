@@ -76,11 +76,10 @@ def test_health_bots_default_and_override():
     assert R.bots_from_env({"HEALTH_BOTS": " , "}) == ("learner",)
 
 
-def test_make_cfg_uses_health_bots_and_veto_age():
+def test_make_cfg_uses_health_bots_and_no_veto_check():
+    """DD-12 WP-06a: saglik kontrolunde veto belgesi yasi denetimi yok (VETO_MAX_AGE_S artik okunmaz)."""
     cfg = R.make_cfg({"HEALTH_BOTS": "learner", "VETO_MAX_AGE_S": "600"})
-    assert cfg.require_bots == ("learner",) and cfg.veto_max_age_s == 600
-    assert R.make_cfg({}).veto_max_age_s == 5400
-    assert R.make_cfg({"VETO_MAX_AGE_S": "abc"}).veto_max_age_s == 5400
+    assert cfg.require_bots == ("learner",) and cfg.veto_max_age_s is None and not cfg.veto_strict
 
 
 def test_collect_only_probes_listed_bots(tmp_path):
@@ -100,10 +99,8 @@ def test_backup_main_passes_health_bots(tmp_path, monkeypatch):
 
 
 # ------------------------------------------------------------------ OPEN-5
-def test_veto_file_default_follows_config_and_env_overrides():
-    assert R.veto_file_from_env({"VETO_FILE": "/x/v.json"}) == "/x/v.json"
-    d = R.veto_file_from_env({})
-    assert d.endswith(os.path.join("shared", "veto", "veto.json")) and os.path.isabs(d)
+def test_veto_probe_removed_from_health_runner():
+    assert not hasattr(R, "veto_file_from_env") and not hasattr(R, "probe_veto_mtime")
 
 
 def _healthy_snap(veto_age_s=None):
@@ -120,24 +117,11 @@ def _veto_status(veto_age_s, cfg):
     return {r.name: r for r in H.evaluate(_healthy_snap(veto_age_s), cfg).results}["veto_file_age"]
 
 
-def test_veto_probe_mtime(tmp_path):
-    assert R.probe_veto_mtime(str(tmp_path / "yok")) is None
-    f = tmp_path / "v.json"
-    f.write_text("{}")
-    assert R.probe_veto_mtime(str(f)).tzinfo is not None
-
-
-def test_veto_missing_is_crit():
+def test_veto_check_skipped_in_paper_health():
+    """DD-12 WP-06a: kagit saglik kontrolu veto belgesini denetlemez; belge yok/eski olsa da saglikli kalir."""
     cfg = R.make_cfg({"HEALTH_BOTS": "learner"})
-    r = _veto_status(None, cfg)
-    assert r.status is H.Status.CRIT and r.code == "veto_missing" and "girisler kapali" in r.detail
-    assert not H.evaluate(_healthy_snap(None), cfg).healthy
-
-
-def test_veto_fresh_ok_stale_crit_no_warn_band():
-    cfg = R.make_cfg({"HEALTH_BOTS": "learner"})
-    assert _veto_status(600, cfg).status is H.Status.OK
-    assert _veto_status(5400, cfg).status is H.Status.OK
-    r = _veto_status(5401, cfg)
-    assert r.status is H.Status.CRIT and r.code == "veto_stale" and "girisler kapali" in r.detail
-    assert not H.evaluate(_healthy_snap(5401), cfg).healthy
+    for age in (None, 600, 99999):
+        r = _veto_status(age, cfg)
+        assert r.status is H.Status.SKIPPED
+    assert H.evaluate(_healthy_snap(None), cfg).healthy
+    assert H.evaluate(_healthy_snap(99999), cfg).healthy

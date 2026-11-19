@@ -236,9 +236,9 @@ class TestOpenSchema:
     def test_new_file_schema(self, led, dbpath):
         assert led.bot == "learner"
         assert led.min_evidence_trades == 20
-        assert raw(dbpath, "PRAGMA user_version")[0][0] == 5
+        assert raw(dbpath, "PRAGMA user_version")[0][0] == 6
         assert raw(dbpath, "PRAGMA journal_mode")[0][0].lower() == "wal"
-        assert L.SCHEMA_VERSION == 5
+        assert L.SCHEMA_VERSION == 6
         meta = dict(raw(dbpath, "SELECT key, value FROM meta"))
         assert meta["bot"] == "learner"
         assert meta["schema_version"] == "1"
@@ -254,7 +254,8 @@ class TestOpenSchema:
 
     def test_constants(self):
         assert tuple(L.LESSON_PARAMS) == ("vol_ratio_max", "stop_buffer_atr",
-                                          "trail_atr", "range_target_frac", "rr_min")
+                                          "trail_atr", "range_target_frac", "rr_min",
+                                          "session_off", "post_stop_wait")   # DD-12 WP-08 genisletmesi
         assert L.LESSON_MIN_INTERVAL_DAYS == 7
         for k, v in {"vol_ratio_max": 0.25, "stop_buffer_atr": 0.1, "trail_atr": 0.5,
                      "range_target_frac": 0.125, "rr_min": 0.25}.items():
@@ -288,7 +289,7 @@ class TestOpenSchema:
 
     def test_newer_schema_rejected(self, dbpath, clock):
         L.open_ledger(dbpath, "learner", clock=clock).close()
-        c = sqlite3.connect(str(dbpath)); c.execute("PRAGMA user_version=6"); c.commit(); c.close()
+        c = sqlite3.connect(str(dbpath)); c.execute("PRAGMA user_version=7"); c.commit(); c.close()
         with pytest.raises(L.LedgerSchemaError):
             L.open_ledger(dbpath, "learner", clock=clock)
 
@@ -457,8 +458,7 @@ class TestRecordDecision:
         dict(veto_status="maybe"),
         dict(veto_status="blocked"),                                          # entered + blocked
         dict(veto_status="stale"), dict(veto_status="missing"),
-        dict(veto_status="not_evaluated"),
-        dict(risk_allowed=False), dict(risk_allowed=None),
+        dict(risk_allowed=False), dict(risk_allowed=None),                    # (not_evaluated + entered gecerli: v6, WP-06a)
         dict(size_qty=None), dict(size_risk_amount=None), dict(leverage=None),
         dict(skip_reason="other"),                                            # entered + skip_reason
         dict(final_action="done"),
@@ -470,6 +470,11 @@ class TestRecordDecision:
         with pytest.raises(L.LedgerValidationError):
             lp.record_decision(dec(**over))
         assert raw(dbpath, "SELECT COUNT(*) FROM decision_events")[0][0] == 0
+
+    def test_entered_not_evaluated_valid_since_v6(self, lp, dbpath):
+        """DD-12 WP-06a: kagitta veto yok; girilen satir veto_status='not_evaluated' yazar (sema v6)."""
+        lp.record_decision(dec(veto_status="not_evaluated"))
+        assert raw(dbpath, "SELECT veto_status, final_action FROM decision_events")[0] == ("not_evaluated", "entered")
 
     @pytest.mark.parametrize("ev", [
         lambda: skipped(skip_reason=None),                                    # skipped needs reason

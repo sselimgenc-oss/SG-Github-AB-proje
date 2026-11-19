@@ -170,7 +170,7 @@ def test_testnet_engine_enforces_without_transfers(tmp_path):
 def test_paper_engine_observes_and_backtest_has_no_ladder(tmp_path):
     import test_engine_live_spec as LS
     from test_engine_05_spec import SynthView
-    cfg = LS.make_cfg(tmp_path, "learner", "paper", (LS.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.json"))
+    cfg = LS.make_cfg(tmp_path, "learner", "paper", (LS.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.live.json"))
     clock = SimClock(LS.BOOT)
     view = SynthView((LS.BTC,), LS.BOOT - timedelta(days=1), LS.BOOT + timedelta(days=1), clock=None)
     eng = build_engine(cfg, clock=clock, view=view, env={})
@@ -188,7 +188,7 @@ def test_paper_engine_observes_and_backtest_has_no_ladder(tmp_path):
         eng.ledger.close()
     (tmp_path / "bt").mkdir()
     bcfg = apply_overrides(LS.make_cfg(tmp_path / "bt", "learner", "paper", (LS.BTC,), 1000.0,
-                                       veto_config=str(ROOT / "config" / "veto.json")), mode="backtest", veto_mode="off")
+                                       veto_config=str(ROOT / "config" / "veto.live.json")), mode="backtest", veto_mode="off")
     beng = build_engine(bcfg, clock=SimClock(LS.BOOT), view=view, env={})
     try:
         assert beng.ladder is None and beng.gate.ladder is None

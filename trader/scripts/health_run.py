@@ -33,7 +33,6 @@ STATUS_MAX_BYTES = 2_000_000
 PING_MAX_AGE_S = 120  # docs/motor/05 8.2: ping_ok = (simdi - loop_at) <= 120 sn
 DEFAULT_BOTS = ("learner",)
 BOTS = DEFAULT_BOTS   # geriye uyum; calisma zamani listesi: bots_from_env(env)
-DEFAULT_VETO_MAX_AGE_S = 5400
 _ROOT = _HERE.parent
 _TF_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}
 
@@ -50,37 +49,6 @@ def bots_from_env(env) -> tuple[str, ...]:
     raw = (env.get("HEALTH_BOTS") or "").strip()
     bots = tuple(dict.fromkeys(b for b in (x.strip() for x in raw.split(",")) if b))
     return bots or DEFAULT_BOTS
-
-
-def veto_file_from_env(env) -> str:
-    """VETO_FILE; yoksa config/veto.json `veto_path` (goreli -> repo koku), o da okunamazsa shared/veto/veto.json."""
-    v = (env.get("VETO_FILE") or "").strip()
-    if v:
-        return v
-    rel = "shared/veto/veto.json"
-    try:
-        with open(_ROOT / "config" / "veto.json", encoding="utf-8") as f:
-            p = json.load(f).get("veto_path")
-        if isinstance(p, str) and p:
-            rel = p
-    except (OSError, ValueError, AttributeError):
-        pass
-    return rel if os.path.isabs(rel) else str(data_root(env) / rel)
-
-
-def veto_max_age_from_env(env) -> int:
-    try:
-        n = int(str(env.get("VETO_MAX_AGE_S") or "").strip())
-    except ValueError:
-        return DEFAULT_VETO_MAX_AGE_S
-    return n if n > 0 else DEFAULT_VETO_MAX_AGE_S
-
-
-def probe_veto_mtime(path: str):
-    try:
-        return datetime.fromtimestamp(os.stat(path).st_mtime, tz=timezone.utc)
-    except OSError:
-        return None
 
 
 def _env_num(env, name, cast, default, *, minimum=0):
@@ -100,7 +68,6 @@ def make_cfg(env) -> H.HealthConfig:
     import dataclasses
     return dataclasses.replace(H.DEFAULT_CFG, require_bots=bots_from_env(env),
                                drift_check_enabled=drift_enabled_from_env(env),
-                               veto_max_age_s=veto_max_age_from_env(env), veto_strict=True,
                                naked_alarm_s=_env_num(env, "NAKED_ALARM_S", float, H.DEFAULT_CFG.naked_alarm_s),
                                exchange_unreachable_s=_env_num(env, "EXCHANGE_UNREACH_S", int,
                                                                H.DEFAULT_CFG.exchange_unreachable_s, minimum=1))
@@ -828,7 +795,6 @@ def collect(env: dict, state: dict, now: datetime, *, deadline: float = 0.0) -> 
         prev_restart_counts=dict(state.get("restart_counts", {})),
         consecutive_restart_runs=dict(state.get("consecutive_restart_runs", {})),
         installed_at=H._from_iso(state.get("installed_at")), last_backup_at=last_backup,
-        veto_file_mtime=probe_veto_mtime(veto_file_from_env(env)),
         pause=pause, prev_pause_holds={b: tuple(v) for b, v in (state.get("pause_holds") or {}).items()})
 
 

@@ -18,6 +18,26 @@ from trader_core import lesson as LS
 from test_lesson_spec import (RUN_DAY, acts, active, env, post_shadow, proposals, ref_cluster_mean,  # noqa: F401
                               rr_env, run_to_end, snapshot_for, status_of)
 
+# DD-12 WP-08: asagidaki testler kaldirilan davranislari (ikiz, golge donem, kanit esikleri/kalibrasyon sarti, haftalik sinir,
+# 'her zaman kullaniciya sorulur', zaman/ikiz tabanli izleyici) sinar; yeni davranis tests/engine/test_dd12_wp08_impl.py ve
+# bagimsiz spec testlerindedir.
+OBSOLETE_DD12_WP08 = {
+    "test_any_cf_evidence_forces_needs_user_in_classification[0]",
+    "test_any_cf_evidence_forces_needs_user_in_classification[1]",
+    "test_counterfactual_support_forces_needs_user_in_classification",
+    "test_route_structural_guard_even_if_classifier_says_auto",
+    "test_service_never_auto_applies_with_counterfactual_support",
+    "test_service_route_forces_needs_user_for_any_verdict[0]",
+    "test_service_route_forces_needs_user_for_any_verdict[1]",
+}
+
+
+@pytest.fixture(autouse=True)
+def _dd12_wp08_obsolete(request):
+    if request.node.name in OBSOLETE_DD12_WP08:
+        pytest.skip("DD-12 WP-08: kaldirilan eski davranis (ikiz/golge/esik/haftalik sinir/zaman-izleyici)")
+
+
 UTC = timezone.utc
 Z90 = 1.2815515655446004
 AS_OF = datetime(2026, 12, 20, tzinfo=UTC)

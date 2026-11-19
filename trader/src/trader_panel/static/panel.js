@@ -402,7 +402,7 @@
       Object.keys(b.services).forEach(function (k) {
         var v = b.services[k], m = el('div', 'mr'), cb = el('div', 'cubuk' + (v.state === 'ok' ? '' : ' k')), i = el('i');
         i.style.width = Math.min(100, v.pct || 0) + '%';
-        add(m, row({veto: 'veto', lesson: 'ders'}[k] || k, usd(v.used_usd) + ' / ' + usd(v.cap_usd) + ' (' + v.state + ')'), add(cb, i));
+        add(m, row({haftalik_ozet: 'haftalık özet', lesson: 'ders'}[k] || k, usd(v.used_usd) + ' / ' + usd(v.cap_usd) + ' (' + v.state + ')'), add(cb, i));
         add(p._body, m);
       });
       if (!b.prices_verified) add(p._body, el('div', 'cip uyari', 'Fiyatlar doğrulanmadı'));

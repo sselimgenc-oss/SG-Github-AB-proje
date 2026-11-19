@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Esik kalibrasyonu (docs/ders-spec.md 7.3): backtest yeniden oynatma defterlerinde kural vekilini calistirir.
 
-`python3 -I scripts/lesson_calibrate.py --backtest-ledger PATH --twin-backtest-ledger PATH --out config/lesson.json
+`python3 -I scripts/lesson_calibrate.py --backtest-ledger PATH --out config/lesson.json
 [--seed N] [--config PATH] [--B 1000]`. LLM ve butce kullanilmaz; hicbir parametre degistirilmez; uretim defteri
 kullanilmaz (yalniz verilen yeniden oynatma defterleri SALT OKUNUR acilir). Cikti: `--out` yapilandirmasina esikler ve
-`calibration` nesnesi; `ok=false` ise esikler en siki hucreye ayarlanir ama otomatik uygulama kapali kalir.
+`calibration` nesnesi (BILGI; DD-12 WP-08: otomatik uygulamanin on sarti degildir, esikleri yapilandirmaya yazmaz).
 M1 geri alma esigi (`monitor_margin_r`=0.3 R, `monitor_z`=1.0: diff <= -0.3R ve z <= -1) bu betikle kalibre edilir
 (`yanlis_geri_alma` <= %15, `geri_alma_tespit` >= %70 olcutleri; spec 7.3.4/7.3.6): sonuc dosyasi yoksa ya da
 `ok=false` ise otomatik uygulama baslamaz (gölge donem bitse bile; Revizyon 3).
@@ -30,7 +30,8 @@ from trader_core import lesson as LS  # noqa: E402
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="lesson_calibrate.py")
     ap.add_argument("--backtest-ledger", required=True)
-    ap.add_argument("--twin-backtest-ledger")
+    ap.add_argument("--apply-thresholds", action="store_true",
+                    help="(eski) kalibre esikleri yapilandirmaya da yaz; varsayilan: yalniz bilgi (esiksiz kagit)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--config")
@@ -49,19 +50,10 @@ def main(argv=None) -> int:
     except L.LedgerError as e:
         print(f"yeniden oynatma defteri acilamadi: {e}", file=sys.stderr)
         return 1
-    twin = None
-    if args.twin_backtest_ledger:
-        try:
-            twin = L.open_ledger(args.twin_backtest_ledger, "twin", create=False, read_only=True, migrate=False)
-        except L.LedgerError as e:
-            print(f"ikiz yeniden oynatma defteri acilamadi: {e}", file=sys.stderr)
-            return 1
     try:
-        cal = LS.calibrate(led, twin, cfg, seed=args.seed, B=args.B)
+        cal = LS.calibrate(led, None, cfg, seed=args.seed, B=args.B)       # ikiz yok (DD-12 WP-07/08)
     finally:
         led.close()
-        if twin is not None:
-            twin.close()
     cd = cal.to_dict()
     out_path = Path(args.out)
     base: dict = {}
@@ -70,8 +62,9 @@ def main(argv=None) -> int:
             base = json.loads(out_path.read_text(encoding="utf-8"))
         except ValueError:
             base = {}
-    for k in LS._CAL_NUM:
-        base[k] = cd[k]
+    if args.apply_thresholds:                       # DD-12 WP-08: kalibrasyon bilgi icindir, esikleri geri acmaz
+        for k in LS._CAL_NUM:
+            base[k] = cd[k]
     base["calibration"] = cd
     fd, tmp = tempfile.mkstemp(dir=str(out_path.parent or "."), prefix=".lesson-cal-")
     try:

@@ -97,7 +97,7 @@ def test_module_units_have_workingdirectory_and_pythonpath(rendered):
 def test_environment_files_are_created_by_install(rendered):
     t = install_text()
     created = set(re.findall(r'copy_env "[^"]+"\s+(/etc/trader-[\w-]+\.env)', t))
-    assert len(created) == 8, created            # WP-B8: + /etc/trader-testnet.env; DD-9: + /etc/trader-live.env
+    assert len(created) == 7, created            # WP-B8: + /etc/trader-testnet.env; DD-9: + /etc/trader-live.env; DD-12 WP-06a: - trader-veto.env
     assert "/etc/trader-live.env" in created
     assert "/etc/trader-testnet.env" in created
     assert "/etc/trader-veto-hmac.env" in created
@@ -142,7 +142,7 @@ def test_restart_semantics_match_exit_codes():
     fd = dict(unit_kv((DEPLOY / "trader-feed.service").read_text(encoding="utf-8")))
     assert eng["RestartPreventExitStatus"].split() == [str(EXIT_STARTUP_GATE), "8"] == ["7", "8"]     # DD-8: 8 = kalici ret (damga vb.)
     assert fd["RestartPreventExitStatus"].split() == [str(F.EXIT_BAN), str(F.EXIT_GEOBLOCK)] == ["3", "6"]
-    for u in ("trader-engine@.service", "trader-feed.service", "trader-telegram.service", "trader-veto.service",
+    for u in ("trader-engine@.service", "trader-feed.service", "trader-telegram.service",
               "trader-lesson.service", "trader-health.service", "trader-backup.service", "trader-telegram-report.service",
               "trader-counterfactual@.service"):
         assert "OnFailure=trader-health-fail@%n.service" in (DEPLOY / u).read_text(encoding="utf-8"), u

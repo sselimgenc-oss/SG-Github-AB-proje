@@ -187,8 +187,8 @@ class TestConfig:
         write_cfg(tmp_path, **over)
 
     def test_repo_config_file_matches_spec(self):
-        p = ROOT / "config" / "veto.json"
-        assert p.exists(), "config/veto.json missing"
+        p = ROOT / "config" / "veto.live.json"
+        assert p.exists(), "config/veto.live.json missing"
         V.load_config(str(p))
         d = json.loads(p.read_text())
         assert d["model"] and d["ttl_s"] == 2700 and d["veto_path"] == "shared/veto/veto.json"
@@ -1210,13 +1210,13 @@ def test_veto_module_is_stdlib_only():
 # =========================================================================== budget helpers
 BUDGET_JSON = {
     "version": 1, "db_path": "BUDGET.sqlite",
-    "daily_cap_usd": {"veto": 0.25, "lesson": 0.10}, "monthly_cap_usd": 10.0, "monthly_warn_usd": 5.0,
+    "daily_cap_usd": {"haftalik_ozet": 0.25, "lesson": 0.10}, "monthly_cap_usd": 10.0, "monthly_warn_usd": 5.0,
     "warn_fraction": 0.70, "prepaid_credit_usd": 10.0, "credit_start_ts": "2026-11-16T00:00:00.000Z",
     "credit_low_usd": 3.0, "price_safety_factor": 1.0, "prices_verified_on": None, "batch_multiplier": 0.5,
-    "api_key_env": {"veto": "ANTHROPIC_API_KEY_VETO", "lesson": "ANTHROPIC_API_KEY_LESSON"},
-    "reservation_ttl_s": {"veto": 600, "lesson": 108000},
+    "api_key_env": {"haftalik_ozet": "ANTHROPIC_API_KEY_HAFTALIK_OZET", "lesson": "ANTHROPIC_API_KEY_LESSON"},
+    "reservation_ttl_s": {"haftalik_ozet": 600, "lesson": 108000},
     "retry": {"max_retries": 3, "base_s": 2.0, "factor": 2.0, "max_sleep_s": 20.0, "jitter": 0.2,
-              "deadline_s": {"veto": 60, "lesson": 300}},
+              "deadline_s": {"haftalik_ozet": 60, "lesson": 300}},
     "prices_usd_per_mtok": {
         "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_write_5m": 0.125, "cache_write_1h": 0.20, "cache_read": 0.01},
         "claude-sonnet-5-5": {"input": 2.00, "output": 10.00, "cache_write_5m": 2.50, "cache_write_1h": 4.00, "cache_read": 0.10},
@@ -1250,17 +1250,6 @@ def micro(usd: float) -> int:
 
 # =========================================================================== 10. cost estimate
 class TestCost:
-    def test_13_1_estimate_and_actual(self, tmp_path):
-        g, _ = make_guard(tmp_path)
-        est = g.estimate_cost("claude-haiku-5-5", input_tokens=4800, max_output_tokens=1200, cache_write_1h_tokens=1500)
-        assert micro(est) == 1380 and est == pytest.approx(0.00138)
-        grant = g.authorize("veto", est)
-        assert isinstance(grant, B.Grant)
-        st = g.record("veto", grant, B.Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500), "claude-haiku-5-5")
-        assert st.ok and st.cost_micro == 895 and st.overrun_micro == 0
-        used = g.status().services["veto"].used_usd
-        assert used == pytest.approx(0.000895)
-
     def test_section10_table(self, tmp_path):
         g, _ = make_guard(tmp_path)
         m = lambda **u: g.estimate_cost("claude-haiku-5-5", input_tokens=0, max_output_tokens=0, **u)  # noqa: E731
@@ -1274,40 +1263,6 @@ class TestCost:
         assert 96 * 1380 == 132_480 < 250_000 * 0.53
         assert est(cache_write_1h_tokens=1500) == 300
 
-    def test_day_total_with_cache_pattern_within_cap(self, tmp_path):
-        g, clock = make_guard(tmp_path)
-        est = g.estimate_cost("claude-haiku-5-5", input_tokens=4800, max_output_tokens=1200, cache_write_1h_tokens=1500)
-        total = 0
-        for i in range(48):
-            clock.t = datetime(2026, 12, 1, 0, 20, tzinfo=UTC) + timedelta(minutes=30 * i)
-            grant = g.authorize("veto", est)
-            assert isinstance(grant, B.Grant), f"call {i} denied: {grant}"
-            u = B.Usage(input_tokens=4800, output_tokens=800, cache_write_1h_tokens=1500) if i == 0 else \
-                B.Usage(input_tokens=4800, output_tokens=800, cache_read_tokens=1500)
-            s = g.record("veto", grant, u, "claude-haiku-5-5")
-            assert s.ok
-            total += s.cost_micro
-        assert total == 43_245
-        sv = g.status().services["veto"]
-        assert sv.used_usd == pytest.approx(0.043245) and sv.used_usd < 0.25 * 0.21 and sv.state == "ok"
-        assert not [e for e in g.pending_events() if e.kind in ("daily_warn_70", "daily_stopped_100")]
-
-    def test_worst_case_96_estimates_fit(self, tmp_path):
-        g, _ = make_guard(tmp_path)
-        est = g.estimate_cost("claude-haiku-5-5", input_tokens=4800, max_output_tokens=1200, cache_write_1h_tokens=1500)
-        for i in range(96):
-            assert isinstance(g.authorize("veto", est), B.Grant), i
-        assert g.status().services["veto"].used_usd == pytest.approx(0.13248)
-
-    def test_13_2_daily_cap_edge(self, tmp_path):
-        g, _ = make_guard(tmp_path)
-        assert isinstance(g.authorize("veto", 0.248), B.Grant)
-        assert isinstance(g.authorize("veto", 0.00138), B.Grant)  # 249 380
-        g2, _ = make_guard(tmp_path / "b") if (tmp_path / "b").mkdir() is None else (None, None)
-        assert isinstance(g2.authorize("veto", 0.249), B.Grant)
-        den = g2.authorize("veto", 0.00138)  # 250 380 > 250 000
-        assert isinstance(den, B.Denial) and den.reason == "daily_cap"
-
     def test_unknown_model_estimate_raises(self, tmp_path):
         g, _ = make_guard(tmp_path)
         with pytest.raises(B.BudgetConfigError):
@@ -1315,7 +1270,7 @@ class TestCost:
 
     def test_model_in_repo_budget_config(self):
         d = json.loads((ROOT / "config" / "budget.json").read_text())
-        vcfg = ROOT / "config" / "veto.json"
+        vcfg = ROOT / "config" / "veto.live.json"
         if vcfg.exists():
             assert json.loads(vcfg.read_text())["model"] in d["prices_usd_per_mtok"]
 
@@ -1446,300 +1401,37 @@ def used_micro(w):
     return micro(w.guard.status().services["veto"].used_usd)
 
 
-class TestRunnerBudgetIntegration:
-    def test_success_order_and_file(self, world, monkeypatch):
-        rc = _run_runner(world, [good_reply({("ETH/USDT", "short"): ("funding asiri", 30)})], monkeypatch)
+class TestRunnerDisabled:
+    """DD-12 WP-06a: kagit botta LLM veto kaldirildi. Eski runner testleri (butce entegrasyonu, yazma, yeniden deneme)
+    emekliye ayrildi; runner artik temiz cikan bir 'devre disi' betigidir. Veto modulu testnet/canli icin kalir."""
+
+    def test_runner_exits_cleanly_with_disabled_log(self, tmp_path, caplog):
+        mod = _load_runner()
+        with caplog.at_level("INFO"):
+            rc = mod.main(["--config", str(tmp_path / "x.json"), "--root", str(tmp_path)])
         assert rc == 0
-        n = names(world.calls)
-        assert n.index("estimate_cost") < n.index("authorize") < n.index("client") < n.index("record")
-        assert "release" not in n and "report_error" not in n
-        st = V.read_veto_file(str(world.vpath), KEY, world.clock(), world.cfg)
-        assert st.ok and V.lookup(st, "ETH/USDT", "short", world.clock()).status == "blocked"
-        assert V.lookup(st, "BTC/USDT", "long", world.clock()).status == "allowed"
-        doc = json.loads(world.vpath.read_text())
-        assert doc["context_sha256"] == V.context_sha256(V.build_context(world.snap))
-        assert doc["generated_at"] == iso(world.clock())
-        assert doc["sig"] == ref_sig(doc)
+        assert "veto devre disi" in caplog.text
+        assert list(tmp_path.iterdir()) == []                      # dosya yazmaz
 
-    def test_authorize_uses_spec_upper_bound_estimate(self, world, monkeypatch):
-        _run_runner(world, [good_reply()], monkeypatch)
-        est_calls = [c for c in world.calls if c[0] == "estimate_cost"]
-        assert est_calls
-        a, k, r = est_calls[0][1], est_calls[0][2], est_calls[0][3]
-        merged = dict(zip(("model", "input_tokens", "max_output_tokens"), a)); merged.update(k)
-        assert merged["model"] == world.cfg.model and merged["input_tokens"] == 4800
-        assert merged["max_output_tokens"] == 1200 and merged.get("cache_write_1h_tokens") == 1500
-        assert micro(r) == 1380
-        auth = [c for c in world.calls if c[0] == "authorize"][0]
-        assert auth[1][0] == "veto" and auth[1][1] == pytest.approx(0.00138)
-
-    def test_record_settles_actual_usage(self, world, monkeypatch):
-        _run_runner(world, [good_reply(usage=mk_usage(4800, 800, 1500, 0))], monkeypatch)
-        assert used_micro(world) == 895
-
-    def test_usage_total_cache_creation_goes_to_1h(self, world, monkeypatch):
-        _run_runner(world, [good_reply(usage=mk_usage(4800, 800, 0, cc_total=1500))], monkeypatch)
-        rec = [c for c in world.calls if c[0] == "record"][0]
-        u = rec[1][2] if len(rec[1]) > 2 else rec[2]["actual_usage"]
-        assert u.cache_write_1h_tokens == 1500 and u.cache_write_5m_tokens == 0
-        assert used_micro(world) == 1180
-
-    def test_usage_breakdown_split(self, world, monkeypatch):
-        _run_runner(world, [good_reply(usage=mk_usage(4800, 800, 0, cc_5m=100, cc_1h=1400))], monkeypatch)
-        rec = [c for c in world.calls if c[0] == "record"][0]
-        u = rec[1][2] if len(rec[1]) > 2 else rec[2]["actual_usage"]
-        assert (u.cache_write_5m_tokens, u.cache_write_1h_tokens) == (100, 1400)
-
-    def test_call_parameters_and_cached_system(self, world, monkeypatch):
-        _run_runner(world, [good_reply()], monkeypatch)
-        kw = [c for c in world.calls if c[0] == "client"][0][1]
-        assert kw["model"] == world.cfg.model and "temperature" not in kw and kw["max_tokens"] == 1200
-        assert kw["output_config"] == {"effort": "low"} and kw["thinking"] == {"type": "disabled"}
-        sysb = kw["system"]
-        assert isinstance(sysb, list) and sysb[0]["type"] == "text"
-        assert sysb[0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
-        assert len(kw["messages"]) == 1 and kw["messages"][0]["role"] == "user"
-        parts = V.build_prompt(world.cfg, V.build_context(world.snap), PAIRS)
-        assert sysb[0]["text"] == parts.system and kw["messages"][0]["content"] == parts.user
-
-    def test_static_system_identical_across_runs(self, world, monkeypatch):
-        _run_runner(world, [good_reply()], monkeypatch)
-        world.snap = snapshot(regime="volatile")
-        world.market = FakeMarket(world.snap)
-        world.clock.advance(minutes=30)
-        _run_runner(world, [good_reply()], monkeypatch)
-        sys_texts = [c[1]["system"][0]["text"] for c in world.calls if c[0] == "client"]
-        users = [c[1]["messages"][0]["content"] for c in world.calls if c[0] == "client"]
-        assert len(sys_texts) == 2 and sys_texts[0] == sys_texts[1] and users[0] != users[1]
-
-    def test_denial_daily_cap_no_call_unavailable_doc_exit_11(self, world, monkeypatch):
-        assert isinstance(world.guard.authorize("veto", 0.249), B.Grant)  # 249 000 kullanildi
-        rc = _run_runner(world, [good_reply()], monkeypatch)
-        assert rc == 11 and world.client.n == 0
-        doc = json.loads(world.vpath.read_text())
-        assert doc["status"] == "unavailable" and doc["reason"] == "budget_daily_cap" and doc["decisions"] == []
-        assert doc["sig"] == ref_sig(doc)
-        st = V.read_veto_file(str(world.vpath), KEY, world.clock(), world.cfg)
-        lk = V.lookup(st, "BTC/USDT", "long", world.clock())
-        assert (lk.status, lk.reason, lk.blocks) == ("missing", "unavailable:budget_daily_cap", True)
-
-    def test_denial_overwrites_older_allow_file(self, world, monkeypatch):
-        assert _run_runner(world, [good_reply()], monkeypatch) == 0
-        world.clock.advance(minutes=30)
-        assert isinstance(world.guard.authorize("veto", 0.249), B.Grant)
-        assert _run_runner(world, [good_reply()], monkeypatch) == 11
-        st = V.read_veto_file(str(world.vpath), KEY, world.clock(), world.cfg)
-        assert not st.ok and V.lookup(st, "BTC/USDT", "long", world.clock()).blocks
-
-    def test_just_under_cap_still_calls(self, world, monkeypatch):
-        assert isinstance(world.guard.authorize("veto", 0.248), B.Grant)
-        assert _run_runner(world, [good_reply()], monkeypatch) == 0 and world.client.n == 1
-
-    def test_provider_limit_stops_and_blocks_further_calls(self, world, monkeypatch):
-        err = FakeAPIError(400, "invalid_request_error", "You have reached your specified API usage limits.")
-        rc = _run_runner(world, [err], monkeypatch)
-        assert rc == 11 and world.client.n == 1
-        doc = json.loads(world.vpath.read_text())
-        assert doc["status"] == "unavailable" and doc["reason"] == "budget_provider_blocked"
-        ra = [c for c in world.calls if c[0] == "report_error"][0]
-        assert ra[3].kind == "stop"
-        assert isinstance(world.guard.authorize("veto", 0.001), B.Denial)
-        n0 = world.client.n
-        world.clock.advance(minutes=30)
-        assert _run_runner(world, [good_reply()], monkeypatch) == 11 and world.client.n == 0 and n0 == 1
-
-    def test_429_enforced_spend_limit_stops(self, world, monkeypatch):
-        err = FakeAPIError(429, "rate_limit_error", "limit", code="enforced_spend_limit_reached")
-        assert _run_runner(world, [err], monkeypatch) == 11 and world.client.n == 1
-        assert json.loads(world.vpath.read_text())["reason"] == "budget_provider_blocked"
-
-    def test_transient_error_keeps_old_file_exit_10(self, world, monkeypatch):
-        assert _run_runner(world, [good_reply()], monkeypatch) == 0
-        before = world.vpath.read_bytes()
-        world.clock.advance(minutes=30)
-        rc = _run_runner(world, [FakeAPIError(529, "overloaded_error", "overloaded")], monkeypatch)
-        assert rc == 10
-        assert world.vpath.read_bytes() == before  # eski dosya ezilmedi, yeniden imzalanmadi
-        assert 2 <= world.client.n <= 4  # 1 + en fazla max_retries(3)
-        assert "release" in names(world.calls)  # yanit alindi (5xx govdesi) -> release
-
-    def test_transient_error_then_success_single_authorize(self, world, monkeypatch):
-        rc = _run_runner(world, [FakeAPIError(529, "overloaded_error", "x"), good_reply()], monkeypatch)
-        assert rc == 0 and world.client.n == 2
-        assert names(world.calls).count("authorize") == 1 and names(world.calls).count("record") == 1
-        assert world.sleeps and all(s <= 20.0 * 1.2 + 1e-6 for s in world.sleeps)
-
-    def test_no_response_error_does_not_release(self, world, monkeypatch):
-        rc = _run_runner(world, [TimeoutError("timed out"), TimeoutError("timed out"), TimeoutError("t"), TimeoutError("t")], monkeypatch)
-        assert rc == 10 and not world.vpath.exists()
-        assert "release" not in names(world.calls)
-        # tahmin sayili kalir (eksik sayim yok)
-        assert used_micro(world) == 1380
-
-    def test_connection_error_no_release_keeps_old_file(self, world, monkeypatch):
-        assert _run_runner(world, [good_reply()], monkeypatch) == 0
-        before = world.vpath.read_bytes()
-        world.clock.advance(minutes=30)
-        assert _run_runner(world, [ConnectionError("reset")], monkeypatch) == 10
-        assert world.vpath.read_bytes() == before and "release" not in names(world.calls[len(world.calls) - 8:]) or True
-
-    def test_answered_hard_error_releases(self, world, monkeypatch):
-        rc = _run_runner(world, [FakeAPIError(400, "invalid_request_error", "bad param")], monkeypatch)
-        assert rc == 10 and not world.vpath.exists()
-        assert "release" in names(world.calls) and world.client.n == 1
-        assert used_micro(world) == 0
-
-    @pytest.mark.parametrize("status", [401, 403, 404])
-    def test_auth_errors_fail_with_release(self, world, monkeypatch, status):
-        rc = _run_runner(world, [FakeAPIError(status, "authentication_error", "nope")], monkeypatch)
-        assert rc == 10 and world.client.n == 1 and used_micro(world) == 0
-
-    def test_record_happens_before_parsing_bad_output(self, world, monkeypatch):
-        rc = _run_runner(world, [Reply("not json at all", usage=mk_usage())], monkeypatch)
-        assert rc == 10
-        n = names(world.calls)
-        assert "record" in n
-        assert used_micro(world) >= 895 * 1  # faturalandi (en az bir kayit)
-
-    def test_parse_failure_one_retry_with_new_authorize(self, world, monkeypatch):
-        rc = _run_runner(world, [Reply("garbage"), good_reply()], monkeypatch)
-        assert rc == 0 and world.client.n == 2
-        n = names(world.calls)
-        assert n.count("authorize") == 2 and n.count("record") == 2
-        assert V.read_veto_file(str(world.vpath), KEY, world.clock(), world.cfg).ok
-
-    def test_parse_failure_twice_exit_10_no_file(self, world, monkeypatch):
-        rc = _run_runner(world, [Reply("garbage"), Reply('{"v":1,"decisions":[]}')], monkeypatch)
-        assert rc == 10 and world.client.n == 2 and not world.vpath.exists()
-
-    def test_parse_failure_keeps_existing_file(self, world, monkeypatch):
-        assert _run_runner(world, [good_reply()], monkeypatch) == 0
-        before = world.vpath.read_bytes()
-        world.clock.advance(minutes=30)
-        assert _run_runner(world, [Reply("oops")], monkeypatch) == 10
-        assert world.vpath.read_bytes() == before
-
-    def test_max_tokens_truncation_rejected_even_if_json_valid(self, world, monkeypatch):
-        rc = _run_runner(world, [Reply(model_json(), stop_reason="max_tokens")], monkeypatch)
-        assert rc == 10 and world.client.n == 2 and not world.vpath.exists()
-
-    def test_max_tokens_then_valid(self, world, monkeypatch):
-        rc = _run_runner(world, [Reply(model_json(), stop_reason="max_tokens"), good_reply()], monkeypatch)
-        assert rc == 0 and world.client.n == 2
-
-    def test_model_trying_to_size_trades_produces_no_file(self, world, monkeypatch):
-        evil = mutate_rows(lambda d: d["decisions"][0].update(size=5, leverage=20), blocks={})
-        rc = _run_runner(world, [Reply(evil)], monkeypatch)
-        assert rc == 10 and not world.vpath.exists()
-
-    def test_missing_api_key_no_call_exit_12(self, world, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY_VETO")
-        rc = _run_runner(world, [good_reply()], monkeypatch, env={k: v for k, v in os.environ.items()})
-        assert rc == 12 and world.client.n == 0 and not world.vpath.exists()
-        assert "authorize" not in names(world.calls) or True
-
-    def test_missing_hmac_key_no_call_exit_12(self, world, monkeypatch):
-        monkeypatch.delenv(HMAC_ENV)
-        rc = _run_runner(world, [good_reply()], monkeypatch, env={k: v for k, v in os.environ.items()})
-        assert rc == 12 and world.client.n == 0 and not world.vpath.exists()
-
-    def test_unknown_model_in_budget_table_exit_12_no_call(self, tmp_path, monkeypatch):
-        w = World()
-        w.tmp = tmp_path
-        w.cfg = write_cfg(tmp_path, model="claude-haiku-9-9")
-        w.cfg_path = tmp_path / "veto_cfg.json"
-        w.vpath = Path(w.cfg.veto_path)
-        w.guard, w.clock = make_guard(tmp_path)
-        w.calls = []
-        w.budget = RecBudget(w.guard, w.calls)
-        w.snap = snapshot()
-        w.market = FakeMarket(w.snap)
-        w.sleeps = []
-        assert _run_runner(w, [good_reply()], monkeypatch) == 12
-        assert w.client.n == 0 and not w.vpath.exists()
-
-    def test_api_key_never_leaks(self, world, monkeypatch, capsys, caplog):
-        caplog.set_level("DEBUG")
-        leak = FakeAPIError(500, "api_error", f"upstream failure for key {API_KEY}")
-        try:
-            _run_runner(world, [leak], monkeypatch)
-        except Exception as e:  # noqa: BLE001
-            assert API_KEY not in str(e) and "sk-ant-api03-FAKE" not in repr(e)
-        out = capsys.readouterr()
-        assert API_KEY not in out.out + out.err + caplog.text
-        assert API_KEY not in "".join(r.getMessage() for r in caplog.records)
-        for f in world.tmp.rglob("*"):
-            if f.is_file():
-                assert API_KEY.encode() not in f.read_bytes(), f"key leaked into {f}"
-        w2_ok = _run_runner(world, [good_reply()], monkeypatch)
-        assert w2_ok in (0, 10, 11)
-        for f in world.tmp.rglob("*"):
-            if f.is_file():
-                assert API_KEY.encode() not in f.read_bytes()
-
-    def test_success_log_line(self, world, monkeypatch, capsys):
-        assert _run_runner(world, [good_reply({("BTC/USDT", "long"): ("r", 20)})], monkeypatch) == 0
-        o = capsys.readouterr()
-        rows = []
-        for line in (o.out + "\n" + o.err).splitlines():
-            line = line.strip()
-            if line.startswith("{"):
-                try:
-                    rows.append(json.loads(line))
-                except ValueError:
-                    pass
-        row = next((r for r in rows if "context_sha256" in r), None)
-        assert row is not None, "no one-line JSON log with context_sha256"
-        assert row.get("blocked") == 1 and "cost_micro" in row and "generated_at" in row
-
-    def test_gap_between_runs_does_not_resign_old_decisions(self, world, monkeypatch):
-        assert _run_runner(world, [good_reply({("BTC/USDT", "long"): ("r", 20)})], monkeypatch) == 0
-        first = json.loads(world.vpath.read_text())
-        world.clock.advance(minutes=30)
-        assert _run_runner(world, [FakeAPIError(503, "api_error", "x")], monkeypatch) == 10
-        assert json.loads(world.vpath.read_text()) == first  # generated_at ve sig eski
+    def test_runner_makes_no_api_or_budget_calls(self):
+        src = (ROOT / "scripts" / "veto_run.py").read_text()
+        assert "import anthropic" not in src
+        assert "BudgetGuard" not in src and "authorize" not in src
 
 
 # =========================================================================== 11. scheduling
 class TestSchedulingFiles:
-    def read(self, rel):
-        p = ROOT / rel
-        assert p.exists(), f"{rel} missing (implementation not ready)"
-        return p.read_text()
-
-    def test_timer(self):
-        t = self.read("deploy/trader-veto.timer")
-        assert re.search(r"^OnCalendar=\*:20,50:00\s*$", t, re.M)
-        assert re.search(r"^AccuracySec=15s\s*$", t, re.M)
-        assert re.search(r"^Persistent=false\s*$", t, re.M)
-
-    def test_service(self):
-        s = self.read("deploy/trader-veto.service")
-        for line in ("Type=oneshot", "EnvironmentFile=/etc/trader-veto.env", "TimeoutStartSec=120",
-                     "ProtectSystem=strict", "NoNewPrivileges=true", "PrivateTmp=true",
-                     "OnFailure=trader-health-fail@%n.service", "SuccessExitStatus=10 11"):
-            assert re.search(r"^" + re.escape(line) + r"\s*$", s, re.M), line
-        assert "ReadWritePaths=" in s and "MemoryMax=" in s
-        assert "shared/veto" in s
-
-    def test_env_example_has_names_no_secrets(self):
-        e = self.read("deploy/trader-veto.env.example")
-        assert "ANTHROPIC_API_KEY_VETO" in e and "TRADER_VETO_HMAC_KEY" not in re.sub(r"#.*", "", e)   # HMAC ayri dosyada (OPEN-1)
-        h = self.read("deploy/trader-veto-hmac.env.example")
+    def test_veto_units_and_env_example_removed(self):
+        """DD-12 WP-06a: veto birimleri ve trader-veto.env.example dagitimdan kalkti (HMAC ornegi testnet/canli icin kalir)."""
+        for rel in ("deploy/trader-veto.timer", "deploy/trader-veto.service", "deploy/trader-veto.env.example",
+                    "config/veto.json"):
+            assert not (ROOT / rel).exists(), rel
+        h = (ROOT / "deploy/trader-veto-hmac.env.example").read_text()
         assert "TRADER_VETO_HMAC_KEY=" in h and "ANTHROPIC" not in re.sub(r"#.*", "", h)
-        assert not re.search(r"sk-ant-[A-Za-z0-9_-]{10,}", e + h)
+        assert not re.search(r"sk-ant-[A-Za-z0-9_-]{10,}", h)
 
-    def test_schedule_arithmetic_slots_before_candle_close(self):
-        runs = [20, 50]
-        closes = [0, 30]
-        for r in runs:
-            assert any((c - r) % 60 == 10 or (c - r) % 60 == 40 for c in closes)
-        assert (50 - 20) == 30 and 30 * 2 == 60  # 30 dk aralik; 48 cagri/gun
-        assert 48 == 24 * len(runs)
-
-    def test_ttl_covers_one_missed_slot_not_two(self):
-        assert 30 * 60 < 2700 < 60 * 60
-        assert 2700 >= 40 * 60 and 2700 < 70 * 60
+    def test_paper_engine_unit_does_not_load_veto_hmac(self):
+        assert "trader-veto-hmac" not in (ROOT / "deploy/trader-engine@.service").read_text()
 
 
 # =========================================================================== Section 11 (skipped)

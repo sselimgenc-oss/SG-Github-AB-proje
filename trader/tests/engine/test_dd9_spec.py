@@ -434,7 +434,8 @@ def test_u_09_paper_engine_unit_differs_from_base_commit_only_by_dd12_changes():
     if base is None:
         pytest.skip("git/taban commit yok")
     want = (base.replace("--bot %i --config-dir config", "--bot %i --env paper --config-dir config")
-            .replace("MemoryHigh=280M", "MemoryHigh=600M").replace("MemoryMax=350M", "MemoryMax=750M"))
+            .replace("MemoryHigh=280M", "MemoryHigh=600M").replace("MemoryMax=350M", "MemoryMax=750M")
+            .replace("EnvironmentFile=/etc/trader-veto-hmac.env\n", ""))      # DD-12 WP-06a: kagitta veto yok
     strip = lambda t: [ln for ln in t.splitlines() if not ln.lstrip().startswith("#")]  # noqa: E731
     assert strip((DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")) == strip(want)
 
@@ -654,11 +655,10 @@ def test_r_01_four_root_units_run_from_root_tree(tmp_path):
         assert f"Environment=TRADER_DATA_ROOT={SERVER_TRADER_DIR}" in rendered[name].splitlines(), name
 
 
-def test_r_02_only_the_four_units_run_as_root_and_veto_runs_as_trader():
+def test_r_02_only_the_four_units_run_as_root_and_veto_unit_is_gone():
     roots = {p.name for p in DEPLOY.glob("*.service") if unit_get(read(p), "User") == ["root"]}
     assert roots == set(ROOT_UNITS)
-    veto = read(DEPLOY / "trader-veto.service")
-    assert unit_get(veto, "User") == ["trader"] and unit_get(veto, "Group") == ["trader"]
+    assert not (DEPLOY / "trader-veto.service").exists()           # DD-12 WP-06a: veto birimi kaldirildi
 
 
 def _lock_blocks(path: Path) -> dict[str, list[str]]:
@@ -798,7 +798,7 @@ def _no_http_main_args(name, tmp_path):
     return ["daemon"], {"env": {}}
 
 
-@pytest.mark.parametrize("name", ["veto_run", "lesson_run", "telegram_run"])
+@pytest.mark.parametrize("name", ["lesson_run", "telegram_run"])     # DD-12 WP-06a: veto_run artik anahtar okumaz (devre disi betik)
 def test_r_10_script_mains_call_set_nondumpable_exactly_once(tmp_path, monkeypatch, name):
     mod = load_script(name)
     argv, kw = _no_http_main_args(name, tmp_path)

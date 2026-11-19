@@ -253,7 +253,7 @@ def _check_decisions(c: Chain):
     for r in dec:
         assert r["final_action"] in ("entered", "skipped")
         if r["final_action"] == "entered":
-            assert r["skip_reason"] is None and r["veto_status"] == "allowed" and r["risk_allowed"] in (1, True)
+            assert r["skip_reason"] is None and r["veto_status"] == "not_evaluated" and r["risk_allowed"] in (1, True)
             assert r["size_qty"] and r["size_qty"] > 0 and r["leverage"] and r["id"] in by_dec
         else:
             assert r["skip_reason"], r
@@ -267,8 +267,8 @@ def _check_decisions(c: Chain):
 
 
 def test_schema_is_v4(off):   # WP-3 (defter-ek-alanlar-spec): sema 3 -> 4
-    assert L.SCHEMA_VERSION == 5
-    assert off.q("PRAGMA user_version")[0]["user_version"] == 5
+    assert L.SCHEMA_VERSION == 6
+    assert off.q("PRAGMA user_version")[0]["user_version"] == 6
     assert off.decisions() and "ml_score" in off.decisions()[0]          # v3 kolonu
 
 
@@ -313,26 +313,27 @@ def test_killswitch_blocks_new_entries(killed, off):
     _check_decisions(killed)
 
 
-def test_veto_blocked_candidate_is_skipped_with_reason(blocked, off):
+def test_veto_block_is_ignored_in_paper(blocked, off):
+    """DD-12 WP-06a: kagitta veto yok; veto sonucu 'block' olsa da aday girilir, veto hic sorgulanmaz."""
     tgt = blocked.target
     rows = [r for r in blocked.decisions()
             if (r["pair"], r["bar_close_ts"], r["side"]) == (tgt["pair"], tgt["bar_close_ts"], tgt["side"])]
     assert len(rows) == 1
     r = rows[0]
-    assert (r["final_action"], r["skip_reason"], r["veto_status"], r["veto_reason"]) == \
-        ("skipped", "veto_blocked", "blocked", BLOCK_REASON)
-    assert r["risk_allowed"] is None and r["size_qty"] is None and r["id"] not in {t["decision_id"] for t in blocked.trades()}
-    assert any(st == "blocked" for (_p, _s, st) in blocked.veto.lookups)
-    assert blocked.engine.counters().get("skip:veto_blocked", 0) >= 1
+    assert (r["final_action"], r["skip_reason"], r["veto_status"]) == ("entered", None, "not_evaluated")
+    assert r["id"] in {t["decision_id"] for t in blocked.trades()}
+    assert blocked.veto.lookups == []
+    assert blocked.engine.counters().get("skip:veto_blocked", 0) == 0
 
 
-def test_veto_result_file_missing_fails_closed(tmp_path_factory, hist):
+def test_veto_result_file_missing_does_not_block_in_paper(tmp_path_factory, hist):
+    """Eski davranis 'veto yok/eski -> islem yok' kagit yolundan cikti (WP-06a)."""
     c = Chain(tmp_path_factory.mktemp("noveto"), hist, strategy="price_action_v1_ml", ml_mode="off")
     c.veto_path.unlink()
     c.run()
     dec = c.decisions()
-    assert dec and not c.trades() and all(r["final_action"] == "skipped" for r in dec)
-    assert any(r["skip_reason"] == "veto_missing" for r in dec)
+    assert c.trades() and not any(str(r["skip_reason"]).startswith("veto_") for r in dec)
+    assert all(r["veto_status"] == "not_evaluated" for r in dec)
 
 
 # ------------------------------------------------------------------------------------------------ 19d: ML kapsami
@@ -401,7 +402,10 @@ def test_lesson_runs_on_produced_ledger_offline(off, tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0, out
     res = json.loads(out.strip().splitlines()[-1])
-    assert res["status"] in ("skipped_no_data", "no_change", "idle", "needs_user", "applied") and res["run_day"]
+    assert res["status"] in ("skipped_no_data", "skipped_gate", "no_change", "idle", "needs_user", "applied") and res["run_day"]
+    # DD-12 WP-08: esiksiz ders; tiny ledger'da hicbir aday checkpoint'te degil -> skipped_gate/no_candidates
+    if res["status"] == "skipped_gate":
+        assert res["code"] == "no_candidates"
     con = sqlite3.connect(str(tmp_path / "lesson.sqlite"))
     try:
         runs = con.execute("SELECT run_day FROM lesson_runs").fetchall()
@@ -410,7 +414,7 @@ def test_lesson_runs_on_produced_ledger_offline(off, tmp_path, capsys):
         con.close()
     assert runs and ev, "ders calisma kaydi yazilmali"
     # ders defteri DEGISTIRMEDI: sema hala v3, karar/islem sayilari ayni (az islem -> veri yetersiz)
-    assert off.q("PRAGMA user_version")[0]["user_version"] == 5   # DD-12 WP-02: sema 5
+    assert off.q("PRAGMA user_version")[0]["user_version"] == 6   # DD-12 WP-08: sema 6
 
 
 def test_telegram_daily_report_renders_from_ledger(off, tmp_path):

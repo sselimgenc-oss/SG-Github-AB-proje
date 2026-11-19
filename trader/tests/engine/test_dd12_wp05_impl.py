@@ -271,7 +271,7 @@ def _cfg(tmp: Path, pairs):
         PAPER, pairs=tuple(pairs), optional_pairs=("NVDA/USDT",), ml_pairs=("BTC/USDT", "ETH/USDT"),
         clusters=clusters, cost_overrides={"NVDA/USDT": PAPER.cost_overrides["NVDA/USDT"]},
         var_dir=str(tmp / "var"), kill_file=str(tmp / "KILL"), pause_file=str(tmp / "PAUSE"),
-        veto_config=str(ROOT / "config/veto.json"), ml_model_path=str(ROOT / "models/ml1-r03.json"),
+        veto_config=str(ROOT / "config/veto.live.json"), ml_model_path=str(ROOT / "models/ml1-r03.json"),
         market_db=str(tmp / "m.sqlite"), history_dir=str(tmp / "h"),
         cost=dict(fill_model="native", granularity="15m", trigger_source="last"))
 

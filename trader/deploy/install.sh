@@ -378,14 +378,13 @@ REL_DIR="${REL_DIR:-${ROOT_DIR:-/usr/local/lib/trader-root}/releases/${COMMIT:-u
 copy_env "$REL_DIR/deploy/trader-health.env.example"    /etc/trader-health.env    "root:root" 0600
 copy_env "$REL_DIR/deploy/trader-lesson.env.example"    /etc/trader-lesson.env    "root:root" 0600
 copy_env "$REL_DIR/deploy/trader-telegram.env.example"  /etc/trader-telegram.env  "root:root" 0600
-copy_env "$REL_DIR/deploy/trader-veto.env.example"      /etc/trader-veto.env      "root:root" 0600
 copy_env "$REL_DIR/deploy/trader-veto-hmac.env.example" /etc/trader-veto-hmac.env "root:root" 0600
 copy_env "$REL_DIR/deploy/trader-panel-cf.env.example"  /etc/trader-panel-cf.env  "root:root" 0600
 # testnet golge motoru anahtarlari: AYRI dosya (canli anahtar dosyasi degil); anahtarlar bos kalirsa birim acilmaz (WP-B8)
 copy_env "$REL_DIR/deploy/trader-testnet.env.example"   /etc/trader-testnet.env   "root:root" 0600
 # CANLI anahtar dosyasi (DD-9): bos ornekten her kurulumda olusturulur (var olan ezilmez); degerleri kullanici nano ile yazar
 copy_env "$REL_DIR/deploy/trader-live.env.example"      /etc/trader-live.env      "root:root" 0600
-# veto HMAC anahtari: bos ise otomatik uret (ekrana YAZILMAZ); veto birimi imzalar, motor dogrular
+# veto HMAC anahtari (YALNIZ testnet/canli motoru dogrular; kagitta veto yok): bos ise otomatik uret (ekrana YAZILMAZ)
 if ! grep -Eq '^TRADER_VETO_HMAC_KEY=[^[:space:]]+' /etc/trader-veto-hmac.env; then
   HMAC_NEW="$(openssl rand -hex 32)"
   sed -i '/^TRADER_VETO_HMAC_KEY=/d' /etc/trader-veto-hmac.env
@@ -485,6 +484,12 @@ fi
 # ---- 10. servisleri baslat --------------------------------------------------------
 say "Servisler"
 # DD-12 WP-07: ikiz kaldirma. Ikiz birimleri durdurulur ve devre disi birakilir; var/twin SILINMEZ, var/arsiv/twin-<tarih>/ altina tasinir (tekrar calistirmada no-op).
+# DD-12 WP-06a: LLM veto kagit botta kaldirildi. Veto birimleri durdurulur/devre disi birakilir ve birim dosyalari silinir
+# (/etc/trader-veto.env'e dokunulmaz; shared/veto/ okunmaz). Tekrar calistirmada no-op.
+for u in trader-veto.timer trader-veto.service; do
+  systemctl disable --now "$u" >/dev/null 2>&1 || true
+done
+rm -f "${UNIT_DIR}/trader-veto.service" "${UNIT_DIR}/trader-veto.timer"
 for u in trader-engine@twin.service trader-engine-retry@twin.timer trader-counterfactual@twin.timer trader-drift@twin.timer; do
   systemctl disable --now "$u" >/dev/null 2>&1 || true
 done
@@ -549,11 +554,6 @@ else MISSING+=("/etc/trader-telegram.env -> TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_
 if has_value /etc/trader-lesson.env ANTHROPIC_API_KEY_LESSON && [ "$TG_OK" -eq 1 ]; then
   enable_now trader-lesson.timer
 else MISSING+=("/etc/trader-lesson.env  -> ANTHROPIC_API_KEY_LESSON ve Telegram anahtarlari (ders servisi; ikisi de dolu olmadan acilmaz)"); fi
-# veto: Anthropic anahtari VE HMAC anahtari (HMAC'i install.sh uretir)
-if has_value /etc/trader-veto.env ANTHROPIC_API_KEY_VETO && has_value /etc/trader-veto-hmac.env TRADER_VETO_HMAC_KEY; then
-  enable_now trader-veto.timer
-else MISSING+=("/etc/trader-veto.env    -> ANTHROPIC_API_KEY_VETO (veto; HMAC anahtari /etc/trader-veto-hmac.env'e otomatik uretilir)"); fi
-
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
   MISSING+=("/etc/trader-health.env   -> HEARTBEAT_URL (https:// dis nabiz adresi; ZORUNLU: bos iken trader-health her 5 dk basarisiz olur)"); fi

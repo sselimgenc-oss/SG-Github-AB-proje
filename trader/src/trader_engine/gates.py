@@ -263,6 +263,7 @@ class EntryGate:
             lk = veto.VetoLookup("allowed", "not_evaluated:paper", False)
         else:
             lk = self.veto.lookup(pair, row.side, now)                                  # 10
+        vs = "not_evaluated" if paper else "allowed"                                    # DD-12 WP-06a: kagitta veto yok
         if lk.blocks:
             return self._skip(row, tf, f"veto_{lk.status}", skip_reason=f"veto_{lk.status}",
                               veto_status=lk.status, veto_reason=lk.reason)
@@ -277,12 +278,12 @@ class EntryGate:
         src = self.ladder if self.ladder is not None else self.cfg
         dec = K.check_entry(acct, cand, src.risk_config)
         if not dec.allowed:
-            return self._skip(row, tf, "risk_denied", skip_reason="risk_denied", veto_status="allowed",
+            return self._skip(row, tf, "risk_denied", skip_reason="risk_denied", veto_status=vs,
                               veto_reason=lk.reason, risk_allowed=False, risk_reason=dec.reason, **tk)
         size = dec.size                                                                 # 12
         self.counters["enter"] += 1
         ev = build_decision_event(
-            row, tf, veto_status="allowed", veto_reason=lk.reason, risk_allowed=True, risk_reason=dec.reason,
+            row, tf, veto_status=vs, veto_reason=lk.reason, risk_allowed=True, risk_reason=dec.reason,
             size_qty=size.qty, size_notional=size.notional, size_margin=size.margin,
             size_risk_amount=size.risk_amount, leverage=lev, final_action="entered", skip_reason=None, **tk)
         return EntryOutcome("enter", ev, size, lev, "entered", True)

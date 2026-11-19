@@ -20,6 +20,48 @@ from trader_core import ledger as L
 from trader_core import lesson as LS
 from trader_core.ledger import DecisionEvent, TradeEntry, TradeExit
 
+# DD-12 WP-08: asagidaki testler kaldirilan davranislari (ikiz, golge donem, kanit esikleri/kalibrasyon sarti, haftalik sinir,
+# 'her zaman kullaniciya sorulur', zaman/ikiz tabanli izleyici) sinar; yeni davranis tests/engine/test_dd12_wp08_impl.py ve
+# bagimsiz spec testlerindedir.
+OBSOLETE_DD12_WP08 = {
+    "test_after_shadow_auto_apply_and_gates",
+    "test_auto_closed_without_calibration_or_twin",
+    "test_config_locks",
+    "test_daily_summary_shape",
+    "test_early_same_day_stops_do_not_rollback",
+    "test_ledger_only_mode_rollback_and_fallback",
+    "test_load_config_shipped_and_unknown",
+    "test_monitor_early_rollback_and_same_day_shock_guard",
+    "test_monitor_expiry_rolls_back_when_no_data",
+    "test_monitor_m1_harm_rollback_and_blacklist",
+    "test_monitor_m2_confirmed_and_rolled_back",
+    "test_monitor_not_harm_pending_recheck_and_confirmed",
+    "test_monitor_twin_benefit_conflict_blocks_rollback",
+    "test_r3_ledger_only_monitor_runs_first_and_fallback_error_is_failsafe",
+    "test_r3_log_notifier_never_counts_as_delivered",
+    "test_r3_loosening_uses_missed_trades_mean_test_not_half_r_gap",
+    "test_r3_reject_cooldown_blacklists_same_direction_only",
+    "test_r3_twin_report_attributes_only_monitored_version",
+    "test_runner_dry_run_and_once_rule_proxy",
+    "test_snapshot_rr_min_up_candidate",
+    "test_stop_buffer_always_user_and_extrapolated_route",
+    "test_twin_codes",
+    "test_twin_excludes_veto_and_gate_days",
+    "test_twin_observed_loosening_and_ratchet",
+    "test_twin_report_counts_and_verdict",
+    "test_twin_unavailable_closes_auto",
+    "test_user_approved_monitor_also_rolled_back",
+    "test_user_version_not_rolled_back_and_superseded",
+    "test_weekly_limit_gate_no_llm",
+}
+
+
+@pytest.fixture(autouse=True)
+def _dd12_wp08_obsolete(request):
+    if request.node.name in OBSOLETE_DD12_WP08:
+        pytest.skip("DD-12 WP-08: kaldirilan eski davranis (ikiz/golge/esik/haftalik sinir/zaman-izleyici)")
+
+
 UTC = timezone.utc
 ROOT = Path(__file__).resolve().parent.parent
 PARAMS = {"range_width_atr": 4.0, "vol_ratio_max": 1.5, "edge_zone_atr": 0.25, "pullback_ema": 50,
@@ -128,6 +170,10 @@ def r1_scenario(env: Env, n=34, ver=1, twin=True, base=D0):
     env.clock.t = max(env.clock.t, RUN_NOW)
 
 
+LEGACY_CFG = dict(checkpoints=(30, 45, 60), min_affected=8, min_gap_r=0.5, min_z=2.0, min_distinct_days=8,
+                  max_pair_share=0.5, early_min_n=10, early_min_days=4, max_user_requests_per_week=1, shadow_weeks=4)
+
+
 def good_cal(day="2026-12-01", **over):
     cal = {"ok": True, "date": day, "rule_version": LS.RULES_VERSION, "min_z": 2.0, "min_gap_r": 0.5,
            "min_affected": 8, "monitor_z": 1.0, "monitor_margin_r": 0.3, "twin_z": 1.0, "twin_margin_r": 0.1}
@@ -137,8 +183,12 @@ def good_cal(day="2026-12-01", **over):
 
 def mk_cfg(tmp_path, **over):
     d = dict(ledger_path=str(tmp_path / "learner.sqlite"), store_path=str(tmp_path / "lesson.sqlite"),
-             twin_ledger_path=str(tmp_path / "twin.sqlite"), mode="rule_proxy")
+             mode="rule_proxy", checkpoints=(30, 45, 60), min_affected=8, min_gap_r=0.5, min_z=2.0,
+             min_distinct_days=8, max_pair_share=0.5, early_min_n=10, early_min_days=4,
+             max_user_requests_per_week=1, shadow_weeks=4)      # eski esikli rejim (DD-12 WP-08 varsayilanlari esiksiz)
     d.update(over)
+    for k in [k for k in d if k.startswith("twin_") or k in ("report_show_twin", "max_steps_from_twin")]:
+        d.pop(k)                                       # ikiz kaldirildi (DD-12 WP-07/08)
     return LS.LessonConfig(**d)
 
 
@@ -246,7 +296,7 @@ def test_cluster_small_g_undefined_and_same_day_cluster():
 # ---------------------------------------------------------------------------
 
 def test_config_locks(tmp_path):
-    LS.LessonConfig()
+    LS.LessonConfig(**LEGACY_CFG)
     for bad in (dict(shadow_weeks=3), dict(shadow_weeks=7), dict(bot="twin"), dict(checkpoints=(20, 45)),
                 dict(checkpoints=(30, 30)), dict(checkpoints=(30, 130)), dict(min_gap_r=0.4), dict(min_z=1.5),
                 dict(monitor_k=10), dict(monitor_z=2.0), dict(early_min_days=2), dict(max_pair_share=0.6),
@@ -264,7 +314,7 @@ def test_load_config_shipped_and_unknown(tmp_path):
     cfg = LS.load_config(ROOT / "config" / "lesson.json")
     import dataclasses
     # gonderilen ayar = kod varsayilanlari + sunucu yollari/bildirimci (hazirlik denetimi OPEN-6)
-    assert cfg == dataclasses.replace(LS.LessonConfig(), ledger_path="var/learner/ledger.sqlite",
+    assert cfg == dataclasses.replace(LS.LessonConfig(**LEGACY_CFG), ledger_path="var/learner/ledger.sqlite",
                                       twin_ledger_path="var/twin/ledger.sqlite", notifier="telegram")
     assert cfg.shadow_weeks == 4 and cfg.model == "claude-sonnet-5-5"
     p = tmp_path / "x.json"
@@ -277,7 +327,7 @@ def test_load_config_shipped_and_unknown(tmp_path):
 
 
 def test_calibration_status():
-    assert LS.calibration_status(LS.LessonConfig(), RUN_DAY)[0] is False
+    assert LS.calibration_status(LS.LessonConfig(**LEGACY_CFG), RUN_DAY)[0] is False
     c = LS.LessonConfig(calibration=good_cal())
     assert LS.calibration_status(c, RUN_DAY) == (True, "ok")
     assert LS.calibration_status(c, "2027-06-01")[0] is False          # 90 gunden eski
@@ -1213,7 +1263,7 @@ def test_daily_summary_shape(env, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_calibration_insufficient_and_deterministic(tmp_path):
-    cfg = LS.LessonConfig()
+    cfg = LS.LessonConfig(**LEGACY_CFG)
     e = Env(tmp_path)
     try:
         for i in range(30):
@@ -1324,7 +1374,7 @@ def test_rule_vol_ratio_up_extrapolated_14_4():
     b = synth(27, -0.05, 1.00, "b")
     rows = [trow(i, v, atr=1.4) for i, (v, _) in enumerate(a)] + [trow(100 + i, v, atr=1.1) for i, (v, _) in enumerate(b)]
     rule = LS.RULES_BY_ID["vol_ratio_max:up"]
-    res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig())
+    res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig(**LEGACY_CFG))
     assert res["passed"], res
     assert res["n_a"] == 9 and res["n_b"] == 27 and res["gap"] == pytest.approx(0.65, abs=1e-3)
     assert res["z"] == pytest.approx(2.25, abs=1e-3)
@@ -1337,10 +1387,10 @@ def test_rule_range_target_frac_down_14_5():
         reason = "time_stop" if i < 14 else ("target" if i < 22 else "stop")
         r = -0.1 if reason == "time_stop" else (1.0 if reason == "target" else 0.2)
         rows.append(trow(i, r, reason=reason))
-    res = LS.eval_rule(LS.RULES_BY_ID["range_target_frac:down"], rows, 0.75, 0.625, LS.LessonConfig())
+    res = LS.eval_rule(LS.RULES_BY_ID["range_target_frac:down"], rows, 0.75, 0.625, LS.LessonConfig(**LEGACY_CFG))
     assert res["passed"] and res["extra"]["share_time_stop"] == pytest.approx(0.4118, abs=1e-4)
     assert LS.rule_to_value(LS.RULES_BY_ID["range_target_frac:down"], 0.75, (0.6, 0.9)) == 0.625
-    up = LS.eval_rule(LS.RULES_BY_ID["range_target_frac:up"], rows, 0.75, 0.875, LS.LessonConfig())
+    up = LS.eval_rule(LS.RULES_BY_ID["range_target_frac:up"], rows, 0.75, 0.875, LS.LessonConfig(**LEGACY_CFG))
     assert not up["passed"] and "share_low" in up["fails"]
 
 
@@ -1357,15 +1407,15 @@ def mfe_rows(runner_gb):
 
 def test_rule_trail_atr_down_mfe_and_runner_guard():
     rule = LS.RULES_BY_ID["trail_atr:down"]
-    res = LS.eval_rule(rule, mfe_rows(1.4), 3.0, 2.5, LS.LessonConfig())
+    res = LS.eval_rule(rule, mfe_rows(1.4), 3.0, 2.5, LS.LessonConfig(**LEGACY_CFG))
     assert res["passed"], res
     assert res["extra"]["giveback_mean"] >= 0.75 and res["extra"]["capture_ratio"] <= 0.45
     assert res["extra"]["n_runners"] == 5
-    guard = LS.eval_rule(rule, mfe_rows(0.3), 3.0, 2.5, LS.LessonConfig())
+    guard = LS.eval_rule(rule, mfe_rows(0.3), 3.0, 2.5, LS.LessonConfig(**LEGACY_CFG))
     assert not guard["passed"] and "runner_guard" in guard["fails"]
     # NULL mfe dislanir
     nulls = [dataclasses.replace(r, mfe_r=None, mae_r=None) for r in mfe_rows(1.4)]
-    res2 = LS.eval_rule(rule, nulls, 3.0, 2.5, LS.LessonConfig())
+    res2 = LS.eval_rule(rule, nulls, 3.0, 2.5, LS.LessonConfig(**LEGACY_CFG))
     assert not res2["passed"] and "n_a_low" in res2["fails"] and res2["extra"]["excluded_missing_excursion"] == 36
 
 
@@ -1376,15 +1426,15 @@ def test_rule_stop_buffer_third_and_cost_gap():
         rows.append(trow(i, -0.4 + 0.1 * (i % 3) if low else 0.4 + 0.1 * (i % 3), stop=1.0 + i * 0.01 if low else 2.0 + i * 0.01,
                          fee=0.2 if low else 0.05, gross=(-0.4 if low else 0.4)))
     rule = LS.RULES_BY_ID["stop_buffer_atr:up"]
-    res = LS.eval_rule(rule, rows, 0.3, 0.4, LS.LessonConfig())
+    res = LS.eval_rule(rule, rows, 0.3, 0.4, LS.LessonConfig(**LEGACY_CFG))
     assert res["n_a"] == 14 and res["passed"], res
     assert res["extra"]["cost_gap"] >= 0.10
     nocost = [dataclasses.replace(r, fee_entry=0.1) for r in rows]
-    assert "cost_gap_low" in LS.eval_rule(rule, nocost, 0.3, 0.4, LS.LessonConfig())["fails"]
+    assert "cost_gap_low" in LS.eval_rule(rule, nocost, 0.3, 0.4, LS.LessonConfig(**LEGACY_CFG))["fails"]
 
 
 def test_checkpoint_frozen_sample_and_largest_passing():
-    cfg = LS.LessonConfig()
+    cfg = LS.LessonConfig(**LEGACY_CFG)
     rule = LS.RULES_BY_ID["rr_min:up"]
     rows = []
     for i in range(46):
@@ -1510,7 +1560,7 @@ def test_calibration_with_twin_pair(tmp_path):
             bar = base + timedelta(days=i * 6, hours=12)
             e.led.record_decision(mk_dec(bar, PAIRS[(i + 1) % 6], entered=False, skip="rr_below_min", rr=1.3))
             e.add(i * 6, rnd.gauss(0.0, 1.0), pair=PAIRS[(i + 1) % 6], led=e.twin, base=base, hour=12, rr=1.3)
-        cfg = LS.LessonConfig()
+        cfg = LS.LessonConfig(**LEGACY_CFG)
         c = LS.calibrate(e.led, e.twin, cfg, seed=5, B=20, today="2026-12-09")
         assert c.twin_fpr is not None and c.twin_guc is not None and c.details["twin_pool"] == 60
         assert 0.0 <= c.twin_fpr <= 1.0 and 0.0 <= c.geri_alma_tespit <= 1.0 and c.sok_erken == 0.0
@@ -1623,7 +1673,7 @@ def test_r3_twin_report_attributes_only_monitored_version(env):
     assert env.led.apply_proposal(pid, actor="user", reason="x").ok
     for i in range(12):
         env.add_pair(i, 0.2, ver=2, base=datetime(2026, 10, 27, tzinfo=UTC))
-    cfg = LS.LessonConfig()
+    cfg = LS.LessonConfig(**LEGACY_CFG)
     window = (D0, datetime(2027, 1, 1, tzinfo=UTC))
     allv = LS.build_twin_report(env.led, env.twin, window, cfg)
     only2 = LS.build_twin_report(env.led, env.twin, window, cfg, version_id=2)
@@ -1636,12 +1686,12 @@ def test_r3_loosening_uses_missed_trades_mean_test_not_half_r_gap():
     a = synth(9, 0.60, 0.80, "a")
     b = synth(27, 0.30, 1.00, "b")                       # gap = 0.30 < 0.50 (eskiden gap_low)
     rows = [trow(i, v, atr=1.4) for i, (v, _) in enumerate(a)] + [trow(100 + i, v, atr=1.1) for i, (v, _) in enumerate(b)]
-    res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig())
+    res = LS.eval_rule(rule, rows, 1.5, 1.7, LS.LessonConfig(**LEGACY_CFG))
     assert res["passed"], res
     assert res["gap"] == pytest.approx(0.30, abs=1e-3)
     neg = [trow(i, v - 0.45, atr=1.4) for i, (v, _) in enumerate(a)] + \
           [trow(100 + i, v, atr=1.1) for i, (v, _) in enumerate(b)]
-    res2 = LS.eval_rule(rule, neg, 1.5, 1.7, LS.LessonConfig())
+    res2 = LS.eval_rule(rule, neg, 1.5, 1.7, LS.LessonConfig(**LEGACY_CFG))
     assert not res2["passed"] and "sign" in res2["fails"]
 
 

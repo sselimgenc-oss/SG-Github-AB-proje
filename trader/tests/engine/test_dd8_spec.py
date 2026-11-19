@@ -437,7 +437,7 @@ def make_tree(tmp, env="testnet", *, tag="testnet-sub", absolute=True, overlay_o
     cdir = root / cname
     cdir.mkdir(parents=True, exist_ok=True)
     base = json.loads((ROOT / "config" / "engine.base.json").read_text())
-    base["veto_config"] = str(ROOT / "config" / "veto.json")
+    base["veto_config"] = str(ROOT / "config" / "veto.live.json")
     if absolute:
         base["var_dir"] = str(root / "var")
         base["market_db"] = str(root / "var" / "market.sqlite")      # `run` yolunda StoreSource bos da olsa acilabilir bir market.sqlite ister
@@ -875,7 +875,7 @@ def test_o8_10_state_stamp_ok_ledger_other_stamp_is_ledger_stamp_mismatch(tmp_pa
 def _paper_engine_pieces(tmp, clock):
     import test_engine_05_spec as E5
     Path(tmp).mkdir(parents=True, exist_ok=True)
-    cfg = E5.make_cfg(Path(tmp), "learner", "paper", (E5.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.json"))
+    cfg = E5.make_cfg(Path(tmp), "learner", "paper", (E5.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.live.json"))
     view = E5.SynthView((E5.BTC,), T.BOOT - timedelta(days=1), T.BOOT + timedelta(days=1), clock=None)
     return cfg, view
 
@@ -967,7 +967,7 @@ def test_o8_15_backtest_never_imports_or_calls_stamp_golden_unchanged(tmp_path, 
     monkeypatch.setattr(S, "verify_or_init_stamp", lambda *a, **k: calls.append(a))
     monkeypatch.setattr(E, "verify_or_init_stamp", lambda *a, **k: calls.append(a), raising=False)
     import test_engine_05_spec as E5
-    cfg = E5.make_cfg(tmp_path, "learner", "backtest", (E5.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.json"))
+    cfg = E5.make_cfg(tmp_path, "learner", "backtest", (E5.BTC,), 1000.0, veto_config=str(ROOT / "config" / "veto.live.json"))
     view = E5.SynthView((E5.BTC,), T.BOOT - timedelta(days=1), T.BOOT + timedelta(days=1), clock=None)
     eng = E.build_engine(cfg, clock=SimClock(T.BOOT), view=view, env={})
     eng.state.close()

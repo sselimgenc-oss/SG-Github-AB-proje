@@ -55,7 +55,7 @@ def test_engine_config_loads_and_twin_is_rejected_and_pairs_agree_everywhere():
     with pytest.raises(ConfigError):                                                         # DD-12: ikiz reddedilir
         from trader_engine.config import load_cli_config
         load_cli_config(ROOT / "config", "twin")
-    vcfg = veto.load_config(ROOT / "config/veto.json")
+    vcfg = veto.load_config(ROOT / "config/veto.live.json")
     vp = veto.load_pairs(vcfg, ROOT)
     assert sorted(veto.pair_key(p) for p in learner.pairs) == vp, "veto pair listesi (config/engine.base.json) motorun ciftleriyle ayni olmali"
     assert vcfg.hmac_key_env == "TRADER_VETO_HMAC_KEY"
@@ -69,7 +69,7 @@ def test_other_configs_load():
     bc = budget.load_config(ROOT / "config/budget.json")
     assert bc is not None
     lc = lesson.load_config(ROOT / "config/lesson.json", budget_config_path=ROOT / "config/budget.json")
-    assert lc.twin_enabled is True
+    assert lc.twin_enabled is False
 
 
 def test_learner_alone_shares_feed_and_twin_not_installed():
@@ -164,21 +164,16 @@ def test_every_timer_has_a_service_and_is_enabled_or_gated(units):
 
 
 # ------------------------------------------------------------------ eski ACIK kusurlar (duzeltildi; regresyon testleri)
-def test_OPEN_engine_unit_receives_veto_hmac_key():
-    eng = (DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")
-    files = [v.lstrip("-") for k, v in unit_kv(eng) if k == "EnvironmentFile"]
-    assert files, "motor birimi EnvironmentFile tanimlamiyor"
-    have = {Path(f).name for f in files}
-    assert any(
-        "TRADER_VETO_HMAC_KEY" in (DEPLOY / (n + ".example")).read_text(encoding="utf-8")
-        for n in have if (DEPLOY / (n + ".example")).exists())
-    # API anahtari motora SIZMAZ; HMAC ayri dosyada, veto birimi de ayni dosyayi okur
-    assert "trader-veto.env" not in have and "trader-veto-hmac.env" in have
+def test_OPEN_engine_unit_veto_hmac_only_for_testnet_live():
+    """DD-12 WP-06a: kagit motor birimi veto HMAC anahtarini yuklemez; testnet/canli birimleri bugunku gibi yukler."""
+    def files(n):
+        return {Path(v.lstrip("-")).name for k, v in unit_kv((DEPLOY / n).read_text(encoding="utf-8")) if k == "EnvironmentFile"}
+    assert "trader-veto-hmac.env" not in files("trader-engine@.service") and "trader-veto.env" not in files("trader-engine@.service")
+    for n in ("trader-engine-testnet.service", "trader-engine-live.service"):
+        assert "trader-veto-hmac.env" in files(n), n
+    assert "TRADER_VETO_HMAC_KEY" in (DEPLOY / "trader-veto-hmac.env.example").read_text(encoding="utf-8")
     assert "ANTHROPIC" not in (DEPLOY / "trader-veto-hmac.env.example").read_text(encoding="utf-8")
-    ve = (DEPLOY / "trader-veto.env.example").read_text(encoding="utf-8")
-    assert "TRADER_VETO_HMAC_KEY" not in re.sub(r"#.*", "", ve)
-    vs = [v for k, v in unit_kv((DEPLOY / "trader-veto.service").read_text(encoding="utf-8")) if k == "EnvironmentFile"]
-    assert "/etc/trader-veto-hmac.env" in vs and "/etc/trader-veto.env" in vs
+    assert not (DEPLOY / "trader-veto.env.example").exists() and not (DEPLOY / "trader-veto.service").exists()
 
 
 def test_OPEN_lesson_and_telegram_ledger_path_is_the_engine_ledger(envs):
@@ -209,13 +204,10 @@ def test_health_unit_can_notify_telegram_and_write_outbox(envs, units):
     assert ("UMask", "0007") in kv                       # outbox dosyalari trader-tg grubuna okunur/yazilir (daemon siler)
 
 
-def test_health_env_has_bots_and_veto_freshness(envs):
+def test_health_env_has_bots_and_no_veto_freshness(envs):
     h = envs["trader-health.env"]
     assert h["HEALTH_BOTS"] == "learner"
-    assert h["VETO_FILE"] == f"{T}/shared/veto/veto.json"
-    assert h["VETO_MAX_AGE_S"] == "5400"
-    # veto.json'daki gercek cikis yolu ile ayni dosya
-    assert json.loads((ROOT / "config/veto.json").read_text())["veto_path"] == "shared/veto/veto.json"
+    assert "VETO_FILE" not in h and "VETO_MAX_AGE_S" not in h              # DD-12 WP-06a: veto belgesi denetimi yok
 
 
 def test_lesson_and_telegram_sandbox_ledger_access(units):

@@ -309,7 +309,7 @@ def test_drill_gate_passes_with_all_rules_and_fresh_data_then_terminates_cleanly
 def test_drill_veto_failure_modes_block_entries_visibly(tmp_path, env_key, make_doc, want_status, want_reason):
     from trader_core import veto as V
     from trader_engine.gates import FileVeto
-    vcfg = V.load_config(ROOT / "config/veto.json")
+    vcfg = V.load_config(ROOT / "config/veto.live.json")
     path = tmp_path / "veto.json"
     vcfg = V.VetoConfig(**{**vcfg.__dict__, "veto_path": str(path)}) if hasattr(vcfg, "__dict__") else vcfg
     pairs = V.load_pairs(vcfg, ROOT)
@@ -330,7 +330,7 @@ def test_drill_veto_failure_modes_block_entries_visibly(tmp_path, env_key, make_
 def test_drill_veto_fresh_valid_document_allows(tmp_path):
     from trader_core import veto as V
     from trader_engine.gates import FileVeto
-    vcfg = V.load_config(ROOT / "config/veto.json")
+    vcfg = V.load_config(ROOT / "config/veto.live.json")
     vcfg = V.VetoConfig(**{**vcfg.__dict__, "veto_path": str(tmp_path / "veto.json")})
     pairs = V.load_pairs(vcfg, ROOT)
     decs = [V.Decision(p, s, "allow", None, None) for p in pairs for s in ("long", "short")]
