@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Haftalik ozet (DD-12 WP-09, spec eki 18 Kas 2026): haftanin islem notlarini sade Turkce ozetler (sahibin okumasi icin).
 
-Tek LLM kullanimi budur. Butce payi `haftalik_ozet` (aylik tavan 10 $; pay bitince DURUR, motor/not/ders etkilenmez):
+Haftalik dosya SABIT BOLUM (LLM'siz: tutarlilik, haber x sonuc, cikis kaniti, PBO, alinmayan sinyal) + istege bagli "Yorum"
+paragrafindan olusur; sabit bolum anahtar olsun olmasin her hafta yazilir (Telegram gunluk raporu `telegram.rapor_ogrenme` onu okur).
+Tek LLM kullanimi yorumdur. Butce payi `haftalik_ozet` (aylik tavan 10 $; pay bitince DURUR, motor/not/ders etkilenmez):
 `budget.authorize` -> cagri -> `budget.record` (hata/sapmada `release`). API anahtari (budget.api_key_env("haftalik_ozet"))
-yoksa NO-OP (cikis 0). Mevcut yardimcilar: `lesson.AnthropicBatchClient` (hata esleme), `lesson.budget_usage`; yeni SDK yok.
+yoksa yorum atlanir (sabit bolum yine yazilir). Mevcut yardimcilar: `lesson.AnthropicBatchClient` (hata esleme), `lesson.budget_usage`; yeni SDK yok.
 Cikti: `<defter dizini>/weekly_summaries/YYYY-Www.md` (hafta basina bir kez). Test: `main(argv, llm=, budget=, now_fn=, env=)`;
 `llm(params) -> (metin, usage)`.
 """
@@ -127,12 +129,133 @@ def _default_llm(env, b):
     return call
 
 
+SABIT_BASLIK = "## Sabit bölüm"
+YORUM_BASLIK = "## Yorum"
+
+
+def _fmt_pnl(x) -> str:
+    return f"{float(x):+.2f} $".replace(".", ",")
+
+
+def cikis_kaniti_satiri(env, lp: str, now: datetime, lesson_store=None) -> str:
+    """Cikis karsi-olgusu (`panel_data.exitcf_view`/`exitcf_bekleyen` ile ayni kaynak): kurulum basina en buyuk olumlu fark + bekleyen
+    ders onerisi sayisi. Kaynak yok/bos -> 'Çıkış kanıtı: henüz veri yok'."""
+    yok = "Çıkış kanıtı: henüz veri yok"
+    try:
+        from trader_core import panel_data as P  # noqa: PLC0415
+        bek: list[str] = []
+        try:
+            bek = P.exitcf_bekleyen(P.lesson_view(str(lesson_store or ""), now, lp))
+        except Exception:  # noqa: BLE001  (ders deposu yok: oneri sayisi 0)
+            pass
+        v = P.exitcf_view(str(Path(lp).with_name("exit_counterfactual.sqlite")), now, bek)
+        if not v.get("var"):
+            return yok
+        best = None
+        for k in v.get("kurulumlar") or []:
+            for ad, alan in (("trail yukarı", "trail_yukari"), ("trail aşağı", "trail_asagi"), ("başabaş", "basabas"), ("kısmi", "kismi")):
+                d = (k.get(alan) or {}).get("delta_r")
+                if d is not None and d > 0 and (best is None or d > best[0]):
+                    best = (d, k["kurulum"], ad, (k.get(alan) or {}).get("n", 0))
+        pend = f"bekleyen ders önerisi {len(v.get('bekleyen') or [])}"
+        if best is None:
+            return f"Çıkış kanıtı: olumlu fark yok; {pend}"
+        return f"Çıkış kanıtı: en büyük olumlu fark {best[1]} {best[2]} {best[0]:+.2f}R (n={best[3]}); {pend}".replace(".", ",")
+    except Exception:  # noqa: BLE001
+        return yok
+
+
+def pbo_satiri(env) -> str | None:
+    """`research/holdout/pbo_ozet.json` (yalniz gelistirme makinesinde): yoksa/bozuksa None (satir atlanir, sessiz)."""
+    try:
+        d = json.loads((_data_root(env) / "research" / "holdout" / "pbo_ozet.json").read_text(encoding="utf-8"))
+        parts = [f"{a['aile']} %{round(a['pbo'] * 100):d}" for a in d.get("aileler", [])[:4]
+                 if isinstance(a, dict) and isinstance(a.get("pbo"), (int, float)) and a.get("aile")]
+        return ("PBO: " + ", ".join(parts)) if parts else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def alinmayan_satiri(env, durum_path=None) -> str:
+    """`var/durum/alinmayan_sonuc_v1.json` (`ml.alinmayan_sonuc.v1`; son 7 gun `tablolar.neden`): en iyi/en kotu neden. Yok -> henuz veri yok."""
+    yok = "Alınmayan sinyal: henüz veri yok"
+    try:
+        p = Path(durum_path) if durum_path else _data_root(env) / "var" / "durum" / "alinmayan_sonuc_v1.json"
+        d = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(d, dict) or d.get("sema") != "ml.alinmayan_sonuc.v1":
+            return yok
+        rows = [r for r in (d["tablolar"].get("neden") or []) if int(r["n"]) >= 1]
+        if not rows:
+            return yok
+        iyi, kotu = max(rows, key=lambda r: r["toplam_pnl"]), min(rows, key=lambda r: r["toplam_pnl"])
+        f = lambda r: f"{r['etiket']} {_fmt_pnl(r['toplam_pnl'])} (n={r['n']})"  # noqa: E731
+        return f"Alınmayan sinyal (7g): {sum(int(r['n']) for r in rows)} sinyal; en iyi {f(iyi)}, en kötü {f(kotu)}"
+    except Exception:  # noqa: BLE001
+        return yok
+
+
+def sabit_bolum(env, lp: str, now: datetime, lesson_store=None) -> list[str]:
+    """Haftalik sabit satirlar (LLM'siz). Her satir kendi icinde hata yutar; ozeti asla engellemez."""
+    def guard(fn, yok):
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001
+            return yok
+    out = [guard(lambda: tutarlilik_satiri(env, now), "Tutarlılık: rapor yok"),
+           guard(lambda: haber_sonuc_uret(env, lp, now), "Haber×sonuç: henüz veri yok"),
+           guard(lambda: cikis_kaniti_satiri(env, lp, now, lesson_store), "Çıkış kanıtı: henüz veri yok")]
+    pbo = guard(lambda: pbo_satiri(env), None)
+    if pbo:
+        out.append(pbo)
+    out.append(guard(lambda: alinmayan_satiri(env), "Alınmayan sinyal: henüz veri yok"))
+    return out
+
+
+def _comment(llm, b, led_path: str, day: datetime) -> tuple[str | None, str]:
+    """(yorum metni | None, durum). Butce mantigi eskisi gibi: authorize -> cagri -> record (hata/sapmada release)."""
+    try:
+        led = L.open_ledger(led_path, "learner", create=False, read_only=True, migrate=False)
+    except Exception as e:  # noqa: BLE001
+        log.warning("defter acilamadi: %s", LS.scrub(e))
+        return None, "no_ledger"
+    try:
+        stats, user = build_input(led, (day - timedelta(days=6)).date().isoformat(), day.date().isoformat())
+    except Exception as e:  # noqa: BLE001
+        log.warning("yorum girdisi kurulamadi: %s", LS.scrub(e))
+        return None, "no_ledger"
+    finally:
+        close = getattr(led, "close", None)
+        if close:
+            close()
+    if stats["not_sayisi"] == 0:
+        return None, "no_notes"
+    params = {"model": MODEL, "max_tokens": MAX_OUT, "system": SYSTEM,
+              "messages": [{"role": "user", "content": user}]}
+    est = b.estimate_cost(MODEL, max(1, (len(SYSTEM) + len(user)) // 3), MAX_OUT)
+    grant = b.authorize(SERVICE, est)
+    if not hasattr(grant, "grant_id"):                     # Denial: pay/tavan bitti => yorum yok
+        return None, "budget_denied"
+    try:
+        text, usage = llm(params)
+    except Exception as e:  # noqa: BLE001
+        b.release(grant)
+        log.warning("LLM hatasi: %s", LS.scrub(type(e).__name__))
+        return None, "llm_error"
+    try:
+        b.record(SERVICE, grant, LS.budget_usage(usage), MODEL, False)
+    except Exception as e:  # noqa: BLE001
+        log.error("butce kaydi yazilamadi: %s", LS.scrub(e))
+    text = (text or "").strip()
+    return (text, "ok") if text else (None, "empty")
+
+
 def main(argv=None, *, llm=None, budget=None, now_fn=None, env=None) -> int:
     ap = argparse.ArgumentParser(prog="weekly_summary_run.py")
     ap.add_argument("--once", action="store_true", required=True)
     ap.add_argument("--day", help="YYYY-MM-DD: bu gunun haftasi (varsayilan: bugun UTC); son 7 gun ozetlenir")
     ap.add_argument("--ledger")
     ap.add_argument("--out-dir")
+    ap.add_argument("--lesson-store", help="ders deposu (cikis kaniti bekleyen oneri sayisi); varsayilan user_data/lesson.sqlite")
     ap.add_argument("--force", action="store_true", help="bu hafta icin ozet varsa yeniden yaz")
     try:
         args = ap.parse_args(argv)
@@ -143,65 +266,32 @@ def main(argv=None, *, llm=None, budget=None, now_fn=None, env=None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     now = (now_fn or (lambda: datetime.now(timezone.utc)))()
     day = datetime.strptime(args.day, "%Y-%m-%d").replace(tzinfo=timezone.utc) if args.day else now
+    lp = _resolve(args.ledger or env.get("LEDGER_PATH") or "var/learner/ledger.sqlite")
+    out_dir = Path(_resolve(args.out_dir) if args.out_dir else str(Path(lp).with_name("weekly_summaries")))
+    out = out_dir / f"{week_key(day)}.md"
+    if out.exists() and not args.force:
+        print(json.dumps({"status": "exists", "week": week_key(day)}))
+        return 0
     if llm is None:
         try:
             llm = _default_llm(env, b)
         except Exception as e:  # noqa: BLE001
             log.warning("LLM istemcisi kurulamadi: %s", LS.scrub(e))
             llm = None
-    lp = _resolve(args.ledger or env.get("LEDGER_PATH") or "var/learner/ledger.sqlite")
-    hs_satir = haber_sonuc_uret(env, lp, now)          # LLM'den bagimsiz: JSON anahtarsiz da yazilir
-    if llm is None:
-        print(json.dumps({"status": "noop", "reason": "no_api_key"}))
-        return 0
-    out_dir = Path(_resolve(args.out_dir) if args.out_dir else str(Path(lp).with_name("weekly_summaries")))
-    out = out_dir / f"{week_key(day)}.md"
-    if out.exists() and not args.force:
-        print(json.dumps({"status": "exists", "week": week_key(day)}))
-        return 0
+    store = args.lesson_store or env.get("LESSON_STORE") or "user_data/lesson.sqlite"
+    satirlar = sabit_bolum(env, lp, now, _resolve(store))     # LLM'den bagimsiz: anahtarsiz da yazilir
+    yorum, yorum_durum = (None, "no_api_key") if llm is None else _comment(llm, b, lp, day)
+    body = f"# Haftalik ozet {week_key(day)}\n\n{SABIT_BASLIK}\n" + "\n".join(satirlar) + "\n"
+    if yorum:
+        body += f"\n{YORUM_BASLIK}\n{yorum}\n"
     try:
-        led = L.open_ledger(lp, "learner", create=False, read_only=True, migrate=False)
-    except Exception as e:  # noqa: BLE001
-        print(f"defter acilamadi: {LS.scrub(e)}", file=sys.stderr)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out.write_text(body, encoding="utf-8")
+    except OSError as e:
+        print(f"ozet yazilamadi: {LS.scrub(e)}", file=sys.stderr)
         return 3
-    try:
-        stats, user = build_input(led, (day - timedelta(days=6)).date().isoformat(), day.date().isoformat())
-    finally:
-        close = getattr(led, "close", None)
-        if close:
-            close()
-    if stats["not_sayisi"] == 0:
-        print(json.dumps({"status": "noop", "reason": "no_notes"}))
-        return 0
-    params = {"model": MODEL, "max_tokens": MAX_OUT, "system": SYSTEM,
-              "messages": [{"role": "user", "content": user}]}
-    est = b.estimate_cost(MODEL, max(1, (len(SYSTEM) + len(user)) // 3), MAX_OUT)
-    grant = b.authorize(SERVICE, est)
-    if not hasattr(grant, "grant_id"):                     # Denial: pay/tavan bitti => dur (sessiz, cikis 0)
-        print(json.dumps({"status": "budget_denied", "reason": getattr(grant, "reason", "denied")}))
-        return 0
-    try:
-        text, usage = llm(params)
-    except Exception as e:  # noqa: BLE001
-        b.release(grant)
-        print(json.dumps({"status": "llm_error", "error": LS.scrub(type(e).__name__)}))
-        return 2
-    try:
-        b.record(SERVICE, grant, LS.budget_usage(usage), MODEL, False)
-    except Exception as e:  # noqa: BLE001
-        log.error("butce kaydi yazilamadi: %s", LS.scrub(e))
-    text = (text or "").strip()
-    if not text:
-        print(json.dumps({"status": "empty"}))
-        return 2
-    out_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        satir = tutarlilik_satiri(env, now)
-    except Exception:  # noqa: BLE001  (bilgi satiri ozeti asla bozmaz)
-        satir = "Tutarlılık: rapor yok"
-    out.write_text(f"# Haftalik ozet {week_key(day)}\n\n{text}\n\n{satir}\n{hs_satir}\n", encoding="utf-8")
-    print(json.dumps({"status": "ok", "week": week_key(day), "file": str(out), "notes": stats["not_sayisi"]}))
-    return 0
+    print(json.dumps({"status": "ok", "week": week_key(day), "file": str(out), "comment": yorum_durum}))
+    return 2 if yorum_durum in ("llm_error", "empty") else 0
 
 
 if __name__ == "__main__":

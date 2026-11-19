@@ -2091,9 +2091,24 @@ def rapor_ogrenme(cfg: TelegramConfig, now: datetime) -> str:
     out.append(_harcama_satiri(lv))
     ws = lv.get("weekly_summary")
     if ws:
-        satir = next((x.strip() for x in ws["text"].splitlines() if x.strip() and not x.startswith("#")), "")
-        out.append(f"🗓 Haftalık özet ({ws['week']}): {satir[:300]}")
+        out.append(_haftalik_ozet_metni(ws))
     return "\n".join(out)
+
+
+def _haftalik_ozet_metni(ws: Mapping[str, Any]) -> str:
+    """Haftalik ozet dosyasinin Telegram metni: '## Sabit bölüm' satirlari (LLM'siz; hepsi) ya da eski bicimde ilk metin satiri."""
+    lines = str(ws.get("text") or "").splitlines()
+    sabit: list[str] = []
+    if "## Sabit bölüm" in lines:
+        for x in lines[lines.index("## Sabit bölüm") + 1:]:
+            if x.startswith("#"):
+                break
+            if x.strip():
+                sabit.append(x.strip()[:300])
+    if sabit:
+        return f"🗓 Haftalık özet ({ws['week']}):\n" + "\n".join(sabit)
+    satir = next((x.strip() for x in lines if x.strip() and not x.startswith("#")), "")
+    return f"🗓 Haftalık özet ({ws['week']}): {satir[:300]}"
 
 
 def default_sections(cfg: TelegramConfig, now: datetime, day: str, pauses: Mapping[str, Any] | None = None,

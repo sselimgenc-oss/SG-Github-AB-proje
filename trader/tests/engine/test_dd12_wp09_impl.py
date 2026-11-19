@@ -100,9 +100,13 @@ def test_weekly_summary_budget_and_noop(tmp_path, capsys):
     e.led.close()
     lp = str(tmp_path / "learner.sqlite")
     now = lambda: day  # noqa: E731
-    # anahtar yok => no-op
-    assert W.main(["--once", "--ledger", lp], env={}, now_fn=now) == 0
-    assert json.loads(capsys.readouterr().out)["status"] == "noop"
+    # anahtar yok => sabit bolum yazilir, yorum yok (hafta basina bir kez; sonraki kosu icin dosyayi sil)
+    assert W.main(["--once", "--ledger", lp], env={"TRADER_DATA_ROOT": str(tmp_path)}, now_fn=now) == 0
+    o = json.loads(capsys.readouterr().out)
+    assert o["status"] == "ok" and o["comment"] == "no_api_key"
+    f = next((tmp_path / "weekly_summaries").glob("*.md"))
+    assert "## Sabit bölüm" in f.read_text() and "## Yorum" not in f.read_text()
+    f.unlink()
     b = _budget(tmp_path)
     calls = []
 
@@ -114,7 +118,7 @@ def test_weekly_summary_budget_and_noop(tmp_path, capsys):
         assert W.main(["--once", "--ledger", lp], llm=fake, budget=b, now_fn=now, env={}) == 0
         assert json.loads(capsys.readouterr().out)["status"] == "ok" and len(calls) == 1
         out = next((tmp_path / "weekly_summaries").glob("*.md")).read_text()
-        assert "4 islem" in out
+        assert "4 islem" in out and "## Yorum" in out and out.index("## Sabit") < out.index("## Yorum")
         assert W.main(["--once", "--ledger", lp], llm=fake, budget=b, now_fn=now, env={}) == 0   # bu hafta var
         assert len(calls) == 1
         assert b.status().month_used_usd > 0 if hasattr(b.status(), "month_used_usd") else True
