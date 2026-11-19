@@ -1,0 +1,410 @@
+{
+  "parametreler": {
+    "seed": 0,
+    "max_combinations": 2000,
+    "kural": "T >= 128 gun -> n_splits 16; 64 <= T < 128 -> n_splits 8; T < 64 -> hesaplanmadi. T = sinifin ilk sifirdan farkli R'li gunu..2026-04-30; pencere oncesi sifir gunler dahil degil.",
+    "holdout_oncesi_sinir": "2026-05-01",
+    "izgara_sha256": "d81ca1e66ae65c5e8fc3a4d722c25246a7da1151167912ed12866673614bfd99"
+  },
+  "siniflar": {
+    "kripto": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "XRP/USDT",
+      "BNB/USDT",
+      "SOL/USDT",
+      "DOGE/USDT",
+      "ADA/USDT",
+      "TRX/USDT",
+      "LINK/USDT",
+      "AVAX/USDT",
+      "HYPE/USDT",
+      "BCH/USDT",
+      "XLM/USDT",
+      "SUI/USDT",
+      "HBAR/USDT",
+      "LTC/USDT",
+      "TON/USDT",
+      "1000SHIB/USDT",
+      "DOT/USDT",
+      "XMR/USDT"
+    ],
+    "hisse": [
+      "NVDA/USDT",
+      "MSFT/USDT",
+      "AAPL/USDT",
+      "GOOGL/USDT",
+      "AMZN/USDT",
+      "META/USDT",
+      "AVGO/USDT",
+      "TSLA/USDT",
+      "BRKB/USDT",
+      "JPM/USDT",
+      "LLY/USDT",
+      "WMT/USDT",
+      "V/USDT",
+      "ORCL/USDT",
+      "XOM/USDT",
+      "NFLX/USDT",
+      "PLTR/USDT",
+      "COST/USDT",
+      "AMD/USDT",
+      "HD/USDT"
+    ],
+    "emtia": [
+      "XAU/USDT",
+      "XAG/USDT",
+      "BZ/USDT",
+      "COPPER/USDT"
+    ]
+  },
+  "sinif_kaynagi": "config/engine.paper.json clusters",
+  "gecmisi_olmayan_ciftler": [
+    "BRKB/USDT",
+    "JPM/USDT",
+    "LLY/USDT",
+    "WMT/USDT",
+    "V/USDT",
+    "ORCL/USDT",
+    "XOM/USDT",
+    "NFLX/USDT",
+    "COST/USDT",
+    "AMD/USDT",
+    "HD/USDT"
+  ],
+  "satirlar": [
+    {
+      "kurulum": "T1",
+      "sinif": "kripto",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 20,
+      "veri_olan_cift": 20,
+      "ciftler": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "XRP/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "DOGE/USDT",
+        "ADA/USDT",
+        "TRX/USDT",
+        "LINK/USDT",
+        "AVAX/USDT",
+        "HYPE/USDT",
+        "BCH/USDT",
+        "XLM/USDT",
+        "SUI/USDT",
+        "HBAR/USDT",
+        "LTC/USDT",
+        "TON/USDT",
+        "1000SHIB/USDT",
+        "DOT/USDT",
+        "XMR/USDT"
+      ],
+      "n_yapilandirma": 48,
+      "T": 1896,
+      "pencere": [
+        "2021-02-20",
+        "2026-04-30"
+      ],
+      "n_kullanilan": 48,
+      "durum": "tamam",
+      "n_splits": 16,
+      "pbo": 0.5255,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.4897959183673469,
+      "prob_oos_kayip": 0.2,
+      "en_iyi_yapilandirma": "T1@1d|trail_atr=2.5|f1|s0",
+      "en_iyi_sr_yillik": 0.9659581006223047,
+      "en_iyi_islem": 223,
+      "dsr": 0.5911023579913601,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "kurulum": "T1",
+      "sinif": "hisse",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 9,
+      "veri_olan_cift": 9,
+      "ciftler": [
+        "NVDA/USDT",
+        "MSFT/USDT",
+        "AAPL/USDT",
+        "GOOGL/USDT",
+        "AMZN/USDT",
+        "META/USDT",
+        "AVGO/USDT",
+        "TSLA/USDT",
+        "PLTR/USDT"
+      ],
+      "n_yapilandirma": 24,
+      "T": 38,
+      "pencere": [
+        "2026-03-24",
+        "2026-04-30"
+      ],
+      "n_kullanilan": 24,
+      "durum": "hesaplanmadi",
+      "neden": "T=38 < 64 (kural)"
+    },
+    {
+      "kurulum": "T1",
+      "sinif": "emtia",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 4,
+      "veri_olan_cift": 4,
+      "ciftler": [
+        "XAU/USDT",
+        "XAG/USDT",
+        "BZ/USDT",
+        "COPPER/USDT"
+      ],
+      "n_yapilandirma": 24,
+      "T": 64,
+      "pencere": [
+        "2026-02-26",
+        "2026-04-30"
+      ],
+      "n_kullanilan": 24,
+      "durum": "tamam",
+      "n_splits": 8,
+      "pbo": 0.5142857142857142,
+      "n_kombinasyon": 70,
+      "medyan_oos_goreli_sira": 0.48,
+      "prob_oos_kayip": 0.34285714285714286,
+      "en_iyi_yapilandirma": "T1@4h|pullback_ema=20|f1|s0",
+      "en_iyi_sr_yillik": 2.8896896293742707,
+      "en_iyi_islem": 10,
+      "dsr": 0.33719941260159836,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "kurulum": "R1",
+      "sinif": "kripto",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 20,
+      "veri_olan_cift": 20,
+      "ciftler": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "XRP/USDT",
+        "BNB/USDT",
+        "SOL/USDT",
+        "DOGE/USDT",
+        "ADA/USDT",
+        "TRX/USDT",
+        "LINK/USDT",
+        "AVAX/USDT",
+        "HYPE/USDT",
+        "BCH/USDT",
+        "XLM/USDT",
+        "SUI/USDT",
+        "HBAR/USDT",
+        "LTC/USDT",
+        "TON/USDT",
+        "1000SHIB/USDT",
+        "DOT/USDT",
+        "XMR/USDT"
+      ],
+      "n_yapilandirma": 56,
+      "T": 1888,
+      "pencere": [
+        "2021-02-28",
+        "2026-04-30"
+      ],
+      "n_kullanilan": 52,
+      "durum": "tamam",
+      "n_splits": 16,
+      "pbo": 0.321,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5849056603773585,
+      "prob_oos_kayip": 0.9165,
+      "en_iyi_yapilandirma": "R1@1d|range_target_frac=0.6|f1|s0",
+      "en_iyi_sr_yillik": -0.4396888345028114,
+      "en_iyi_islem": 1,
+      "dsr": 4.935337944179833e-10,
+      "yorum": "asiri uyum riski dusuk-orta"
+    },
+    {
+      "kurulum": "R1",
+      "sinif": "hisse",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 9,
+      "veri_olan_cift": 9,
+      "ciftler": [
+        "NVDA/USDT",
+        "MSFT/USDT",
+        "AAPL/USDT",
+        "GOOGL/USDT",
+        "AMZN/USDT",
+        "META/USDT",
+        "AVGO/USDT",
+        "TSLA/USDT",
+        "PLTR/USDT"
+      ],
+      "n_yapilandirma": 28,
+      "T": 0,
+      "durum": "hesaplanmadi",
+      "neden": "hic islem yok"
+    },
+    {
+      "kurulum": "R1",
+      "sinif": "emtia",
+      "kaynak": "arm_harness 4s+1g (kolon = tf x parametre varyanti x maliyet)",
+      "cift_sayisi": 4,
+      "veri_olan_cift": 4,
+      "ciftler": [
+        "XAU/USDT",
+        "XAG/USDT",
+        "BZ/USDT",
+        "COPPER/USDT"
+      ],
+      "n_yapilandirma": 28,
+      "T": 0,
+      "durum": "hesaplanmadi",
+      "neden": "hic islem yok"
+    },
+    {
+      "kurulum": "ML r02",
+      "sinif": "kripto",
+      "kaynak": "research/ml/r02/oof_predictions.parquet (ml1-r02-long-ctx-1r; model x esik)",
+      "ciftler": [
+        "ADA/USDT",
+        "AVAX/USDT",
+        "BNB/USDT",
+        "BTC/USDT",
+        "DOGE/USDT",
+        "ETH/USDT",
+        "LINK/USDT",
+        "SOL/USDT",
+        "TRX/USDT",
+        "XRP/USDT"
+      ],
+      "cift_sayisi": 10,
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "pencere": [
+        "2022-01-07",
+        "2026-04-29"
+      ],
+      "n_kullanilan": 9,
+      "durum": "tamam",
+      "n_splits": 16,
+      "pbo": 0.5805,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.5,
+      "prob_oos_kayip": 0.848,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": -0.12219690886894083,
+      "en_iyi_islem": null,
+      "dsr": 0.08475821252711058,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "kurulum": "ML r02",
+      "sinif": "hisse",
+      "kaynak": "research/ml/r02/oof_predictions.parquet (ml1-r02-long-ctx-1r; model x esik)",
+      "ciftler": [],
+      "cift_sayisi": 0,
+      "durum": "uretilemedi",
+      "n_yapilandirma": 0,
+      "T": 0,
+      "neden": "OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi)"
+    },
+    {
+      "kurulum": "ML r02",
+      "sinif": "emtia",
+      "kaynak": "research/ml/r02/oof_predictions.parquet (ml1-r02-long-ctx-1r; model x esik)",
+      "ciftler": [],
+      "cift_sayisi": 0,
+      "durum": "uretilemedi",
+      "n_yapilandirma": 0,
+      "T": 0,
+      "neden": "OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi)"
+    },
+    {
+      "kurulum": "ML r03",
+      "sinif": "kripto",
+      "kaynak": "research/ml/r03/oof_predictions.parquet (ml1-r03-long-regime8; model x esik)",
+      "ciftler": [
+        "ADA/USDT",
+        "AVAX/USDT",
+        "BNB/USDT",
+        "BTC/USDT",
+        "DOGE/USDT",
+        "ETH/USDT",
+        "LINK/USDT",
+        "SOL/USDT",
+        "TRX/USDT",
+        "XRP/USDT"
+      ],
+      "cift_sayisi": 10,
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "pencere": [
+        "2022-01-07",
+        "2026-04-29"
+      ],
+      "n_kullanilan": 8,
+      "durum": "tamam",
+      "n_splits": 16,
+      "pbo": 0.6645,
+      "n_kombinasyon": 2000,
+      "medyan_oos_goreli_sira": 0.3333333333333333,
+      "prob_oos_kayip": 0.77,
+      "en_iyi_yapilandirma": "p_logistic@0.70",
+      "en_iyi_sr_yillik": 0.2130324596312616,
+      "en_iyi_islem": null,
+      "dsr": 0.3037151011744526,
+      "yorum": "asiri uyum riski yuksek"
+    },
+    {
+      "kurulum": "ML r03",
+      "sinif": "hisse",
+      "kaynak": "research/ml/r03/oof_predictions.parquet (ml1-r03-long-regime8; model x esik)",
+      "ciftler": [],
+      "cift_sayisi": 0,
+      "durum": "uretilemedi",
+      "n_yapilandirma": 0,
+      "T": 0,
+      "neden": "OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi)"
+    },
+    {
+      "kurulum": "ML r03",
+      "sinif": "emtia",
+      "kaynak": "research/ml/r03/oof_predictions.parquet (ml1-r03-long-regime8; model x esik)",
+      "ciftler": [],
+      "cift_sayisi": 0,
+      "durum": "uretilemedi",
+      "n_yapilandirma": 0,
+      "T": 0,
+      "neden": "OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi)"
+    }
+  ],
+  "tutarlilik_arm_series": {
+    "T1": {
+      "maks_mutlak_fark": 1.8776870973624682e-06,
+      "kolon_sayisi_esit": true
+    },
+    "R1": {
+      "maks_mutlak_fark": 2.3711864738373833e-07,
+      "kolon_sayisi_esit": true
+    }
+  },
+  "defter_ve_ml_sinif_ustu_onceki_sonuc": {
+    "ML r02": {
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "pbo": 0.5805,
+      "dsr": 0.08475821252711058,
+      "medyan_oos_goreli_sira": 0.5
+    },
+    "ML r03": {
+      "n_yapilandirma": 12,
+      "T": 1574,
+      "pbo": 0.6645,
+      "dsr": 0.3037151011744526,
+      "medyan_oos_goreli_sira": 0.3333333333333333
+    }
+  }
+}

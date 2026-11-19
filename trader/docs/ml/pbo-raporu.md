@@ -138,3 +138,34 @@ Gonderilen `M1@1h` paketinin egitim penceresi 2024-01-16T15:00:00+00:00..2026-04
 - `M1@4h`: gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)
 
 Calisma suresi: toplam 488.2 sn (4 cekirdek; kurulum basina: B1 88.2 sn, F1 128.2 sn, H2 97.2 sn, M1 12.3 sn, R1 12.8 sn, S1 51.5 sn, T1 8.8 sn, TF1 89.3 sn).
+
+## Varlik sinifi dokumu — 23.11 degerlendirmesi icin
+
+Yalniz olcum: kol ayari, agirlik, config ve motor degismedi; karar kapisi degildir. Uretim: `python research/pbo_sinif.py` (`pbo_rapor.py` dosyayi bastan yazar; bu komut ondan SONRA kosulur) (seed 0, tek komut; holdout 2026-05-01 oncesi). Kural ve sinif tablosu asagida; hepsi sonuc gorulmeden once betiğe yazildi.
+
+**Ne olduklari.** `T1` / `R1`: kagit kural ailesi kurulumlari (trend / aralik). `r02` ve `r03`: R1 ailesi degil, ML-1 uzun-yon filtre tarifleri — `ml1-r02-long-ctx-1r` (lojistik + LightGBM, 40 ozellik, 1R/72 mum etiketi) ve `ml1-r03-long-regime8` (ayni, 8 ozellik, sig LightGBM); `docs/ml/r02-r03-on-kayit.md`, `research/ml/{r02,r03}/`, `research/ml_trial_registry.csv`. Ikisi de kapida RED (r02: IC rho -0,034).
+
+**Sinif kaynagi** (`config/engine.paper.json` `clusters`): kripto 20 cift (BTC, ETH, XRP, BNB, SOL, DOGE, ADA, TRX, LINK, AVAX, HYPE, BCH, XLM, SUI, HBAR, LTC, TON, 1000SHIB, DOT, XMR); hisse 20 cift (NVDA, MSFT, AAPL, GOOGL, AMZN, META, AVGO, TSLA, BRKB, JPM, LLY, WMT, V, ORCL, XOM, NFLX, PLTR, COST, AMD, HD); emtia 4 cift (XAU, XAG, BZ, COPPER).
+Tarihsel mumu olmayan 11 hisse cifti kapsam disi: BRKB, JPM, LLY, WMT, V, ORCL, XOM, NFLX, COST, AMD, HD.
+
+**Onceden yazili kural.** T >= 128 gun -> n_splits 16; 64 <= T < 128 -> n_splits 8; T < 64 -> hesaplanmadi. T = sinifin ilk sifirdan farkli R'li gunu..2026-04-30; pencere oncesi sifir gunler dahil degil. Sabit sutunlar CSCV'den cikar, deneme sayisinda kalir; max_combinations 2000, olcut Sharpe, DSR en iyi tam-pencere Sharpe'li yapilandirma icin sinifin tum yapilandirma sayisiyla. Pencere kirpmasi nedeniyle kripto T'si, mevcut §1 tablosundaki (2021-01-01..) T'den kisa olabilir; mevcut tablodaki aile-ustu degerlerle birebir karsilastirilmaz.
+
+| Kurulum | Sinif | Cift (verisi olan) | Yapilandirma (kullanilan) | T (gun) | n_splits | PBO | Medyan OOS goreli sira | En iyi IS yapilandirma (islem) | Yillik SR | DSR | Not |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| T1 | kripto | 20 | 48 (48) | 1896 | 16 | 0,525 | 0,490 | `T1@1d/trail_atr=2.5/f1/s0` (223) | 0,97 | 0,591 | asiri uyum riski yuksek |
+| T1 | hisse | 9 | 24 | 38 | - | - | - | - | - | - | hesaplanmadi: T=38 < 64 (kural) |
+| T1 | emtia | 4 | 24 (24) | 64 | 8 | 0,514 | 0,480 | `T1@4h/pullback_ema=20/f1/s0` (10) | 2,89 | 0,337 | asiri uyum riski yuksek |
+| R1 | kripto | 20 | 56 (52) | 1888 | 16 | 0,321 | 0,585 | `R1@1d/range_target_frac=0.6/f1/s0` (1) | -0,44 | 0,000 | asiri uyum riski dusuk-orta |
+| R1 | hisse | 9 | 28 | 0 | - | - | - | - | - | - | hesaplanmadi: hic islem yok |
+| R1 | emtia | 4 | 28 | 0 | - | - | - | - | - | - | hesaplanmadi: hic islem yok |
+| ML r02 | kripto | 10 | 12 (9) | 1574 | 16 | 0,581 | 0,500 | `p_logistic@0.70` | -0,12 | 0,085 | asiri uyum riski yuksek |
+| ML r02 | hisse | 0 | 0 | 0 | - | - | - | - | - | - | uretilemedi: OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi) |
+| ML r02 | emtia | 0 | 0 | 0 | - | - | - | - | - | - | uretilemedi: OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi) |
+| ML r03 | kripto | 10 | 12 (8) | 1574 | 16 | 0,664 | 0,333 | `p_logistic@0.70` | 0,21 | 0,304 | asiri uyum riski yuksek |
+| ML r03 | hisse | 0 | 0 | 0 | - | - | - | - | - | - | uretilemedi: OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi) |
+| ML r03 | emtia | 0 | 0 | 0 | - | - | - | - | - | - | uretilemedi: OOF yalniz 10 kripto cift icerir; bu sinifta cift/alinan satir yok (ML-1 egitim korpusu bu sinifi kapsamadi) |
+
+PBO < 0,5 ise "dusuk-orta", aksi "yuksek" yazilir (bilgi amacli). Dusuk PBO secim kararliligidir, karlilik degildir; DSR ~0 deneme sayisi duzeltmesinden sonra pozitif beklenti gorunmedigini belirtir. Hisse/emtia kolonlari ayni sinyal akisinin maliyet/parametre kopyalari oldugundan yuksek olcude iliskilidir ve sinif basina islem sayisi azdir (kisa pencere): PBO/DSR bu siniflarda dusuk gucle okunmali, kesin hukum degil.
+
+**Tutarlilik:** siniflarin toplami `research/arm_series/{T1,R1}.parquet` ile T1: maks fark 1.88e-06, R1: maks fark 2.37e-07 (float32 yuvarlamasi).
+
