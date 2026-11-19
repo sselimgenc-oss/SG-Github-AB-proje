@@ -16,6 +16,15 @@ PARAMS = {"range_width_atr": 4.0, "vol_ratio_max": 1.5, "edge_zone_atr": 0.25, "
           "stop_buffer_atr": 0.3, "trail_atr": 3.0, "range_target_frac": 0.75, "rr_min": 1.5, "trigger_tf": "1h"}
 
 
+def limit_orani():
+    """Gercek kagit ayari (config/engine.paper.json risk.daily_max_loss); sabit yazilmaz."""
+    return float(json.loads((ROOT / "config" / "engine.paper.json").read_text(encoding="utf-8"))["risk"]["daily_max_loss"])
+
+
+def tr_usd(x):
+    return f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def mkcfg(tmp_path, **kw):
     d = dict(ledger_path=str(tmp_path / "l.sqlite"),
              budget_config=str(tmp_path / "config" / "budget.json"), lesson_store=str(tmp_path / "lesson.sqlite"))
@@ -55,7 +64,7 @@ def test_ledger_normal_day(tmp_path):
     write_status(tmp_path)
     s = T.section_ledger(mkcfg(tmp_path), DAY)
     assert "kapanan=2" in s and "kazanan/kaybeden=1/1" in s and "açık=1" in s
-    assert "equity=1000.00" in s and "bütçe %5=50.00$" in s and "ikiz" not in s
+    assert "equity=1000.00" in s and f"bütçe %{limit_orani() * 100:g}={limit_orani() * 1000:.2f}$" in s and "ikiz" not in s
 
 
 def test_ledger_no_trades(tmp_path):
@@ -138,7 +147,7 @@ def test_report_paper_is_plain_turkish(tmp_path):
     lines = out.splitlines()
     assert lines[0] == "[ML] 🌙 Günlük özet · 16 Kasım"
     for want in ("Bugün kapanan işlem yok.", "Kasa: 1.000,00 $ (gün başı 1.000,00 $)",
-                 "Günlük zarar sınırı: 0,00 $ / 50,00 $ kullanıldı", "Açık pozisyon yok.", "Yeni işlemler açık."):
+                 f"Günlük zarar sınırı: 0,00 $ / {tr_usd(limit_orani() * 1000)} $ kullanıldı", "Açık pozisyon yok.", "Yeni işlemler açık."):
         assert want in out, want
     assert "Dersler: bugün 0 uygulandı, 0 geri alındı · işlemlere etkili" in out and len(lines) <= 12
     for ham in ("{", "Sayaclar", "PermissionError", "depo_yok", "Spool", "bilgiler okunamadı", "bilinmeyen_kod",
@@ -166,7 +175,7 @@ def test_report_risk_closed_lines(tmp_path):
     assert "Yeni işlemler kapalı." in out and "Yeni işlemler açık" not in out and "clock_skew" not in out
     _status(tmp_path, kill=True, entries_open=False)
     assert "Acil durdurma açık" in T.build_report(cfg, NOW, DAY, {})
-    _status(tmp_path, entries_open=False, equity=940.0)
+    _status(tmp_path, entries_open=False, equity=1000.0 - 1.1 * limit_orani() * 1000.0)
     assert "Günlük zarar sınırı doldu: bugün yeni işlem açılmaz." in T.build_report(cfg, NOW, DAY, {})
     _status(tmp_path, entries_open=False, gate={"ok": False, "code": "paused"})
     out = T.build_report(cfg, NOW, DAY, {"Duraklatma": lambda: "⏸️ ana bot: yeni işlemler duraklatıldı — elle durduruldu"})

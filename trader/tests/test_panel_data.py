@@ -110,7 +110,7 @@ def test_ledger_day_and_recent(run):
     j = run.get(f"/api/ledger?bot=learner&day={DAY}")
     s = j["summary"]
     assert (s["closed"], s["win"], s["loss"], s["open"]) == (2, 1, 1, 1)
-    assert s["daily_limit"] == pytest.approx(LOCKED_CFG.daily_max_loss * 1000.0)
+    assert s["daily_limit"] == pytest.approx(P.daily_loss_rate() * 1000.0)
     assert [t["trade_id"] for t in j["closed"]] == [5, 4]                 # cikis zamani yeniden eskiye
     assert j["open"][0]["trade_id"] == 6
     assert j["decisions"]["entered"] == 3 and j["decisions"]["total"] == 3
@@ -153,7 +153,7 @@ def test_risk_rows_use_ledger_and_risk_config(run):
     assert rows["Toplam açık risk"]["used"] == pytest.approx(13.188)     # acik islemin planned_risk toplami
     assert rows["Toplam açık risk"]["limit"] == pytest.approx(LOCKED_CFG.max_open_risk * 1003.5)
     assert rows["Long açık risk"]["limit"] == pytest.approx(LOCKED_CFG.max_same_dir_risk * 1003.5)
-    assert rows["Günlük zarar"]["limit"] == pytest.approx(LOCKED_CFG.daily_max_loss * 1000.0)
+    assert rows["Günlük zarar"]["limit"] == pytest.approx(P.daily_loss_rate() * 1000.0)
 
 
 def test_compare_and_twin_endpoints_removed(run):

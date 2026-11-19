@@ -6,6 +6,7 @@ import pytest
 from panel_support import DAY, NOW, Env, ROOT
 from trader_core import panel_data as P
 from trader_core import telegram as T
+from trader_core import tg_sade as TS
 
 
 @pytest.fixture(scope="module")
@@ -38,7 +39,7 @@ def test_ledger_numbers_equal_section_ledger(env, tcfg):
     s = P.day_summary(closed, opened, dse)
     assert (f"kapanan={s['closed']} PnL={s['pnl']:+.2f}$ R={s['r']:+.2f} kazanan/kaybeden={s['win']}/{s['loss']} "
             f"açık={s['open']}") in text
-    assert f"günlük zarar={s['daily_loss']:.2f}$ / bütçe %5={s['daily_limit']:.2f}$" in text
+    assert f"günlük zarar={s['daily_loss']:.2f}$ / bütçe %{P.daily_loss_rate() * 100:g}={s['daily_limit']:.2f}$" in text
     assert "ikiz" not in text                                  # DD-12: ikiz satiri yok
     # telegram'in eski yolu (_trades) ile ayni kume ve toplam
     from trader_core import ledger as L
@@ -48,7 +49,7 @@ def test_ledger_numbers_equal_section_ledger(env, tcfg):
     led.close()
     assert T._sum(old) == pytest.approx(P.sum_pnl_r(closed))
     assert sorted(t.trade_id for t in old) == sorted(t.trade_id for t in closed)
-    assert abs(0.05 * dse - s["daily_limit"]) < 1e-9                 # telegram'daki %5 sabiti = risk kilidi degeri
+    assert abs(TS.limit_orani(tcfg.config_dir, None) * dse - s["daily_limit"]) < 1e-9   # telegram ve panel ayni tek kaynak
 
 
 def test_budget_equals_section_budget(tcfg):

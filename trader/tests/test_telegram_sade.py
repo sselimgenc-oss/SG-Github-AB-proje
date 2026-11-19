@@ -199,14 +199,22 @@ def test_motor_deneme_tukendi_ve_birim_basarisiz_bot_durdu_olur(rig):
 
 
 # ------------------------------------------------------------------ gunluk zarar %80
+def _ayar_orani():
+    """Gercek kagit ayari (config/engine.paper.json risk.daily_max_loss); sabit yazilmaz."""
+    from pathlib import Path
+    cfg = Path(__file__).resolve().parent.parent / "config" / "engine.paper.json"
+    return float(json.loads(cfg.read_text(encoding="utf-8"))["risk"]["daily_max_loss"])
+
+
 def _durum(rig, eq, dse=1000.0):
     (rig.tmp / "status.json").write_text(json.dumps({"equity": eq, "day_start_equity": dse}))
 
 
 def test_zarar_80_yuzde_gunde_bir_kez(rig):
-    _durum(rig, 970.0)                                     # 30 $ / 50 $ = %60: sessiz
+    lim = _ayar_orani() * 1000.0
+    _durum(rig, 1000.0 - 0.6 * lim)                        # %60: sessiz
     assert T.zarar_tick(rig.cfg, rig.n, T0) == 0
-    _durum(rig, 960.0)                                     # 40 $ = %80
+    _durum(rig, 1000.0 - 0.8 * lim)                        # %80
     assert T.zarar_tick(rig.cfg, rig.n, T0) == 1
     assert T.zarar_tick(rig.cfg, rig.n, T0 + timedelta(hours=1)) == 0       # ayni gun ikinci uyari yok
     assert "%80" in rig.fake.texts[0] and "Günlük zarar sınırına yaklaşıldı" in rig.fake.texts[0]
@@ -216,7 +224,7 @@ def test_zarar_80_yuzde_gunde_bir_kez(rig):
 
 
 def test_limit_doldu_acik_pozisyonlarin_akibetini_soyler(rig):
-    _durum(rig, 945.0)
+    _durum(rig, 1000.0 - 1.1 * _ayar_orani() * 1000.0)
     assert T.zarar_tick(rig.cfg, rig.n, T0) == 1
     t = rig.fake.texts[0]
     assert "limiti doldu" in t and "stoplarıyla yönetilmeye devam" in t and "yeni işlem açılmaz" in t
@@ -281,15 +289,15 @@ def test_limit_orani_ayardan_okunur(tmp_path, monkeypatch):
     assert TS.limit_orani(cd, "paper") == 0.04
     assert TS.limit_orani(cd, "live") == R.LOCKED_CFG.daily_max_loss          # canlida kilitli
     assert TS.limit_orani(tmp_path / "yok", "paper") == R.LOCKED_CFG.daily_max_loss
-    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}}))
-    assert TS.limit_orani(cd, "paper") == R.LOCKED_CFG.daily_max_loss          # paper siniri asan deger -> kilitli
-    monkeypatch.setattr(R.PaperRiskConfig, "_LIMITS", {**R.PAPER_LIMITS, "daily_max_loss": 0.08})
-    assert TS.limit_orani(cd, "paper") == 0.08
+    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": R.PAPER_LIMITS["daily_max_loss"]}}))
+    assert TS.limit_orani(cd, "paper") == R.PAPER_LIMITS["daily_max_loss"]       # paper ust siniri gecerli
+    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": R.PAPER_LIMITS["daily_max_loss"] + 0.01}}))
+    assert TS.limit_orani(cd, "paper") == R.LOCKED_CFG.daily_max_loss          # siniri asan deger -> kilitli
+    assert TS.limit_orani(None, "paper") == _ayar_orani()                      # varsayilan: gercek ayar dosyasi
 
 
 def test_kagitta_yuzde_80_uyarisi_ayardaki_limite_gore(rig, monkeypatch):
     from trader_core import risk as R
-    monkeypatch.setattr(R.PaperRiskConfig, "_LIMITS", {**R.PAPER_LIMITS, "daily_max_loss": 0.08})
     cd = rig.tmp / "cfg"
     cd.mkdir()
     (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}}))

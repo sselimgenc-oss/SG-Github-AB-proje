@@ -1706,9 +1706,9 @@ def section_ledger(cfg: TelegramConfig, day: str) -> str:
     if dse:
         lim = TS.limit_orani(cfg.config_dir, None) * float(dse)
         lines.append(f"  equity={_fnum(eq)} gün_başı={_fnum(dse)} günlük zarar={max(0.0, -pnl):.2f}$ / "
-                     f"bütçe %5={lim:.2f}$")
+                     f"bütçe %{TS.limit_orani(cfg.config_dir, None) * 100:g}={lim:.2f}$")
     else:
-        lines.append(f"  equity={_fnum(eq)} gün_başı=? günlük zarar={max(0.0, -pnl):.2f}$ / bütçe %5=?")
+        lines.append(f"  equity={_fnum(eq)} gün_başı=? günlük zarar={max(0.0, -pnl):.2f}$ / bütçe %{TS.limit_orani(cfg.config_dir, None) * 100:g}=?")
     return "\n" + "\n".join(lines)
 
 
