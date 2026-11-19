@@ -4320,7 +4320,7 @@ class LessonService:
                               "stats": dict(v.stats), "run_day": run_day, "fingerprint": fp})
                 if res.ok:
                     self._notify(ctx, "rolled_back", "warn", "Ders degisikligi geri alindi",
-                                 f"{mon.param} {mon.to_value} -> {mon.from_value} (ledger_only)", run_day,
+                                 f"{mon.param} {mon.to_value} -> {mon.from_value} (ledger_only). Kapsam: {mon.scope}.", run_day,
                                  mon.version_id, now)
                     rolled = TickResult("rolled_back", run_day, v.action, detail, EXIT_DEGRADED)
             elif v.action in ("confirmed_pending_recheck", "confirmed", "superseded") and not fb.has(fp):
@@ -4603,7 +4603,7 @@ class LessonService:
             self._notify(ctx, "rolled_back", "warn",
                          f"Geri alındı: {m.param}" if self.cfg.paper_auto else "Ders degisikligi geri alindi",
                          f"{m.param} {m.to_value} -> {m.from_value}: {reason}"
-                         + (" (kullanici onayli degisiklik)" if m.origin == "user" else ""),
+                         + (" (kullanici onayli degisiklik)" if m.origin == "user" else "") + f" Kapsam: {m.scope}.",
                          run.run_day, m.version_id, now)
             rolled.append({"version_id": m.version_id, **stats, "action": v.action})
         if rolled:
@@ -5047,7 +5047,7 @@ class LessonService:
         store.add_monitor(m)
         ev_txt = " ".join(f"{k}={v}" for k, v in (evidence or {}).items())
         self._notify(ctx, "applied", "info", f"Ders uygulandı: {param}" if self.cfg.paper_auto else f"Ders uygulandi: {param}",
-                     f"{param} {m.from_value} -> {m.to_value} ({'otomatik' if origin == 'auto' else 'kullanici onayli'}). "
+                     f"{param} {m.from_value} -> {m.to_value} ({'otomatik' if origin == 'auto' else 'kullanici onayli'}). Kapsam: {scope}. "
                      f"Kanit: {ev_txt}. Geri alma: kullanici geri alma dugmesi ya da otomatik izleyici.",
                      run.run_day if run else fmt_ts(now)[:10], ares.version_id, now)
 

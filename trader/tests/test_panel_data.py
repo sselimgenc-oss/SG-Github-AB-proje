@@ -96,7 +96,7 @@ def test_thresholds_come_from_config_not_literals(tmp_path, monkeypatch):
     assert r.get("/api/status")["bots"]["learner"]["state"] == "stale"
     monkeypatch.setattr(P, "STALE_S", 120)
     assert r.get("/api/status")["bots"]["learner"]["state"] == "live"
-    monkeypatch.setattr(P, "LOCKED_CFG", dataclasses.replace(LOCKED_CFG, daily_max_loss=0.03))
+    monkeypatch.setattr(P, "daily_loss_rate", lambda mode="paper": 0.03)   # tek kaynak: Telegram ile ayni yardimci
     row = [x for x in r.get("/api/risk?bot=learner")["rows"] if x["label"] == "Günlük zarar"][0]
     assert row["limit"] == pytest.approx(0.03 * 1000.0)
     s = r.get("/api/ledger?bot=learner")["summary"]

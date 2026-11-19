@@ -86,7 +86,7 @@ guncelleme_metni() { # eski yeni: en cok 3 satir, sade Turkce; dosya adi yok; ha
   [ -n "$ilk" ] || ilk="iyileştirmeler"
   printf '[ML] Bot güncellendi: %s\n' "$ilk"
   if [ "${toplam:-0}" -gt 1 ]; then printf '(ve %s değişiklik daha)\n' "$((toplam - 1))"; fi
-  printf 'Sorun olursa tek komutla geri alınır: trader-geri-al\n'
+  printf "Senden: sorun görürsen orkestratöre 'ML geri al' yaz.\n"
 }
 
 gecmis_ekle() { # eski yeni sonuc

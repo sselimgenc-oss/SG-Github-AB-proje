@@ -140,9 +140,9 @@ def test_report_paper_is_plain_turkish(tmp_path):
     for want in ("Bugün kapanan işlem yok.", "Kasa: 1.000,00 $ (gün başı 1.000,00 $)",
                  "Günlük zarar sınırı: 0,00 $ / 50,00 $ kullanıldı", "Açık pozisyon yok.", "Yeni işlemler açık."):
         assert want in out, want
-    assert len(lines) <= 12
+    assert "Dersler: bugün 0 uygulandı, 0 geri alındı · işlemlere etkili" in out and len(lines) <= 12
     for ham in ("{", "Sayaclar", "PermissionError", "depo_yok", "Spool", "bilgiler okunamadı", "bilinmeyen_kod",
-                "veto_missing", "kip=", "Model", "Bütçe", "Ders", "Öğrenme", "━"):
+                "veto_missing", "kip=", "Bütçe", "Öğrenme", "━"):
         assert ham not in out, ham
 
 
@@ -154,7 +154,7 @@ def test_report_open_positions_and_closed_summary(tmp_path):
            for i in range(8)]
     _status(tmp_path, open_positions=pos)
     out = T.build_report(cfg, NOW, DAY, T.default_sections(cfg, NOW, DAY))
-    assert "Açık pozisyon: 8 (P0 kısa, P1 uzun, P2 kısa, P3 uzun, …)" in out
+    assert "Açık pozisyon: 8 (P0 short, P1 long, P2 short, P3 long, …)" in out
     assert "Bugün 2 işlem kapandı (1 kâr, 1 zarar)" in out and "USDT" not in out
     assert len(out.splitlines()) <= 12
 

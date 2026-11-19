@@ -49,7 +49,7 @@ def coin(pair: Any) -> str:
 
 
 def yon(side: Any) -> str:
-    return "uzun" if str(side).lower() in ("long", "buy", "b", "uzun") else "kısa"
+    return "long" if str(side).lower() in ("long", "buy", "b", "uzun") else "short"
 
 
 def fiyat(x: Any) -> str:
@@ -91,10 +91,28 @@ def _bagla(satirlar: list[str], max_satir: int = MAX_SATIR) -> str:
     return etiketle("\n".join(satirlar[:max_satir]))
 
 
+# ----------------------------------------------------------------------------- kol adi
+_TF_TR = {"15m": "15dk", "1h": "1s", "4h": "4s", "1d": "1g", "5m": "5dk", "1m": "1dk", "30m": "30dk", "1w": "1h"}
+
+
+def kol_adi(setup: Any, tf: Any = None) -> str:
+    """Kol/kurulum kimligi -> okunur ad: 'M1@1h' -> 'M1 · 1s', 'T1@15m' -> 'T1 · 15dk', 'R1@1d' -> 'R1 · 1g'.
+    `tf` ayrica verilirse (setup '@' icermiyorsa) o kullanilir. Panel de ayni fonksiyonu kullanir."""
+    s = str(setup or "?").strip()
+    ad, _, zf = s.partition("@")
+    zf = zf or str(tf or "")
+    return f"{ad} · {_TF_TR.get(zf, zf)}" if zf else ad
+
+
+def trade_kol(t: Any) -> str:
+    """Ledger TradeRecord -> kol adi (arm_id yoksa setup@trigger_tf)."""
+    return kol_adi(getattr(t, "arm_id", None) or getattr(t, "setup", None), getattr(t, "trigger_tf", None))
+
+
 # ----------------------------------------------------------------------------- islem mesajlari
-def islem_acildi(bot: str, pair: Any, side: Any, giris: Any, tutar: Any, stop: Any) -> str:
+def islem_acildi(kol: str, pair: Any, side: Any, giris: Any, tutar: Any, stop: Any) -> str:
     t = f"{sayi(tutar, 0)} $" if tutar is not None else "?"
-    return _bagla([f"{'🟩' if yon(side) == 'uzun' else '🟥'} {BOT_AD.get(bot, bot)} · {coin(pair)} · {yon(side)}",
+    return _bagla([f"{'🟩' if yon(side) == 'long' else '🟥'} {kol} · {coin(pair)} · {yon(side)}",
                    f"Giriş {fiyat(giris)} · Tutar {t} · Stop {fiyat(stop)}"])
 
 
@@ -102,14 +120,54 @@ KAPANIS_NEDEN = {"stop": "stop", "trail_stop": "stop", "liquidation": "stop", "t
                  "manual": "elle", "force_exit": "elle", "regime_flip": "piyasa değişti"}
 
 
-def islem_kapandi(bot: str, pair: Any, side: Any, pnl: float, notional: float | None, neden: Any, kritik: bool = False) -> str:
+def islem_kapandi(kol: str, pair: Any, side: Any, pnl: float, notional: float | None, neden: Any, kritik: bool = False) -> str:
     yuz = f" ({isaretli(pnl / notional * 100, 1)}%)" if notional else ""
     isaret = "🔴" if kritik else ("🟢" if pnl > 0 else ("🔻" if pnl < 0 else "⚪"))
-    return _bagla([f"{isaret} {BOT_AD.get(bot, bot)} · {coin(pair)} · {yon(side)} kapandı",
+    return _bagla([f"{isaret} {kol} · {coin(pair)} · {yon(side)} kapandı",
                    f"Sonuç {isaretli(pnl)} ${yuz} · {KAPANIS_NEDEN.get(str(neden), 'elle')}"])
 
 
+def islemler_acildi(satirlar: list[tuple[str, Any, Any, Any, Any, Any]]) -> str:
+    """Ayni dakikadaki acilislar tek mesaj; her satir bir islem. Tek islem -> `islem_acildi` (tam 2 satir)."""
+    if len(satirlar) == 1:
+        return islem_acildi(*satirlar[0])
+    out = [f"🟩 {len(satirlar)} işlem açıldı"]
+    for kol, pair, side, giris, tutar, stop in satirlar[: MAX_SATIR - 2]:
+        out.append(f"{kol} · {coin(pair)} · {yon(side)} · {fiyat(giris)} · {sayi(tutar, 0)} $ · stop {fiyat(stop)}")
+    if len(satirlar) > MAX_SATIR - 2:
+        out.append(f"… ve {len(satirlar) - (MAX_SATIR - 2)} işlem daha")
+    return _bagla(out)
+
+
+def saatlik_ozet(acilan: int, kapanan: int, net: float) -> str:
+    return _bagla([f"Son 1 saatte {acilan + kapanan} işlem daha: {acilan} açıldı, {kapanan} kapandı · net {isaretli(net)} $"])
+
+
 # ----------------------------------------------------------------------------- gunluk zarar
+def limit_orani(config_dir: str | Path | None, mode: Any = "paper") -> float:
+    """Gunluk zarar orani: canlida kilitli (LOCKED_CFG), kagitta engine.base/learner/paper ayarindaki risk.daily_max_loss
+    (risk.paper_config ile dogrulanir). Okunamazsa LOCKED_CFG. trader_engine ice aktarilmaz."""
+    from . import risk as R  # noqa: PLC0415
+    if str(mode) == "live":
+        return R.LOCKED_CFG.daily_max_loss
+    if not config_dir:
+        config_dir = (os.environ.get("ENGINE_CONFIG_DIR") or "").strip() or str(Path(__file__).resolve().parent.parent.parent / "config")
+    try:
+        cfg: dict = {}
+        for ad in ("engine.base.json", "engine.learner.json", "engine.paper.json"):
+            p = Path(config_dir) / ad
+            if p.exists():
+                d = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(d.get("risk"), dict):
+                    cfg.setdefault("risk", {}).update(d["risk"])
+        v = (cfg.get("risk") or {}).get("daily_max_loss")
+        if v is None:
+            return R.LOCKED_CFG.daily_max_loss
+        return R.paper_config(daily_max_loss=float(v)).daily_max_loss
+    except (OSError, ValueError, TypeError):
+        return R.LOCKED_CFG.daily_max_loss
+
+
 def limit_uyari(zarar: float, limit: float) -> str:
     return _bagla(["⚠️ Günlük zarar sınırına yaklaşıldı",
                    f"Bugün {sayi(zarar)} $ kaybedildi; sınır {sayi(limit)} $ (%80 doldu).",
@@ -123,25 +181,28 @@ def limit_doldu(zarar: float, limit: float) -> str:
 
 
 # ----------------------------------------------------------------------------- bot durdu
-def _pozisyonlar(status_path: str | None) -> tuple[int | None, bool | None]:
-    """(acik pozisyon sayisi, hepsinin stopu var mi); okunamazsa (None, None)."""
+def _pozisyonlar(status_path: str | None) -> tuple[int | None, str | None]:
+    """(acik pozisyon sayisi, kip); okunamazsa (None, None)."""
     try:
         st = json.loads(Path(str(status_path)).read_text(encoding="utf-8"))
-        pos = st.get("open_positions") or []
-        ok = all(isinstance(p.get("stop"), (int, float)) and not isinstance(p.get("stop"), bool) for p in pos)
-        return len(pos), ok
+        return len(st.get("open_positions") or []), str(st.get("mode") or "")
     except Exception:  # noqa: BLE001
         return None, None
 
 
 def bot_durdu(status_path: str | None = None, ne: str = "Bot durdu") -> str:
-    n, ok = _pozisyonlar(status_path)
+    """Kagitta stop 'benzetilmis borsa'da (engine surecinin icinde; brokers/paper.py:298 place_stop, :545 stop_hit yalniz
+    motor `advance` cagirinca) izlenir: motor durunca stoplar izlenmez. Canlida STOP_MARKET emri borsada durur
+    (brokers/binance_futures.py:1129)."""
+    n, mod = _pozisyonlar(status_path)
     if n is None:
-        poz = "Açık pozisyon bilgisi okunamadı; borsadaki stopları kontrol et."
+        poz = "Açık pozisyon bilgisi okunamadı."
     elif n == 0:
         poz = "Açık pozisyon yok."
+    elif mod == "live":
+        poz = f"Açık pozisyon: {n}; stop emirleri borsada duruyor."
     else:
-        poz = f"Açık pozisyon: {n}; " + ("stopları borsada yerinde." if ok else "bazılarında stop görünmüyor, borsayı kontrol et.")
+        poz = f"Açık pozisyon: {n}; bot durmuşken stoplar izlenmiyor."
     return _bagla([f"🔴 {ne}", poz, "Otomatik yeniden başlatma deneniyor."])
 
 
@@ -173,7 +234,7 @@ _SADE: dict[str, tuple[str, str, str | None, str]] = {
                            "hesap ayarı yeniden doğru"),
     "naked_position": ("Stopu olmayan açık pozisyon var!", "Bot stop koymayı deniyor.",
                        "Binance uygulamasında pozisyona stop koy ya da kapat.", "stopsuz pozisyon kalmadı"),
-    "exchange_unreachable": ("Borsaya ulaşılamıyor.", "Bağlantı yeniden deneniyor; stoplar borsada yerinde.", None,
+    "exchange_unreachable": ("Borsaya ulaşılamıyor.", "Bağlantı yeniden deneniyor.", None,
                              "borsa bağlantısı yeniden sağlandı"),
     "disk_dolu": ("Disk dolmak üzere.", "Haftalık bakım eski dosyaları temizliyor.", "Yetmezse yer açılması için bana haber ver.",
                   "disk doluluğu normale döndü"),
@@ -256,12 +317,41 @@ def birim_metni(birim: str, status_path: str | None = None) -> str | None:
 
 
 # ----------------------------------------------------------------------------- ders / onay
-def ders_mesaji(level: str, code: str) -> str | None:
-    """Ders bildirimi -> metin | None. INFO ve teknik hatalar susturulur; geri alma/fren tek satir."""
-    if str(level).lower() == "info":
-        return None
-    if code in ("rolled_back", "brake"):
-        return _bagla(["⚠️ Son ayar değişikliği geri alındı", "Bot önceki güvenli ayarla devam ediyor."])
+def _ders_ayrinti(title: str, body: str) -> tuple[str, str, str, str]:
+    """Bildirim govdesinden (param, eski, yeni, kapsam)."""
+    m = re.match(r"\s*(\w+) (\S+) -> (\S+)", body or "")
+    k = re.search(r"Kapsam: ([A-Za-z0-9+@]+)", body or "")
+    param, eski, yeni = (m.group(1), m.group(2), m.group(3).rstrip(":")) if m else ("", "", "")
+    return param, eski, yeni, (k.group(1) if k else "")
+
+
+def _ders_ne(param: str, eski: str, yeni: str) -> str:
+    if not param:
+        return "bir ayar"
+    return f"{PARAM_AD.get(param, temizle(param))} {eski} → {yeni}".strip()
+
+
+def _kapsam_oku(kapsam: str) -> str:
+    return " + ".join(kol_adi(x) for x in kapsam.split("+") if x) if kapsam else ""
+
+
+def ders_mesaji(level: str, code: str, title: str = "", body: str = "") -> tuple[str, str] | None:
+    """Ders bildirimi -> (metin, tekrar anahtari) | None (susar). Uygulandi ve geri alindi kullaniciya gider (ders artik onaysiz
+    uygulaniyor); onay-zaman-asimi/teknik hatalar susar; fren eski tek satir."""
+    code = str(code)
+    param, eski, yeni, kapsam = _ders_ayrinti(title, body)
+    kol = _kapsam_oku(kapsam)
+    if code == "applied":
+        t = _bagla([f"Ders uygulandı: {_ders_ne(param, eski, yeni)}" + (f" · {kol}" if kol else "")])
+        return t, f"ders|applied|{param}|{kapsam}"
+    if code == "rolled_back":
+        if param:
+            t = _bagla([f"Ders geri alındı: {_ders_ne(param, eski, yeni)}" + (f" · {kol}" if kol else "") + " (sonuç kötüleşti)"])
+        else:
+            t = _bagla(["⚠️ Son ayar değişikliği geri alındı", "Bot önceki güvenli ayarla devam ediyor."])
+        return t, f"ders|rolled_back|{param}|{kapsam}"
+    if code == "brake":
+        return _bagla(["⚠️ Ders freni devrede", "Bot önceki güvenli ayarla devam ediyor; yeni ders uygulanmıyor."]), "ders|brake"
     return None
 
 
@@ -331,6 +421,16 @@ class Kayit:
             self._yaz(d)
             return True
         return False
+
+    def durum(self, key: str) -> dict:
+        v = self._oku().get("durum", {})
+        e = v.get(key) if isinstance(v, dict) else None
+        return e if isinstance(e, dict) else {}
+
+    def durum_yaz(self, key: str, val: dict) -> None:
+        d = self._oku()
+        d.setdefault("durum", {})[key] = val
+        self._yaz(d)
 
     def gunde_bir(self, key: str, gun: str) -> bool:
         """key bugun (gun) daha once isaretlenmediyse isaretler ve True doner."""

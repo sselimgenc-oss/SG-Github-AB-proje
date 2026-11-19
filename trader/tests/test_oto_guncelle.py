@@ -202,7 +202,7 @@ def test_yeni_yesil_commit_kurulur_ve_telegram_yazar(world):
     rows = world.history()
     assert len(rows) == 1 and rows[0][1:] == [old, new, "basarili"]
     msgs = world.telegram()
-    assert msgs == ["[ML] Bot güncellendi: degisiklik 2\n(ve 1 değişiklik daha)\nSorun olursa tek komutla geri alınır: trader-geri-al"]
+    assert msgs == ["[ML] Bot güncellendi: degisiklik 2\n(ve 1 değişiklik daha)\nSenden: sorun görürsen orkestratöre 'ML geri al' yaz."]
     assert len(msgs[0].splitlines()) <= 3 and "_" not in msgs[0] and old[:7] not in msgs[0]
 
 
@@ -302,7 +302,7 @@ def test_cok_degisiklikte_mesaj_uc_satiri_asmaz(tmp_path):
     assert r.returncode == 0, r.stderr
     msg = w.telegram()[0].split("\n")
     assert msg == ["[ML] Bot güncellendi: degisiklik 17", "(ve 16 değişiklik daha)",
-                   "Sorun olursa tek komutla geri alınır: trader-geri-al"]
+                   "Senden: sorun görürsen orkestratöre 'ML geri al' yaz."]
 
 
 def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
@@ -317,7 +317,7 @@ def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
     assert (world.state / "DURDUR").exists()
     assert world.history()[-1][1:] == [new, old, "geri_alindi"]
     assert world.telegram()[-1] == ("[ML] Bot önceki sürüme geri alındı.\n"
-                                    "Otomatik güncelleme durduruldu; yeniden açmak için: trader-oto-ac")
+                                    "Otomatik güncelleme durduruldu.")
     # DURDUR varken yeni yesil commit kurulmaz
     n = len(world.install_calls())
     assert world.run().returncode == 0

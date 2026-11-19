@@ -63,13 +63,15 @@ def test_tum_bicimleyiciler_kurallara_uyar(tmp_path):
     sp = tmp_path / "status.json"
     sp.write_text(json.dumps({"open_positions": [{"pair": "SOL/USDT", "stop": 1.0}, {"pair": "BTC/USDT", "stop": 2.0}]}))
     metinler = [
-        TS.islem_acildi("learner", "SOL/USDT", "long", 142.3, 300, 139.1),
-        TS.islem_kapandi("learner", "SOL/USDT", "long", 9.6, 300, "target"),
-        TS.islem_kapandi("learner", "BTC/USDT", "short", -6.4, 300, "trail_stop"),
+        TS.islem_acildi("M1 · 1s", "SOL/USDT", "long", 142.3, 300, 139.1),
+        TS.islem_kapandi("T1 · 15dk", "SOL/USDT", "long", 9.6, 300, "target"),
+        TS.islem_kapandi("T1 · 15dk", "BTC/USDT", "short", -6.4, 300, "trail_stop"),
         TS.limit_uyari(40.0, 50.0), TS.limit_doldu(50.0, 50.0), TS.bot_durdu(str(sp)), TS.bot_durdu(None),
         TS.bot_duzeldi(), TS.duzeldi("hesap_ayarı yeniden doğru"),
         TS.onay_istegi("rr_min", 1.5, 1.8, "kanıt_sayısı yeterli", "17.11 10:00"),
-        TS.ders_mesaji("warn", "rolled_back"),
+        TS.ders_mesaji("info", "applied", "t", "rr_min 1.5 -> 1.8 (otomatik). Kapsam: R1+T1. Kanit: x")[0],
+        TS.ders_mesaji("warn", "rolled_back", "t", "rr_min 1.8 -> 1.5: kotu Kapsam: M1.")[0],
+        TS.ders_mesaji("warn", "brake")[0],
         TS.birim_metni("trader-feed.service"), TS.birim_metni("trader-engine-live.service", str(sp)),
         TS.birim_metni("trader-backup.service"),
         T.build_report(T.TelegramConfig("1:t", 5, str(tmp_path), "", str(sp), ledger_path=str(tmp_path / "l")), NOW, DAY),
@@ -90,20 +92,20 @@ def test_yasak_izler_temizlenir():
 
 # ------------------------------------------------------------------ islem mesajlari
 def test_acildi_tam_iki_satir():
-    t = TS.islem_acildi("learner", "SOL/USDT", "long", 142.3, 300, 139.1)
-    assert t == "[ML] 🟩 öğrenen · SOL · uzun\nGiriş 142,30 · Tutar 300 $ · Stop 139,10"
+    t = TS.islem_acildi("M1 · 1s", "SOL/USDT", "long", 142.3, 300, 139.1)
+    assert t == "[ML] 🟩 M1 · 1s · SOL · long\nGiriş 142,30 · Tutar 300 $ · Stop 139,10"
     assert "USDT" not in t and len(t.splitlines()) == 2
-    assert "kısa" in TS.islem_acildi("learner", "BTC/USDT", "short", 60000, 500, 61000)
+    assert "short" in TS.islem_acildi("M1 · 1s", "BTC/USDT", "short", 60000, 500, 61000)
 
 
 def test_kapandi_sonuc_neden_ve_ikon():
-    k = TS.islem_kapandi("learner", "SOL/USDT", "long", 9.6, 300, "target")
-    assert k == "[ML] 🟢 öğrenen · SOL · uzun kapandı\nSonuç +9,60 $ (+3,2%) · kâr al"
-    z = TS.islem_kapandi("learner", "BTC/USDT", "short", -6.4, 300, "stop")
+    k = TS.islem_kapandi("T1 · 15dk", "SOL/USDT", "long", 9.6, 300, "target")
+    assert k == "[ML] 🟢 T1 · 15dk · SOL · long kapandı\nSonuç +9,60 $ (+3,2%) · kâr al"
+    z = TS.islem_kapandi("T1 · 15dk", "BTC/USDT", "short", -6.4, 300, "stop")
     assert z.splitlines()[0].startswith("[ML] 🔻") and "−6,40 $ (−2,1%) · stop" in z
-    assert "🔴" not in z and "🔴" in TS.islem_kapandi("learner", "BTC/USDT", "short", -6.4, 300, "stop", kritik=True)
-    assert "süre" in TS.islem_kapandi("learner", "ETH/USDT", "long", 1, 100, "time_stop")
-    assert "elle" in TS.islem_kapandi("learner", "ETH/USDT", "long", 1, 100, "manual")
+    assert "🔴" not in z and "🔴" in TS.islem_kapandi("T1 · 15dk", "BTC/USDT", "short", -6.4, 300, "stop", kritik=True)
+    assert "süre" in TS.islem_kapandi("T1 · 15dk", "ETH/USDT", "long", 1, 100, "time_stop")
+    assert "elle" in TS.islem_kapandi("T1 · 15dk", "ETH/USDT", "long", 1, 100, "manual")
 
 
 def test_islem_tick_acilan_ve_kapanani_bildirir_tekrar_etmez(rig):
@@ -169,7 +171,7 @@ def test_bot_durdu_6_saat_kuralindan_muaf_ve_pozisyon_bilgisi_verir(rig):
     rig.n.send(a)
     assert len(rig.fake.texts) == 3                        # her seferinde gider (6 saat kurali yok)
     t = rig.fake.texts[0]
-    assert t.startswith("[ML] 🔴 Bot durdu") and "Açık pozisyon: 1" in t and "stopları borsada yerinde" in t
+    assert t.startswith("[ML] 🔴 Bot durdu") and "Açık pozisyon: 1" in t and "stoplar izlenmiyor" in t and "yerinde" not in t
     ok_form(t)
     rig.n.send(alert("api_unreachable", H.Status.OK, fp="api_reachable:learner|api_unreachable"))
     rig.n.send(alert("api_unreachable", H.Status.OK, fp="api_reachable:learner|api_unreachable"))
@@ -178,7 +180,7 @@ def test_bot_durdu_6_saat_kuralindan_muaf_ve_pozisyon_bilgisi_verir(rig):
 
 def test_bot_durdu_durum_dosyasi_yoksa_stopu_kontrol_ettirir(rig):
     t = TS.bot_durdu(None)
-    assert "stopları kontrol et" in t
+    assert "bilgisi okunamadı" in t
     assert "Açık pozisyon yok" in TS.bot_durdu(_bos_durum(rig))
 
 
@@ -231,15 +233,75 @@ def test_teknik_uyarilar_susar(rig, kod):
     assert rig.fake.texts == []
 
 
-def test_ders_info_ve_teknik_hatalar_susar_geri_alma_gider(rig):
-    def nt(level, code):
-        return LS.LessonNotice(level, code, "t", "b", f"{code}|d|1", T0)
-    for lvl, code in (("info", "applied"), ("info", "needs_user_expired"), ("warn", "run_failed"), ("warn", "llm_error")):
-        assert rig.n.notify(nt(lvl, code)) is True
+def test_ders_uygulandi_ve_geri_alindi_gider_gunde_bir_kez(rig):
+    def nt(code, body):
+        return LS.LessonNotice("info" if code == "applied" else "warn", code, "t", body, f"{code}|d|1", T0)
+    ap = nt("applied", "rr_min 1.5 -> 1.8 (otomatik). Kapsam: R1+T1. Kanit: n=5. Geri alma: dugme")
+    assert rig.n.notify(ap) is True and rig.n.notify(ap) is True
+    assert len(rig.fake.texts) == 1
+    assert rig.fake.texts[0] == "[ML] Ders uygulandı: en düşük kazanç/risk oranı 1.5 → 1.8 · R1 + T1"
+    rb = nt("rolled_back", "rr_min 1.8 -> 1.5: ders etkisi kotu. Kapsam: M1@1h.")
+    rig.n.notify(rb)
+    rig.n.notify(rb)
+    assert len(rig.fake.texts) == 2
+    assert rig.fake.texts[1] == "[ML] Ders geri alındı: en düşük kazanç/risk oranı 1.8 → 1.5 · M1 · 1s (sonuç kötüleşti)"
+    rig.clk.adv(days=1)
+    rig.n.notify(ap)
+    assert len(rig.fake.texts) == 3                       # ertesi gun yine
+    for x in rig.fake.texts:
+        ok_form(x, 2)
+
+
+def test_ders_teknik_hata_ve_zaman_asimi_susar(rig):
+    for lvl, code in (("info", "needs_user_expired"), ("warn", "run_failed"), ("warn", "llm_error")):
+        assert rig.n.notify(LS.LessonNotice(lvl, code, "t", "b", f"{code}|d|1", T0)) is True
     assert rig.fake.texts == []
-    rig.n.notify(nt("warn", "rolled_back"))
-    rig.n.notify(nt("warn", "rolled_back"))
-    assert len(rig.fake.texts) == 1 and "geri alındı" in rig.fake.texts[0]
+
+
+def test_kol_adi_bicimi():
+    assert TS.kol_adi("M1@1h") == "M1 · 1s" and TS.kol_adi("T1@15m") == "T1 · 15dk"
+    assert TS.kol_adi("C1@1h") == "C1 · 1s" and TS.kol_adi("R1@1d") == "R1 · 1g" and TS.kol_adi("R1@4h") == "R1 · 4s"
+    assert TS.kol_adi("M1", "1h") == "M1 · 1s" and TS.kol_adi("M1") == "M1"
+
+
+def test_islem_mesajinda_kol_adi_ledgerdan_gelir(rig):
+    mkledger(rig.tmp / "l.sqlite", "learner", [(True, True)])
+    (rig.tmp / "tg").mkdir(exist_ok=True)
+    (rig.tmp / "tg" / "islem_imleci.json").write_text(json.dumps({"acilan": [], "kapanan": []}))
+    T.islem_tick(rig.cfg, rig.n, NOW)
+    assert rig.fake.texts[0].splitlines()[0] == "[ML] 🟩 R1 · 1s · ETH · long"
+    assert "öğrenen" not in "".join(rig.fake.texts)
+
+
+def test_limit_orani_ayardan_okunur(tmp_path, monkeypatch):
+    from trader_core import risk as R
+    cd = tmp_path / "config"
+    cd.mkdir()
+    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.04}}))
+    assert TS.limit_orani(cd, "paper") == 0.04
+    assert TS.limit_orani(cd, "live") == R.LOCKED_CFG.daily_max_loss          # canlida kilitli
+    assert TS.limit_orani(tmp_path / "yok", "paper") == R.LOCKED_CFG.daily_max_loss
+    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}}))
+    assert TS.limit_orani(cd, "paper") == R.LOCKED_CFG.daily_max_loss          # paper siniri asan deger -> kilitli
+    monkeypatch.setattr(R.PaperRiskConfig, "_LIMITS", {**R.PAPER_LIMITS, "daily_max_loss": 0.08})
+    assert TS.limit_orani(cd, "paper") == 0.08
+
+
+def test_kagitta_yuzde_80_uyarisi_ayardaki_limite_gore(rig, monkeypatch):
+    from trader_core import risk as R
+    monkeypatch.setattr(R.PaperRiskConfig, "_LIMITS", {**R.PAPER_LIMITS, "daily_max_loss": 0.08})
+    cd = rig.tmp / "cfg"
+    cd.mkdir()
+    (cd / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}}))
+    rig.cfg.config_dir = str(cd)
+    (rig.tmp / "status.json").write_text(json.dumps({"mode": "paper", "equity": 940.0, "day_start_equity": 1000.0}))
+    assert T.zarar_tick(rig.cfg, rig.n, T0) == 0                       # 60 $ < 64 $
+    (rig.tmp / "status.json").write_text(json.dumps({"mode": "paper", "equity": 936.0, "day_start_equity": 1000.0}))
+    assert T.zarar_tick(rig.cfg, rig.n, T0) == 1 and "sınır 80,00 $" in rig.fake.texts[0]
+    rep_cfg = rig.cfg
+    (rig.tmp / "status.json").write_text(json.dumps({"mode": "paper", "equity": 950.0, "day_start_equity": 1000.0,
+                                                     "loop_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ")}))
+    assert "Günlük zarar sınırı: 50,00 $ / 80,00 $ kullanıldı" in T.build_report(rep_cfg, NOW, DAY)
 
 
 def test_onay_istegi_karar_mesaji_kisa_ve_sade(rig):
@@ -269,3 +331,69 @@ def test_gunluk_ozet_12_satiri_asmaz_ve_haftalik_yalniz_pazar(rig):
     assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is False                  # haftada bir
     ok_form(rig.fake.texts[-1])
     assert rig.fake.texts[-1].startswith("[ML] 🗓 Haftalık özet")
+
+
+# ------------------------------------------------------------------ saatlik sinir, gruplama, gunluk ozet satirlari
+def _ac_kapa_ledger(rig, n):
+    mkledger(rig.tmp / "l.sqlite", "learner", [(True, i % 2 == 0) for i in range(n)])
+    (rig.tmp / "tg").mkdir(exist_ok=True)
+    (rig.tmp / "tg" / "islem_imleci.json").write_text(json.dumps({"acilan": [], "kapanan": []}))
+
+
+def test_islemler_saatte_en_cok_6_mesaj_fazlasi_saat_sonunda_ozet(rig):
+    _ac_kapa_ledger(rig, 8)                                 # 8 acilis (farkli dakikalar) + 4 kapanis = 12 olay
+    now = datetime(2026, 11, 16, 18, 5, tzinfo=UTC)
+    T.islem_tick(rig.cfg, rig.n, now)
+    assert len(rig.fake.texts) == 6
+    sessiz = [c for c in rig.fake.texts]
+    assert all("Son 1 saatte" not in t for t in sessiz)
+    T.islem_tick(rig.cfg, rig.n, now + timedelta(minutes=10))
+    assert len(rig.fake.texts) == 6                         # ayni saat: sinir
+    T.islem_tick(rig.cfg, rig.n, now + timedelta(hours=1))
+    assert len(rig.fake.texts) == 7
+    o = rig.fake.texts[-1]
+    assert o.startswith("[ML] Son 1 saatte 6 işlem daha: ") and "açıldı" in o and "kapandı" in o and "net " in o
+    ok_form(o)
+
+
+def test_islem_mesajlari_sessiz_gider(rig):
+    _ac_kapa_ledger(rig, 1)
+    sessiz = []
+    orig = rig.n.client.send_message
+    rig.n.client.send_message = lambda c, t, disable_notification=False, **k: (sessiz.append(disable_notification), orig(c, t, disable_notification=disable_notification, **k))[1]
+    T.islem_tick(rig.cfg, rig.n, NOW)
+    assert sessiz and all(sessiz)
+
+
+def test_ayni_dakikadaki_acilislar_tek_mesaj():
+    t = TS.islemler_acildi([("M1 · 1s", "SOL/USDT", "long", 142.3, 300, 139.1), ("T1 · 15dk", "BTC/USDT", "short", 60000, 200, 61000)])
+    assert t.splitlines()[0] == "[ML] 🟩 2 işlem açıldı" and len(t.splitlines()) == 3
+    assert "M1 · 1s · SOL · long" in t and "T1 · 15dk · BTC · short" in t
+    ok_form(t)
+    buyuk = TS.islemler_acildi([("M1 · 1s", "SOL/USDT", "long", 1, 1, 1)] * 9)
+    ok_form(buyuk)
+    assert "ve 5 işlem daha" in buyuk
+
+
+def test_gunluk_ozet_ders_ve_model_satirlari(tmp_path):
+    sp = tmp_path / "status.json"
+    mkledger(tmp_path / "l.sqlite", "learner", [])
+    def yaz(ml):
+        sp.write_text(json.dumps({"mode": "paper", "equity": 1000.0, "day_start_equity": 1000.0, "entries_open": True,
+                                  "open_positions": [], "loop_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"), "ml": ml}))
+    cfg = T.TelegramConfig("1:t", 5, str(tmp_path), "", str(sp), ledger_path=str(tmp_path / "l.sqlite"))
+    yaz({"mode": "active", "state": "ok", "expires_at": "2026-12-30T00:00:00Z"})
+    r = T.build_report(cfg, NOW, DAY)
+    assert "Dersler: bugün 0 uygulandı, 0 geri alındı · işlemlere etkili" in r and "Model: güncel, işlemlere etkili" in r
+    yaz({"mode": "active", "state": "expired", "expires_at": None})
+    r = T.build_report(cfg, NOW, DAY)
+    assert "Model süresi doldu, kararlar kuralla veriliyor" in r
+    ok_form(r, TS.MAX_SATIR_OZET)
+
+
+def test_ornek_render_acildi_ve_kapandi(rig, capsys):
+    _ac_kapa_ledger(rig, 2)
+    T.islem_tick(rig.cfg, rig.n, NOW)
+    with capsys.disabled():
+        print("\nORNEK ACILDI:\n" + next(t for t in rig.fake.texts if "kapandı" not in t))
+        print("ORNEK KAPANDI:\n" + next(t for t in rig.fake.texts if "kapandı" in t))

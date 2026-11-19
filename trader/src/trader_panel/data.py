@@ -151,7 +151,7 @@ class PanelData:
                 kill = os.path.exists(kf) if kf else None
             except OSError:
                 kill = None
-            return {"stale_s": P.STALE_S, "daily_max_loss": P.LOCKED_CFG.daily_max_loss, "kill_file_exists": kill,
+            return {"stale_s": P.STALE_S, "daily_max_loss": P.daily_loss_rate(), "kill_file_exists": kill,
                     "bots": bots}
         return self._wrap(fn)
 

@@ -65,7 +65,7 @@ rc=$?
 simdi="$(release_commit)"
 if [ "$rc" -eq 0 ] && [ "$simdi" = "$hedef" ]; then
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$mevcut" "$hedef" geri_alindi >> "$HIST"
-  tg_send "[ML] Bot önceki sürüme geri alındı."$'\n'"Otomatik güncelleme durduruldu; yeniden açmak için: trader-oto-ac"
+  tg_send "[ML] Bot önceki sürüme geri alındı."$'\n'"Otomatik güncelleme durduruldu."
   echo "Geri alindi: ${hedef} (otomatik guncelleme DURDU; acmak icin: trader-oto-ac)"
   exit 0
 fi

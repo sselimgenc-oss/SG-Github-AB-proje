@@ -75,13 +75,19 @@ def today_tr(now: datetime) -> str:
     return now.astimezone(TR).strftime("%Y-%m-%d")
 
 
+def daily_loss_rate(mode: Any = "paper") -> float:
+    """Gunluk zarar orani: Telegram ile ayni tek kaynak (`tg_sade.limit_orani`: kagitta ayar dosyasi, canlida kilitli)."""
+    from . import tg_sade as _TS  # noqa: PLC0415
+    return _TS.limit_orani(None, mode)
+
+
 def daily_loss_limit(day_start_equity: Any) -> float | None:
     """Gunluk zarar siniri = risk kilidi `daily_max_loss` x gun basi equity (sabit sayi yok)."""
     try:
         v = float(day_start_equity)
     except (TypeError, ValueError):
         return None
-    return LOCKED_CFG.daily_max_loss * v if v > 0 else None
+    return daily_loss_rate() * v if v > 0 else None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -268,7 +274,7 @@ def risk_usage(path: str, bot: str, equity: Any, day_start_equity: Any, day: str
     rows = [("Toplam açık risk", used_open, c.max_open_risk * eq),
             ("Long açık risk", long_r, c.max_same_dir_risk * eq),
             ("Short açık risk", short_r, c.max_same_dir_risk * eq),
-            ("Günlük zarar", max(0.0, -pnl), c.daily_max_loss * dse)]
+            ("Günlük zarar", max(0.0, -pnl), daily_loss_rate() * dse)]
     return {"rows": [{"label": n, "used": u, "limit": lim, "pct": (u / lim * 100.0) if lim > 0 else None}
                      for n, u, lim in rows]}
 
