@@ -25,7 +25,7 @@ from trader_core import arm_time as AT
 __all__ = ["VERSION", "HORIZON_BARS", "PLAN_HORIZON_BARS", "TARGET_R", "FEE_RATE", "SLIPPAGE_RATE", "replay", "cost_in_r", "CounterfactualStore",
            "run_once", "summary", "outcomes", "RunResult", "CounterfactualError",
            "run_shadow", "shadow_outcomes", "ShadowRunResult",
-           "ARM_TF_MS", "BASE_SLIP", "arm_rows", "arm_candidates", "arm_scorecard"]
+           "ARM_TF_MS", "BASE_SLIP", "arm_rows", "arm_candidates", "arm_scorecard", "arm_virtual_bankroll"]
 
 VERSION = 2                          # 2: plan ufku 48 mum; target yanlis tarafta -> invalid_plan
 # --- trader_ml.config'in KOPYASI (parite testi esitligi kilitler); ML etiketi degisirse VERSION artar
@@ -656,14 +656,49 @@ def _arm_block(cs: list[dict]) -> dict:
             "mean_r_taken_cf": _mean_or_none(c["r"] for c in cs)}
 
 
+def arm_virtual_bankroll(candidates, *, start: float = 1000.0, risk: float = 0.01, arms=()) -> dict:
+    """Kurulum basina sanal kasa (yalniz rapor): arm_id -> {"taken": seri, "cf": seri}.
+    `taken`: yalniz alinan ve sonucu olan adaylar; `cf`: sonucu olan tum adaylar (alinan + alinmayan 'alinsaydi').
+    Seri ts'ye gore artan (esitlikte girdi sirasi), her adimda eq = eq * (1 + risk * r), eq 0'in altina inmez.
+    Seri: {n, equity, return_pct, max_dd_pct} (equity/return_pct 2 ondalik; max_dd_pct pozitif, 2 ondalik).
+    `arms`: aday olmayan kurulumlar da (n=0) yer alir."""
+    if not start > 0 or not risk > 0:
+        raise ValueError("start ve risk pozitif olmali")
+    groups: dict[str, list[dict]] = {}
+    for c in candidates:
+        groups.setdefault(c["arm_id"], []).append(c)
+
+    def _series(cs: list[dict]) -> dict:
+        ordered = sorted(cs, key=lambda c: c["ts"])          # sorted kararlidir: esitlikte girdi sirasi korunur
+        eq, peak, worst = float(start), float(start), 0.0
+        for c in ordered:
+            eq = max(0.0, eq * (1.0 + risk * float(c["r"])))
+            peak = max(peak, eq)
+            if peak > 0:
+                worst = max(worst, (peak - eq) / peak * 100.0)
+        equity = round(eq, 2)
+        return {"n": len(ordered), "equity": equity,
+                "return_pct": round((equity / start - 1.0) * 100.0, 2),
+                "max_dd_pct": round(worst, 2)}
+
+    out: dict[str, dict] = {}
+    for arm in dict.fromkeys([*arms, *groups]):
+        cs = groups.get(arm, [])
+        out[arm] = {"taken": _series([c for c in cs if c["taken"] is True and c["r"] is not None]),
+                    "cf": _series([c for c in cs if c["r"] is not None])}
+    return out
+
+
 def arm_scorecard(candidates, *, arms=(), closed=None) -> dict:
     """Kurulum karnesi: arm_id -> {candidates, taken, resolved, mean_r_taken (yalniz alinan), mean_r_taken_cf (alinan +
-    alinmayan 'alinsaydi'), by_class: {kripto|hisse|emtia: ayni alanlar}, state: open|closed}. `arms`: yapilandirilmis
+    alinmayan 'alinsaydi'), by_class: {kripto|hisse|emtia: ayni alanlar}, state: open|closed, kasa: arm_virtual_bankroll
+    degeri (start=1000, risk=0.01: {taken, cf})}. `arms`: yapilandirilmis
     kurulumlar (aday yoksa da satiri vardir). `closed`: kapali kurulum kimlikleri (arms_off)."""
     closed = set(closed or ())
     groups: dict[str, list[dict]] = {}
     for c in candidates:
         groups.setdefault(c["arm_id"], []).append(c)
+    bankroll = arm_virtual_bankroll(candidates, arms=arms)
     out: dict[str, dict] = {}
     for arm in dict.fromkeys([*arms, *groups]):
         cs = groups.get(arm, [])
@@ -671,5 +706,6 @@ def arm_scorecard(candidates, *, arms=(), closed=None) -> dict:
         block["by_class"] = {cls: _arm_block([c for c in cs if c["asset_class"] == cls])
                              for cls in sorted({c["asset_class"] for c in cs})}
         block["state"] = "closed" if arm in closed else "open"
+        block["kasa"] = bankroll[arm]
         out[arm] = block
     return out

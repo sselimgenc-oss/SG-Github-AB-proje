@@ -451,9 +451,10 @@
       else {
       // kurulum karnesi
       var arms = (L.scorecard || []).filter(function (c) { return c.candidates > 0; });
-      if (arms.length) add(pk._body, table(['Kurulum', 'Aday', 'Alınan', 'Ort. R (alınan)', 'Ort. R (alınan + alınsaydı)', 'Durum'],
-        arms.map(function (c) { return [c.arm, String(c.candidates), String(c.taken), sgn(c.mean_r_taken), sgn(c.mean_r_taken_cf),
-          c.state === 'closed' ? 'kapalı' : 'açık']; }), {right: [1, 2, 3, 4]}));
+      if (arms.length) add(pk._body, table(['Kurulum', 'Aday', 'Alınan', 'Ort. R (alınan)', 'Ort. R (alınan + alınsaydı)', 'Sanal kasa ($)', 'En derin düşüş (%)', 'Durum'],
+        arms.map(function (c) { var kt = (c.kasa || {}).taken; return [c.arm, String(c.candidates), String(c.taken), sgn(c.mean_r_taken), sgn(c.mean_r_taken_cf),
+          kt ? f2(kt.equity) : '—', kt ? (kt.max_dd_pct > 0 ? '-' + f2(kt.max_dd_pct) : f2(0)) : '—',
+          c.state === 'closed' ? 'kapalı' : 'açık']; }), {right: [1, 2, 3, 4, 5, 6]}));
       else add(pk._body, el('div', 'yok', 'Henüz aday yok.'));
       // ders
       var ds = L.lesson || {};

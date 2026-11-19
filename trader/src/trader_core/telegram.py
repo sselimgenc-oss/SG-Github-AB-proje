@@ -1970,8 +1970,13 @@ def _karne_satirlari(lv: Mapping[str, Any]) -> list[str]:
         if not row.get("candidates"):
             continue
         durum = "KAPALI" if row.get("state") == "closed" else "açık"
-        out.append(f"{row['arm']}: aday {row['candidates']} · alınan {row['taken']} · ort. R (alınan) "
-                   f"{_r_or_dash(row.get('mean_r_taken'))} · alınsaydı {_r_or_dash(row.get('mean_r_taken_cf'))} · {durum}")
+        satir = (f"{row['arm']}: aday {row['candidates']} · alınan {row['taken']} · ort. R (alınan) "
+                 f"{_r_or_dash(row.get('mean_r_taken'))} · alınsaydı {_r_or_dash(row.get('mean_r_taken_cf'))} · {durum}")
+        taken_kasa = (row.get("kasa") or {}).get("taken")          # sanal kasa (yalniz alinan seri); yoksa satir eskisi gibi
+        if taken_kasa:
+            dd = taken_kasa["max_dd_pct"]
+            satir += f" · kasa {taken_kasa['equity']:.2f} $ (en derin {('-' + format(dd, '.2f')) if dd > 0 else '0.00'}%)"
+        out.append(satir)
     return out
 
 

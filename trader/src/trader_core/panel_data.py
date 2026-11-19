@@ -521,7 +521,7 @@ def _ledger_learning(ledger_path: str, now: datetime, paper_config=None) -> dict
     sc = CF.arm_scorecard(cands, arms=arms, closed=closed)
     scorecard = [{"arm": a, "candidates": b["candidates"], "taken": b["taken"], "resolved": b["resolved"],
                   "mean_r_taken": b["mean_r_taken"], "mean_r_taken_cf": b["mean_r_taken_cf"], "state": b["state"],
-                  "by_class": b["by_class"]} for a, b in sc.items()]
+                  "by_class": b["by_class"], "kasa": b["kasa"]} for a, b in sc.items()]
     les = [a for a in acts if a.actor == "lesson"]
     brake_ev = [a for a in les if a.kind == "rollback" and str(a.reason or "").startswith(LS.BRAKE_REASON_PREFIX)]
     lesson = {"applied": sum(1 for a in les if a.kind == "apply"),
