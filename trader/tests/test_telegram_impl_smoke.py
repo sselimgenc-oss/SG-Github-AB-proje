@@ -308,7 +308,7 @@ def test_report_schedule():
     assert T.report_decision(tr(9, 0, 17), None)[0] == "atla"
 
 
-def test_report_run_and_late_tag(tmp_path):
+def test_report_run_and_no_late_tag(tmp_path):
     fake = FakeTG()
     clk = Clk()
     clk.t = datetime(2026, 11, 16, 22, 0, tzinfo=T.TR).astimezone(UTC)
@@ -316,7 +316,7 @@ def test_report_run_and_late_tag(tmp_path):
     cfg = T.TelegramConfig.from_env(env)
     n = T.notifier_from_env(env, fake, clk, lambda s: None)
     assert T.run_report(cfg, n, clk()) == "sent"
-    assert fake.sent()[0]["text"].startswith("[ML] [gecikmiş]")
+    assert fake.sent()[0]["text"].startswith("[ML] 🌙 Günlük özet") and "gecikmiş" not in fake.sent()[0]["text"]
     assert T.run_report(cfg, n, clk()) == "already"
 
 

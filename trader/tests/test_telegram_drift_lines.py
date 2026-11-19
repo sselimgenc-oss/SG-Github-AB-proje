@@ -64,9 +64,10 @@ def test_default_sections_and_build_report_include_it(tmp_path):
     cfg = Cfg(tmp_path / "learner")
     secs = T.default_sections(cfg, NOW, "2026-12-20")
     assert "Davranış" in secs
+    assert "📐 Bot beklendiği gibi davranıyor" in secs["Davranış"]()      # bolum durur (/rapor komutlari); gunluk ozette yok
     text = T.build_report(cfg, NOW, "2026-12-20", {"Davranış": secs["Davranış"]})
-    assert "📐 Bot beklendiği gibi davranıyor" in text
+    assert "Günlük özet" in text and "📐" not in text
     # bolum patlasa bile rapor uretilir
     def boom():
         raise RuntimeError("x")
-    assert "Günlük rapor" in T.build_report(cfg, NOW, "2026-12-20", {"Davranış": boom})
+    assert "Günlük özet" in T.build_report(cfg, NOW, "2026-12-20", {"Davranış": boom})

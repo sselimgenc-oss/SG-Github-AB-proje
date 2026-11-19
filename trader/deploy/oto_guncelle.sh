@@ -78,6 +78,17 @@ degisiklikler() { # eski..yeni arasi birlesme haric konu satirlari (en fazla 15)
   if [ "${toplam:-0}" -gt 15 ]; then echo "… ve $((toplam - 15)) değişiklik daha"; fi
 }
 
+guncelleme_metni() { # eski yeni: en cok 3 satir, sade Turkce; dosya adi yok; hangi degisiklik + geri alma tek komut
+  local eski="$1" yeni="$2" toplam ilk
+  toplam="$(root_git rev-list --no-merges --count "${eski}..${yeni}" 2>/dev/null || echo 0)"
+  ilk="$(root_git log --format=%s --no-merges -n 1 "${eski}..${yeni}" 2>/dev/null | head -n 1 \
+    | sed -E 's/[A-Za-z0-9_\/.-]+\.(py|sh|json|md|js|html|service|timer|sqlite)//g; s/_/ /g; s/  +/ /g; s/^ +| +$//g' | cut -c1-90)"
+  [ -n "$ilk" ] || ilk="iyileştirmeler"
+  printf '[ML] Bot güncellendi: %s\n' "$ilk"
+  if [ "${toplam:-0}" -gt 1 ]; then printf '(ve %s değişiklik daha)\n' "$((toplam - 1))"; fi
+  printf 'Sorun olursa tek komutla geri alınır: trader-geri-al\n'
+}
+
 gecmis_ekle() { # eski yeni sonuc
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$1" "$2" "$3" >> "$HIST"
 }
@@ -97,7 +108,7 @@ oto_guncelle() {
     bugun="$(date -u +%Y%m%d)"
     if [ "$(cat "$STATE_DIR/canli-uyari.gun" 2>/dev/null || true)" != "$bugun" ]; then
       printf '%s\n' "$bugun" > "$STATE_DIR/canli-uyari.gun"
-      tg_send "Otomatik güncelleme canlı birim nedeniyle durdu."
+      log "otomatik guncelleme canli birim nedeniyle durdu (mesaj yok: tekrar eder)"
     fi
     return 0
   fi
@@ -157,15 +168,13 @@ except Exception:
   simdi="$(release_commit)"
   if [ "$rc" -eq 0 ] && [ "$simdi" = "$yeni" ]; then
     gecmis_ekle "$mevcut" "$yeni" basarili
-    local govde=""
-    if [ -n "$liste" ]; then govde="${liste}"$'\n'; fi
-    tg_send "[ML] Sunucu güncellendi: ${mevcut:0:7} → ${yeni:0:7}"$'\n'"${govde}Sorun olursa: trader-geri-al"
+    tg_send "$(guncelleme_metni "$mevcut" "$yeni")"
     log "guncellendi: ${mevcut:0:7} -> ${yeni:0:7}"
     return 0
   fi
 
   gecmis_ekle "$mevcut" "$yeni" basarisiz
-  tg_send "[ML] Güncelleme BAŞARISIZ (${yeni:0:7}); ${mevcut:0:7} çalışmaya devam ediyor."$'\n'"$(tail -n 5 "$ILOG")"
+  tg_send "[ML] Güncelleme yapılamadı; bot eski sürümle çalışmaya devam ediyor."
   log "BASARISIZ (kurulum cikis=$rc, surum=${simdi:0:7})"
   return 1
 }

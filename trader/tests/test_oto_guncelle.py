@@ -202,7 +202,8 @@ def test_yeni_yesil_commit_kurulur_ve_telegram_yazar(world):
     rows = world.history()
     assert len(rows) == 1 and rows[0][1:] == [old, new, "basarili"]
     msgs = world.telegram()
-    assert msgs == [f"[ML] Sunucu güncellendi: {old[:7]} → {new[:7]}\n- degisiklik 2\n- degisiklik 1\nSorun olursa: trader-geri-al"]
+    assert msgs == ["[ML] Bot güncellendi: degisiklik 2\n(ve 1 değişiklik daha)\nSorun olursa tek komutla geri alınır: trader-geri-al"]
+    assert len(msgs[0].splitlines()) <= 3 and "_" not in msgs[0] and old[:7] not in msgs[0]
 
 
 def test_token_komut_satirinda_degil_stdinde(world):
@@ -229,8 +230,7 @@ def test_canli_birim_etkinse_islem_yok_ve_gunde_bir_bildirim(world):
         r = world.run(**env)
         assert r.returncode == 0, r.stderr
     assert world.install_calls() == [] and world.current() == world.shas[0]
-    msgs = [m for m in world.telegram() if "canlı birim" in m]
-    assert msgs == ["Otomatik güncelleme canlı birim nedeniyle durdu."]   # ikinci calismada tekrar yok
+    assert world.telegram() == []                                          # canli birim nedeniyle durma: mesaj yok (tekrar eden tur)
 
 
 def test_canli_birim_yalniz_var_ve_pasifse_engellemez(world):
@@ -252,8 +252,8 @@ def test_kurulum_hatasi_basarisiz_mesaji_ve_tekrar_denememe(world):
     rows = world.history()
     assert rows[-1][1:] == [old, new, "basarisiz"]
     msgs = world.telegram()
-    assert len(msgs) == 1 and msgs[0].startswith(f"[ML] Güncelleme BAŞARISIZ ({new[:7]}); {old[:7]} çalışmaya devam ediyor.")
-    assert "<maskeli>" in msgs[0] and TOKEN not in msgs[0] and "SECRETKEYVALUE" not in msgs[0]
+    assert msgs == ["[ML] Güncelleme yapılamadı; bot eski sürümle çalışmaya devam ediyor."]
+    assert TOKEN not in msgs[0] and "SECRETKEYVALUE" not in msgs[0]
     # ayni commit bir daha denenmez
     r2 = world.run(**env)
     assert r2.returncode == 0
@@ -295,16 +295,14 @@ def test_github_erisilemezse_islem_yok(world):
     assert "User-Agent: trader-oto-guncelle" in world.curl_argv() and "status=success" in world.curl_argv()
 
 
-def test_degisiklik_listesi_on_bes_satirla_sinirlanir(tmp_path):
+def test_cok_degisiklikte_mesaj_uc_satiri_asmaz(tmp_path):
     w = World(tmp_path, commits=18)                                    # 17 degisiklik (c0 haric)
     w.set_release(w.shas[0])
     r = w.run()
     assert r.returncode == 0, r.stderr
     msg = w.telegram()[0].split("\n")
-    assert msg[0] == f"[ML] Sunucu güncellendi: {w.shas[0][:7]} → {w.shas[-1][:7]}"
-    assert len([ln for ln in msg if ln.startswith("- ")]) == 15
-    assert msg[-2] == "… ve 2 değişiklik daha"
-    assert msg[-1] == "Sorun olursa: trader-geri-al"
+    assert msg == ["[ML] Bot güncellendi: degisiklik 17", "(ve 16 değişiklik daha)",
+                   "Sorun olursa tek komutla geri alınır: trader-geri-al"]
 
 
 def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
@@ -318,8 +316,8 @@ def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
     assert world.current() == old
     assert (world.state / "DURDUR").exists()
     assert world.history()[-1][1:] == [new, old, "geri_alindi"]
-    assert world.telegram()[-1] == (f"[ML] Geri alındı: {new[:7]} → {old[:7]}. "
-                                    "Otomatik güncelleme durduruldu; açmak için: trader-oto-ac")
+    assert world.telegram()[-1] == ("[ML] Bot önceki sürüme geri alındı.\n"
+                                    "Otomatik güncelleme durduruldu; yeniden açmak için: trader-oto-ac")
     # DURDUR varken yeni yesil commit kurulmaz
     n = len(world.install_calls())
     assert world.run().returncode == 0

@@ -710,8 +710,10 @@ class TestStatusAndReport:
 
     def _report(self, lad):
         now = lad.clk()
-        return tg.build_report(lad.cfg, now, "2026-11-16", tg.default_sections(
-            lad.cfg, now, "2026-11-16", pauses=lad.pauses, ladders={"learner": lad.lf}))
+        # Kademe satiri artik gunluk ozette degil; /kademe ve panelde. Bolum ayri okunur.
+        secs = tg.default_sections(lad.cfg, now, "2026-11-16", pauses=lad.pauses, ladders={"learner": lad.lf})
+        assert "Kademe:" not in tg.build_report(lad.cfg, now, "2026-11-16", secs)
+        return secs["Risk kademesi"]()
 
     def test_report_section_and_line_ok(self, lad):
         lad.seed("ok")

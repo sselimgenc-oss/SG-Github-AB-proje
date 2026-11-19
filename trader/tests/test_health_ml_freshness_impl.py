@@ -316,7 +316,8 @@ def mkcfg(tmp_path, ml, **extra):
 
 
 def report(cfg):
-    return T.build_report(cfg, NOW, "2026-12-10", {"Model": lambda: T.rapor_model(cfg, NOW)})
+    # gunluk ozet kisa; model bolumu /rapor komutlarinda ve panelde: bolum cikisi dogrudan sinanir
+    return T.rapor_model(cfg, NOW)
 
 
 def iso(dt):
@@ -348,13 +349,12 @@ def test_report_lines(tmp_path, ml, expect):
 
 def test_report_blocked_risk_text_and_order(tmp_path):
     cfg = mkcfg(tmp_path, {"mode": "active", "state": "expired"}, entries_open=False, gate={"code": "ml_expired"})
-    out = report(cfg)
-    assert "🛑 Yeni işlemler kapalı: modelin süresi doldu" in out and "hazır değil" not in out
-    cfg = mkcfg(tmp_path, {"mode": "active", "state": "no_model"}, entries_open=False, gate={"code": "ml_no_model"})
-    assert "model yüklenemedi" in report(cfg)
+    out = T.build_report(cfg, NOW, "2026-12-10", {})
+    assert "Yeni işlemler kapalı." in out and "hazır değil" not in out and "ml_expired" not in out
+    assert T.neden_tr("ml_expired") == "modelin süresi doldu" and T.neden_tr("ml_no_model") == "model yüklenemedi"
     assert T.neden_tr("ml_other") == "yapay zekâ filtresi hazır değil"
     cfg = mkcfg(tmp_path, {"mode": "shadow", "state": "no_model"})
-    assert "🛑 Yeni işlemler kapalı" not in report(cfg)
+    assert "Yeni işlemler kapalı" not in T.build_report(cfg, NOW, "2026-12-10", {})
 
 
 def test_report_health_suffix(tmp_path):
@@ -368,12 +368,14 @@ def test_report_health_suffix(tmp_path):
 
 def test_report_bad_block_and_default_sections(tmp_path):
     cfg = mkcfg(tmp_path, ["bozuk"])
-    out = report(cfg)
-    assert "Bazı bilgiler okunamadı" in out and "bozuk" not in out
+    with pytest.raises(T.SectionError):                      # bozuk blok bolumde SectionError; ozet yine uretilir
+        report(cfg)
+    out = T.build_report(cfg, NOW, "2026-12-10", {})
+    assert "bozuk" not in out and "Günlük özet" in out
     cfg = mkcfg(tmp_path, None)
-    assert "Model filtresi kapalı" in T.build_report(cfg, NOW, "2026-12-10", T.default_sections(cfg, NOW, "2026-12-10"))
-    lines = T.build_report(cfg, NOW, "2026-12-10", {"Model": lambda: "M", "Risk kademesi": lambda: "K"}).splitlines()
-    assert lines.index("M") < lines.index("K")
+    assert "Model filtresi kapalı" in T.default_sections(cfg, NOW, "2026-12-10")["Model"]()
+    secs = list(T.default_sections(cfg, NOW, "2026-12-10"))
+    assert secs.index("Model") < secs.index("Davranış")
 
 
 def test_opt_in_status_block_without_path(tmp_path):

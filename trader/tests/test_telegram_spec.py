@@ -884,7 +884,7 @@ def test_neutralize_slash_lines():
 
 
 def test_alert_send_uses_fingerprint_dedup(nt):
-    a = Alert(level=Status.WARN, code="c", title="t", body="b", fingerprint="fp1", created_at=T0)
+    a = Alert(level=Status.WARN, code="exchange_ban", title="t", body="b", fingerprint="exchange_ban|exchange_ban", created_at=T0)
     assert nt.n.send(a) is True
     assert nt.n.send(a) in (True, False)
     assert len(nt.f.of("sendMessage")) == 1
@@ -987,13 +987,13 @@ def _report_env(tmp_path, status=True, stale=False):
     return f, n, cfg, sp
 
 
-def test_late_report_sent_tagged_gecikmis(tmp_path):
+def test_late_report_sent_without_gecikmis_tag(tmp_path):
     f, n, cfg, sp = _report_env(tmp_path)
     now = ist(22, 15)
     write_status(sp, loop_at=now)
     r = tg.run_report(cfg, n, now)
     assert r == "sent"
-    assert "gecikmiş" in f.alltext().lower()
+    assert "gecikmiş" not in f.alltext().lower()      # gecikme oneki kalkti; rapor yine gider
 
 
 def test_report_after_2330_skipped(tmp_path):
@@ -1044,7 +1044,7 @@ def test_report_stale_status_first_line_crit(tmp_path):
     write_status(sp, loop_at=now - timedelta(seconds=600))
     text = tg.build_report(cfg, now, "2026-11-16")
     first = text.split("\n")[0]
-    assert first.startswith("🚨") and "Motor yanıt vermiyor" in first and "10 dk" in first
+    assert first.startswith("[ML] 🔴") and "Bot yanıt vermiyor" in first and "10 dk" in first
 
 
 def test_report_fresh_status_no_crit_first_line(tmp_path):
