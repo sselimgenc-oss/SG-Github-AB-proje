@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trader panosu</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<style>
+/* panel.css — kendi stilimiz; tema/degisken yaklasimi 1L3A pano.py CSS dizgisinden uyarlandi (kullanicinin kendi projesi, 2026-11-16). Dis URL, dis yazi tipi yok. */
+:root{--bg:#f4f6f8;--kart:#fff;--yazi:#16202a;--sol:#5a6773;--cizgi:#dde3e9;--iyi:#0e8a4f;--kotu:#c62828;--notr:#6b7684;--uyar:#b26a00;--vurgu:#a85f00;--r:12px;--iyibg:#e3f5ea;--kotubg:#fdeaea;--uyarbg:#fff3dc;--gol:rgba(0,0,0,.06)}
+:root[data-theme="dark"]{--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--notr:#98a4b1;--uyar:#e0a030;--vurgu:#f5a524;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--notr:#98a4b1;--uyar:#e0a030;--vurgu:#f5a524;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--yazi);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:12px 16px 40px;overflow-x:hidden}
+.gomulu .ust{display:none}
+.gomulu main{padding-top:8px}
+.ust{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.mk{display:flex;align-items:center;gap:8px}
+.lg0{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:7px;background:var(--vurgu);color:#fff;font-weight:700;font-size:14px}
+h1{font-size:17px;margin:0;letter-spacing:.2px}
+.un{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.so{color:var(--sol);font-size:12px}
+button{font:inherit;font-size:13px;padding:5px 11px;border-radius:8px;border:1px solid var(--cizgi);background:var(--kart);color:var(--yazi);cursor:pointer}
+button:hover{border-color:var(--vurgu)}
+.rozet{font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--gol);color:var(--sol)}
+.uyari{padding:9px 12px;border-radius:10px;margin:0 0 8px;font-size:13.5px;background:var(--uyarbg);color:var(--uyar);border:1px solid var(--uyar)}
+.uyari.kritik{background:var(--kotubg);color:var(--kotu);border-color:var(--kotu)}
+/* serit: telefonda 3x2, masaustunde 1x6 */
+.serit{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+@media (min-width:900px){.serit{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.ks{background:var(--kart);border:1px solid var(--cizgi);border-radius:var(--r);padding:9px 10px;min-width:0}
+.ks .e{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--sol);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ks .e .ipucu{display:inline-block;margin-left:5px;width:14px;height:14px;line-height:14px;text-align:center;border:1px solid var(--cizgi);border-radius:50%;font-size:10px;cursor:help}
+.ks .b{font-size:18px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.ks .a{font-size:11.5px;color:var(--sol);margin-top:1px;line-height:1.25;overflow:hidden;text-overflow:ellipsis}
+.ks.risk .b{font-size:14.5px;white-space:normal;line-height:1.2;display:flex;align-items:center;gap:6px}
+.nokta{flex:none;width:10px;height:10px;border-radius:50%;background:var(--sol)}
+.yesil .nokta{background:var(--iyi)}.sari .nokta{background:var(--uyar)}.kirmizi .nokta{background:var(--kotu)}
+.ks.risk.yesil{border-color:var(--iyi)}.ks.risk.sari{border-color:var(--uyar);background:var(--uyarbg)}.ks.risk.gri{border-color:var(--cizgi);background:var(--gol)}.gri .nokta{background:var(--notr)}.gri,.yok.gri{color:var(--notr)}
+.ks.risk.kirmizi{border-color:var(--kotu);background:var(--kotubg)}
+.iyi{color:var(--iyi)}.kotu{color:var(--kotu)}.sol,.notr{color:var(--notr)}
+/* sekmeler */
+.tabs{display:flex;gap:4px;overflow-x:auto;margin:0 -16px 12px;padding:0 16px;border-bottom:1px solid var(--cizgi);scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs{gap:0;justify-content:space-between}.tabs button{flex:1 1 auto;letter-spacing:.04em;border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:9px 6px;font-weight:600;font-size:13px;color:var(--sol);white-space:nowrap}
+.tabs button.on{color:var(--vurgu);border-bottom-color:var(--vurgu)}
+.tabs button .hap{display:inline-block;margin-left:5px;padding:0 6px;border-radius:99px;background:var(--gol);color:var(--sol);font-size:10.5px;font-weight:700;letter-spacing:0}
+.son-gun{margin:-6px 0 10px;text-align:left}
+.sek{display:none}.sek.on{display:block}
+/* kartlar */
+.ig{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media (min-width:900px){.ig.iki{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kart{background:var(--kart);border:1px solid var(--cizgi);border-radius:var(--r);padding:13px 14px;min-width:0}
+.kart h2{margin:0 0 8px;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--vurgu);font-weight:700;display:flex;justify-content:space-between;gap:8px}
+.kart h2 a,.lnk{color:var(--vurgu);text-transform:none;letter-spacing:0;font-weight:600;cursor:pointer;background:none;border:0;padding:0;font-size:12.5px}
+.kart.kirmizi{border-color:var(--kotu);background:var(--kotubg)}
+.buyuk{font-size:16px;font-weight:600}
+.satir{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--cizgi);font-size:14px}
+.satir:first-of-type{border-top:0}
+.satir span:first-child{color:var(--sol)}
+.satir b{font-variant-numeric:tabular-nums;text-align:right}
+.yok{color:var(--sol);font-size:13.5px;padding:6px 0}
+.rt{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:700;background:var(--gol)}
+.rt.yesil{background:var(--iyibg);color:var(--iyi)}.rt.sari{background:var(--uyarbg);color:var(--uyar)}.rt.kirmizi{background:var(--kotubg);color:var(--kotu)}.rt.gri{background:var(--gol);color:var(--notr)}
+.yon{display:inline-block;margin-left:5px;padding:0 6px;border-radius:5px;font-size:11px;font-weight:700;vertical-align:1px}
+.yon.long{background:var(--iyibg);color:var(--iyi)}.yon.short{background:var(--kotubg);color:var(--kotu)}
+/* tablolar: 4 sutun, yatay kaydirma yok */
+table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13.5px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--sol);text-align:left;padding:4px 4px 6px;font-weight:700}
+td{padding:9px 4px;border-top:1px solid var(--cizgi);vertical-align:top;overflow:hidden;text-overflow:ellipsis}
+th.sg,td.sg{text-align:right}
+col.c1{width:31%}col.c2{width:27%}col.c3{width:24%}col.c4{width:18%}
+tr.satir-t{cursor:pointer}
+tr.satir-t:hover td{background:var(--gol)}
+td .u{font-size:11.5px;color:var(--sol);font-variant-numeric:tabular-nums}
+td .n{white-space:nowrap;font-variant-numeric:tabular-nums}
+tr.dty td{background:var(--gol);padding:8px 10px}
+.dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;font-size:13px}
+.dl div span{display:block;color:var(--sol);font-size:11px}
+.dl .g{grid-column:1/-1}
+.daha{display:block;width:100%;margin-top:8px}
+.donem{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.donem button.on{background:var(--vurgu);border-color:var(--vurgu);color:#fff}
+.ozet-ic{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;font-size:14px}
+.ozet-ic b{font-variant-numeric:tabular-nums}
+.d4{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media (min-width:700px){.d4{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.d4 .ks .b{font-size:17px}
+/* grafik */
+.gk{position:relative;height:150px;margin:4px 0 18px 38px}
+.gk svg{width:100%;height:100%;display:block}
+.gk .yt{position:absolute;left:-38px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:space-between;font-size:10.5px;color:var(--sol);width:34px;text-align:right}
+.gk .ek{position:absolute;left:0;right:0;bottom:-16px;display:flex;justify-content:space-between;font-size:10.5px;color:var(--sol)}
+.izg{stroke:var(--cizgi);stroke-width:1;vector-effect:non-scaling-stroke}
+.baz{stroke:var(--sol);stroke-dasharray:4 4;stroke-width:1;vector-effect:non-scaling-stroke}
+.cizgi{fill:none;stroke:var(--vurgu);stroke-width:2;vector-effect:non-scaling-stroke}
+.alan{fill:var(--vurgu);opacity:.12}
+.cizgi.k{stroke:var(--kotu)}.alan.k{fill:var(--kotu)}
+/* teknik: katli */
+details{background:var(--kart);border:1px solid var(--cizgi);border-radius:12px;margin-bottom:8px;padding:0 14px}
+summary{cursor:pointer;padding:12px 0;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--sol)}
+details[open] summary::after{content:"−"}
+details>div{padding-bottom:12px}
+.cub{height:7px;border-radius:4px;background:var(--gol);overflow:hidden;margin-top:3px}
+.cub i{display:block;height:100%;background:var(--vurgu)}
+.cub i.s{background:var(--uyar)}.cub i.k{background:var(--kotu)}
+.lim{margin:7px 0;font-size:13.5px}
+.lim .r{display:flex;justify-content:space-between;gap:8px}
+@media (max-width:420px){
+  .tabs button{font-size:10.5px;padding:9px 1px;letter-spacing:-.3px}
+  main{padding:10px 12px 32px}.tabs{margin:0 -12px 10px;padding:0 12px}
+  .ks .b{font-size:16.5px}.ks.risk .b{font-size:13.5px}.ks .e{font-size:9.5px;letter-spacing:.02em}
+}
+@media print{.tabs,.un{display:none}.sek{display:block}}
+
+</style>
+</head>
+<body>
+<main>
+<div class="ust" id="ust">
+  <div class="mk"><span class="lg0">T</span><h1>İşlem Botu</h1><span id="rozet" class="rozet" hidden></span></div>
+  <div class="un">
+    <span class="so" id="damga">Oluşturulma: 2026-11-20 20:33:36 TSİ</span>
+    <button type="button" id="yenile">Yenile</button>
+    <button type="button" id="tema">Tema</button>
+  </div>
+</div>
+<div id="snap-bant" class="uyari bayat-bant" role="alert"></div>
+<div id="bantlar"></div>
+<div id="serit" class="serit"></div>
+<div class="so son-gun" id="uretim"></div>
+<nav class="tabs" id="tabs"></nav>
+<section class="sek" id="sek-ozet"></section>
+<section class="sek" id="sek-acik"></section>
+<section class="sek" id="sek-kapanan"></section>
+<section class="sek" id="sek-kz"></section>
+<section class="sek" id="sek-ogrenme"></section>
+<section class="sek" id="sek-teknik"></section>
+</main>
+<script>window.__SNAPSHOT__={"generated_at":"2026-11-20T17:33:36.000Z","data":{"/api/status":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","stale_s":120,"daily_max_loss":0.08,"kill_file_exists":false,"bots":{"learner":{"state":"live","code":null,"loop_at":"2026-11-20T17:33:34.000Z","age_s":2.5,"data":{"mode":"paper","dry_run":true,"kill":false,"kill_state":null,"entries_open":true,"entries_blocked_reason":null,"loop_at":"2026-11-20T17:33:34Z","started_at":"2026-11-20T16:03:31Z","equity":1180.2624105195052,"day_start_equity":1031.8162622511654,"wallet":1122.0681593145052,"counters":{"rules_missing":1,"data_stale":0,"callback_errors":0,"data_gaps":0,"ledger_errors":0,"outbox_failed":0,"unknown_orders":0,"mark_fallbacks":1123,"minute_gaps":2894,"funding_missing":0,"exit_data_gap":0,"optional_waiting":1,"reconciles":336,"partial_fills":2,"trades_closed":3,"steps":93,"decisions":6,"trades_opened":3,"ignore:no_signal":246,"skip:stop_width":4,"etiket_veri_yok:etiket_kalabalik":7,"enter":4,"skip:cluster_cap":2,"arm_would_close":4,"skip:risk_denied":6,"ignore:position_exists":2,"rejects":6,"duplicates":0,"anomalies":0},"param_version_id":2,"strategy":{"name":"price_action_lab_ml","version":"1.0-lab1"},"trigger_tf":"1h","open_positions":[{"trade_id":15,"pair":"XRP/USDT","side":"short","qty":136.20000000000002,"entry_price":0.9687,"stop":0.9672,"asset_class":"kripto","mark":0.9025,"notional_usd":122.9205,"unrealized_pnl_usd":9.016440000000006,"unrealized_pct":6.833901104573142,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.13188850500000002,"funding_paid":0.0036558157904396787,"partial_realized_usd":7.975459999999997,"partial_fee_usd":0.061932305},{"trade_id":17,"pair":"TRX/USDT","side":"short","qty":1614.0,"entry_price":0.30987,"stop":0.30363,"asset_class":"kripto","mark":0.30224,"notional_usd":487.81536,"unrealized_pnl_usd":12.314819999999951,"unrealized_pct":2.462322909607245,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.50013018,"funding_paid":0.1638769163844,"partial_realized_usd":3.437819999999944,"partial_fee_usd":0.24834618},{"trade_id":20,"pair":"ORCL/USDT","side":"short","qty":0.92,"entry_price":109.86,"stop":120.79207954312925,"asset_class":"hisse","mark":102.93,"notional_usd":94.69560000000001,"unrealized_pnl_usd":6.375599999999993,"unrealized_pct":6.308028399781533,"mark_ts":"2026-11-20T17:31:00Z","fee_paid_entry":0.0505356,"funding_paid":-0.002270387592,"partial_realized_usd":0.0,"partial_fee_usd":0.0},{"trade_id":22,"pair":"ADA/USDT","side":"short","qty":850.0,"entry_price":0.149,"stop":0.1458,"asset_class":"kripto","mark":0.1402,"notional_usd":119.16999999999999,"unrealized_pnl_usd":7.480000000000002,"unrealized_pct":5.906040268456378,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.12664999999999998,"funding_paid":0.09596276619762001,"partial_realized_usd":7.734999999999998,"partial_fee_usd":0.059457499999999996},{"trade_id":27,"pair":"AMD/USDT","side":"short","qty":0.5,"entry_price":462.66,"stop":461.96,"asset_class":"hisse","mark":434.18,"notional_usd":217.09,"unrealized_pnl_usd":14.240000000000009,"unrealized_pct":6.1557082955085844,"mark_ts":"2026-11-20T17:31:00Z","fee_paid_entry":0.115665,"funding_paid":0.0,"partial_realized_usd":0.0,"partial_fee_usd":0.0},{"trade_id":31,"pair":"AAPL/USDT","side":"short","qty":3.34,"entry_price":347.87,"stop":350.01636381121665,"asset_class":"hisse","mark":346.73,"notional_usd":1158.0782,"unrealized_pnl_usd":3.807599999999954,"unrealized_pct":0.3277086267858643,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.5809429,"funding_paid":0.0,"partial_realized_usd":0.0,"partial_fee_usd":0.0},{"trade_id":33,"pair":"BTC/USDT","side":"short","qty":0.009,"entry_price":59500.0,"stop":60691.39604583944,"asset_class":"kripto","mark":59206.4,"notional_usd":532.8575999999999,"unrealized_pnl_usd":2.6423999999999865,"unrealized_pct":0.49344537815125805,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.26775,"funding_paid":0.0,"partial_realized_usd":0.0,"partial_fee_usd":0.0},{"trade_id":34,"pair":"LINK/USDT","side":"short","qty":50.25,"entry_price":8.398,"stop":8.616437102217086,"asset_class":"kripto","mark":8.362,"notional_usd":420.1905,"unrealized_pnl_usd":1.8089999999999793,"unrealized_pct":0.4286734936889687,"mark_ts":"2026-11-20T17:33:00Z","fee_paid_entry":0.21099975,"funding_paid":0.0,"partial_realized_usd":0.0,"partial_fee_usd":0.0}],"unrealized_pnl_usd":57.685859999999884,"mark_ts":"2026-11-20T17:33:00Z","ml_filtre":{"aktif_kurulum":0,"atladi":0,"gecti":0,"calisiyor":true},"gate_code":"ok"},"banner":null}}},"/api/budget":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","day":"2026-11-20","month":"2026-11","month_used_usd":0.058463,"monthly_cap_usd":10.0,"month_state":"ok","provider_blocked_until":null,"prices_verified":false,"services":{"haftalik_ozet":{"used_usd":0.0,"cap_usd":0.25,"pct":0.0,"state":"ok","calls_today":0},"lesson":{"used_usd":0.007019,"cap_usd":0.1,"pct":7.0,"state":"ok","calls_today":1}}},"/api/lesson":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","open_requests":[],"open_count":0,"shadow":{"start":"2026-11-17","end":"2026-12-15","day":4,"total":28},"last_run":{"day":"2026-11-20","status":"no_change","code":"llm_no_change"},"proposals":[]},"/api/learning":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","ledger_error":null,"scorecard":[{"arm":"T1@15m","candidates":140,"taken":1,"resolved":1,"mean_r_taken":4.230419367803586,"mean_r_taken_cf":4.230419367803586,"state":"open","by_class":{"emtia":{"candidates":31,"taken":1,"resolved":1,"mean_r_taken":4.230419367803586,"mean_r_taken_cf":4.230419367803586},"hisse":{"candidates":55,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":54,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":1,"equity":1042.3,"return_pct":4.23,"max_dd_pct":0.0},"cf":{"n":1,"equity":1042.3,"return_pct":4.23,"max_dd_pct":0.0}}},{"arm":"T1@1h","candidates":49,"taken":6,"resolved":6,"mean_r_taken":0.47901659291556026,"mean_r_taken_cf":0.47901659291556026,"state":"open","by_class":{"emtia":{"candidates":3,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":12,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":34,"taken":6,"resolved":6,"mean_r_taken":0.47901659291556026,"mean_r_taken_cf":0.47901659291556026}},"kasa":{"taken":{"n":6,"equity":1028.85,"return_pct":2.88,"max_dd_pct":0.98},"cf":{"n":6,"equity":1028.85,"return_pct":2.88,"max_dd_pct":0.98}}},{"arm":"T1@4h","candidates":6,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":5,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"T1@1d","candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"R1@15m","candidates":31,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":29,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"R1@1h","candidates":16,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"kripto":{"candidates":16,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"R1@4h","candidates":11,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"kripto":{"candidates":11,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"R1@1d","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"TF1@15m","candidates":59,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":4,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":23,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":32,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"TF1@1h","candidates":26,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":10,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":15,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"TF1@4h","candidates":10,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":8,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"TF1@1d","candidates":3,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":3,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"B1@15m","candidates":21,"taken":1,"resolved":1,"mean_r_taken":0.7271213446597237,"mean_r_taken_cf":0.7271213446597237,"state":"open","by_class":{"emtia":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":12,"taken":1,"resolved":1,"mean_r_taken":0.7271213446597237,"mean_r_taken_cf":0.7271213446597237},"kripto":{"candidates":8,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":1,"equity":1007.27,"return_pct":0.73,"max_dd_pct":0.0},"cf":{"n":1,"equity":1007.27,"return_pct":0.73,"max_dd_pct":0.0}}},{"arm":"B1@1h","candidates":7,"taken":1,"resolved":1,"mean_r_taken":2.349167886589689,"mean_r_taken_cf":2.349167886589689,"state":"open","by_class":{"hisse":{"candidates":5,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":2,"taken":1,"resolved":1,"mean_r_taken":2.349167886589689,"mean_r_taken_cf":2.349167886589689}},"kasa":{"taken":{"n":1,"equity":1023.49,"return_pct":2.35,"max_dd_pct":0.0},"cf":{"n":1,"equity":1023.49,"return_pct":2.35,"max_dd_pct":0.0}}},{"arm":"B1@4h","candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"B1@1d","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"H2@15m","candidates":58,"taken":1,"resolved":1,"mean_r_taken":0.5689522745361969,"mean_r_taken_cf":0.5689522745361969,"state":"open","by_class":{"emtia":{"candidates":5,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":32,"taken":1,"resolved":1,"mean_r_taken":0.5689522745361969,"mean_r_taken_cf":0.5689522745361969},"kripto":{"candidates":21,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":1,"equity":1005.69,"return_pct":0.57,"max_dd_pct":0.0},"cf":{"n":1,"equity":1005.69,"return_pct":0.57,"max_dd_pct":0.0}}},{"arm":"H2@1h","candidates":22,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":4,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":9,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":9,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"H2@4h","candidates":7,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":3,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"H2@1d","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"S1@15m","candidates":125,"taken":4,"resolved":3,"mean_r_taken":-1.1096975594049365,"mean_r_taken_cf":-1.1096975594049365,"state":"closed","by_class":{"emtia":{"candidates":11,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":49,"taken":1,"resolved":1,"mean_r_taken":-1.362187298225619,"mean_r_taken_cf":-1.362187298225619},"kripto":{"candidates":65,"taken":3,"resolved":2,"mean_r_taken":-0.9834526899945955,"mean_r_taken_cf":-0.9834526899945955}},"kasa":{"taken":{"n":3,"equity":967.07,"return_pct":-3.29,"max_dd_pct":3.29},"cf":{"n":3,"equity":967.07,"return_pct":-3.29,"max_dd_pct":3.29}}},{"arm":"S1@1h","candidates":23,"taken":2,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":10,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":11,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"S1@4h","candidates":11,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"emtia":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":5,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":5,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"S1@1d","candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"F1@15m","candidates":101,"taken":3,"resolved":3,"mean_r_taken":-0.3684228264099036,"mean_r_taken_cf":-0.3684228264099036,"state":"closed","by_class":{"emtia":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":51,"taken":1,"resolved":1,"mean_r_taken":0.8233552306498879,"mean_r_taken_cf":0.8233552306498879},"kripto":{"candidates":48,"taken":2,"resolved":2,"mean_r_taken":-0.9643118549397993,"mean_r_taken_cf":-0.9643118549397993}},"kasa":{"taken":{"n":3,"equity":988.88,"return_pct":-1.11,"max_dd_pct":1.11},"cf":{"n":3,"equity":988.88,"return_pct":-1.11,"max_dd_pct":1.11}}},{"arm":"F1@1h","candidates":22,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":8,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":14,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"F1@4h","candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"F1@1d","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"M1@1h","candidates":35,"taken":1,"resolved":1,"mean_r_taken":0.4801958700908314,"mean_r_taken_cf":0.4801958700908314,"state":"open","by_class":{"emtia":{"candidates":2,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"hisse":{"candidates":22,"taken":1,"resolved":1,"mean_r_taken":0.4801958700908314,"mean_r_taken_cf":0.4801958700908314},"kripto":{"candidates":11,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":1,"equity":1004.8,"return_pct":0.48,"max_dd_pct":0.0},"cf":{"n":1,"equity":1004.8,"return_pct":0.48,"max_dd_pct":0.0}}},{"arm":"M1@4h","candidates":11,"taken":1,"resolved":1,"mean_r_taken":1.9914644457353896,"mean_r_taken_cf":1.9914644457353896,"state":"open","by_class":{"kripto":{"candidates":11,"taken":1,"resolved":1,"mean_r_taken":1.9914644457353896,"mean_r_taken_cf":1.9914644457353896}},"kasa":{"taken":{"n":1,"equity":1019.91,"return_pct":1.99,"max_dd_pct":0.0},"cf":{"n":1,"equity":1019.91,"return_pct":1.99,"max_dd_pct":0.0}}},{"arm":"M1@15m","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"M1@1d","candidates":0,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}},{"arm":"C1@1h","candidates":52,"taken":4,"resolved":2,"mean_r_taken":1.4768973653157753,"mean_r_taken_cf":1.4768973653157753,"state":"open","by_class":{"hisse":{"candidates":8,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":44,"taken":4,"resolved":2,"mean_r_taken":1.4768973653157753,"mean_r_taken_cf":1.4768973653157753}},"kasa":{"taken":{"n":2,"equity":1029.54,"return_pct":2.95,"max_dd_pct":0.0},"cf":{"n":2,"equity":1029.54,"return_pct":2.95,"max_dd_pct":0.0}}},{"arm":"C1@4h","candidates":11,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null,"state":"open","by_class":{"hisse":{"candidates":1,"taken":0,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null},"kripto":{"candidates":10,"taken":1,"resolved":0,"mean_r_taken":null,"mean_r_taken_cf":null}},"kasa":{"taken":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0},"cf":{"n":0,"equity":1000.0,"return_pct":0.0,"max_dd_pct":0.0}}}],"lesson":{"applied":0,"rollbacks":0,"brake_events":0,"brake_active":false,"effect":null,"closed_arms":["F1@15m","S1@15m"],"events":[]},"ml":{"eliminated":0,"passed":0,"effect_r":null,"m1_candidates":46,"m1_taken":2},"sessions":{"open":{"kripto":{"candidates":457,"taken":19,"resolved":14,"mean_r_taken":0.44807125218437144,"mean_r_taken_cf":0.44807125218437144},"hisse":{"candidates":136,"taken":3,"resolved":2,"mean_r_taken":0.7752382876548058,"mean_r_taken_cf":0.7752382876548058},"emtia":{"candidates":69,"taken":1,"resolved":1,"mean_r_taken":4.230419367803586,"mean_r_taken_cf":4.230419367803586}},"closed":{"hisse":{"candidates":201,"taken":5,"resolved":3,"mean_r_taken":-0.10434638453286353,"mean_r_taken_cf":-0.10434638453286353}},"weekend":{}},"asset_class":{"kripto":{"candidates":457,"taken":19,"resolved":14,"mean_r_taken":0.44807125218437144,"mean_r_taken_cf":0.44807125218437144},"hisse":{"candidates":337,"taken":8,"resolved":5,"mean_r_taken":0.24748748434220422,"mean_r_taken_cf":0.24748748434220422},"emtia":{"candidates":69,"taken":1,"resolved":1,"mean_r_taken":4.230419367803586,"mean_r_taken_cf":4.230419367803586}},"open":{"total":8,"by_arm":{"C1@1h":2,"C1@4h":1,"S1@15m":1,"S1@1h":2,"TF1@15m":1,"TF1@1d":1},"by_cluster":{"hisse":3,"hisse_teknoloji":3,"kripto_buyuk":2,"kripto_diger":3}},"trades_closed":20,"decisions":863,"budget":{"day":"2026-11-20","month":"2026-11","month_used_usd":0.058463,"monthly_cap_usd":10.0,"month_state":"ok","provider_blocked_until":null,"prices_verified":false,"services":{"haftalik_ozet":{"used_usd":0.0,"cap_usd":0.25,"pct":0.0,"state":"ok","calls_today":0},"lesson":{"used_usd":0.007019,"cap_usd":0.1,"pct":7.0,"state":"ok","calls_today":1}}},"weekly_summary":null},"/api/tutarlilik":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","var":false,"neden":"dosya_yok"},"/api/pbo":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","pbo":{"var":true,"aileler":[{"aile":"ML 19c","tur":"ml","pbo":0.3225,"dsr":0.023646168438990083,"n_yapilandirma":12,"T":240,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"ML r02","tur":"ml","pbo":0.5805,"dsr":0.08475821252711058,"n_yapilandirma":12,"T":1574,"durum":"tamam","yorum":"asiri uyum riski yuksek"},{"aile":"ML r03","tur":"ml","pbo":0.6645,"dsr":0.3037151011744526,"n_yapilandirma":12,"T":1574,"durum":"tamam","yorum":"asiri uyum riski yuksek"},{"aile":"Kural B1 (harness)","tur":"kural_harness","pbo":0.007,"dsr":9.770199334900311e-94,"n_yapilandirma":112,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"Kural F1 (harness)","tur":"kural_harness","pbo":0.0,"dsr":7.955520573407131e-137,"n_yapilandirma":112,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"Kural H2 (harness)","tur":"kural_harness","pbo":0.0675,"dsr":2.52639863387818e-25,"n_yapilandirma":112,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"ML M1@1h (egitim-disi)","tur":"m1","pbo":0.0045,"dsr":0.0011391930018196897,"n_yapilandirma":12,"T":1110,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"Kural R1 (harness)","tur":"kural_harness","pbo":0.388,"dsr":4.947836464309731e-10,"n_yapilandirma":56,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"Kural S1 (harness)","tur":"kural_harness","pbo":0.177,"dsr":5.4775801429691947e-45,"n_yapilandirma":112,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"Kural T1 (harness)","tur":"kural_harness","pbo":0.514,"dsr":0.5923338026460777,"n_yapilandirma":48,"T":1946,"durum":"tamam","yorum":"asiri uyum riski yuksek"},{"aile":"Kural TF1 (harness)","tur":"kural_harness","pbo":0.0325,"dsr":4.7261877922579196e-52,"n_yapilandirma":112,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"},{"aile":"TUM KUME","tur":"tum","pbo":0.0845,"dsr":8.034702592519196e-130,"n_yapilandirma":712,"T":1946,"durum":"tamam","yorum":"asiri uyum riski dusuk-orta"}],"holdout_oncesi_sinir":"2026-05-01"},"muhur":{"var":true,"muhur_tarihi":"2026-11-19T15:08:49Z","dosya_sayisi":80,"acildi":false,"baslangic":"2026-05-01","bitis":"2026-11-01","hash12":"499d54b12cde"}},"/api/ciktikaniti":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","var":false,"neden":"kayit_yok"},"/api/haber":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","var":true,"uretim":"2026-11-20T17:01:20.000Z","yas_dk":32,"duygu":{"deger":12,"sinif":"Extreme Fear","sinif_tr":"Aşırı korku"},"coinler":[{"coin":"BTC","adet_24s":16,"ton":"negatif"},{"coin":"ETH","adet_24s":4,"ton":"negatif"},{"coin":"SOL","adet_24s":1,"ton":"negatif"}]},"/api/habersonuc":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","var":false,"neden":"dosya_yok"},"/api/alinmayansonuc":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","var":true,"uretim":"2026-11-19T23:23:06Z","birim":"R","pencere_gun":7,"tablolar":{"neden":[{"etiket":"alınan işlemler","n":13,"kazanan":6,"isabet_yuzde":46.2,"toplam_pnl":-1.18,"ortalama_pnl":-0.09}]},"tum_zamanlar":{"neden":[{"etiket":"alınan işlemler","n":13,"kazanan":6,"isabet_yuzde":46.2,"toplam_pnl":-1.18,"ortalama_pnl":-0.09}]},"cozulmedi":{"tablolar":{"arm_conflict":32,"risk_denied":219,"entry_gate_closed":5,"veto_blocked":3,"veto_missing":1,"stop_width":111,"rr_below_min":13,"order_failed":1},"tum_zamanlar":{"arm_conflict":32,"risk_denied":219,"entry_gate_closed":5,"veto_blocked":3,"veto_missing":1,"stop_width":111,"rr_below_min":13,"order_failed":1}},"not":"Yalnız bilgi: karar/limit/eşik/kol ayarı değiştirmez. BİRİM R (USD değil): alınmayan aday için boyut/dolum yok; 'alınsaydı' sonucu net R (maliyet düşülmüş, plan yöntemi: planlanan stop/hedef, 48 mum). Toplam/Ort. PnL sütunları bu raporda R'dir; 'alınan işlemler' satırı da R (kapanan işlemin r_multiple'ı). Çözülen alınmayan aday: son 7 gün 0, tüm zamanlar 0; çözülmedi (bekleyen/veri boşluğu/geçersiz plan): 385 / 385. Üst sınır: sonraki kapıları ve dolumu yok sayar, giriş = planlanan fiyat; işlem yapılabilir kâr değildir."},"/api/health":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","overall":"CRIT","last_run_at":"2026-11-20T17:32:33.000Z","age_s":63.9,"check_stale":false,"alerts":[{"name":"acik_pozisyon_fiyat_bayat:learner","code":"open_price_stale","first_seen":"2026-11-20T14:40:56Z","consecutive":35,"alerted":true,"level":"WARN"},{"name":"risk_ladder:learner@testnet","code":"capital_missing","first_seen":"2026-11-18T19:05:13Z","consecutive":550,"alerted":true,"level":"CRIT"}],"restart_counts":{"trader-learner":22,"trader-twin":2}},"/api/system":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","mem_available":1400016896,"mem_total":2063568896,"mem_level":"iyi","swap_total":4294963200,"swap_used":13213696,"swap_level":"iyi","disk_free":36848607232,"disk_total":50884108288,"disk_level":"iyi"},"/api/ledger?bot=learner":{"ok":true,"generated_at":"2026-11-20T17:33:36.000Z","day":"2026-11-20","summary":{"closed":7,"pnl":131.62291642513995,"r":12.917153935946299,"win":7,"loss":0,"open":8,"daily_loss":0.0,"daily_limit":82.54530098009323},"closed":[{"trade_id":30,"pair":"SOL/USDT","side":"short","setup":"B1","leverage":3,"entry_ts":"2026-11-20T15:00:00.000Z","exit_ts":"2026-11-20T16:00:00.000Z","entry_price":71.0,"exit_price":68.32,"qty":9.58,"planned_stop":71.97530280459824,"planned_risk":10.617400068919173,"fee_entry":0.34009,"fee_exit":0.3272528,"realized_pnl":24.942055280980068,"r_multiple":2.349167886589689,"exit_reason":"target"},{"trade_id":28,"pair":"LINK/USDT","side":"short","setup":"C1","leverage":3,"entry_ts":"2026-11-20T11:00:00.000Z","exit_ts":"2026-11-20T16:00:00.000Z","entry_price":8.872,"exit_price":8.339,"qty":58.5,"planned_stop":9.033515161440866,"planned_risk":10.37922658123489,"fee_entry":0.25950599999999996,"fee_exit":0.24391575000000001,"realized_pnl":30.653254236149973,"r_multiple":2.953327398360248,"exit_reason":"target"},{"trade_id":24,"pair":"BNB/USDT","side":"short","setup":"M1","leverage":3,"entry_ts":"2026-11-20T04:00:00.000Z","exit_ts":"2026-11-20T16:00:00.000Z","entry_price":575.09,"exit_price":546.83,"qty":0.74,"planned_stop":587.9557142857143,"planned_risk":10.292571199999978,"fee_entry":0.2127833,"fee_exit":0.2023271,"realized_pnl":20.49728959999999,"r_multiple":1.9914644457353896,"exit_reason":"target"},{"trade_id":23,"pair":"BTC/USDT","side":"short","setup":"C1","leverage":3,"entry_ts":"2026-11-20T03:00:00.000Z","exit_ts":"2026-11-20T14:28:00.000Z","entry_price":62235.1,"exit_price":62172.8,"qty":0.009,"planned_stop":63261.73061979434,"planned_risk":10.25675955372722,"fee_entry":0.28005794999999994,"fee_exit":0.2797776,"realized_pnl":0.004793314738444669,"r_multiple":0.00046733227130227686,"exit_reason":"trail_stop"},{"trade_id":21,"pair":"NVDA/USDT","side":"short","setup":"H2","leverage":3,"entry_ts":"2026-11-20T00:30:00.000Z","exit_ts":"2026-11-20T08:21:00.000Z","entry_price":145.87,"exit_price":144.59096267190571,"qty":5.09,"planned_stop":147.65892410562344,"planned_risk":10.192893121320997,"fee_entry":0.37123915,"fee_exit":0.367984,"realized_pnl":5.799269725479937,"r_multiple":0.5689522745361969,"exit_reason":"trail_stop"},{"trade_id":12,"pair":"WMT/USDT","side":"long","setup":"F1","leverage":3,"entry_ts":"2026-11-19T14:45:00.000Z","exit_ts":"2026-11-20T02:45:00.000Z","entry_price":125.03,"exit_price":127.2,"qty":4.01,"planned_stop":122.7754000043511,"planned_risk":9.954365436569564,"fee_entry":0.25068515,"fee_exit":0.255036,"realized_pnl":8.195978850000005,"r_multiple":0.8233552306498879,"exit_reason":"time_stop"},{"trade_id":14,"pair":"XAG/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-19T15:15:00.000Z","exit_ts":"2026-11-20T00:15:00.000Z","entry_price":45.28,"exit_price":43.15,"qty":19.771,"planned_stop":45.70553276764478,"planned_risk":9.81705873745417,"fee_entry":0.44761544000000003,"fee_exit":0.426559325,"realized_pnl":41.53027541779154,"r_multiple":4.230419367803586,"exit_reason":"trail_stop"},{"trade_id":16,"pair":"HBAR/USDT","side":"long","setup":"F1","leverage":3,"entry_ts":"2026-11-19T17:30:00.000Z","exit_ts":"2026-11-19T20:27:00.000Z","entry_price":0.05524,"exit_price":0.0543,"qty":9908.0,"planned_stop":0.05432717722317808,"planned_risk":10.030660584678868,"fee_entry":0.27365896,"fee_exit":0.2690022,"realized_pnl":-9.856181159999965,"r_multiple":-0.9826053904221016,"exit_reason":"stop"},{"trade_id":13,"pair":"BRKB/USDT","side":"short","setup":"B1","leverage":3,"entry_ts":"2026-11-19T15:15:00.000Z","exit_ts":"2026-11-19T17:15:00.000Z","entry_price":570.35,"exit_price":567.81,"qty":1.72,"planned_stop":572.0680111988262,"planned_risk":4.662196241243017,"fee_entry":0.490501,"fee_exit":0.48831659999999993,"realized_pnl":3.3899824000001324,"r_multiple":0.7271213446597237,"exit_reason":"target"},{"trade_id":9,"pair":"NVDA/USDT","side":"long","setup":"M1","leverage":3,"entry_ts":"2026-11-19T11:00:00.000Z","exit_ts":"2026-11-19T15:00:00.000Z","entry_price":154.09,"exit_price":155.2,"qty":5.09,"planned_stop":152.30678571428572,"planned_risk":10.126611353571429,"fee_entry":0.39215905,"fee_exit":0.394984,"realized_pnl":4.862756949999924,"r_multiple":0.4801958700908314,"exit_reason":"target"},{"trade_id":11,"pair":"AMD/USDT","side":"long","setup":"S1","leverage":3,"entry_ts":"2026-11-19T11:45:00.000Z","exit_ts":"2026-11-19T13:30:00.000Z","entry_price":550.75,"exit_price":538.3,"qty":1.05,"planned_stop":541.912817401155,"planned_risk":10.016428187058423,"fee_entry":0.28914375000000003,"fee_exit":0.2826075,"realized_pnl":-13.644251250000048,"r_multiple":-1.362187298225619,"exit_reason":"stop"},{"trade_id":10,"pair":"HYPE/USDT","side":"long","setup":"S1","leverage":3,"entry_ts":"2026-11-19T11:45:00.000Z","exit_ts":"2026-11-19T12:25:00.000Z","entry_price":68.917,"exit_price":68.146,"qty":11.67,"planned_stop":68.18007090509158,"planned_risk":10.036341975043715,"fee_entry":0.40213069500000004,"fee_exit":0.39763191000000003,"realized_pnl":-9.797332605000008,"r_multiple":-0.97618560919526,"exit_reason":"stop"},{"trade_id":8,"pair":"HBAR/USDT","side":"short","setup":"S1","leverage":3,"entry_ts":"2026-11-19T11:00:00.000Z","exit_ts":"2026-11-19T11:45:00.000Z","entry_price":0.05534,"exit_price":0.05603,"qty":13472.0,"planned_stop":0.05600130864100826,"planned_risk":10.139969561674949,"fee_entry":0.37277024000000003,"fee_exit":0.37741808000000004,"realized_pnl":-10.045868320000041,"r_multiple":-0.9907197707939309,"exit_reason":"stop"},{"trade_id":7,"pair":"BTC/USDT","side":"short","setup":"F1","leverage":3,"entry_ts":"2026-11-19T11:00:00.000Z","exit_ts":"2026-11-19T11:33:00.000Z","entry_price":63747.6,"exit_price":64018.4,"qty":0.015,"planned_stop":63986.43384156009,"planned_risk":5.3067101310246825,"fee_entry":0.478107,"fee_exit":0.480138,"realized_pnl":-5.020245000000044,"r_multiple":-0.9460183194574969,"exit_reason":"stop"},{"trade_id":3,"pair":"BTC/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T09:00:00.000Z","exit_ts":"2026-11-19T04:46:00.000Z","entry_price":64644.4,"exit_price":63634.1,"qty":0.009,"planned_stop":65081.39016783331,"planned_risk":4.983560622010305,"fee_entry":0.2908998,"fee_exit":0.28635344999999995,"realized_pnl":8.602715078928643,"r_multiple":1.7262186078230983,"exit_reason":"trail_stop"},{"trade_id":2,"pair":"AVAX/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T07:00:00.000Z","exit_ts":"2026-11-19T04:46:00.000Z","entry_price":7.147,"exit_price":7.099,"qty":50.0,"planned_stop":7.234097441167478,"planned_risk":4.974026930432267,"fee_entry":0.17867500000000003,"fee_exit":0.177475,"realized_pnl":2.043400251252442,"r_multiple":0.41081407073822596,"exit_reason":"trail_stop"},{"trade_id":1,"pair":"ADA/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T05:00:00.000Z","exit_ts":"2026-11-19T04:46:00.000Z","entry_price":0.1529,"exit_price":0.1533,"qty":1536.0,"planned_stop":0.15594486591256382,"planned_risk":4.997853355739727,"fee_entry":0.1174272,"fee_exit":0.1177344,"realized_pnl":-0.8099702155224325,"r_multiple":-0.16206362169314784,"exit_reason":"trail_stop"},{"trade_id":5,"pair":"BNB/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T09:00:00.000Z","exit_ts":"2026-11-19T04:45:00.000Z","entry_price":591.97,"exit_price":588.02,"qty":1.0,"planned_stop":595.8734388762414,"planned_risk":4.961412315117599,"fee_entry":0.295985,"fee_exit":0.29401,"realized_pnl":3.3600050000000454,"r_multiple":0.6772275284926413,"exit_reason":"trail_stop"},{"trade_id":6,"pair":"SOL/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T20:00:00.000Z","exit_ts":"2026-11-19T04:34:00.000Z","entry_price":73.06,"exit_price":74.68,"qty":3.06,"planned_stop":74.64492541299462,"planned_risk":5.271279435527334,"fee_entry":0.1117818,"fee_exit":0.11426040000000003,"realized_pnl":-5.181550598034014,"r_multiple":-0.9829777877286174,"exit_reason":"stop"},{"trade_id":4,"pair":"ETH/USDT","side":"short","setup":"T1","leverage":3,"entry_ts":"2026-11-18T09:00:00.000Z","exit_ts":"2026-11-19T01:04:00.000Z","entry_price":1810.7,"exit_price":1788.89,"qty":0.298,"planned_stop":1824.1305326565214,"planned_risk":4.987236570375024,"fee_entry":0.26979430000000004,"fee_exit":0.26654460999999996,"realized_pnl":6.009025388520829,"r_multiple":1.204880759861161,"exit_reason":"trail_stop"}],"open":[{"trade_id":15,"pair":"XRP/USDT","side":"short","setup":"C1","leverage":3,"entry_ts":"2026-11-19T16:00:00.000Z","exit_ts":null,"entry_price":0.9687,"exit_price":null,"qty":272.3,"planned_stop":1.0033185502378317,"planned_risk":9.90920634099133,"fee_entry":0.13188850500000002,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":17,"pair":"TRX/USDT","side":"short","setup":"S1","leverage":3,"entry_ts":"2026-11-19T20:30:00.000Z","exit_ts":null,"entry_price":0.30987,"exit_price":null,"qty":3228.0,"planned_stop":0.31120604084103476,"planned_risk":6.059591534695051,"fee_entry":0.50013018,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":20,"pair":"ORCL/USDT","side":"short","setup":"TF1","leverage":3,"entry_ts":"2026-11-20T00:00:00.000Z","exit_ts":null,"entry_price":109.86,"exit_price":null,"qty":0.92,"planned_stop":120.79207954312925,"planned_risk":10.232949892858583,"fee_entry":0.0505356,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":22,"pair":"ADA/USDT","side":"short","setup":"S1","leverage":3,"entry_ts":"2026-11-20T02:00:00.000Z","exit_ts":null,"entry_price":0.149,"exit_price":null,"qty":1700.0,"planned_stop":0.1549975541966341,"planned_risk":10.372977976412262,"fee_entry":0.12664999999999998,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":27,"pair":"AMD/USDT","side":"short","setup":"S1","leverage":3,"entry_ts":"2026-11-20T10:00:00.000Z","exit_ts":null,"entry_price":462.66,"exit_price":null,"qty":0.5,"planned_stop":482.6812842018383,"planned_risk":10.343452743020075,"fee_entry":0.115665,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":31,"pair":"AAPL/USDT","side":"short","setup":"TF1","leverage":3,"entry_ts":"2026-11-20T16:30:00.000Z","exit_ts":null,"entry_price":347.87,"exit_price":null,"qty":3.34,"planned_stop":350.01636381121665,"planned_risk":9.032663184593103,"fee_entry":0.5809429,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":33,"pair":"BTC/USDT","side":"short","setup":"C1","leverage":3,"entry_ts":"2026-11-20T17:00:00.000Z","exit_ts":null,"entry_price":59500.0,"exit_price":null,"qty":0.009,"planned_stop":60691.39604583944,"planned_risk":11.696394976967541,"fee_entry":0.26775,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null},{"trade_id":34,"pair":"LINK/USDT","side":"short","setup":"C1","leverage":3,"entry_ts":"2026-11-20T17:00:00.000Z","exit_ts":null,"entry_price":8.398,"exit_price":null,"qty":50.25,"planned_stop":8.616437102217086,"planned_risk":11.731040350794952,"fee_entry":0.21099975,"fee_exit":null,"realized_pnl":null,"r_multiple":null,"exit_reason":null}],"decisions":{"total":524,"entered":11,"skipped":513,"skip_reasons":{"risk_denied":275,"stop_width":125,"arm_conflict":53,"etiket_duygu":30,"rr_below_min":16,"etiket_rejim":6,"order_failed":6,"cluster_cap":2}}},"/api/curve?bot=learner":{"ok":true,"generated_at":"2026-11-20T17:33:37.000Z","base":"equity","start":1000.0,"peak":1105.5354023452855,"max_dd_pct":-0.03955641466317128,"max_dd_abs":-40.111138985000025,"total_closed":20,"truncated":false,"points":[["2026-11-19T01:04:00.000Z",1006.0090253885209,0.0,0.0],["2026-11-19T04:34:00.000Z",1000.8274747904868,-5.18155059803405,-0.005150600508810443],["2026-11-19T04:45:00.000Z",1004.1874797904868,-1.8215455980340494,-0.001810665264489586],["2026-11-19T04:46:00.000Z",1003.3775095749644,-2.6315158135564616,-0.00261579742044582],["2026-11-19T04:46:00.000Z",1005.4209098262169,-0.5881155623039831,-0.0005846026700176976],["2026-11-19T04:46:00.000Z",1014.0236249051455,0.0,0.0],["2026-11-19T11:33:00.000Z",1009.0033799051455,-5.020245000000045,-0.004950816604957997],["2026-11-19T11:45:00.000Z",998.9575115851454,-15.066113320000113,-0.014857753754415226],["2026-11-19T12:25:00.000Z",989.1601789801455,-24.863445925000065,-0.024519592358931308],["2026-11-19T13:30:00.000Z",975.5159277301453,-38.5076971750002,-0.03797514794450896],["2026-11-19T15:00:00.000Z",980.3786846801453,-33.644940225000255,-0.03317964137980267],["2026-11-19T17:15:00.000Z",983.7686670801454,-30.254957825000133,-0.02983654136049374],["2026-11-19T20:27:00.000Z",973.9124859201455,-40.111138985000025,-0.03955641466317128],["2026-11-20T00:15:00.000Z",1015.442761337937,0.0,0.0],["2026-11-20T02:45:00.000Z",1023.6387401879371,0.0,0.0],["2026-11-20T08:21:00.000Z",1029.4380099134169,0.0,0.0],["2026-11-20T14:28:00.000Z",1029.4428032281553,0.0,0.0],["2026-11-20T16:00:00.000Z",1049.9400928281555,0.0,0.0],["2026-11-20T16:00:00.000Z",1080.5933470643054,0.0,0.0],["2026-11-20T16:00:00.000Z",1105.5354023452855,0.0,0.0]],"daily":[{"day":"2026-11-19","pnl":-26.087514079854536,"r":-1.1762996158504917,"n":13},{"day":"2026-11-20","pnl":131.62291642513995,"r":12.917153935946299,"n":7}]},"/api/risk?bot=learner":{"ok":true,"generated_at":"2026-11-20T17:33:37.000Z","rows":[{"label":"Toplam açık risk","used":79.3782770003329,"limit":70.81574463117032,"pct":112.09128339150965},{"label":"Long açık risk","used":0,"limit":47.21049642078021,"pct":0.0},{"label":"Short açık risk","used":79.3782770003329,"limit":47.21049642078021,"pct":168.13692508726447},{"label":"Günlük zarar","used":0.0,"limit":82.54530098009323,"pct":0.0}]},"/api/pano?bot=learner":{"ok":true,"generated_at":"2026-11-20T17:33:37.000Z","bot_durum":"live","mod":"paper","serit":{"kasa":1180.2624105195052,"baslangic":1000.0,"bugun":131.62291642513995,"bugun_yuzde":12.756429728871652,"toplam":180.26241051950524,"toplam_yuzde":18.026241051950525,"acik":8,"acik_kz":57.685859999999884,"dusus":0.0,"dusus_yuzde":0.0,"durum_yasi_s":3.3,"risk":{"limit":82.54530098009323,"limit_orani":0.08,"kullanilan":0.0,"kalan":82.54530098009323,"oran":0.0,"renk":"yesil","metin":"Güvenli","alt":"günlük limite kalan 82,55 $"}},"acik":{"n":8,"kz":57.685859999999884,"kasa_yuzde":89.04284707929916,"en_iyi":{"coin":"AMD","kz":14.240000000000009},"en_kotu":{"coin":"LINK","kz":1.8089999999999793},"rows":[{"id":15,"coin":"XRP","yon":"short","kol":"Kadro uzlaşısı · 4 saat","giris":0.9687,"simdi":0.9025,"kz":9.016440000000006,"fiyat_bekleniyor":false,"kz_yuzde":6.833901104573142,"sure":"1g 1s","stop":0.9672,"hedef":0.9000628995243365,"buyukluk":122.9205,"kaldirac":3,"acilis":"19.11 19:00","neden":"Kadro uzlaşısı sinyali"},{"id":17,"coin":"TRX","yon":"short","kol":"Sıkışma kırılımı · 15 dakika","giris":0.30987,"simdi":0.30224,"kz":12.314819999999951,"fiyat_bekleniyor":false,"kz_yuzde":2.462322909607245,"sure":"21s 3dk","stop":0.30363,"hedef":null,"buyukluk":487.81536,"kaldirac":3,"acilis":"19.11 23:30","neden":"Sıkışma kırılımı sinyali"},{"id":20,"coin":"ORCL","yon":"short","kol":"Trend kırılımı · 1 gün","giris":109.86,"simdi":102.93,"kz":6.375599999999993,"fiyat_bekleniyor":false,"kz_yuzde":6.308028399781533,"sure":"17s 33dk","stop":120.79207954312925,"hedef":null,"buyukluk":94.69560000000001,"kaldirac":3,"acilis":"20.11 03:00","neden":"Trend kırılımı sinyali"},{"id":22,"coin":"ADA","yon":"short","kol":"Sıkışma kırılımı · 1 saat","giris":0.149,"simdi":0.1402,"kz":7.480000000000002,"fiyat_bekleniyor":false,"kz_yuzde":5.906040268456378,"sure":"15s 33dk","stop":0.1458,"hedef":null,"buyukluk":119.16999999999999,"kaldirac":3,"acilis":"20.11 05:00","neden":"Sıkışma kırılımı sinyali"},{"id":27,"coin":"AMD","yon":"short","kol":"Sıkışma kırılımı · 1 saat","giris":462.66,"simdi":434.18,"kz":14.240000000000009,"fiyat_bekleniyor":false,"kz_yuzde":6.1557082955085844,"sure":"7s 33dk","stop":461.96,"hedef":null,"buyukluk":217.09,"kaldirac":3,"acilis":"20.11 13:00","neden":"Sıkışma kırılımı sinyali"},{"id":31,"coin":"AAPL","yon":"short","kol":"Trend kırılımı · 15 dakika","giris":347.87,"simdi":346.73,"kz":3.807599999999954,"fiyat_bekleniyor":false,"kz_yuzde":0.3277086267858643,"sure":"1s 3dk","stop":350.01636381121665,"hedef":null,"buyukluk":1158.0782,"kaldirac":3,"acilis":"20.11 19:30","neden":"Trend kırılımı sinyali"},{"id":33,"coin":"BTC","yon":"short","kol":"Kadro uzlaşısı · 1 saat","giris":59500.0,"simdi":59206.4,"kz":2.6423999999999865,"fiyat_bekleniyor":false,"kz_yuzde":0.49344537815125805,"sure":"33 dk","stop":60691.39604583944,"hedef":57153.20790832112,"buyukluk":532.8575999999999,"kaldirac":3,"acilis":"20.11 20:00","neden":"Kadro uzlaşısı sinyali"},{"id":34,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","giris":8.398,"simdi":8.362,"kz":1.8089999999999793,"fiyat_bekleniyor":false,"kz_yuzde":0.4286734936889687,"sure":"33 dk","stop":8.616437102217086,"hedef":7.96712579556583,"buyukluk":420.1905,"kaldirac":3,"acilis":"20.11 20:00","neden":"Kadro uzlaşısı sinyali"}]},"kz":{"donemler":{"bugun":{"kz":131.62291642513995,"yuzde":13.162291642513996},"7g":{"kz":105.53540234528542,"yuzde":10.553540234528542},"30g":{"kz":105.53540234528542,"yuzde":10.553540234528542},"tumu":{"kz":105.53540234528542,"yuzde":10.553540234528542}},"egri":[["19.11",1006.0090253885209],["19.11",1000.8274747904868],["19.11",1004.1874797904868],["19.11",1003.3775095749644],["19.11",1005.4209098262169],["19.11",1014.0236249051455],["19.11",1009.0033799051455],["19.11",998.9575115851454],["19.11",989.1601789801455],["19.11",975.5159277301453],["19.11",980.3786846801453],["19.11",983.7686670801454],["19.11",973.9124859201455],["20.11",1015.442761337937],["20.11",1023.6387401879371],["20.11",1029.4380099134169],["20.11",1029.4428032281553],["20.11",1049.9400928281555],["20.11",1080.5933470643054],["20.11",1105.5354023452855]],"oran":{"kazanma_yuzde":65.0,"n":20,"ort_kazanc":12.29929242260323,"ort_kayip":-7.765057021222364},"kol":[{"kol":"Trend geri çekilmesi · 15 dakika","n":1,"kz":41.53027541779154},{"kol":"Trend geri çekilmesi · 1 saat","n":6,"kz":14.023624905145514},{"kol":"Kırılım yeniden testi · 15 dakika","n":1,"kz":3.3899824000001324},{"kol":"Kırılım yeniden testi · 1 saat","n":1,"kz":24.942055280980068},{"kol":"İki bacaklı geri çekilme · 15 dakika","n":1,"kz":5.799269725479937},{"kol":"Sıkışma kırılımı · 15 dakika","n":3,"kz":-33.4874521750001},{"kol":"Sahte kırılım dönüşü · 15 dakika","n":3,"kz":-6.6804473100000035},{"kol":"Yapay zekâ adayı · 1 saat","n":1,"kz":4.862756949999924},{"kol":"Yapay zekâ adayı · 4 saat","n":1,"kz":20.49728959999999},{"kol":"Kadro uzlaşısı · 1 saat","n":2,"kz":30.65804755088842}],"masraf":{"30g":{"komisyon":12.174339510000001,"fonlama":-0.4096018552854169},"tumu":{"komisyon":12.174339510000001,"fonlama":-0.4096018552854169}}},"son3":[{"id":30,"coin":"SOL","yon":"short","kol":"Kırılım yeniden testi · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 18:00","kz":24.942055280980068,"kz_yuzde":3.666978635211278,"neden":"Kâr al","giris":71.0,"cikis":68.32,"sure":"1s","komisyon":0.6673428,"fonlama":0.06500191902,"ders":false},{"id":28,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 14:00","kz":30.653254236149973,"kz_yuzde":5.9060781323264155,"neden":"Kâr al","giris":8.872,"cikis":8.339,"sure":"5s","komisyon":0.50342175,"fonlama":0.023824013850000002,"ders":false},{"id":24,"coin":"BNB","yon":"short","kol":"Yapay zekâ adayı · 4 saat","kapanis":"20.11 19:00","acilis":"20.11 07:00","kz":20.49728959999999,"kz_yuzde":4.816470465492356,"neden":"Kâr al","giris":575.09,"cikis":546.83,"sure":"12s","komisyon":0.4151104,"fonlama":0.0,"ders":false}],"ders":{"durum":"Açık, veri birikiyor (0/10)","renk":"sari","son":null,"degisen_7g":0,"katki":{"olculemedi":"Henüz ölçülemedi (sonucu belli 0 karar, en az 10)"},"son5":[]},"ml":{"durum":"Açık, veri birikiyor (6/10)","renk":"sari","kapsam":{"aktif":0,"toplam":34,"en_az":10,"eksik":[{"kol":"Trend geri çekilmesi · 1 saat","n":6,"en_az":10},{"kol":"Sıkışma kırılımı · 15 dakika","n":3,"en_az":10},{"kol":"Sahte kırılım dönüşü · 15 dakika","n":3,"en_az":10},{"kol":"Kadro uzlaşısı · 1 saat","n":2,"en_az":10},{"kol":"Trend geri çekilmesi · 15 dakika","n":1,"en_az":10},{"kol":"Kırılım yeniden testi · 15 dakika","n":1,"en_az":10}],"eksik_fazla":4,"bos":24},"isabet":{"olculemedi":"Henüz ölçülemedi (0 tahmin, en az 10 gerek)"},"onay_7g":0,"ret_7g":0,"katki":{"olculemedi":"Henüz ölçülemedi (sonucu belli 0 karar, en az 10)"},"egitim":null,"son5":[]},"etiket":null,"teknik":{"mutabakat":{"son":"20.11 18:04","islem":25,"uyusmazlik":0},"saglik":{"durum":"Dikkat","renk":"sari","uyarilar":["Açık pozisyonun fiyatı gelmiyor"],"senden":[],"kontrol_bayat":false,"diger_botlar":["Testnet botu: sermaye kaydı girilmemiş (gerçek paraya geçişte yapılacak)"]},"limitler":[{"ad":"Toplam açık risk","kullanilan":79.3782770003329,"limit":70.81574463117032,"yuzde":112.09128339150965},{"ad":"Long açık risk","kullanilan":0,"limit":47.21049642078021,"yuzde":0.0},{"ad":"Short açık risk","kullanilan":79.3782770003329,"limit":47.21049642078021,"yuzde":168.13692508726447},{"ad":"Günlük zarar","kullanilan":0.0,"limit":82.54530098009323,"yuzde":0.0}],"kapilar":[{"ad":"Yapay zekâ filtresi","ok":true,"not":"0 kolda aktif"},{"ad":"Ders freni","ok":true,"not":"Açık, veri birikiyor (0/10)"}],"model":[{"ad":"Yapay zekâ","cagri_bugun":1,"maliyet_ay":0.058463}],"butce":{"kullanilan":0.058463,"tavan":10.0},"kayitlar":{"kapanan":20,"acik":8,"karar":863},"dogrulama":{"pbo":0.6645}},"isik":{"renk":"sari","metin":"Sağlık uyarısı: Açık pozisyonun fiyatı gelmiyor"},"yapmali":"Bir şey yapmanız gerekmiyor; sağlık uyarısı inceleniyor: Açık pozisyonun fiyatı gelmiyor. Ayrıca: Makine öğrenmesi: Açık, veri birikiyor (6/10)."},"/api/kapanan?bot=learner\u0026period=bugun":{"ok":true,"generated_at":"2026-11-20T17:33:38.000Z","period":"bugun","n":7,"kazanan_yuzde":100.0,"net":131.62291642513995,"rows":[{"id":30,"coin":"SOL","yon":"short","kol":"Kırılım yeniden testi · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 18:00","kz":24.942055280980068,"kz_yuzde":3.666978635211278,"neden":"Kâr al","giris":71.0,"cikis":68.32,"sure":"1s","komisyon":0.6673428,"fonlama":0.06500191902,"ders":false},{"id":28,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 14:00","kz":30.653254236149973,"kz_yuzde":5.9060781323264155,"neden":"Kâr al","giris":8.872,"cikis":8.339,"sure":"5s","komisyon":0.50342175,"fonlama":0.023824013850000002,"ders":false},{"id":24,"coin":"BNB","yon":"short","kol":"Yapay zekâ adayı · 4 saat","kapanis":"20.11 19:00","acilis":"20.11 07:00","kz":20.49728959999999,"kz_yuzde":4.816470465492356,"neden":"Kâr al","giris":575.09,"cikis":546.83,"sure":"12s","komisyon":0.4151104,"fonlama":0.0,"ders":false},{"id":23,"coin":"BTC","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 17:28","acilis":"20.11 06:00","kz":0.004793314738444669,"kz_yuzde":0.0008557719462069671,"neden":"İz süren stop","giris":62235.1,"cikis":62172.8,"sure":"11s 28dk","komisyon":0.55983555,"fonlama":-0.003928864738483954,"ders":false},{"id":21,"coin":"NVDA","yon":"short","kol":"İki bacaklı geri çekilme · 15 dakika","kapanis":"20.11 11:21","acilis":"20.11 03:30","kz":5.799269725479937,"kz_yuzde":0.7810692548832656,"neden":"İz süren stop","giris":145.87,"cikis":144.59096267190571,"sure":"7s 51dk","komisyon":0.7392231499999999,"fonlama":-0.02819287548,"ders":false},{"id":12,"coin":"WMT","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"20.11 05:45","acilis":"19.11 17:45","kz":8.195978850000005,"kz_yuzde":1.6347156682396236,"neden":"Süre","giris":125.03,"cikis":127.2,"sure":"12s","komisyon":0.5057211500000001,"fonlama":0.0,"ders":false},{"id":14,"coin":"XAG","yon":"short","kol":"Trend geri çekilmesi · 15 dakika","kapanis":"20.11 03:15","acilis":"19.11 18:15","kz":41.53027541779154,"kz_yuzde":4.639057515284945,"neden":"İz süren stop","giris":45.28,"cikis":43.15,"sure":"9s","komisyon":0.874174765,"fonlama":-0.2922201827914864,"ders":false}],"daha_fazla":0},"/api/kapanan?bot=learner\u0026period=7g":{"ok":true,"generated_at":"2026-11-20T17:33:38.000Z","period":"7g","n":20,"kazanan_yuzde":65.0,"net":105.53540234528542,"rows":[{"id":30,"coin":"SOL","yon":"short","kol":"Kırılım yeniden testi · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 18:00","kz":24.942055280980068,"kz_yuzde":3.666978635211278,"neden":"Kâr al","giris":71.0,"cikis":68.32,"sure":"1s","komisyon":0.6673428,"fonlama":0.06500191902,"ders":false},{"id":28,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 14:00","kz":30.653254236149973,"kz_yuzde":5.9060781323264155,"neden":"Kâr al","giris":8.872,"cikis":8.339,"sure":"5s","komisyon":0.50342175,"fonlama":0.023824013850000002,"ders":false},{"id":24,"coin":"BNB","yon":"short","kol":"Yapay zekâ adayı · 4 saat","kapanis":"20.11 19:00","acilis":"20.11 07:00","kz":20.49728959999999,"kz_yuzde":4.816470465492356,"neden":"Kâr al","giris":575.09,"cikis":546.83,"sure":"12s","komisyon":0.4151104,"fonlama":0.0,"ders":false},{"id":23,"coin":"BTC","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 17:28","acilis":"20.11 06:00","kz":0.004793314738444669,"kz_yuzde":0.0008557719462069671,"neden":"İz süren stop","giris":62235.1,"cikis":62172.8,"sure":"11s 28dk","komisyon":0.55983555,"fonlama":-0.003928864738483954,"ders":false},{"id":21,"coin":"NVDA","yon":"short","kol":"İki bacaklı geri çekilme · 15 dakika","kapanis":"20.11 11:21","acilis":"20.11 03:30","kz":5.799269725479937,"kz_yuzde":0.7810692548832656,"neden":"İz süren stop","giris":145.87,"cikis":144.59096267190571,"sure":"7s 51dk","komisyon":0.7392231499999999,"fonlama":-0.02819287548,"ders":false},{"id":12,"coin":"WMT","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"20.11 05:45","acilis":"19.11 17:45","kz":8.195978850000005,"kz_yuzde":1.6347156682396236,"neden":"Süre","giris":125.03,"cikis":127.2,"sure":"12s","komisyon":0.5057211500000001,"fonlama":0.0,"ders":false},{"id":14,"coin":"XAG","yon":"short","kol":"Trend geri çekilmesi · 15 dakika","kapanis":"20.11 03:15","acilis":"19.11 18:15","kz":41.53027541779154,"kz_yuzde":4.639057515284945,"neden":"İz süren stop","giris":45.28,"cikis":43.15,"sure":"9s","komisyon":0.874174765,"fonlama":-0.2922201827914864,"ders":false},{"id":16,"coin":"HBAR","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 23:27","acilis":"19.11 20:30","kz":-9.856181159999965,"kz_yuzde":-1.8008146270818184,"neden":"Stop","giris":0.05524,"cikis":0.0543,"sure":"2s 57dk","komisyon":0.54266116,"fonlama":0.0,"ders":false},{"id":13,"coin":"BRKB","yon":"short","kol":"Kırılım yeniden testi · 15 dakika","kapanis":"19.11 20:15","acilis":"19.11 18:15","kz":3.3899824000001324,"kz_yuzde":0.3455632506355881,"neden":"Kâr al","giris":570.35,"cikis":567.81,"sure":"2s","komisyon":0.9788176,"fonlama":0.0,"ders":false},{"id":9,"coin":"NVDA","yon":"long","kol":"Yapay zekâ adayı · 1 saat","kapanis":"19.11 18:00","acilis":"19.11 14:00","kz":4.862756949999924,"kz_yuzde":0.6199980530858492,"neden":"Kâr al","giris":154.09,"cikis":155.2,"sure":"4s","komisyon":0.7871430500000001,"fonlama":0.0,"ders":false},{"id":11,"coin":"AMD","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 16:30","acilis":"19.11 14:45","kz":-13.644251250000048,"kz_yuzde":-2.359423513390839,"neden":"Stop","giris":550.75,"cikis":538.3,"sure":"1s 45dk","komisyon":0.57175125,"fonlama":0.0,"ders":false},{"id":10,"coin":"HYPE","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 15:25","acilis":"19.11 14:45","kz":-9.797332605000008,"kz_yuzde":-1.2181776629859116,"neden":"Stop","giris":68.917,"cikis":68.146,"sure":"40 dk","komisyon":0.7997626050000001,"fonlama":0.0,"ders":false},{"id":8,"coin":"HBAR","yon":"short","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 14:45","acilis":"19.11 14:00","kz":-10.045868320000041,"kz_yuzde":-1.3474611492591309,"neden":"Stop","giris":0.05534,"cikis":0.05603,"sure":"45 dk","komisyon":0.7501883200000001,"fonlama":0.0,"ders":false},{"id":7,"coin":"BTC","yon":"short","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 14:33","acilis":"19.11 14:00","kz":-5.020245000000044,"kz_yuzde":-0.5250127063607146,"neden":"Stop","giris":63747.6,"cikis":64018.4,"sure":"33 dk","komisyon":0.958245,"fonlama":0.0,"ders":false},{"id":3,"coin":"BTC","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 12:00","kz":8.602715078928643,"kz_yuzde":1.478638878220034,"neden":"İz süren stop","giris":64644.4,"cikis":63634.1,"sure":"19s 46dk","komisyon":0.5772532499999999,"fonlama":-0.08726832892861808,"ders":false},{"id":2,"coin":"AVAX","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 10:00","kz":2.043400251252442,"kz_yuzde":0.5718204145102679,"neden":"İz süren stop","giris":7.147,"cikis":7.099,"sure":"21s 46dk","komisyon":0.35615,"fonlama":0.0004497487475600033,"ders":false},{"id":1,"coin":"ADA","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 08:00","kz":-0.8099702155224325,"kz_yuzde":-0.34488185681104233,"neden":"İz süren stop","giris":0.1529,"cikis":0.1533,"sure":"23s 46dk","komisyon":0.2351616,"fonlama":-0.0395913844775424,"ders":false},{"id":5,"coin":"BNB","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:45","acilis":"18.11 12:00","kz":3.3600050000000454,"kz_yuzde":0.5675971755325515,"neden":"İz süren stop","giris":591.97,"cikis":588.02,"sure":"19s 45dk","komisyon":0.589995,"fonlama":0.0,"ders":false},{"id":6,"coin":"SOL","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:34","acilis":"18.11 23:00","kz":-5.181550598034014,"kz_yuzde":-2.3177076223651856,"neden":"Stop","giris":73.06,"cikis":74.68,"sure":"8s 34dk","komisyon":0.22604220000000003,"fonlama":-0.001691601966,"ders":false},{"id":4,"coin":"ETH","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 04:04","acilis":"18.11 12:00","kz":6.009025388520829,"kz_yuzde":1.1136309011200067,"neden":"İz süren stop","giris":1810.7,"cikis":1788.89,"sure":"16s 4dk","komisyon":0.53633891,"fonlama":-0.0459842985208461,"ders":false}],"daha_fazla":0},"/api/kapanan?bot=learner\u0026period=30g":{"ok":true,"generated_at":"2026-11-20T17:33:38.000Z","period":"30g","n":20,"kazanan_yuzde":65.0,"net":105.53540234528542,"rows":[{"id":30,"coin":"SOL","yon":"short","kol":"Kırılım yeniden testi · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 18:00","kz":24.942055280980068,"kz_yuzde":3.666978635211278,"neden":"Kâr al","giris":71.0,"cikis":68.32,"sure":"1s","komisyon":0.6673428,"fonlama":0.06500191902,"ders":false},{"id":28,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 14:00","kz":30.653254236149973,"kz_yuzde":5.9060781323264155,"neden":"Kâr al","giris":8.872,"cikis":8.339,"sure":"5s","komisyon":0.50342175,"fonlama":0.023824013850000002,"ders":false},{"id":24,"coin":"BNB","yon":"short","kol":"Yapay zekâ adayı · 4 saat","kapanis":"20.11 19:00","acilis":"20.11 07:00","kz":20.49728959999999,"kz_yuzde":4.816470465492356,"neden":"Kâr al","giris":575.09,"cikis":546.83,"sure":"12s","komisyon":0.4151104,"fonlama":0.0,"ders":false},{"id":23,"coin":"BTC","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 17:28","acilis":"20.11 06:00","kz":0.004793314738444669,"kz_yuzde":0.0008557719462069671,"neden":"İz süren stop","giris":62235.1,"cikis":62172.8,"sure":"11s 28dk","komisyon":0.55983555,"fonlama":-0.003928864738483954,"ders":false},{"id":21,"coin":"NVDA","yon":"short","kol":"İki bacaklı geri çekilme · 15 dakika","kapanis":"20.11 11:21","acilis":"20.11 03:30","kz":5.799269725479937,"kz_yuzde":0.7810692548832656,"neden":"İz süren stop","giris":145.87,"cikis":144.59096267190571,"sure":"7s 51dk","komisyon":0.7392231499999999,"fonlama":-0.02819287548,"ders":false},{"id":12,"coin":"WMT","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"20.11 05:45","acilis":"19.11 17:45","kz":8.195978850000005,"kz_yuzde":1.6347156682396236,"neden":"Süre","giris":125.03,"cikis":127.2,"sure":"12s","komisyon":0.5057211500000001,"fonlama":0.0,"ders":false},{"id":14,"coin":"XAG","yon":"short","kol":"Trend geri çekilmesi · 15 dakika","kapanis":"20.11 03:15","acilis":"19.11 18:15","kz":41.53027541779154,"kz_yuzde":4.639057515284945,"neden":"İz süren stop","giris":45.28,"cikis":43.15,"sure":"9s","komisyon":0.874174765,"fonlama":-0.2922201827914864,"ders":false},{"id":16,"coin":"HBAR","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 23:27","acilis":"19.11 20:30","kz":-9.856181159999965,"kz_yuzde":-1.8008146270818184,"neden":"Stop","giris":0.05524,"cikis":0.0543,"sure":"2s 57dk","komisyon":0.54266116,"fonlama":0.0,"ders":false},{"id":13,"coin":"BRKB","yon":"short","kol":"Kırılım yeniden testi · 15 dakika","kapanis":"19.11 20:15","acilis":"19.11 18:15","kz":3.3899824000001324,"kz_yuzde":0.3455632506355881,"neden":"Kâr al","giris":570.35,"cikis":567.81,"sure":"2s","komisyon":0.9788176,"fonlama":0.0,"ders":false},{"id":9,"coin":"NVDA","yon":"long","kol":"Yapay zekâ adayı · 1 saat","kapanis":"19.11 18:00","acilis":"19.11 14:00","kz":4.862756949999924,"kz_yuzde":0.6199980530858492,"neden":"Kâr al","giris":154.09,"cikis":155.2,"sure":"4s","komisyon":0.7871430500000001,"fonlama":0.0,"ders":false},{"id":11,"coin":"AMD","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 16:30","acilis":"19.11 14:45","kz":-13.644251250000048,"kz_yuzde":-2.359423513390839,"neden":"Stop","giris":550.75,"cikis":538.3,"sure":"1s 45dk","komisyon":0.57175125,"fonlama":0.0,"ders":false},{"id":10,"coin":"HYPE","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 15:25","acilis":"19.11 14:45","kz":-9.797332605000008,"kz_yuzde":-1.2181776629859116,"neden":"Stop","giris":68.917,"cikis":68.146,"sure":"40 dk","komisyon":0.7997626050000001,"fonlama":0.0,"ders":false},{"id":8,"coin":"HBAR","yon":"short","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 14:45","acilis":"19.11 14:00","kz":-10.045868320000041,"kz_yuzde":-1.3474611492591309,"neden":"Stop","giris":0.05534,"cikis":0.05603,"sure":"45 dk","komisyon":0.7501883200000001,"fonlama":0.0,"ders":false},{"id":7,"coin":"BTC","yon":"short","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 14:33","acilis":"19.11 14:00","kz":-5.020245000000044,"kz_yuzde":-0.5250127063607146,"neden":"Stop","giris":63747.6,"cikis":64018.4,"sure":"33 dk","komisyon":0.958245,"fonlama":0.0,"ders":false},{"id":3,"coin":"BTC","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 12:00","kz":8.602715078928643,"kz_yuzde":1.478638878220034,"neden":"İz süren stop","giris":64644.4,"cikis":63634.1,"sure":"19s 46dk","komisyon":0.5772532499999999,"fonlama":-0.08726832892861808,"ders":false},{"id":2,"coin":"AVAX","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 10:00","kz":2.043400251252442,"kz_yuzde":0.5718204145102679,"neden":"İz süren stop","giris":7.147,"cikis":7.099,"sure":"21s 46dk","komisyon":0.35615,"fonlama":0.0004497487475600033,"ders":false},{"id":1,"coin":"ADA","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 08:00","kz":-0.8099702155224325,"kz_yuzde":-0.34488185681104233,"neden":"İz süren stop","giris":0.1529,"cikis":0.1533,"sure":"23s 46dk","komisyon":0.2351616,"fonlama":-0.0395913844775424,"ders":false},{"id":5,"coin":"BNB","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:45","acilis":"18.11 12:00","kz":3.3600050000000454,"kz_yuzde":0.5675971755325515,"neden":"İz süren stop","giris":591.97,"cikis":588.02,"sure":"19s 45dk","komisyon":0.589995,"fonlama":0.0,"ders":false},{"id":6,"coin":"SOL","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:34","acilis":"18.11 23:00","kz":-5.181550598034014,"kz_yuzde":-2.3177076223651856,"neden":"Stop","giris":73.06,"cikis":74.68,"sure":"8s 34dk","komisyon":0.22604220000000003,"fonlama":-0.001691601966,"ders":false},{"id":4,"coin":"ETH","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 04:04","acilis":"18.11 12:00","kz":6.009025388520829,"kz_yuzde":1.1136309011200067,"neden":"İz süren stop","giris":1810.7,"cikis":1788.89,"sure":"16s 4dk","komisyon":0.53633891,"fonlama":-0.0459842985208461,"ders":false}],"daha_fazla":0},"/api/kapanan?bot=learner\u0026period=tumu":{"ok":true,"generated_at":"2026-11-20T17:33:39.000Z","period":"tumu","n":20,"kazanan_yuzde":65.0,"net":105.53540234528542,"rows":[{"id":30,"coin":"SOL","yon":"short","kol":"Kırılım yeniden testi · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 18:00","kz":24.942055280980068,"kz_yuzde":3.666978635211278,"neden":"Kâr al","giris":71.0,"cikis":68.32,"sure":"1s","komisyon":0.6673428,"fonlama":0.06500191902,"ders":false},{"id":28,"coin":"LINK","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 19:00","acilis":"20.11 14:00","kz":30.653254236149973,"kz_yuzde":5.9060781323264155,"neden":"Kâr al","giris":8.872,"cikis":8.339,"sure":"5s","komisyon":0.50342175,"fonlama":0.023824013850000002,"ders":false},{"id":24,"coin":"BNB","yon":"short","kol":"Yapay zekâ adayı · 4 saat","kapanis":"20.11 19:00","acilis":"20.11 07:00","kz":20.49728959999999,"kz_yuzde":4.816470465492356,"neden":"Kâr al","giris":575.09,"cikis":546.83,"sure":"12s","komisyon":0.4151104,"fonlama":0.0,"ders":false},{"id":23,"coin":"BTC","yon":"short","kol":"Kadro uzlaşısı · 1 saat","kapanis":"20.11 17:28","acilis":"20.11 06:00","kz":0.004793314738444669,"kz_yuzde":0.0008557719462069671,"neden":"İz süren stop","giris":62235.1,"cikis":62172.8,"sure":"11s 28dk","komisyon":0.55983555,"fonlama":-0.003928864738483954,"ders":false},{"id":21,"coin":"NVDA","yon":"short","kol":"İki bacaklı geri çekilme · 15 dakika","kapanis":"20.11 11:21","acilis":"20.11 03:30","kz":5.799269725479937,"kz_yuzde":0.7810692548832656,"neden":"İz süren stop","giris":145.87,"cikis":144.59096267190571,"sure":"7s 51dk","komisyon":0.7392231499999999,"fonlama":-0.02819287548,"ders":false},{"id":12,"coin":"WMT","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"20.11 05:45","acilis":"19.11 17:45","kz":8.195978850000005,"kz_yuzde":1.6347156682396236,"neden":"Süre","giris":125.03,"cikis":127.2,"sure":"12s","komisyon":0.5057211500000001,"fonlama":0.0,"ders":false},{"id":14,"coin":"XAG","yon":"short","kol":"Trend geri çekilmesi · 15 dakika","kapanis":"20.11 03:15","acilis":"19.11 18:15","kz":41.53027541779154,"kz_yuzde":4.639057515284945,"neden":"İz süren stop","giris":45.28,"cikis":43.15,"sure":"9s","komisyon":0.874174765,"fonlama":-0.2922201827914864,"ders":false},{"id":16,"coin":"HBAR","yon":"long","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 23:27","acilis":"19.11 20:30","kz":-9.856181159999965,"kz_yuzde":-1.8008146270818184,"neden":"Stop","giris":0.05524,"cikis":0.0543,"sure":"2s 57dk","komisyon":0.54266116,"fonlama":0.0,"ders":false},{"id":13,"coin":"BRKB","yon":"short","kol":"Kırılım yeniden testi · 15 dakika","kapanis":"19.11 20:15","acilis":"19.11 18:15","kz":3.3899824000001324,"kz_yuzde":0.3455632506355881,"neden":"Kâr al","giris":570.35,"cikis":567.81,"sure":"2s","komisyon":0.9788176,"fonlama":0.0,"ders":false},{"id":9,"coin":"NVDA","yon":"long","kol":"Yapay zekâ adayı · 1 saat","kapanis":"19.11 18:00","acilis":"19.11 14:00","kz":4.862756949999924,"kz_yuzde":0.6199980530858492,"neden":"Kâr al","giris":154.09,"cikis":155.2,"sure":"4s","komisyon":0.7871430500000001,"fonlama":0.0,"ders":false},{"id":11,"coin":"AMD","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 16:30","acilis":"19.11 14:45","kz":-13.644251250000048,"kz_yuzde":-2.359423513390839,"neden":"Stop","giris":550.75,"cikis":538.3,"sure":"1s 45dk","komisyon":0.57175125,"fonlama":0.0,"ders":false},{"id":10,"coin":"HYPE","yon":"long","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 15:25","acilis":"19.11 14:45","kz":-9.797332605000008,"kz_yuzde":-1.2181776629859116,"neden":"Stop","giris":68.917,"cikis":68.146,"sure":"40 dk","komisyon":0.7997626050000001,"fonlama":0.0,"ders":false},{"id":8,"coin":"HBAR","yon":"short","kol":"Sıkışma kırılımı · 15 dakika","kapanis":"19.11 14:45","acilis":"19.11 14:00","kz":-10.045868320000041,"kz_yuzde":-1.3474611492591309,"neden":"Stop","giris":0.05534,"cikis":0.05603,"sure":"45 dk","komisyon":0.7501883200000001,"fonlama":0.0,"ders":false},{"id":7,"coin":"BTC","yon":"short","kol":"Sahte kırılım dönüşü · 15 dakika","kapanis":"19.11 14:33","acilis":"19.11 14:00","kz":-5.020245000000044,"kz_yuzde":-0.5250127063607146,"neden":"Stop","giris":63747.6,"cikis":64018.4,"sure":"33 dk","komisyon":0.958245,"fonlama":0.0,"ders":false},{"id":3,"coin":"BTC","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 12:00","kz":8.602715078928643,"kz_yuzde":1.478638878220034,"neden":"İz süren stop","giris":64644.4,"cikis":63634.1,"sure":"19s 46dk","komisyon":0.5772532499999999,"fonlama":-0.08726832892861808,"ders":false},{"id":2,"coin":"AVAX","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 10:00","kz":2.043400251252442,"kz_yuzde":0.5718204145102679,"neden":"İz süren stop","giris":7.147,"cikis":7.099,"sure":"21s 46dk","komisyon":0.35615,"fonlama":0.0004497487475600033,"ders":false},{"id":1,"coin":"ADA","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:46","acilis":"18.11 08:00","kz":-0.8099702155224325,"kz_yuzde":-0.34488185681104233,"neden":"İz süren stop","giris":0.1529,"cikis":0.1533,"sure":"23s 46dk","komisyon":0.2351616,"fonlama":-0.0395913844775424,"ders":false},{"id":5,"coin":"BNB","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:45","acilis":"18.11 12:00","kz":3.3600050000000454,"kz_yuzde":0.5675971755325515,"neden":"İz süren stop","giris":591.97,"cikis":588.02,"sure":"19s 45dk","komisyon":0.589995,"fonlama":0.0,"ders":false},{"id":6,"coin":"SOL","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 07:34","acilis":"18.11 23:00","kz":-5.181550598034014,"kz_yuzde":-2.3177076223651856,"neden":"Stop","giris":73.06,"cikis":74.68,"sure":"8s 34dk","komisyon":0.22604220000000003,"fonlama":-0.001691601966,"ders":false},{"id":4,"coin":"ETH","yon":"short","kol":"Trend geri çekilmesi · 1 saat","kapanis":"19.11 04:04","acilis":"18.11 12:00","kz":6.009025388520829,"kz_yuzde":1.1136309011200067,"neden":"İz süren stop","giris":1810.7,"cikis":1788.89,"sure":"16s 4dk","komisyon":0.53633891,"fonlama":-0.0459842985208461,"ders":false}],"daha_fazla":0}}};</script>
+<script>
+/* panel.js
+ * KOPYA/UYARLAMA kaynagi: /home/user/sselimgenc-oss/1l3a-proje/motor/canli/pano.py, JS dizgisi (satir 329-380; 1L3A kullanicinin kendi projesi,
+ * 2026-11-16): tema dugmesi (K tema anahtari), yenile dugmesi. Bu depoya ozgu: sekmeler, tum cizimler.
+ * Her metin textContent ile basilir; HTML dizgisi yok. Sayilar ve Turkce metinler sunucudan hazir gelir; burada yalniz bicim/yerlesim.
+ * Anlik goruntu kipinde veri gomulu (ag yok); canli kipte fetch. Yeniden cizim yok: 5 dk'da bir sayfa yenilenir. Dis URL yok.
+ */
+(function () {
+  'use strict';
+  var YENILE_S = 300;                                         // sayfa yenileme: 5 dk
+  var SAYFA = 20;                                             // tablo: 20 satir + daha fazla
+  var TABS = [['ozet', 'ÖZET'], ['acik', 'AÇIK'], ['kapanan', 'KAPANAN'], ['kz', 'K/Z'], ['ogrenme', 'ÖĞRENME'], ['teknik', 'TEKNİK']];
+  var DONEMLER = [['bugun', 'Bugün'], ['7g', '7 gün'], ['30g', '30 gün'], ['tumu', 'Tümü']];
+  var BOT = 'learner';
+  var S = {tab: 'ozet', pano: null, kapanan: {}, donem: 'bugun', t0: Date.now(), gen: null};
+  var $ = function (i) { return document.getElementById(i); };
+
+  /* ---------- DOM yardimcilari (yalniz textContent) ---------- */
+  function el(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt !== undefined && txt !== null) e.textContent = String(txt);
+    return e;
+  }
+  function add(p) {
+    for (var i = 1; i < arguments.length; i++) { if (arguments[i]) p.appendChild(arguments[i]); }
+    return p;
+  }
+  function clear(p) { while (p.firstChild) p.removeChild(p.firstChild); return p; }
+  var NS = 'http' + '://www.w3.org/2000/svg';            // SVG ad alani kimligi: ag istegi degil
+  function sv(tag, attrs) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  /* ---------- bicim ---------- */
+  function num(x) { return typeof x === 'number' && isFinite(x); }
+  function trn(x, d) {                                        // Turkce sayi: 1.428,40
+    var s = Math.abs(x).toFixed(d === undefined ? 2 : d), p = s.split('.'), g = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return p.length > 1 ? g + ',' + p[1] : g;
+  }
+  function f2(x) { return num(x) ? (x < 0 ? '−' : '') + trn(x) : '—'; }
+  function sgn(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + trn(x) : '—'; }
+  function usd(x) { return num(x) ? f2(x) + ' $' : '—'; }
+  function usdS(x) { return num(x) ? sgn(x) + ' $' : '—'; }
+  function pc(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + '%' + trn(x) : ''; }
+  function px(x) { return !num(x) ? '—' : (x < 0 ? '−' : '') + (Math.abs(x) >= 1 ? trn(x, 2) : trn(x, 3)); }
+  /* ek:basla — "12'si", "3'ü": sayinin okunusuna gore iyelik eki (son soylenen sozcuge gore) */
+  function ek(n) {
+    n = Math.abs(Math.round(n));
+    var T = {0: "'ı", 1: "'i", 2: "'si", 3: "'ü", 4: "'ü", 5: "'i", 6: "'sı", 7: "'si", 8: "'i", 9: "'u"};   // bir, iki, üç, dört, beş, altı, yedi, sekiz, dokuz
+    var O = {1: "'u", 2: "'si", 3: "'u", 4: "'ı", 5: "'si", 6: "'ı", 7: "'i", 8: "'i", 9: "'ı"};             // on, yirmi, otuz, kırk, elli, altmış, yetmiş, seksen, doksan
+    if (n === 0) return T[0];
+    if (n % 10) return T[n % 10];
+    if (n % 100) return O[(n % 100) / 10];
+    if (n % 1000) return "'ü";                                // yüz
+    if (n % 1000000) return "'i";                             // bin
+    return "'u";                                              // milyon
+  }
+  /* ek:bitir */
+  function cls(x) { return !num(x) ? '' : (Math.abs(x) < 0.005 ? 'notr' : (x > 0 ? 'iyi' : 'kotu')); }
+  function ago(s) {
+    if (!num(s) || s < 90) return 'az önce';
+    if (s < 5400) return Math.round(s / 60) + ' dk önce';
+    return trn(s / 3600, 1) + ' sa önce';
+  }
+  function etiketTsi(iso) {                                   // yalniz gosterim: TSİ (sabit +3)
+    var t = Date.parse(iso);
+    if (!isFinite(t)) return '—';
+    var d = new Date(t + 3 * 3600000).toISOString();
+    return d.slice(8, 10) + '.' + d.slice(5, 7) + ' ' + d.slice(11, 16);
+  }
+
+  /* ---------- ag ---------- */
+  var SNAP = window.__SNAPSHOT__ || null;                      // anlik goruntu kipi: veri gomulu, ag yok
+  var SNAP_STALE_S = 600;                                      // gorunumun kendisi 10 dk'dan eskiyse bayat
+  function snapBanner() {
+    var b = $('snap-bant');
+    if (!SNAP || !b) return;
+    var age = (Date.now() - Date.parse(SNAP.generated_at)) / 1000;
+    if (!isFinite(age) || age > SNAP_STALE_S) {
+      b.textContent = 'BAYAT GÖRÜNÜM: bu sayfa ' + (isFinite(age) ? ago(age).replace(' önce', '') : 'bilinmeyen süre') + ' önce üretildi; Yenile ile tekrar yükleyin.';
+      b.style.display = '';
+    } else { b.style.display = 'none'; }
+  }
+  function get(path) {
+    if (SNAP) {
+      var v = SNAP.data[path];
+      return Promise.resolve(v === undefined ? {ok: false} : v);
+    }
+    return fetch(path, {cache: 'no-store'}).then(function (r) { return r.json(); }, function () { return {ok: false, baglanti: true}; });
+  }
+
+  /* ---------- parcalar ---------- */
+  function kart(baslik, sag, extra) {
+    var k = el('div', 'kart' + (extra ? ' ' + extra : ''));
+    var h = el('h2');
+    add(h, el('span', '', baslik));
+    if (sag) add(h, sag);
+    add(k, h);
+    return k;
+  }
+  function satir(ad, val, c) { return add(el('div', 'satir'), el('span', '', ad), el('b', c || '', val)); }
+  function link(txt, tab) {
+    var a = el('button', 'lnk', txt);
+    a.type = 'button';
+    a.addEventListener('click', function () { sec(tab); });
+    return a;
+  }
+  function rozetRenk(txt, renk) { return el('span', 'rt ' + (renk || ''), txt); }
+  function yok(txt) { return el('div', 'yok', txt); }
+  function sym(coin, yon, kol) {
+    var d = el('div');
+    add(d, el('b', 'n', coin), el('span', 'yon ' + yon, yon));
+    if (kol) add(d, el('div', 'u', kol));
+    return d;
+  }
+  function kzHucre(kz, yuzde, bekliyor) {
+    var d = el('div', 'sg');
+    if (bekliyor) { add(d, el('div', 'u', 'fiyat bekleniyor')); return d; }
+    add(d, el('div', 'n ' + cls(kz), usdS(kz)));
+    if (num(yuzde)) add(d, el('div', 'u ' + cls(yuzde), pc(yuzde)));
+    return d;
+  }
+  function ayrinti(pairs) {
+    var d = el('div', 'dl');
+    pairs.forEach(function (p) {
+      if (p[1] === null || p[1] === undefined || p[1] === '' || p[1] === '—') return;
+      var c = el('div', p[2] ? 'g' : '');
+      add(c, el('span', '', p[0]), document.createTextNode(String(p[1])));
+      add(d, c);
+    });
+    return d;
+  }
+  /* 4 sutunlu tablo; satira dokununca ayrinti acilir. rows: [{cells: [node x4], detail: [[ad, deger]]}] */
+  function tablo(head, rows, sagCols) {
+    var w = el('div'), t = el('table'), cg = el('colgroup'), th = el('thead'), hr = el('tr'), tb = el('tbody');
+    ['c1', 'c2', 'c3', 'c4'].forEach(function (c) { add(cg, el('col', c)); });
+    head.forEach(function (h, i) { add(hr, el('th', sagCols.indexOf(i) >= 0 ? 'sg' : '', h)); });
+    add(t, cg, add(th, hr), tb);
+    var gosterilen = 0, btn = null;
+    function ciz() {
+      var son = Math.min(gosterilen + SAYFA, rows.length);
+      for (var i = gosterilen; i < son; i++) tb.appendChild(satirYap(rows[i]));
+      gosterilen = son;
+      if (btn) { if (gosterilen >= rows.length) btn.style.display = 'none'; else btn.textContent = 'Daha fazla (' + (rows.length - gosterilen) + ')'; }
+    }
+    function satirYap(r) {
+      var tr = el('tr', 'satir-t'), dty = null;
+      tr.setAttribute('tabindex', '0');
+      tr.setAttribute('aria-expanded', 'false');
+      r.cells.forEach(function (c, i) {
+        var td = el('td', sagCols.indexOf(i) >= 0 ? 'sg' : '');
+        td.appendChild(c);
+        tr.appendChild(td);
+      });
+      function ac() {
+        var acik = tr.getAttribute('aria-expanded') === 'true';
+        if (acik) { if (dty && dty.parentNode) dty.parentNode.removeChild(dty); tr.setAttribute('aria-expanded', 'false'); return; }
+        dty = el('tr', 'dty');
+        var td = el('td');
+        td.setAttribute('colspan', '4');
+        td.appendChild(ayrinti(r.detail));
+        dty.appendChild(td);
+        tb.insertBefore(dty, tr.nextSibling);
+        tr.setAttribute('aria-expanded', 'true');
+      }
+      tr.addEventListener('click', ac);
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); } });
+      return tr;
+    }
+    ciz();
+    add(w, t);
+    if (rows.length > SAYFA) {
+      btn = el('button', 'daha', 'Daha fazla (' + (rows.length - gosterilen) + ')');
+      btn.type = 'button';
+      btn.addEventListener('click', ciz);
+      add(w, btn);
+    }
+    return w;
+  }
+
+  /* ---------- grafik (satir ici SVG) ---------- */
+  function cizgiGrafik(egri) {
+    var ys = egri.map(function (p) { return p[1]; }), W = 1000, H = 300, n = ys.length;
+    var mn = Math.min.apply(null, ys), mx = Math.max.apply(null, ys);
+    if (mx === mn) { mx += 1; mn -= 1; }
+    var X = function (i) { return n < 2 ? W / 2 : i * W / (n - 1); }, Y = function (v) { return H - (v - mn) / (mx - mn) * H; };
+    var svg = sv('svg', {viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Kasa eğrisi, son 30 gün'});
+    [0, 0.5, 1].forEach(function (f) { svg.appendChild(sv('line', {x1: 0, x2: W, y1: f * H, y2: f * H, 'class': 'izg'})); });
+    var d = ys.map(function (v, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1); }).join(' ');
+    var neg = ys[n - 1] < ys[0];
+    svg.appendChild(sv('path', {d: d + ' L' + X(n - 1).toFixed(1) + ' ' + H + ' L' + X(0).toFixed(1) + ' ' + H + ' Z', 'class': 'alan' + (neg ? ' k' : '')}));
+    svg.appendChild(sv('path', {d: d, 'class': 'cizgi' + (neg ? ' k' : '')}));
+    var g = el('div', 'gk'), yt = el('div', 'yt'), ek = el('div', 'ek');
+    add(yt, el('span', '', trn(mx, 0)), el('span', '', trn(mn, 0)));
+    add(ek, el('span', '', egri[0][0]), el('span', '', egri[n - 1][0]));
+    return add(g, yt, svg, ek);
+  }
+
+  /* ---------- ust serit ---------- */
+  function sk(e, big, alt, bigCls, extra) {
+    var k = el('div', 'ks' + (extra ? ' ' + extra : ''));
+    return add(k, el('div', 'e', e), el('div', 'b ' + (bigCls || ''), big), alt ? el('div', 'a', alt) : null);
+  }
+  var KASA_IPUCU = 'Kasa = başlangıç + kapanan K/Z + açık K/Z − açık işlemlerin giriş komisyonu';
+  function eskiAlt(s, alt) {      // durum dosyasi eski/okunamiyor: canli sayi yok; yasi belirt
+    if (s.risk && s.risk.renk === 'gri') return 'eski' + (num(s.durum_yasi_s) ? ' · ' + ago(s.durum_yasi_s) : '');
+    return alt;
+  }
+  function kasaKart(s) {
+    var k = sk('Kasa', usd(s.kasa), eskiAlt(s, num(s.baslangic) ? 'başlangıç ' + usd(s.baslangic) : '')), q = el('span', 'ipucu', '?');
+    q.title = KASA_IPUCU; q.setAttribute('tabindex', '0'); q.setAttribute('aria-label', KASA_IPUCU);
+    k.firstChild.appendChild(q);
+    return k;
+  }
+  function renderTop(p) {
+    var b = clear($('bantlar')), z = clear($('serit'));
+    if (!p || !p.ok) {
+      add(b, el('div', 'uyari' + (p && p.baglanti ? ' bayat-bant' : ' kritik'),
+        p && p.baglanti ? 'Panel bağlantısı yok; ekrandaki değerler güncel değil.' : 'Veri şu an okunamıyor. Birazdan yeniden denenecek.'));
+      return;
+    }
+    var s = p.serit, r = s.risk, ro = $('rozet');
+    if (p.mod) { ro.hidden = false; ro.textContent = p.mod === 'live' ? 'CANLI' : 'KÂĞIT'; } else ro.hidden = true;
+    add(z,
+      kasaKart(s),
+      sk('Bugün K/Z', usdS(s.bugun), pc(s.bugun_yuzde), cls(s.bugun)),
+      sk('Toplam K/Z', usdS(s.toplam), pc(s.toplam_yuzde), cls(s.toplam)),
+      sk('Açık poz.', String(s.acik), eskiAlt(s, num(s.acik_kz) ? 'açık K/Z ' + usdS(s.acik_kz) : ''), ''),
+      sk('Zirveden düşüş', usdS(s.dusus), pc(s.dusus_yuzde), cls(s.dusus)),
+      add(el('div', 'ks risk ' + r.renk), el('div', 'e', 'Risk durumu'),
+        add(el('div', 'b'), el('span', 'nokta'), el('span', '', r.metin)), el('div', 'a', r.alt)));
+  }
+
+  /* ---------- sekmeler ---------- */
+  function sec(t) {
+    S.tab = t;
+    try { localStorage.setItem('pano_sekme', t); } catch (e) { /* tarayici deposu yoksa sorun degil */ }
+    TABS.forEach(function (x) {
+      var s = $('sek-' + x[0]), bt = $('tab-' + x[0]);
+      if (s) s.className = 'sek' + (x[0] === t ? ' on' : '');
+      if (bt) bt.className = x[0] === t ? 'on' : '';
+    });
+    if (t === 'kapanan') yukleKapanan();
+  }
+  function kurTabs() {
+    var n = clear($('tabs'));
+    TABS.forEach(function (x) {
+      var b = el('button', '', x[1]);
+      b.type = 'button';
+      b.id = 'tab-' + x[0];
+      b.setAttribute('data-ad', x[1]);
+      b.addEventListener('click', function () { sec(x[0]); });
+      add(n, b);
+    });
+  }
+
+  /* sekme rozetleri: yalniz AÇIK (acik pozisyon sayisi) ve KAPANAN (bugun, TR saati); digerlerinde sayi yok */
+  function rozetYaz(t, n) {
+    var bt = $('tab-' + t);
+    if (!bt || n === null || n === undefined || isNaN(n)) return;
+    clear(bt);
+    add(bt, el('span', '', t === 'acik' ? 'AÇIK' : 'KAPANAN'), el('span', 'hap', String(n)));
+  }
+  function sekmeSayilari(p) {
+    if (p && p.acik) rozetYaz('acik', p.acik.n);
+    get('/api/kapanan?bot=' + BOT + '&period=bugun').then(function (v) { if (v && v.ok !== false) rozetYaz('kapanan', v.n); });
+  }
+
+  function yokKart(txt) { return add(kart('Veri'), yok(txt)); }
+
+  function kzHatasi(root, p) {
+    clear(root);
+    add(root, yokKart('Veri şu an okunamıyor.'));
+  }
+
+  /* ÖZET */
+  function tabOzet(root, p) {
+    clear(root);
+    var ig = add(el('div', 'ig iki'));
+    if (p.isik.renk === 'kirmizi') add(ig, isikKart(p));
+    var y = kart('Ne yapmalıyım?');
+    add(y, el('div', 'buyuk', p.yapmali));
+    add(ig, y);
+    var a = p.acik, k = kart('Açık işlemler', link('Tümü', 'acik'));
+    if (!a.n) add(k, yok('Şu an açık işlem yok.'));
+    else {
+      add(k, satir('Adet', String(a.n)), satir('Toplam K/Z', usdS(a.kz), cls(a.kz)));
+      if (a.en_iyi) add(k, satir('En iyi', a.en_iyi.coin + ' ' + usdS(a.en_iyi.kz), cls(a.en_iyi.kz)));
+      if (a.en_kotu) add(k, satir('En kötü', a.en_kotu.coin + ' ' + usdS(a.en_kotu.kz), cls(a.en_kotu.kz)));
+    }
+    add(ig, k);
+    var s3 = kart('Son kapanan işlemler', link('Tümü', 'kapanan'));
+    if (!p.son3.length) add(s3, yok('Henüz kapanan işlem yok.'));
+    p.son3.forEach(function (r) {
+      var d = el('div', 'satir');
+      var sol = add(el('span'), el('b', '', r.coin), el('span', 'yon ' + r.yon, r.yon), el('span', 'u sol', ' ' + r.kapanis));
+      add(d, sol, add(el('b'), el('span', cls(r.kz), usdS(r.kz)), el('span', '', ' · ' + r.neden)));
+      add(s3, d);
+    });
+    add(ig, s3);
+    var dd = p.ders || {durum: 'Kapalı', renk: 'gri', son: null, degisen_7g: 0, katki: {olculemedi: 'Henüz ölçülemedi'}};
+    var d = kart('Ders öğrenmesi', link('Ayrıntı', 'ogrenme'));      // iki öğrenme kartı veri yokken de görünür (zorunlu)
+    add(d, add(el('div'), rozetRenk(dd.durum, dd.renk)));
+    add(d, dd.son ? satir('Son öğrendiği', dd.son.tarih) : el('div', 'yok', 'Henüz ders yok'));
+    if (dd.son) add(d, el('div', 'yok', dd.son.metin));
+    add(d, satir('Son 7 günde değiştirdiği işlem', String(dd.degisen_7g)), katkiSatir(dd.katki));
+    add(ig, d);
+    var mm = p.ml || {durum: 'Kapalı', renk: 'gri', isabet: {olculemedi: 'Henüz ölçülemedi'}};
+    var m = kart('Makine öğrenmesi', link('Ayrıntı', 'ogrenme'));
+    add(m, add(el('div'), rozetRenk(mm.durum, mm.renk)));
+    add(m, el('div', 'yok', mm.isabet.olculemedi ? mm.isabet.olculemedi : 'Son ' + mm.isabet.n + ' tahminin ' + mm.isabet.tutan + ek(mm.isabet.tutan) + ' tuttu'));
+    add(ig, m);
+    if (p.isik.renk !== 'kirmizi') add(ig, isikKart(p));
+    add(root, ig);
+  }
+  function isikKart(p) {
+    var k = kart('Durum', null, p.isik.renk === 'kirmizi' ? 'kirmizi' : '');
+    return add(k, add(el('div', 'buyuk'), el('span', 'nokta'), document.createTextNode(' ' + p.isik.metin)),
+      p.isik.renk === 'kirmizi' ? link('Teknik ayrıntı', 'teknik') : null);
+  }
+
+  /* AÇIK */
+  function tabAcik(root, p) {
+    clear(root);
+    var a = p.acik, k = kart('Açık işlemler');
+    if (!a.n) { add(k, yok('Şu an açık işlem yok.')); add(root, k); return; }
+    add(k, add(el('div', 'ozet-ic'), el('span', '', a.n + ' işlem'), add(el('span'), document.createTextNode('K/Z '), el('b', cls(a.kz), usdS(a.kz))),
+      num(a.kasa_yuzde) ? el('span', '', 'kasanın %' + trn(a.kasa_yuzde, 0) + ek(a.kasa_yuzde) + ' kullanımda') : null));
+    var rows = a.rows.map(function (r) {
+      var gn = add(el('div'), el('div', 'n', px(r.giris)), el('div', 'u', r.fiyat_bekleniyor ? '→ fiyat bekleniyor' : '→ ' + px(r.simdi)));
+      return {cells: [sym(r.coin, r.yon, r.kol), gn, kzHucre(r.kz, r.kz_yuzde, r.fiyat_bekleniyor), add(el('div', 'sg'), el('span', 'n', r.sure))],
+        detail: [['Stop', px(r.stop)], ['Hedef', px(r.hedef)], ['Büyüklük', usd(r.buyukluk)], ['Kaldıraç', r.kaldirac ? r.kaldirac + 'x' : ''],
+          ['Kol', r.kol], ['Açılış', r.acilis], ['Açılış nedeni', r.neden, 1]]};
+    });
+    add(k, tablo(['Sembol', 'Giriş → şimdi', 'K/Z', 'Süre'], rows, [2, 3]));
+    add(root, k);
+  }
+
+  /* KAPANAN */
+  function yukleKapanan() {
+    var root = $('sek-kapanan'), d = S.donem;
+    function ciz(v) {
+      clear(root);
+      var k = kart('Kapanan işlemler'), bar = el('div', 'donem');
+      DONEMLER.forEach(function (x) {
+        var b = el('button', x[0] === S.donem ? 'on' : '', x[1]);
+        b.type = 'button';
+        b.addEventListener('click', function () { S.donem = x[0]; yukleKapanan(); });
+        add(bar, b);
+      });
+      add(k, bar);
+      if (!v || !v.ok) { add(k, yok('Veri şu an okunamıyor.')); add(root, k); return; }
+      if (!v.n) { add(k, yok('Bu dönemde kapanan işlem yok.')); add(root, k); return; }
+      add(k, add(el('div', 'ozet-ic'), el('span', '', v.n + ' işlem'), el('span', '', 'kazanan %' + trn(v.kazanan_yuzde, 0)),
+        add(el('span'), document.createTextNode('net '), el('b', cls(v.net), usdS(v.net)))));
+      var rows = v.rows.map(function (r) {
+        return {cells: [sym(r.coin, r.yon), el('div', 'n', r.kapanis), kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.neden))],
+          detail: [['Giriş', px(r.giris)], ['Çıkış', px(r.cikis)], ['Süre', r.sure], ['Komisyon', usd(r.komisyon)], ['Kol', r.kol],
+            ['Açılış', r.acilis], ['Ders', r.ders ? 'Bu işlemde ders etkili oldu' : '', 1]]};
+      });
+      add(k, tablo(['Sembol', 'Kapanış', 'K/Z', 'Neden'], rows, [2, 3]));
+      if (v.daha_fazla) add(k, el('div', 'yok', 'Daha eski ' + v.daha_fazla + ' işlem listede gösterilmiyor.'));
+      add(root, k);
+    }
+    if (S.kapanan[d]) { ciz(S.kapanan[d]); return; }
+    get('/api/kapanan?bot=' + BOT + '&period=' + d).then(function (v) { S.kapanan[d] = v; if (S.donem === d) ciz(v); });
+  }
+
+  /* K/Z */
+  function tabKz(root, p) {
+    clear(root);
+    var z = p.kz, ig = el('div', 'ig iki');
+    if (z.egri) { var g = kart('Kasa eğrisi · 30 gün'); add(g, cizgiGrafik(z.egri)); add(ig, g); }
+    var d = kart('Dönem K/Z'), g4 = el('div', 'd4');
+    [['bugun', 'Bugün'], ['7g', '7 gün'], ['30g', '30 gün'], ['tumu', 'Toplam']].forEach(function (x) {
+      var v = z.donemler[x[0]];
+      add(g4, sk(x[1], usdS(v.kz), pc(v.yuzde), cls(v.kz)));
+    });
+    add(d, g4); add(ig, d);
+    if (z.oran) {
+      var o = kart('Kazanma oranı');
+      if (z.oran.olculemedi) add(o, yok(z.oran.olculemedi));
+      else add(o, satir('Kazanan işlem', '%' + trn(z.oran.kazanma_yuzde, 0) + ' (' + z.oran.n + ' işlem)'),
+        satir('Ortalama kazanç', usdS(z.oran.ort_kazanc), 'iyi'), satir('Ortalama kayıp', usdS(z.oran.ort_kayip), 'kotu'));
+      add(ig, o);
+    }
+    if (z.kol.length) {
+      var kk = kart('Kaynağa göre K/Z');
+      z.kol.forEach(function (r) { add(kk, satir(r.kol + ' · ' + r.n + ' işlem', usdS(r.kz), cls(r.kz))); });
+      add(ig, kk);
+    }
+    if (z.masraf) {
+      var m = kart('Masraflar');
+      add(m, satir('Komisyon · 30 gün', usd(z.masraf['30g'].komisyon)), satir('Fonlama · 30 gün', usdS(-z.masraf['30g'].fonlama)),
+        satir('Komisyon · toplam', usd(z.masraf.tumu.komisyon)), satir('Fonlama · toplam', usdS(-z.masraf.tumu.fonlama)));
+      add(ig, m);
+    }
+    add(root, ig);
+  }
+
+  /* ÖĞRENME */
+  function katkiSatir(k) {
+    if (k.olculemedi) return satir('Katkı', k.olculemedi.replace('Henüz', 'henüz'));
+    return satir('Katkı', (k.yaklasik ? '≈ ' : '') + usdS(k.usd) + ' (' + k.n + ' sonucu belli karar)', cls(k.usd));
+  }
+  function tabOgrenme(root, p) {
+    clear(root);
+    var ig = el('div', 'ig iki');
+    if (p.ders) {
+      var d = p.ders, k = kart('Ders kartı');
+      add(k, add(el('div'), rozetRenk(d.durum, d.renk)));
+      if (d.son) add(k, satir('Son öğrendiği', d.son.tarih), el('div', 'yok', d.son.metin));
+      add(k, satir('Son 7 günde etkilediği işlem', String(d.degisen_7g)), katkiSatir(d.katki));
+      add(ig, k);
+      if (d.son5.length) {
+        var l = kart('Son dersler');
+        d.son5.forEach(function (s) { add(l, satir(s.tarih, s.metin, s.geri ? 'kotu' : '')); });
+        add(ig, l);
+      }
+    }
+    if (p.ml) {
+      var m = p.ml, mk = kart('Makine öğrenmesi');
+      add(mk, add(el('div'), rozetRenk(m.durum, m.renk)));
+      add(mk, m.isabet.olculemedi ? satir('İsabet', m.isabet.olculemedi) : satir('İsabet', 'son ' + m.isabet.n + ' tahminin ' + m.isabet.tutan + ek(m.isabet.tutan) + ' tuttu'));
+      add(mk, satir('Son 7 gün', m.onay_7g + ' onay · ' + m.ret_7g + ' ret'), katkiSatir(m.katki));
+      if (m.kapsam && (m.kapsam.eksik.length || m.kapsam.bos)) {
+        add(mk, el('div', 'yok', 'Yapay zekâ filtresi için yeterli kapanmış işlem yok:'));
+        m.kapsam.eksik.forEach(function (e) { add(mk, satir(e.kol, e.n + '/' + e.en_az, 'sol')); });
+        if (m.kapsam.eksik_fazla) add(mk, el('div', 'yok', '… ve ' + m.kapsam.eksik_fazla + ' kol daha'));
+        if (m.kapsam.bos) add(mk, el('div', 'yok', m.kapsam.bos + ' kolda henüz işlem yok'));
+      }
+      if (m.egitim) add(mk, satir('Son eğitim', m.egitim.tarih + ' · ' + m.egitim.ornek + ' örnek'));
+      add(ig, mk);
+      if (m.son5.length) {
+        var ls = kart('Son 5 karar');
+        m.son5.forEach(function (s) {
+          add(ls, add(el('div', 'satir'), add(el('span'), el('b', '', s.coin), el('span', 'u sol', ' ' + s.tarih)),
+            add(el('b', ''), el('span', '', s.karar + ' · '), el('span', cls(s.kz), num(s.kz) ? usdS(s.kz) : s.sonuc))));
+        });
+        add(ig, ls);
+      }
+    }
+    if (p.etiket) {
+      var ek2 = kart('Etiket kuralları');
+      p.etiket.kurallar.forEach(function (r) {
+        add(ek2, add(el('div'), el('b', '', r.ad + ' '), rozetRenk(r.durum, r.renk)));
+        add(ek2, satir('Son 7 günde atladığı işlem', String(r.atlanan_7g)),
+          satir('Alınsaydı sonucu', r.sonuc.olculemedi ? r.sonuc.olculemedi : sgn(r.sonuc.r) + ' R (' + r.sonuc.n + ' işlem)', r.sonuc.olculemedi ? '' : cls(r.sonuc.r)));
+      });
+      add(ig, ek2);
+    }
+    if (!p.ders && !p.ml && !p.etiket) add(ig, yokKart('Henüz öğrenme verisi yok.'));
+    add(root, ig);
+  }
+
+  /* TEKNİK (katlı) */
+  function katli(baslik, renk, bodyFn, ac) {
+    var d = el('details'), s = el('summary');
+    if (ac) d.setAttribute('open', '');
+    add(s, el('span', '', baslik), renk ? el('span', 'nokta ' + renk) : null);
+    add(d, s, bodyFn(el('div')));
+    return d;
+  }
+  function bar(ad, kul, lim, pct) {
+    var w = el('div', 'lim'), r = el('div', 'r');
+    add(r, el('span', '', ad), el('b', '', f2(kul) + ' / ' + f2(lim) + ' $'));
+    var c = el('div', 'cub'), i = el('i', pct >= 90 ? 'k' : (pct >= 70 ? 's' : ''));
+    i.style.width = Math.min(Math.max(num(pct) ? pct : 0, 0), 100) + '%';
+    return add(w, r, add(c, i));
+  }
+  function tabTeknik(root, p) {
+    clear(root);
+    var t = p.teknik;
+    if (t.saglik) {
+      add(root, katli('Sağlık', t.saglik.renk, function (b) {
+        add(b, add(el('div'), rozetRenk(t.saglik.durum, t.saglik.renk)));
+        t.saglik.uyarilar.forEach(function (u) { add(b, el('div', 'yok', u)); });
+        (t.saglik.diger_botlar || []).forEach(function (u) { add(b, el('div', 'yok gri', u)); });
+        (t.saglik.senden || []).forEach(function (u) { add(b, el('div', 'yok', 'Senden: ' + u)); });
+        if (t.saglik.kontrol_bayat) add(b, el('div', 'yok kotu', 'Sağlık kontrolü bir süredir çalışmamış.'));
+        return b;
+      }, t.saglik.renk !== 'yesil'));
+    }
+    if (t.limitler) add(root, katli('Risk limitleri', '', function (b) {
+      t.limitler.forEach(function (r) { add(b, bar(r.ad, r.kullanilan, r.limit, r.yuzde)); });
+      return b;
+    }));
+    if (t.kapilar) add(root, katli('Kalite kapıları', '', function (b) {
+      t.kapilar.forEach(function (r) { add(b, satir(r.ad, r.not, r.ok ? 'iyi' : 'kotu')); });
+      return b;
+    }));
+    if (t.model) add(root, katli('Model ayrıntısı', '', function (b) {
+      t.model.forEach(function (r) { add(b, satir(r.ad + ' · bugünkü çağrı', String(r.cagri_bugun)), satir('Bu ay maliyet', usd(r.maliyet_ay))); });
+      return b;
+    }));
+    if (t.butce) add(root, katli('Bütçe', '', function (b) {
+      return add(b, satir('Bu ay kullanılan', usd(t.butce.kullanilan)), satir('Aylık tavan', usd(t.butce.tavan)));
+    }));
+    if (t.kayitlar) add(root, katli('Kayıtlar', '', function (b) {
+      return add(b, satir('Kapanan işlem', String(t.kayitlar.kapanan)), satir('Açık işlem', String(t.kayitlar.acik)), satir('Değerlendirilen fırsat', String(t.kayitlar.karar)));
+    }));
+    if (t.mutabakat) add(root, katli('İşlem kontrolü', t.mutabakat.uyusmazlik > 0 ? 'sari' : '', function (b) {
+      return add(b, el('div', t.mutabakat.uyusmazlik > 0 ? 'yok kotu' : 'yok', 'Son kontrol: ' + t.mutabakat.son + ', ' + t.mutabakat.islem + ' işlem, ' + t.mutabakat.uyusmazlik + ' uyuşmazlık'));
+    }));
+    if (t.dogrulama) add(root, katli('Backtest / doğrulama', '', function (b) {
+      if (num(t.dogrulama.eslesme)) add(b, satir('Kâğıt ile geçmiş test eşleşmesi', '%' + trn(t.dogrulama.eslesme * 100, 0)));
+      if (num(t.dogrulama.pbo)) add(b, satir('Aşırı uyum riski (en yüksek)', '%' + trn(t.dogrulama.pbo * 100, 0)));
+      if (t.dogrulama.uyari) add(b, el('div', 'yok kotu', 'Doğrulama raporunda uyarı var.'));
+      return b;
+    }));
+    if (!root.firstChild) add(root, yokKart('Teknik veri yok.'));
+  }
+
+  function ciz(p) {
+    renderTop(p);
+    ['ozet', 'acik', 'kz', 'ogrenme', 'teknik'].forEach(function (k) { clear($('sek-' + k)); });
+    if (!p || !p.ok) { add($('sek-ozet'), yokKart('Veri şu an okunamıyor.')); return; }
+    S.gen = p.generated_at;
+    tabOzet($('sek-ozet'), p); tabAcik($('sek-acik'), p); tabKz($('sek-kz'), p); tabOgrenme($('sek-ogrenme'), p); tabTeknik($('sek-teknik'), p);
+  }
+
+  /* ---------- baslat ---------- */
+  function guncellemeEtiketi() {
+    var u = $('uretim'), g = SNAP ? SNAP.generated_at : null;
+    var s = g ? (Date.now() - Date.parse(g)) / 1000 : (Date.now() - S.t0) / 1000;
+    u.textContent = 'son güncelleme ' + ago(s);
+    if ((Date.now() - S.t0) / 1000 >= YENILE_S && location && typeof location.reload === 'function') location.reload();
+  }
+  function tema(v) {
+    document.documentElement.setAttribute('data-theme', v);
+    try { localStorage.setItem('pano_tema', v); } catch (e) { /* onemsiz */ }
+  }
+  function baslat() {
+    var iframe = false;
+    try { iframe = window.self !== window.top; } catch (e) { iframe = true; }
+    var tb = $('tema');
+    if (iframe) {                                           // gomulu: kendi basligi ve Yenile/Tema yok; cihaz ayari izlenir
+      document.documentElement.classList.add('gomulu');
+      if (tb) tb.hidden = true;
+    } else {
+      var kay = null;
+      try { kay = localStorage.getItem('pano_tema'); } catch (e) { kay = null; }
+      if (kay === 'light' || kay === 'dark') document.documentElement.setAttribute('data-theme', kay);   // kayit yoksa: cihaz (CSS media)
+      tb.addEventListener('click', function () {
+        var d = document.documentElement.getAttribute('data-theme');
+        if (d !== 'light' && d !== 'dark') d = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        tema(d === 'dark' ? 'light' : 'dark');
+      });
+    }
+    $('yenile').addEventListener('click', function () { location.reload(); });
+    if ($('snap-bant')) $('snap-bant').style.display = 'none';
+    snapBanner();
+    kurTabs();
+    var son = null;
+    try { son = localStorage.getItem('pano_sekme'); } catch (e) { son = null; }
+    sec(TABS.some(function (x) { return x[0] === son; }) ? son : 'ozet');
+    if (SNAP) $('damga').style.display = 'none';
+    get('/api/pano?bot=' + BOT).then(function (p) { S.pano = p; ciz(p); sekmeSayilari(p); guncellemeEtiketi(); if (S.tab === 'kapanan') yukleKapanan(); });
+    setInterval(function () { snapBanner(); guncellemeEtiketi(); }, 30000);     // yalniz etiket; ekran yeniden cizilmez
+  }
+  baslat();
+})();
+
+</script>
+</body>
+</html>

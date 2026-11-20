@@ -1,0 +1,100 @@
+{
+  "sema": "ortak.gunluk_ozet.v1",
+  "proje": "ML",
+  "mod": "kagit",
+  "uretim": "2026-11-20T17:33:30Z",
+  "gun": "2026-11-20",
+  "kasa": {
+    "baslangic": 1000.0,
+    "simdi": 1105.54,
+    "gun_pnl": 131.62,
+    "toplam_pnl": 105.54,
+    "zirveden_dusus_yuzde": 4.03
+  },
+  "islem": {
+    "gun_acilan": 11,
+    "gun_kapanan": 7,
+    "kazanan": 7,
+    "kaybeden": 0,
+    "acik_pozisyon": 8,
+    "alinmayan_sinyal": 0
+  },
+  "hesaplar": [
+    {
+      "ad": "T1",
+      "gun_pnl": 0.0,
+      "toplam_pnl": 72.37,
+      "islem": 7
+    },
+    {
+      "ad": "B1",
+      "gun_pnl": 23.66,
+      "toplam_pnl": 30.93,
+      "islem": 2
+    },
+    {
+      "ad": "C1",
+      "gun_pnl": 29.54,
+      "toplam_pnl": 29.54,
+      "islem": 2
+    },
+    {
+      "ad": "M1",
+      "gun_pnl": 20.01,
+      "toplam_pnl": 24.81,
+      "islem": 2
+    },
+    {
+      "ad": "H2",
+      "gun_pnl": 5.69,
+      "toplam_pnl": 5.69,
+      "islem": 1
+    },
+    {
+      "ad": "R1",
+      "gun_pnl": 0.0,
+      "toplam_pnl": 0.0,
+      "islem": 0
+    },
+    {
+      "ad": "TF1",
+      "gun_pnl": 0.0,
+      "toplam_pnl": 0.0,
+      "islem": 0
+    },
+    {
+      "ad": "F1",
+      "gun_pnl": 0.0,
+      "toplam_pnl": -11.12,
+      "islem": 3
+    },
+    {
+      "ad": "S1",
+      "gun_pnl": 0.0,
+      "toplam_pnl": -32.93,
+      "islem": 3
+    }
+  ],
+  "ogrenme": {
+    "aktif_ders": 0,
+    "yeni_ders": 0,
+    "emekli_ders": 0,
+    "filtre_aktif": true
+  },
+  "rejim": "trend_down",
+  "drift_uyari": false,
+  "limitler": {
+    "gunluk_kayip_yuzde": 8.0,
+    "kaldirac_tavan": 5.0,
+    "durdu_mu": false
+  },
+  "saglik": {
+    "son_nabiz": "2026-11-20T17:32:33Z",
+    "hata_sayisi_gun": 2
+  },
+  "notlar": [
+    "ML filtresi: 0 kurulumda aktif, bugün 0 giriş atlandı",
+    "en iyi kurulum: T1",
+    "Duygu: Aşırı korku (12)"
+  ]
+}
