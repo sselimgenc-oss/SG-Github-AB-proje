@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -53,12 +54,22 @@ def yon(side: Any) -> str:
 
 
 def fiyat(x: Any) -> str:
+    """TEK Telegram fiyat bicimi (tum islem mesajlari): 1 $ ustu 2 ondalik, 1 $ alti en fazla 4 ondalik; Turkce ayraclar."""
     try:
         v = float(x)
     except (TypeError, ValueError):
         return "?"
-    nd = 2 if abs(v) >= 100 else (4 if abs(v) >= 1 else 6)
-    return sayi(v, nd)
+    if not math.isfinite(v):
+        return "?"
+    a = abs(v)
+    if a >= 1 or a == 0:
+        t = sayi(v, 2)                       # 1 $ ustu: 2 ondalik (8,87; 2.001,00)
+    else:
+        t = sayi(v, 4 if a >= 0.0001 else 6)  # 1 $ alti: en fazla 4 ondalik (0,1234); cok kucukte anlamli hane kalsin
+        if "," in t:
+            ip, ond = t.split(",")
+            t = ip + "," + (ond.rstrip("0").ljust(2, "0"))   # 0,5000 -> 0,50
+    return ("-" if v < 0 and any(c in "123456789" for c in t) else "") + t
 
 
 def temizle(text: str) -> str:
@@ -202,10 +213,16 @@ def limit_doldu(zarar: float, limit: float) -> str:
 
 
 def islem_kontrolu(doc: Mapping[str, Any] | int) -> str:
-    """Gunluk uyusmazlik bildirimi: kurulum ozetiyle ayni sade bicim (sayim satiri + en fazla 3 ornek). Sayi verilirse tek satir."""
+    """Sorun bildirimi (yalniz gercek sorun varsa gonderilir): coin adli sade satirlar, islem numarasi yok. Sayi verilirse tek satir."""
     if not isinstance(doc, Mapping):
-        return etiketle(f"İşlem kontrolü: {int(doc)} uyuşmazlık bulundu, inceleniyor.")
-    return islem_kontrolu_ozet(doc)
+        return etiketle(f"⚠️ İşlem kontrolü: {int(doc)} uyuşmazlık bulundu, inceleniyor.")
+    return islem_kontrolu_sorun(doc)
+
+
+def islem_kontrolu_sorun(doc: Mapping[str, Any]) -> str:
+    """doc['sorunlar'] (mutabakat.sorunlar) -> '[ML] ⚠️ ...' satirlari (en fazla 4)."""
+    sat = [f"⚠️ {str(x)[:140]}" for x in list(doc.get("sorunlar") or [])[:4]]
+    return _bagla(sat or ["⚠️ İşlem kontrolünde sorun bulundu, inceleniyor."])
 
 
 def islem_kontrolu_ozet(doc: Mapping[str, Any]) -> str:
@@ -220,6 +237,9 @@ def islem_kontrolu_ozet(doc: Mapping[str, Any]) -> str:
     sat = [f"İşlem kontrolü: {n} işlem (açık {int(doc.get('acik') or 0)} / kapanan {int(doc.get('kapanan') or 0)} · "
            f"long {long_n} / short {short_n}) · uyuşmazlık {z} · {kasa_t}"]
     sat += [f"- {str(u)[:120]}" for u in list(doc.get("uyusmazliklar") or [])[:3]]
+    bek = [i for i in (doc.get("fiyat_bekleniyor") or []) if isinstance(i, int)]
+    if bek:                                       # nötr bilgi satırı: uyuşmazlık sayılmaz
+        sat.append("ℹ️ Fiyat bekleniyor (piyasa kapalı/veri yok): " + ", ".join(f"#{i}" for i in bek[:6]))
     return _bagla(sat)
 
 
@@ -289,6 +309,10 @@ _SADE: dict[str, tuple[str, str, str | None, str]] = {
     "feed_status_age": ("Fiyat akışı durmuş görünüyor.", "Yeni işlem açılmıyor; akış yeniden başlatılıyor.", None,
                         "fiyat akışı yeniden çalışıyor"),
     "market_bar_age": ("Piyasa verisi güncel değil.", "Yeni işlem açılmıyor; veri bekleniyor.", None, "piyasa verisi güncel"),
+    "acik_pozisyon_fiyat_bayat": ("Açık pozisyonun fiyatı gelmiyor.", "Stop, fiyat gelince işlenir; veri bekleniyor.", None,
+                                  "açık pozisyonun fiyatı yeniden geliyor"),
+    "open_price_stale": ("Açık pozisyonun fiyatı gelmiyor.", "Stop, fiyat gelince işlenir; veri bekleniyor.", None,
+                         "açık pozisyonun fiyatı yeniden geliyor"),
     "veto_file_age": ("Yapay zekâ filtresi güncel değil.", "Yeni işlem açılmıyor; açık pozisyonlar korunuyor.", None,
                       "yapay zekâ filtresi güncel"),
     "backup_age": ("Yedek alınmıyor ya da çok eski.", "Yedekleme yeniden deneniyor.", None, "yedekleme düzenli"),
@@ -422,6 +446,9 @@ def saglik_mesaji(alert: Any, status_path: str | None = None) -> tuple[str, str 
             return "sustur", None, key
         return "alarm", _bagla(["🔴 Bir sistem kontrolü ciddi şekilde sorunlu.", "Açık pozisyonlar stoplarıyla izleniyor; inceleniyor."]), key
     ne, yap, senden, duz = ent
+    govde = str(getattr(alert, "body", "") or "")
+    if code == "open_price_stale" and "için fiyat gelmiyor" in govde:
+        yap = govde[:200]                      # '<COIN> için fiyat gelmiyor; açık pozisyonun stopu fiyat gelince işler'
     if ok:
         return "duzeldi", duzeldi(duz), key
     if code in ("disk_dolu", "disk_kritik"):

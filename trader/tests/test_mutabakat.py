@@ -299,7 +299,7 @@ def test_end_to_end_all_match(env):
     assert d["satirlar"][0]["kol"] == "Yatay piyasa kenarı · 1 saat" and "_a" not in d["satirlar"][0]
     md = (env.root / "var/durum/mutabakat.md").read_text(encoding="utf-8")
     assert "İşlem no" in md and "Net K/Z $" in md and "Uyuşmazlık: 0" in md
-    assert [i for i in _outbox_items(env) if i.get("severity") != "INFO"] == []      # 0 uyusmazlik: uyari yok (yalniz kurulum ozeti, sessiz)
+    assert _outbox_items(env) == []      # her sey yolunda: kurulum kosusunda da HICBIR Telegram mesaji yok
 
 
 def test_end_to_end_open_count_and_kasa_mismatch_and_daily_telegram(env):
@@ -309,22 +309,20 @@ def test_end_to_end_open_count_and_kasa_mismatch_and_daily_telegram(env):
     assert ad["Açık pozisyon sayısı (motor = panel = şerit = durum)"]["sonuc"] == "kaldı"
     assert ad["Kasa = başlangıç + Σ net K/Z"]["sonuc"] == "kaldı"
     assert d["uyusmazlik_sayisi"] >= 2
-    # kurulum kosusu: yalniz kurulum ozeti (INFO) gider; ayni kosuda gunluk uyari (WARN) gonderilmez
+    # kurulum kosusu: gercek sorun var -> TEK mesaj (WARN), sade, islem numarasi yok; ayni kosuda gunluk uyari ayrica gitmez
     tum = _outbox_items(env)
-    assert [i["severity"] for i in tum] == ["INFO"]
+    assert [i["severity"] for i in tum] == ["WARN"]
     t = tum[0]["text"]
-    assert t.splitlines()[0].startswith("[ML] İşlem kontrolü: 6 işlem (açık 1 / kapanan 5")
-    assert f"uyuşmazlık {d['uyusmazlik_sayisi']} · kasa tutmuyor ❌" in t and "olmalı, kayıtta" in t and "· fark " in t and " $" in t
-    assert "bulundu, inceleniyor" not in t and "Σ" not in t and TS.kontrol(t) == []
-    # sonraki kosu (ayni surum): gunluk uyari, ayni sade bicim, WARN
-    e = {"TELEGRAM_VAR_DIR": str(env.root / "var/telegram")}
-    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
-    uyari = [i for i in _outbox_items(env) if i.get("severity") == "WARN"]
-    assert len(uyari) == 1 and uyari[0]["text"].splitlines()[1:] == t.splitlines()[1:] and len(uyari[0]["text"].splitlines()) <= 4
-    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0   # ayni gun: yeni mesaj yok
-    assert len([i for i in _outbox_items(env) if i.get("severity") == "WARN"]) == 1
+    assert t.startswith("[ML] ⚠️ ") and "Kasa kayıtla tutmuyor: " in t and "olmalı, kayıtta" in t and " $" in t
+    assert "#" not in t and "Σ" not in t and "_" not in t and TS.kontrol(t) == [] and len(t.splitlines()) <= 4
     md = (env.root / "var/durum/mutabakat.md").read_text(encoding="utf-8")
     assert "olmalı, kayıtta" in md and "+0." not in md and "Anlık kâr/zarar" not in md
+    # sonraki kosu ayni gun, ayni sorun: yeni mesaj yok
+    e = {"TELEGRAM_VAR_DIR": str(env.root / "var/telegram")}
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
+    assert len(_outbox_items(env)) == 1
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(days=1), env=e) == 0   # ertesi gun de ayni icerik: yok
+    assert len(_outbox_items(env)) == 1
 
 
 def test_end_to_end_no_telegram_records_means_before_message_system(env):
@@ -407,24 +405,33 @@ def _outbox_items(env):
     return out
 
 
-def test_kurulum_ozeti_once_per_code_version_and_silent(env, monkeypatch):
-    _setup(env)
+def test_kurulum_mesaji_yalniz_sorun_varsa_ve_icerik_degisince(env, monkeypatch):
+    _setup(env, wallet_delta=0.5)                                                      # gercek sorun: kasa tutmuyor
     e = {"TELEGRAM_VAR_DIR": str(env.root / "var" / "telegram")}
 
-    def ozetler():
-        return [i for i in _outbox_items(env) if "İşlem kontrolü:" in i.get("text", "") and "long" in i.get("text", "")]
+    def mesajlar():
+        return [i for i in _outbox_items(env) if "Kasa kayıtla tutmuyor" in i.get("text", "")]
 
     monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/aaa")
     assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
-    oz = ozetler()
-    assert len(oz) == 1 and oz[0]["severity"] == "INFO"                                 # ilk kurulum: bir kez, sessiz
-    t = oz[0]["text"]
-    assert t.startswith("[ML] ") and "uyuşmazlık" in t and "kasa" in t and len(t.splitlines()) <= 6 and "_" not in t
-    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=5), env=e) == 0
-    assert len(ozetler()) == 1                                                        # ayni surum: yeni ozet yok
+    assert len(mesajlar()) == 1 and mesajlar()[0]["severity"] == "WARN"
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(seconds=20), env=e) == 0
+    assert len(mesajlar()) == 1                                                       # ayni surum: yok
     monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/bbb")
-    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=10), env=e) == 0
-    assert len(ozetler()) == 2                                                        # yeni kurulum: bir ozet daha
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(seconds=40), env=e) == 0
+    assert len(mesajlar()) == 1                                                       # yeni kurulum ama AYNI icerik: tekrar yok
+    _setup(env, wallet_delta=0.9)                                                     # ayni tur sorun ama tutarlar degisti -> yeni icerik
+    monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/ccc")
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(seconds=60), env=e) == 0
+    assert len(mesajlar()) == 2
+
+
+def test_kurulum_saglamken_mesaj_yok(env, monkeypatch):
+    _setup(env)
+    e = {"TELEGRAM_VAR_DIR": str(env.root / "var" / "telegram")}
+    monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/aaa")
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
+    assert _outbox_items(env) == []
 
 
 def test_islem_kontrolu_ozet_text_examples_max_three():
@@ -440,13 +447,13 @@ def test_islem_kontrolu_ozet_text_examples_max_three():
 
 
 def test_kurulum_ozeti_surum_release_dosyasindan_commit(env, tmp_path):
-    """Sunucuda betik sabit dizinden calisir; surum kimligi /etc/trader-release COMMIT'idir: commit degisince bir ozet, ayni commit'te yok."""
-    _setup(env)
+    """Surum kimligi /etc/trader-release COMMIT'idir; sorun varsa ilk kurulumda bir mesaj, ayni icerikle yeni commit'te yok."""
+    _setup(env, wallet_delta=0.5)
     rel = tmp_path / "trader-release"
     e = {"TELEGRAM_VAR_DIR": str(env.root / "var" / "telegram"), "MUTABAKAT_RELEASE_FILE": str(rel)}
 
     def ozetler():
-        return [i for i in _outbox_items(env) if "İşlem kontrolü:" in i.get("text", "") and "long" in i.get("text", "")]
+        return [i for i in _outbox_items(env) if "Kasa kayıtla tutmuyor" in i.get("text", "")]
 
     def kos(dk):
         assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=dk), env=e) == 0
@@ -455,12 +462,12 @@ def test_kurulum_ozeti_surum_release_dosyasindan_commit(env, tmp_path):
     kos(0)
     assert len(ozetler()) == 1
     kos(5)
-    assert len(ozetler()) == 1                                                       # ayni commit: yok
+    assert len(ozetler()) == 1
     rel.write_text("COMMIT=" + "b" * 40 + "\n", encoding="utf-8")
     kos(10)
-    assert len(ozetler()) == 2                                                       # yeni commit: bir ozet daha
+    assert len(ozetler()) == 1                                                       # yeni commit, ayni sonuc: tekrar yok
     kos(15)
-    assert len(ozetler()) == 2
+    assert len(ozetler()) == 1
 
 
 def test_kod_surumu_release_yoksa_yola_duser(tmp_path):

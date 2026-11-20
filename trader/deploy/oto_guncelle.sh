@@ -179,13 +179,14 @@ except Exception:
   simdi="$(release_commit)"
   if [ "$rc" -eq 0 ] && [ "$simdi" = "$yeni" ]; then
     gecmis_ekle "$mevcut" "$yeni" basarili
-    tg_send "$(guncelleme_metni "$mevcut" "$yeni")"
+    # basarili kurulumda Telegram'a HICBIR sey gitmez (yalniz gunluk): kullanici "Telegram cok karisik"
+    log "$(guncelleme_metni "$mevcut" "$yeni" | tr '\n' ' ')"
     log "guncellendi: ${mevcut:0:7} -> ${yeni:0:7}"
     return 0
   fi
 
   gecmis_ekle "$mevcut" "$yeni" basarisiz
-  tg_send "[ML] Güncelleme yapılamadı; bot eski sürümle çalışmaya devam ediyor."
+  tg_send "[ML] ⚠️ Güncelleme kurulamadı; bot eski sürümle çalışıyor."
   log "BASARISIZ (kurulum cikis=$rc, surum=${simdi:0:7})"
   return 1
 }

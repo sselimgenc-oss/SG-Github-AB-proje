@@ -190,8 +190,11 @@ def telegram_karsilastir(rows: list[dict], *, now: datetime, kayit: Mapping, isa
 
 
 # ----------------------------------------------------------------------------------------------- kontroller
-def kontrol(ad: str, gecti: bool | None, ayrinti: str) -> dict:
-    return {"ad": ad, "sonuc": "atlandı" if gecti is None else ("geçti" if gecti else "kaldı"), "ayrinti": ayrinti}
+FIYAT_BEKLENIYOR = "fiyat bekleniyor (piyasa kapalı/veri yok)"
+
+
+def kontrol(ad: str, gecti: bool | None, ayrinti: str, **ek) -> dict:
+    return {"ad": ad, "sonuc": "atlandı" if gecti is None else ("geçti" if gecti else "kaldı"), "ayrinti": ayrinti, **ek}
 
 
 def toplamlar(rows: Sequence[Mapping]) -> dict:
@@ -302,15 +305,18 @@ def kontrol_acik_kz(status: Mapping | None, panel_acik: Sequence[Mapping]) -> di
     pos = {p.get("trade_id"): p for p in status.get("open_positions") or [] if isinstance(p, Mapping)}
     if not pos and not panel_acik:
         return kontrol(ad, True, "Açık işlem yok")
-    sorun, enb = [], 0.0
+    sorun, enb, bekleyen = [], 0.0, []
     for r in panel_acik:
         p = pos.get(r.get("id"))
         if p is None:
             sorun.append(f"#{r.get('id')} durum dosyasında yok")
             continue
         mark = p.get("mark")
+        if mark is None and r.get("simdi") is None:
+            bekleyen.append(r.get("id"))          # fiyat yok (seans kapali / veri yok): uyusmazlik DEGIL, ayri durum
+            continue
         if mark is None or r.get("simdi") is None:
-            sorun.append(f"#{r.get('id')} anlık fiyat yok")
+            sorun.append(f"#{r.get('id')} panel ile motor fiyatı farklı")
             continue
         sgn = 1.0 if str(p.get("side")).lower() == "long" else -1.0
         yeniden = sgn * (float(mark) - float(p["entry_price"])) * float(p["qty"])
@@ -321,9 +327,10 @@ def kontrol_acik_kz(status: Mapping | None, panel_acik: Sequence[Mapping]) -> di
     for i in pos:
         if i not in {r.get("id") for r in panel_acik}:
             sorun.append(f"#{i} panelde yok")
+    bek = ("; " + FIYAT_BEKLENIYOR + ": " + ", ".join(f"#{i}" for i in bekleyen)) if bekleyen else ""
     if not sorun:
-        return kontrol(ad, True, "Açık işlemlerin kâr/zararı panelle aynı")
-    return kontrol(ad, False, "Açık işlem kâr/zararı panelde farklı: " + ", ".join(sorun[:3]))
+        return kontrol(ad, True, "Açık işlemlerin kâr/zararı panelle aynı" + bek, fiyat_bekleniyor=bekleyen)
+    return kontrol(ad, False, "Açık işlem kâr/zararı panelde farklı: " + ", ".join(sorun[:3]) + bek, fiyat_bekleniyor=bekleyen)
 
 
 def kontrol_limit(panel_oran: float | None, ayar_orani: float | None) -> dict:
@@ -343,6 +350,7 @@ def ozet(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequenc
     liste = ([k["ayrinti"] for k in kal]
              + [f"#{r['islem_no']} {r['coin']} {r['yon']}: " + "; ".join(r["uyusmazlik"]) for r in sat]
              + list(ekstra))
+    bekleyen = sorted({int(i) for k in kontroller for i in (k.get("fiyat_bekleniyor") or []) if isinstance(i, int)})
     sayac: dict[str, int] = {}
     for r in rows:
         for a in ("telegram_acildi", "telegram_kapandi"):
@@ -357,7 +365,51 @@ def ozet(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequenc
                          "fazla": sum(1 for e in ekstra if e.startswith("Telegram")),
                          "oncesi": sum(1 for r in rows for a in ("telegram_acildi", "telegram_kapandi") if r[a] == TG_ONCESI),
                          "dagilim": dict(sorted(sayac.items())), "kaynak": telegram_kaynak},
+            "fiyat_bekleniyor": bekleyen, "fiyat_bekleniyor_durum": FIYAT_BEKLENIYOR if bekleyen else None,
             "panel_notu": panel_notu, "bilgi": list(bilgi), "kontroller": list(kontroller)}
+
+
+FIYAT_ESIK_DK = 10
+
+
+def _seans_acik(cls, now: datetime) -> bool:
+    """Piyasa seansta mi (simdi ve FIYAT_ESIK_DK dk once)? Sinif bilinmiyorsa False: 'fiyat yok' sorun sayilmaz."""
+    from . import arm_time as AT   # noqa: PLC0415
+    try:
+        return (AT.session_tag(str(cls), now) == "open"
+                and AT.session_tag(str(cls), now - timedelta(minutes=FIYAT_ESIK_DK)) == "open")
+    except ValueError:
+        return False
+
+
+def sorunlar(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequence[str], status: Mapping | None, now: datetime) -> list[str]:
+    """Telegram'a gidecek GERCEK sorunlar (sade Turkce, islem numarasi yok, coin adiyla). Bos liste = mesaj yok. 'Fiyat bekleniyor'
+    (piyasa kapali / veri yok) sorun DEGILDIR; yalniz seans icinde fiyat gelmiyorsa sorun olur."""
+    import re   # noqa: PLC0415
+    out: list[str] = []
+    coin_of = {r["islem_no"]: r["coin"] for r in rows}
+    pos = {p.get("trade_id"): p for p in (status or {}).get("open_positions") or [] if isinstance(p, Mapping)}
+    for k in kontroller:
+        if k.get("sonuc") != "kaldı":
+            continue
+        ad, ay = str(k.get("ad", "")), str(k.get("ayrinti", ""))
+        if ad.startswith("Kasa"):
+            m = re.search(r"Kasa (\S+) \$ olmalı, kayıtta (\S+) \$", ay)
+            out.append(f"Kasa kayıtla tutmuyor: {m.group(1)} $ olmalı, kayıtta {m.group(2)} $" if m else "Kasa kayıtla tutmuyor")
+        elif ad.startswith("Açık K/Z"):
+            out.append("Açık işlemlerin kâr/zararı panelle tutmuyor")
+        else:
+            out.append(re.sub(r" ?#\d+", "", ay).strip() or ad)
+    for i in sorted({int(x) for k in kontroller for x in (k.get("fiyat_bekleniyor") or []) if isinstance(x, int)}):
+        p = pos.get(i) or {}
+        if p.get("asset_class") and _seans_acik(p.get("asset_class"), now):
+            out.append(f"{coin_of.get(i) or TS.coin(p.get('pair'))} işleminin güncel fiyatı alınamıyor")
+    for r in rows:
+        if r["uyusmazlik"]:
+            out.append(f"{r['coin']} işleminde kayıtlar tutmuyor: " + "; ".join(str(u) for u in r["uyusmazlik"][:2]))
+    if ekstra:
+        out.append("Panelde ya da Telegram'da fazladan kayıt var")
+    return list(dict.fromkeys(out))
 
 
 def markdown(doc: Mapping, rows: Sequence[Mapping]) -> str:

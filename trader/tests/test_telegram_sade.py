@@ -241,23 +241,16 @@ def test_teknik_uyarilar_susar(rig, kod):
     assert rig.fake.texts == []
 
 
-def test_ders_uygulandi_ve_geri_alindi_gider_gunde_bir_kez(rig):
+def test_ders_uygulandi_ve_geri_alindi_telegrama_gitmez(rig):
     def nt(code, body):
         return LS.LessonNotice("info" if code == "applied" else "warn", code, "t", body, f"{code}|d|1", T0)
     ap = nt("applied", "rr_min 1.5 -> 1.8 (otomatik). Kapsam: R1+T1. Kanit: n=5. Geri alma: dugme")
-    assert rig.n.notify(ap) is True and rig.n.notify(ap) is True
-    assert len(rig.fake.texts) == 1
-    assert rig.fake.texts[0] == "[ML] Ders uygulandı: en düşük kazanç/risk oranı 1.5 → 1.8 · Yatay piyasa kenarı + Trend geri çekilmesi"
     rb = nt("rolled_back", "rr_min 1.8 -> 1.5: ders etkisi kotu. Kapsam: M1@1h.")
-    rig.n.notify(rb)
-    rig.n.notify(rb)
-    assert len(rig.fake.texts) == 2
-    assert rig.fake.texts[1] == "[ML] Ders geri alındı: en düşük kazanç/risk oranı 1.8 → 1.5 · Yapay zekâ adayı · 1 saat (sonuç kötüleşti)"
-    rig.clk.adv(days=1)
-    rig.n.notify(ap)
-    assert len(rig.fake.texts) == 3                       # ertesi gun yine
-    for x in rig.fake.texts:
-        ok_form(x, 2)
+    for x in (ap, ap, rb, rb):
+        assert rig.n.notify(x) is True
+    assert rig.fake.texts == []                           # ders mesajlari artik yalniz gunluge gider
+    # metin uretimi (gunluk/panel icin) degismedi
+    assert TS.ders_mesaji("info", "applied", "t", ap.body)[0] == "[ML] Ders uygulandı: en düşük kazanç/risk oranı 1.5 → 1.8 · Yatay piyasa kenarı + Trend geri çekilmesi"
 
 
 def test_ders_teknik_hata_ve_zaman_asimi_susar(rig):
@@ -337,8 +330,13 @@ def test_gunluk_ozet_12_satiri_asmaz_ve_haftalik_yalniz_pazar(rig):
     ok_form(rep, TS.MAX_SATIR_OZET)
     assert not T.haftalik_gonder(rig.cfg, rig.n, NOW)                         # 16 Kasim 2026 pazartesi
     pazar = datetime(2026, 11, 22, 18, 0, tzinfo=UTC)
-    assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is True
-    assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is False                  # haftada bir
+    assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is False and rig.fake.texts == []   # haftalik ozet Telegram'a gitmez (varsayilan)
+    T.HAFTALIK_TELEGRAM = True                                               # metin hala uretilebilir (panel/rapor icin)
+    try:
+        assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is True
+        assert T.haftalik_gonder(rig.cfg, rig.n, pazar) is False              # haftada bir
+    finally:
+        T.HAFTALIK_TELEGRAM = False
     ok_form(rig.fake.texts[-1])
     assert rig.fake.texts[-1].startswith("[ML] 🗓 Haftalık özet")
 

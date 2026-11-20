@@ -117,19 +117,37 @@ def isaret_fonksiyonu(tg_dir: Path, rows: list[dict]):
     return f
 
 
+def parmak_izi(doc: dict | int) -> str:
+    """Sonuc parmak izi: sayimlar + uyusmazlik listesi + kasa sonucu + fiyat bekleyenler. Ayni sonuc tekrar gonderilmez."""
+    if not isinstance(doc, dict):
+        return f"n={int(doc)}"
+    kasa = next((k.get("sonuc") for k in doc.get("kontroller") or [] if str(k.get("ad", "")).startswith("Kasa")), None)
+    if "sorunlar" in doc:                      # mesaj icerigi = sorun listesi (sayimlar/numaralar degisse de ayni sorun ayni mesaj)
+        ham = json.dumps({"s": doc["sorunlar"]}, ensure_ascii=False, sort_keys=True)
+    else:
+        ham = json.dumps({"i": doc.get("islem_sayisi"), "a": doc.get("acik"), "k": doc.get("kapanan"), "u": doc.get("uyusmazliklar") or [],
+                          "kasa": kasa, "f": doc.get("fiyat_bekleniyor") or []}, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(ham.encode("utf-8")).hexdigest()[:16]
+
+
 def telegram_bildir(root_tg: Path, durum_dir: Path, doc: dict | int, now: datetime) -> bool:
-    """Gunde en cok bir mesaj (kurulum ozetiyle ayni sade bicim): outbox'a yazar (telegram servisi gonderir). Yazilamazsa False."""
+    """Gunde en cok bir mesaj (sade bicim): outbox'a yazar (telegram servisi gonderir). Yazilamazsa False."""
     n = doc if isinstance(doc, int) else int(doc.get("uyusmazlik_sayisi") or 0)
+    if isinstance(doc, dict) and "sorunlar" in doc and not doc["sorunlar"]:
+        return False                                    # gercek sorun yok: mesaj yok
     gun = now.astimezone(M.TR).date().isoformat()
     isaret = durum_dir / "mutabakat_bildirim.json"
-    if (_json(isaret) or {}).get("gun") == gun:
-        return False
+    kayit = _json(isaret) or {}
+    pi = parmak_izi(doc)
+    son_ozet = (_json(durum_dir / OZET_KAYIT) or {}).get("parmak_izi")
+    if kayit.get("gun") == gun or (isinstance(doc, dict) and pi in (kayit.get("parmak_izi"), son_ozet)):
+        return False                       # bugun gitti ya da son gonderilenle ayni sonuc: tekrar yok
     try:
         from trader_core.telegram import Outbox  # noqa: PLC0415
         ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu(doc), "severity": "WARN", "dedup_key": f"mutabakat:{gun}",
                                                     "expires_at": None, "reply_markup": None, "created_at": now.timestamp()})
         if ok:
-            atomic_write_text(isaret, json.dumps({"gun": gun, "n": n}) + "\n")
+            atomic_write_text(isaret, json.dumps({"gun": gun, "n": n, "parmak_izi": pi}) + "\n")
         return bool(ok)
     except Exception:  # noqa: BLE001
         return False
@@ -188,13 +206,20 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
     siniri = f"Panel 'tümü' listesi son {int(cfg.closed_limit)} kapanan işlemi gösterir; toplamlar tüm işlemleri kapsar."
     bilgi = [b for b in (M.bilgi_acik_kz(status),) if b]
     doc = M.ozet(rows, kontroller, fazla, now=now, panel_notu=siniri, telegram_kaynak=KAYNAK_NOTU, bilgi=bilgi)
+    if doc["fiyat_bekleniyor"]:
+        doc["bilgi"].append("Fiyatı gelmeyen açık işlemler: " + ", ".join(f"#{i}" for i in doc["fiyat_bekleniyor"]) + " · "
+                            + M.FIYAT_BEKLENIYOR + "; uyuşmazlık sayılmaz")
+        for r in rows:
+            if r["islem_no"] in doc["fiyat_bekleniyor"]:
+                r["fiyat_durumu"] = M.FIYAT_BEKLENIYOR
+    doc["sorunlar"] = M.sorunlar(rows, kontroller, fazla, status, now)       # Telegram: yalniz gercek sorun; bos = mesaj yok
     satirlar = M.temiz(rows)
     durum = root / "var" / "durum"
     atomic_write_text(durum / "mutabakat_v1.json", json.dumps({**doc, "satirlar": satirlar}, ensure_ascii=False, indent=1) + "\n")
     atomic_write_text(durum / "mutabakat.md", M.markdown(doc, rows))
     tam = {**doc, "satirlar": satirlar}
     gitti = kurulum_ozeti(tg_dir, durum, tam, now, env=env)
-    if doc["uyusmazlik_sayisi"] > 0 and not gitti:          # tek mesaj: kurulum ozeti gittiyse gunluk uyari ayni kosuda gonderilmez
+    if doc["sorunlar"] and not gitti:                       # tek mesaj: kurulum mesaji gittiyse gunluk uyari ayni kosuda gonderilmez
         telegram_bildir(tg_dir, durum, tam, now)
     return 0, doc
 
@@ -224,19 +249,30 @@ def kod_surumu(env=None) -> str:
 
 
 def kurulum_ozeti(root_tg: Path, durum_dir: Path, doc: dict, now: datetime, surum: str | None = None, env=None) -> bool:
-    """Kurulum sonrasi tek seferlik SESSIZ (INFO) Telegram ozeti: kod surumu son ozettekinden farkliysa bir kez gider.
-    Ilk kez (kayit yok) da gider. Hata sessizce False."""
+    """Kurulum sonrasi kontrol: GERCEK sorun yoksa hicbir mesaj gitmez (yalniz surum kaydi tutulur). Sorun varsa ve icerigi son
+    gonderilenden farkliysa bir kez gider (WARN). Hata sessizce False."""
     surum = surum or kod_surumu(env)
     kayit = durum_dir / OZET_KAYIT
-    if (_json(kayit) or {}).get("surum") == surum:
+    onceki = _json(kayit) or {}
+    pi = parmak_izi(doc)
+    if onceki.get("surum") == surum:
+        return False
+    son_gunluk = (_json(durum_dir / "mutabakat_bildirim.json") or {}).get("parmak_izi")
+    if ("sorunlar" in doc and not doc["sorunlar"]) or onceki.get("parmak_izi") == pi or son_gunluk == pi:
+        # sorun yok ya da sonuc son gonderilenle ayni: mesaj yok
+        # yeni kurulum ama sonuc son gonderilenle ayni: mesaj yok; yalniz surum kaydi guncellenir (her kurulumda tekrar kontrol edilmesin)
+        try:
+            atomic_write_text(kayit, json.dumps({"surum": surum, "uretim": onceki.get("uretim"), "parmak_izi": pi}) + "\n")
+        except Exception:  # noqa: BLE001
+            pass
         return False
     try:
         from trader_core.telegram import Outbox  # noqa: PLC0415
-        ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu_ozet(doc), "severity": "INFO",
+        ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu(doc), "severity": "WARN",
                                                     "dedup_key": f"mutabakat-ozet:{doc.get('uretim')}", "expires_at": None,
                                                     "reply_markup": None, "created_at": now.timestamp()})
         if ok:
-            atomic_write_text(kayit, json.dumps({"surum": surum, "uretim": doc.get("uretim")}) + "\n")
+            atomic_write_text(kayit, json.dumps({"surum": surum, "uretim": doc.get("uretim"), "parmak_izi": pi}) + "\n")
         return bool(ok)
     except Exception:  # noqa: BLE001
         return False

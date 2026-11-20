@@ -174,6 +174,7 @@ def open_view(ctx: Ctx, status: Mapping | None, now: datetime) -> dict:
         kol = ctx.kol(t)
         rows.append({"id": t.trade_id, "coin": TS.coin(t.pair), "yon": TS.yon(t.side), "kol": kol, "giris": _px(t.entry_price),
                      "simdi": _f(p.get("mark")), "kz": _f(p.get("unrealized_pnl_usd")),
+                     "fiyat_bekleniyor": status is not None and _f(p.get("mark")) is None,   # piyasa kapali / veri yok: K/Z sayisi yerine metin
                      "kz_yuzde": _f(p.get("unrealized_pct")), "sure": sure_metni(t.entry_ts, now),
                      "stop": _f(p.get("stop")) if p.get("stop") is not None else _px(t.planned_stop),
                      "hedef": _px(t.planned_target), "buyukluk": notional, "kaldirac": t.leverage,

@@ -190,6 +190,12 @@ def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | 
                                    and p["stop"] > 0))
         except (KeyError, TypeError, ValueError):
             unprot = None
+    open_pairs = None
+    if isinstance(pos, list) and all(isinstance(p, dict) for p in pos):
+        try:
+            open_pairs = tuple((str(p["pair"]), str(p["asset_class"])) for p in pos)    # sinif yoksa (eski motor) denetim uretilmez
+        except KeyError:
+            open_pairs = None
     dry = d.get("dry_run") if isinstance(d.get("dry_run"), bool) else None
     mode = d.get("mode") if isinstance(d.get("mode"), str) else None
     ex = d.get("exchange")
@@ -205,7 +211,7 @@ def probe_status(path: str, bot: str, now: datetime) -> tuple[H.ApiProbe, int | 
         acct_u = None if un is None or ub is None else max(un - ub, 0)
     probe = H.ApiProbe(ping, loop_at, _parse_dt(d.get("last_candle_open")), _ids(d.get("open_trade_ids")), dry,
                        gate_code, kill, le, unprot, mode, has_ex, reach, last_sync, naked, _ladder_block(d),
-                       acct_drift=acct_d, acct_unverified=acct_u)
+                       acct_drift=acct_d, acct_unverified=acct_u, open_pairs=open_pairs)
     return probe, timeframe_to_s(d.get("trigger_tf"))
 
 
