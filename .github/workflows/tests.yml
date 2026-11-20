@@ -41,6 +41,7 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           pip install --require-hashes -r requirements.lock
           pip install --require-hashes -r requirements-ml.txt
+          pip install "pytest==9.2.0"   # duman, sentetik zinciri tests/e2e yardimcilarindan alir (pytest'i ice aktarir)
 
       - name: Motor duman testi (import + kisa kagit kosusu)
         working-directory: trader
