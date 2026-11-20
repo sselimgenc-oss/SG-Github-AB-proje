@@ -149,7 +149,9 @@ def test_critical_ladder_codes_alert_immediately_and_overall_is_crit():
                             swap_used_bytes=0, last_backup_at=NOW - timedelta(hours=1))
     rep = H.evaluate(snap, cfg)
     assert rep.overall is Status.CRIT
-    alerts, _ = H.plan_alerts(rep, H.empty_state(), NOW, cfg)
+    a0, st0 = H.plan_alerts(rep, H.empty_state(), NOW, cfg)
+    assert not a0                                   # kirmizi cift dogrulama: ilk tur mesaj yok
+    alerts, _ = H.plan_alerts(rep, st0, NOW + timedelta(minutes=5), cfg)
     assert any(a.code == "capital_floor" and a.level is Status.CRIT for a in alerts)
 
 

@@ -1173,10 +1173,11 @@ class TestPlanAlertsCrit:
 
     def test_immediate_disk_low(self):
         rep = ev(disk_free_bytes=int(0.9 * GiB))
-        out, _ = run_turns([(0, rep)])
-        assert len(out[0][1]) == 1
-        assert out[0][1][0].code == "disk_low"
-        assert out[0][1][0].level == Status.CRIT
+        out, _ = run_turns([(0, rep), (5, rep)])
+        assert out[0][1] == []                      # kirmizi cift dogrulama: ilk tur sari
+        assert len(out[1][1]) == 1
+        assert out[1][1][0].code == "disk_low"
+        assert out[1][1][0].level == Status.CRIT
 
     @pytest.mark.parametrize("kw,code", [
         (dict(**with_bot("ledger", "learner", spool_lines=1)), "spool_pending"),
@@ -1186,8 +1187,10 @@ class TestPlanAlertsCrit:
                           "trader-twin": good_container()}), "oom_killed"),
     ])
     def test_other_immediate_codes(self, kw, code):
-        out, _ = run_turns([(0, ev(**kw))])
-        assert [a.code for a in out[0][1]] == [code]
+        rep = ev(**kw)
+        out, _ = run_turns([(0, rep), (5, rep)])
+        assert out[0][1] == []                      # kirmizi cift dogrulama: ilk tur sari
+        assert [a.code for a in out[1][1]] == [code]
 
     def test_non_immediate_critical_not_first_turn(self):
         out, _ = run_turns([(0, ev(mem_available_bytes=100 * MiB))])
@@ -1207,8 +1210,9 @@ class TestPlanAlertsCrit:
         assert all(a == [] for _, a in out)
 
     def test_alert_field_limits(self):
-        out, _ = run_turns([(0, ev(disk_free_bytes=0))])
-        a = out[0][1][0]
+        rep = ev(disk_free_bytes=0)
+        out, _ = run_turns([(0, rep), (5, rep)])
+        a = out[1][1][0]
         assert len(a.title) <= 80 and len(a.body) <= 500
         assert "|" in a.fingerprint
         assert a.created_at.tzinfo is not None
@@ -1217,8 +1221,8 @@ class TestPlanAlertsCrit:
 
     def test_body_has_no_secrets(self):
         rep = ev(disk_free_bytes=0)
-        out, _ = run_turns([(0, rep)])
-        a = out[0][1][0]
+        out, _ = run_turns([(0, rep), (5, rep)])
+        a = out[1][1][0]
         for s in ("SECRET", "PASS", "password"):
             assert s not in a.body
 
@@ -1272,9 +1276,9 @@ class TestPlanAlertsMultiple:
     def test_three_failing_not_summarized(self):
         rep = ev(disk_free_bytes=0, mem_available_bytes=10 * MiB,
                  **with_bot("ledger", "learner", spool_lines=1))
-        out, _ = run_turns([(0, rep)])
-        assert all(a.code != "multiple" for a in out[0][1])
-        assert len(out[0][1]) >= 1
+        out, _ = run_turns([(0, rep), (5, rep)])
+        assert all(a.code != "multiple" for a in out[1][1])
+        assert len(out[1][1]) >= 1
 
     def test_body_lists_at_most_five_names(self):
         rep = self.many_report()

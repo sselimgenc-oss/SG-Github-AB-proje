@@ -144,7 +144,9 @@ def test_alert_texts_and_thresholds():
     def alerts(code_probe, state=None, now=NOW):
         rep = ev(code_probe)[1]
         return H.plan_alerts(rep, state, now, replace(H.DEFAULT_CFG, multiple_threshold=100))
-    a, st = alerts(mlp(state="expired"))
+    a0, st0 = alerts(mlp(state="expired"))
+    assert not a0                                  # kirmizi cift dogrulama: ilk tur mesaj yok
+    a, st = alerts(mlp(state="expired"), st0, NOW + timedelta(minutes=5))
     ml = [x for x in a if x.code == "ml_expired"]
     assert ml and "Modelin süresi doldu" in ml[0].title
     for x in a:

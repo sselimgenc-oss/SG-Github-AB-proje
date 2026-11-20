@@ -161,7 +161,9 @@ def test_reader_is_read_only(tmp_path):
 def test_rules_missing_increase_alerts_immediately():
     bad = H.CheckResult("rules_missing:learner", Status.CRIT, "rules_missing_increase", "x")
     rep = H.HealthReport(NOW, (bad,), Status.CRIT, False)
-    alerts, _ = H.plan_alerts(rep, H.empty_state(), NOW)
+    a0, st0 = H.plan_alerts(rep, H.empty_state(), NOW)
+    assert a0 == []                                 # kirmizi cift dogrulama: ilk tur sari
+    alerts, _ = H.plan_alerts(rep, st0, NOW + timedelta(minutes=5))
     assert [a.code for a in alerts] == ["rules_missing_increase"]
 
 
