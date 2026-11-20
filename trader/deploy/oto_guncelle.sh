@@ -156,8 +156,6 @@ except Exception:
   if [ "$rc" -eq 0 ]; then log "${yeni:0:7} mevcut surumun atasi (eski); kurulmadi"; return 0; fi
   if [ "$rc" -ne 1 ]; then log "atalik kontrolu hata verdi; islem yok"; return 0; fi
 
-  local liste
-  liste="$(degisiklikler "$mevcut" "$yeni")"
 
   log "kurulum basliyor: ${mevcut:0:7} -> ${yeni:0:7}"
   COMMIT="$yeni" timeout "$INSTALL_TIMEOUT" bash "$INSTALL_SH" >"$ILOG" 2>&1 9>&-
