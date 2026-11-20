@@ -28,7 +28,7 @@ _BLOCKING = ("not_trading", "exchangeInfo'da yok")
 class SembolIzleyici:
     def __init__(self, pairs: Iterable[str], fetch: Callable[[], dict], *, contract_types=("PERPETUAL",),
                  has_open_fn: Callable[[str], bool] | None = None, interval: timedelta = ARALIK,
-                 background: bool = False) -> None:
+                 arka_plan: bool = False) -> None:
         self.pairs = list(pairs)
         self.fetch = fetch
         self.contract_types = tuple(contract_types)
@@ -37,7 +37,7 @@ class SembolIzleyici:
         self.blocked: dict[str, dict] = {}       # cift -> {"since": iso, "open": bool, "alert": "WARN" | "CRIT"}
         self.events: list[tuple[str, str, str]] = []   # (seviye, cift, metin) -> engine loglar
         self._last: datetime | None = None
-        self.background = background             # True: exchangeInfo istegi ayri iplikte (motor dongusunu bekletmez)
+        self.background = arka_plan              # True: exchangeInfo istegi ayri iplikte (motor dongusunu bekletmez)
         self._thread: threading.Thread | None = None
         self._box: dict = {}
 

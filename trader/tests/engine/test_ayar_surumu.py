@@ -1,4 +1,4 @@
-"""6c: etkin yapilandirma hash'i (ayar_surumu): kararli, degisiklikte degisir, kararin features'inda ve status'ta."""
+"""6c: etkin yapilandirma hash'i (ayar_surumu): kararli, degisiklikte degisir; status.json'da (karar defterine yazilmaz: denklik testleri bit bit ayni kalir)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,20 +20,16 @@ def test_hash_kararli_ve_degisiklige_duyarli():
     assert GI.ayar_sha256(_c(leverage=4)) != GI.ayar_sha256(a)
 
 
-def test_karar_features_ve_status_icinde(monkeypatch):
-    import datetime as dt
+def test_status_tam_hash_ve_karar_defterine_yazilmaz(tmp_path):
     from trader_engine import gates
-    from trader_engine.strategy_runner import SignalRow
-    import dataclasses
-    fields = {f.name for f in dataclasses.fields(SignalRow)}
-    assert "param_version_id" in fields
-    # build_decision_event: hash verilirse features'a girer, verilmezse girmez
-    class R:                                                    # SignalRow'un kullanilan alanlari
-        regime = "trend"; setup = "T1"; side = "long"; pair = "BTC/USDT"; atr_ratio = 1.0; rh = None; rl = None
-        rh_touches = 0; rl_touches = 0; planned_entry = 100.0; planned_stop = 99.0; planned_target = None
-        param_version_id = 1; ml_score = None; arm_id = None; atr_tf = 1.0; stop_dist_atr = 1.0; atr_4h = 1.0
-        bar_close_ts = dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
-    monkeypatch.setattr(gates, "_features", lambda row: {"atr_tf": 1.0, "stop_dist_atr": 1.0, "atr_4h": 1.0})
-    ev = gates.build_decision_event(R(), "1h", ayar_surumu="abc123def456")
-    assert ev.features["ayar_surumu"] == "abc123def456"
-    assert "ayar_surumu" not in gates.build_decision_event(R(), "1h").features
+    from trader_engine.status import StatusWriter
+    cfg = _c()
+    import datetime as dt
+
+    class Saat:
+        def now(self):
+            return dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)
+    sw = StatusWriter(str(tmp_path / "status.json"), clock=Saat(), cfg=cfg)
+    assert sw._ayar_sha() == GI.ayar_sha256(cfg)
+    # karar defterine yazilmaz: ml kapali/golge ve kagit denklik testleri bit bit ayni kalmali
+    assert "ayar_surumu" not in open(gates.__file__, encoding="utf-8").read()

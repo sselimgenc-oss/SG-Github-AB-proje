@@ -252,7 +252,7 @@ def test_symbol_watcher_background_does_not_block_loop():
     def slow():
         gate.wait(5)
         return _info(BTCUSDT="BREAK")
-    w = SembolIzleyici(["BTC/USDT"], slow, background=True)
+    w = SembolIzleyici(["BTC/USDT"], slow, arka_plan=True)
     assert w.check(T0) is False and w._thread is not None      # istek ayri iplikte; dongu beklemez
     assert w.check(T0 + timedelta(seconds=1)) is False and not w.blocked
     gate.set()

@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from trader_core import etiket_kurallari as EK
-from trader_core import giris_izi as GI
 from trader_core import kol_kucultme as KK
 from trader_core import ledger as L
 from trader_core import risk as K
@@ -129,9 +128,7 @@ def _tf_of(row: SignalRow) -> str:
     raise ValueError(f"tetik tf cozulemedi: {secs}s")
 
 
-def build_decision_event(row: SignalRow, tf: str, *, ayar_surumu: str | None = None, **override) -> L.DecisionEvent:
-    """6c: `ayar_surumu` (etkin yapilandirma hash'i) verilirse karar `features`'ina `ayar_surumu` eklenir.
-    Yalniz kayit; defter semasi ayni (features sozlugu), ayni-karar karsilastirmasina girmez (ledger._ETIKET_ANAHTARLARI)."""
+def build_decision_event(row: SignalRow, tf: str, **override) -> L.DecisionEvent:
     is_range = row.regime == "range"
     base = dict(
         bar_close_ts=row.bar_close_ts, trigger_tf=tf, pair=row.pair, side=row.side, setup=row.setup,
@@ -143,10 +140,6 @@ def build_decision_event(row: SignalRow, tf: str, *, ayar_surumu: str | None = N
         size_qty=None, size_notional=None, size_margin=None, size_risk_amount=None, leverage=None,
         final_action="skipped", skip_reason=None, ml_score=row.ml_score, arm_id=row.arm_id)
     base.update(override)
-    if ayar_surumu:
-        f = dict(base["features"])
-        f.setdefault(GI.ANAHTAR_SURUM, ayar_surumu)
-        base["features"] = f
     return L.DecisionEvent(**base)
 
 
@@ -235,19 +228,6 @@ class EntryGate:
         return K.AccountState(equity=float(self.broker.account().equity), day_start_equity=float(ds),
                               open_positions=positions)
 
-    def _ayar_surumu(self) -> str | None:
-        """6c: etkin yapilandirmanin kisa sha256'si (bir kez hesaplanir); hesap hatasi karari bozmaz (None = eklenmez)."""
-        if not hasattr(self, "_ayar_kisa"):
-            if self.cfg.mode == "backtest":                        # geri test altin ozetleri (tarafsizlik) bit bit ayni kalir
-                self._ayar_kisa = None
-                return None
-            try:
-                self._ayar_kisa = GI.ayar_kisa(self.cfg)
-            except Exception as e:  # noqa: BLE001
-                log.warning("ayar_surumu hesaplanamadi: %s", e)
-                self._ayar_kisa = None
-        return self._ayar_kisa
-
     # ------------------------------------------------------------------ karar
     def _ignore(self, code: str) -> EntryOutcome:
         self.counters["ignore:" + code] += 1
@@ -255,7 +235,7 @@ class EntryGate:
 
     def _skip(self, row: SignalRow, tf: str, code: str, *, mark: bool = True, **ev) -> EntryOutcome:
         self.counters["skip:" + code] += 1
-        return EntryOutcome("skip", build_decision_event(row, tf, ayar_surumu=self._ayar_surumu(), **ev), None, None, code, False, mark)
+        return EntryOutcome("skip", build_decision_event(row, tf, **ev), None, None, code, False, mark)
 
     def _session_off(self) -> Mapping[str, Collection[str]] | None:
         so = self.session_off
@@ -512,7 +492,7 @@ class EntryGate:
         size = dec.size                                                                 # 12
         self.counters["enter"] += 1
         ev = build_decision_event(
-            row, tf, ayar_surumu=self._ayar_surumu(), veto_status=vs, veto_reason=lk.reason, risk_allowed=True, risk_reason=dec.reason,
+            row, tf, veto_status=vs, veto_reason=lk.reason, risk_allowed=True, risk_reason=dec.reason,
             size_qty=size.qty, size_notional=size.notional, size_margin=size.margin,
             size_risk_amount=size.risk_amount, leverage=lev, final_action="entered", skip_reason=None, **tk)
         return EntryOutcome("enter", ev, size, lev, "entered", True)

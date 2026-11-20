@@ -119,7 +119,7 @@ def _attach_symbol_watch(eng, cfg) -> None:
         eng.sembol_izleyici = SembolIzleyici(cfg.pairs, rest.exchange_info,
                                              contract_types=cfg.contract_types or ("PERPETUAL",),
                                              has_open_fn=lambda p: eng.state.position_for_pair(p) is not None,
-                                             background=True)
+                                             arka_plan=True)
     except Exception as e:  # noqa: BLE001
         logging.getLogger("engine.cli").error("sembol izleyici kurulamadi: %r", e)
 
