@@ -224,6 +224,7 @@ class Engine:
         self._naked_rows: list[dict] = []
         self._in_drain = 0
         # WP-3 (defter-ek-alanlar): YALNIZ KAYIT. Bu durum bellekte tutulur, durum deposuna YAZILMAZ ve hicbir karari etkilemez.
+        self._dec_ts: "OrderedDict[int, tuple[str, datetime]]" = OrderedDict()   # trade_id -> (cikis client_id, karar mumu kapanis zamani)
         self._dec_price: "OrderedDict[int, tuple[str, float]]" = OrderedDict()   # trade_id -> (cikis client_id, karar mumu kapanisi)
         self._regime_mem: dict[str, tuple[datetime, str]] = {}                   # cift -> (karar adimi D, hizali 4s kosul etiketi)
         self._gate_quote: tuple[str, datetime, dict | None] | None = None        # D17 sorgusu (cift, ts, sonuc) - tek GET paylasimi
@@ -641,7 +642,33 @@ class Engine:
             log.warning("olcum alanlari uretilemedi: %r", e)
             return {}
 
+    def _latency_sn(self, since) -> float | None:
+        """Kagit: enjekte saatle simdi - `since` (sn, >= 0). Bilinmeyen/bozuk zaman = None (alan yazilmaz). Yalniz kayit."""
+        try:
+            if not self.is_paper or not isinstance(since, datetime):
+                return None
+            v = (self.clock.now() - since).total_seconds()
+            return round(max(0.0, float(v)), 3) if math.isfinite(v) else None
+        except Exception:  # noqa: BLE001 - olcum kaydi hicbir zaman islemi durdurmaz
+            return None
+
+    def _store_latency(self, trade_id: int, key: str, value: float | None) -> None:
+        """Gecikmeyi motor durumundaki `gecikme:<trade_id>` kv satirina birlestirir (defter semasi degismez; ledger'a giden yuke girmez).
+        Cagiran `state.tx()` icinde olmalidir."""
+        if value is None:
+            return
+        cur = self.state.kv_get(f"gecikme:{trade_id}")
+        d = dict(cur) if isinstance(cur, dict) else {}
+        d[key] = value
+        self.state.kv_set(f"gecikme:{trade_id}", d)
+
     def _remember_dec_price(self, pos: Position, D: datetime, price) -> None:
+        try:
+            self._dec_ts[pos.trade_id] = (make_client_id(self.cfg.bot, "exit", pos.pair, pos.side, D, 0), D)
+            while len(self._dec_ts) > _EXEC_MEM_MAX:
+                self._dec_ts.popitem(last=False)
+        except Exception:  # noqa: BLE001
+            pass
         try:
             if price is None or not float(price) > 0:
                 return
@@ -1222,12 +1249,14 @@ class Engine:
                          e.pair, getattr(fill, "price", None), getattr(fill, "qty", None))
             return
         t_fill = self.clock.now()
+        lat_in = self._latency_sn(pos.signal_bar_close_ts)      # yalniz kayit: dolum duvar saati - karar mumu kapanisi
         newp = apply_entry_fill(pos, fill, step.bars.get(e.pair) if step is not None else None, now)
         xp = self._exec_payload("entry", fill)                  # WP-3: yalniz kayit (emir ani alanlari)
         with self.state.tx():                                   # G2: pozisyon open + emir filled + outbox
             self._persist(pos, newp)
             self._mark_order(fill.client_id, "filled")
             self.state.outbox_add("entry", pos.trade_id, build_trade_entry(newp, xp))
+            self._store_latency(pos.trade_id, "dolum_gecikme_sn", lat_in)
         self._c["trades_opened"] += 1
         eq = self.state.kv_get(f"eq:{pos.trade_id}")
         tick = self.orders.stop_tick(newp)
@@ -1279,8 +1308,11 @@ class Engine:
         if dp is not None and fill.reason == "market" and dp[0] == fill.client_id:
             extra["decision_price"] = dp[1]
         xp = self._exec_payload("exit", fill, extra)
+        dts = self._dec_ts.pop(pos.trade_id, None)               # yalniz KARARIN verdigi piyasa cikisi: dolum - karar mumu kapanisi
+        lat_out = self._latency_sn(dts[1]) if (dts is not None and fill.reason == "market" and dts[0] == fill.client_id) else None
         with self.state.tx():                                   # G3
             self._persist(pos, newp)
+            self._store_latency(pos.trade_id, "cikis_gecikme_sn", lat_out)
             self.state.outbox_add("exit", pos.trade_id, build_trade_exit(pos, closed, ex=xp))
             self._mark_order(fill.client_id, "filled")
         self._c["trades_closed"] += 1

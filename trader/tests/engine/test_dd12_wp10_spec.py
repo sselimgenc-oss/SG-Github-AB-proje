@@ -58,14 +58,14 @@ def test_service_limits_and_oneshot():
     assert "ml_retrain_run" in s.get("ExecStart", "")
 
 
-def test_timer_runs_0310_utc_after_notes():
+def test_timer_runs_0340_utc_after_notes():
     txt = (TRADER / "deploy" / "trader-ml-retrain.timer").read_text()
-    assert re.search(r"OnCalendar=.*03:10", txt) or re.search(r"OnCalendar=\*-\*-\* 03:10", txt)
+    assert re.search(r"OnCalendar=\*-\*-\* 03:40:00 UTC", txt)
     assert "Persistent" in txt
     notes = (TRADER / "deploy" / "trader-notes.timer").read_text()
     m = re.search(r"OnCalendar=.*?(\d\d):(\d\d)", notes)
     if m:
-        assert (int(m.group(1)), int(m.group(2))) < (3, 10), "retrain must run after the 02:55 notes job"
+        assert (int(m.group(1)), int(m.group(2))) < (3, 40), "retrain must run after the 02:55 notes job"
 
 
 def test_setup_filter_uses_no_pandas_and_no_trader_engine():

@@ -34,9 +34,13 @@ Kullanıcı şartları: (1) yalnız GitHub'daki otomatik testleri **yeşil** ge�
 ## `trader-oto-ac`
 - `DURDUR` dosyasını siler, Telegram: `[ML] Otomatik güncelleme yeniden açıldı.`
 
+## Mum kapanışı koruması
+- Kurulum başlamadan hemen önce (tüm kontroller geçtikten sonra) UTC dakikası `dakika % 15 ∈ {14, 0, 1, 2}` ise (15 dk mum kapanışından 1 dk önce – 3 dk sonra; motor kararı kapanışta verir ve veri için en çok 120 sn bekler) betik `dakika % 15 == 3` olana dek uyur (en çok ~4 dk) ve sonra kurulur. Pencere dışında beklemez; kurulum gerekmiyorsa hiç beklemez.
+- Test için: `OTO_SIMDI_DAKIKA`, `OTO_SIMDI_SANIYE` (UTC şimdi), `OTO_UYKU` (sleep komutu).
+
 ## install.sh
 - Yeni birimleri ve iki komutu kurar; timer'ı etkinleştirir. Durum dizinini oluşturur (root, 0700).
 
 ## Testler (ağsız)
-- `oto_guncelle.sh` için kabuk testleri: sahte `curl`, `systemctl`, `git`, `install.sh` ve `/etc/trader-release` yollarıyla (ortam değişkenleriyle geçersiz kılınabilir yollar): aynı commit → işlem yok; yeni yeşil → kurulum + Telegram metni; DURDUR → işlem yok; canlı birim → işlem yok; kurulum hatası → başarısız mesajı ve tekrar denememe; eski commit → işlem yok; maskeleme.
+- `oto_guncelle.sh` için kabuk testleri: sahte `curl`, `systemctl`, `git`, `install.sh` ve `/etc/trader-release` yollarıyla (ortam değişkenleriyle geçersiz kılınabilir yollar): aynı commit → işlem yok; yeni yeşil → kurulum + Telegram metni; DURDUR → işlem yok; canlı birim → işlem yok; kurulum hatası → başarısız mesajı ve tekrar denememe; eski commit → işlem yok; maskeleme; mum kapanışı penceresinde ertelenir, dışında beklemez.
 - `bash -n` ve (varsa) shellcheck temiz.

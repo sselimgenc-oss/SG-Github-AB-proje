@@ -4,6 +4,7 @@
 # atasi olan (geri giden) commit kurulmaz; canli (trader-engine-live*) birim varsa hic dokunulmaz.
 # Ortam degiskenleri YALNIZ testler icindir (uretimde varsayilanlar kullanilir):
 #   OTO_STATE_DIR OTO_RELEASE_FILE OTO_ROOT_DIR OTO_GIT_DIR OTO_INSTALL OTO_API_URL OTO_TELEGRAM_ENV OTO_BRANCH OTO_INSTALL_TIMEOUT
+#   OTO_SIMDI_DAKIKA OTO_SIMDI_SANIYE (UTC 'simdi' dakika/saniye) OTO_UYKU (sleep komutu): mum kapanisi beklemesi testi
 # Telegram token'i asla komut satirinda degildir: curl --config - ile stdin'den okunur.
 set -uo pipefail
 
@@ -16,6 +17,7 @@ TG_ENV="${OTO_TELEGRAM_ENV:-/etc/trader-telegram.env}"
 API_URL="${OTO_API_URL:-https://api.github.com/repos/sselimgenc-oss/SG-Github-AB-proje/actions/workflows/tests.yml/runs}"
 BRANCH="${OTO_BRANCH:-claude/charming-hawking-ab5w5q}"   # install.sh BRANCH ile ayni olmali
 INSTALL_TIMEOUT="${OTO_INSTALL_TIMEOUT:-1800}"            # 30 dk
+UYKU="${OTO_UYKU:-sleep}"
 HIST="$STATE_DIR/gecmis.tsv"
 ILOG="$STATE_DIR/son-kurulum.log"
 
@@ -106,6 +108,24 @@ gecmis_ekle() { # eski yeni sonuc
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$1" "$2" "$3" >> "$HIST"
 }
 
+kapanis_bekle() { # kurulumdan once: 15 dk mum kapanisinin 1 dk oncesi - 3 dk sonrasi (dakika%15 in 14,0,1,2) ise dakika%15==3 olana dek bekler (en cok ~4 dk)
+  local dk sn r bekle
+  dk="${OTO_SIMDI_DAKIKA:-$(date -u +%M)}"
+  sn="${OTO_SIMDI_SANIYE:-$(date -u +%S)}"
+  dk=$((10#$dk))
+  sn=$((10#$sn))
+  r=$((dk % 15))
+  case "$r" in
+    14 | 0 | 1 | 2)
+      bekle=$((((3 - r + 15) % 15) * 60 - sn))
+      [ "$bekle" -gt 0 ] || bekle=1
+      log "mum kapanisina yakin (dakika ${dk}); kurulum ${bekle} sn ertelendi"
+      "$UYKU" "$bekle"
+      ;;
+  esac
+  return 0
+}
+
 oto_guncelle() {
   mkdir -p "$STATE_DIR"
   chmod 0700 "$STATE_DIR" 2>/dev/null || true
@@ -170,6 +190,7 @@ except Exception:
   if [ "$rc" -ne 1 ]; then log "atalik kontrolu hata verdi; islem yok"; return 0; fi
 
 
+  kapanis_bekle
   log "kurulum basliyor: ${mevcut:0:7} -> ${yeni:0:7}"
   COMMIT="$yeni" timeout "$INSTALL_TIMEOUT" bash "$INSTALL_SH" >"$ILOG" 2>&1 9>&-
   rc=$?
