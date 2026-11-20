@@ -133,3 +133,37 @@ def test_cli_prints_no_content_values(hist, tmp_path, capsys):
 def test_json_has_only_permitted_fields(hist, tmp_path):
     doc = M.muhurle(hist, tmp_path / "m.json")
     assert set(doc) == {"muhur_tarihi", "holdout", "dosya_sayisi", "dosyalar", "birlesik_sha256", "acildi"}
+
+
+def test_kayit_alani_istege_bagli_ve_dogrula_etkilenmez(hist, tmp_path):
+    f = tmp_path / "ayar.json"
+    f.write_text("{}")
+    k = M.kayit_olustur(["s1"], [f], [f])
+    out = tmp_path / "o" / "muhur.json"
+    doc = M.muhurle(hist, out, kayit=k)
+    assert doc["kayit"]["stratejiler"] == ["s1"]
+    assert M.dogrula(hist, out) == (True, [])
+    out2 = tmp_path / "o2" / "muhur.json"
+    assert "kayit" not in M.muhurle(hist, out2)
+
+
+def test_on_kayit_zinciri_ve_kod_degisimi(tmp_path):
+    f = tmp_path / "kod.py"
+    f.write_text("x=1")
+    g = tmp_path / "g.jsonl"
+    M.on_kayit_yaz(M.kayit_olustur(["a"], [f], [f]), g)
+    M.on_kayit_yaz(M.kayit_olustur(["a", "b"], [f], [f]), g)
+    assert M.gunluk_dogrula(g) == []
+    assert M.kayit_dogrula(M.gunluk_oku(g)[-1]["kayit"]) == []
+    f.write_text("x=2")
+    assert any("degismis" in x for x in M.kayit_dogrula(M.gunluk_oku(g)[-1]["kayit"]))
+    satirlar = g.read_text().splitlines()
+    g.write_text(satirlar[0].replace('"a"', '"z"') + "\n" + satirlar[1] + "\n")
+    assert M.gunluk_dogrula(g)
+
+
+def test_bos_strateji_reddedilir(tmp_path):
+    f = tmp_path / "k.py"
+    f.write_text("")
+    with pytest.raises(M.MuhurError):
+        M.kayit_olustur([], [f], [f])

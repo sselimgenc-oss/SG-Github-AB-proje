@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ from trader_engine.holdout import HOLDOUT  # noqa: E402  (donuk dosya; yalniz ic
 
 HISTORY_DIR = ROOT / "var" / "history"
 MUHUR_PATH = ROOT / "research" / "holdout" / "muhur.json"
+ON_KAYIT_PATH = ROOT / "research" / "holdout" / "on_kayit_gunlugu.jsonl"
 TIME_COL = "date"
 
 
@@ -96,7 +98,9 @@ def _window() -> dict:
     return {"baslangic": HOLDOUT[0].strftime("%Y-%m-%d"), "bitis": HOLDOUT[1].strftime("%Y-%m-%d")}
 
 
-def muhurle(history_dir: Path = HISTORY_DIR, out: Path = MUHUR_PATH, *, now: datetime | None = None) -> dict:
+def muhurle(history_dir: Path = HISTORY_DIR, out: Path = MUHUR_PATH, *, now: datetime | None = None,
+            kayit: dict | None = None) -> dict:
+    """`kayit` (istege bagli): `kayit_olustur` ciktisi; verilirse muhura "kayit" anahtari eklenir. Verilmezse bicim ESKISIYLE AYNIDIR."""
     out = Path(out)
     if out.exists():
         raise MuhurError(f"muhur zaten var: {out.name}; ikinci muhur basilmaz (yeniden bayragi yok)")
@@ -104,9 +108,113 @@ def muhurle(history_dir: Path = HISTORY_DIR, out: Path = MUHUR_PATH, *, now: dat
     doc = {"muhur_tarihi": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "holdout": _window(), "dosya_sayisi": len(files), "dosyalar": files,
            "birlesik_sha256": combined_sha(files), "acildi": False}
+    if kayit is not None:
+        doc["kayit"] = kayit
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return doc
+
+
+# ---------------------------------------------------------------------------------------------------------------------------
+# Strateji/ayar/kod hash'i + on kayit gunlugu (1L3A motor/arastirma/v2/holdout.py `muhur_yaz`/`muhur_kontrol` ve `sabit.py`'dan
+# uyarlandi). YALNIZ rapor/kayit: karar kapisi degildir; canli/paper motoruna etkisi yoktur. Eski muhur (kayit yok) `dogrula` ile
+# AYNEN ESIT kalir; `dogrula` bu bolumu hic okumaz. Bicim geriye uyumlu: yeni alanlar istege bagli ("kayit", ayri gunluk dosyasi).
+#
+# Budama ("budama": kapi gecerse holdout neti <= 0 veya K2 p yuksek stratejiyi setten cikarma) UYGULANMADI: o mantik holdout
+# SONUCUNU okuyup mühürlü seti degistirir; bu modulun "holdout icerigine hic dokunma" sozlesmesiyle ve muhurlu veri anlamiyla
+# celisir. Yalniz belgelenir (docs/ml/pbo-holdout-muhur-spec.md ek not): holdout degerlendirmesi
+# `holdout_degerlendir.py`'de kalir, setten cikarma karari insan/yeni on kayit gerektirir.
+# ---------------------------------------------------------------------------------------------------------------------------
+def sha256_dosya(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for blok in iter(lambda: f.read(1 << 20), b""):
+            h.update(blok)
+    return h.hexdigest()
+
+
+def _git_commit() -> str | None:
+    try:
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _goreli(p: Path) -> str:
+    try:
+        return Path(p).resolve().relative_to(ROOT).as_posix()
+    except ValueError:
+        return Path(p).as_posix()
+
+
+def _hash_haritasi(yollar: list) -> dict:
+    out = {}
+    for p in sorted(Path(x) for x in yollar):
+        if not p.is_file():
+            raise MuhurError(f"hash'lenecek dosya yok: {p}")
+        out[_goreli(p)] = sha256_dosya(p)
+    return out
+
+
+def kayit_olustur(stratejiler: list[str], ayar_dosyalari: list, kod_dosyalari: list, *, olcek: dict | None = None,
+                  not_: str = "") -> dict:
+    """Strateji listesi + ayar dosyalari sha256 + kod dosyalari sha256 + git commit (+ istege bagli olcek). Veri okumaz."""
+    if not stratejiler or any(not str(s).strip() for s in stratejiler):
+        raise MuhurError("strateji listesi bos olamaz")
+    return {"surum": 1, "stratejiler": sorted(map(str, stratejiler)), "ayar_sha256": _hash_haritasi(ayar_dosyalari),
+            "kod_sha256": _hash_haritasi(kod_dosyalari), "olcek": olcek or {}, "git_commit": _git_commit(), "not": not_}
+
+
+def _zincir_sha(onceki: str, govde: dict) -> str:
+    return hashlib.sha256((onceki + "\n" + json.dumps(govde, sort_keys=True, ensure_ascii=False)).encode("utf-8")).hexdigest()
+
+
+def gunluk_oku(path: Path = ON_KAYIT_PATH) -> list[dict]:
+    path = Path(path)
+    if not path.exists():
+        return []
+    return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+
+def on_kayit_yaz(kayit: dict, path: Path = ON_KAYIT_PATH, *, now: datetime | None = None) -> dict:
+    """On kayit gunlugune (yalniz-ekleme, hash zincirli JSONL) bir kayit ekler. Holdout degerlendirmesinden ONCE cagrilmali;
+    veri okumaz. Zincir: her satirin `zincir_sha256`'i onceki satirin degerine baglidir (arada degisiklik `gunluk_dogrula` ile bulunur)."""
+    path = Path(path)
+    onceki = gunluk_oku(path)
+    onceki_sha = onceki[-1]["zincir_sha256"] if onceki else ""
+    govde = {"olay": "on_kayit", "zaman": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ"), "kayit": kayit}
+    satir = {**govde, "onceki_sha256": onceki_sha, "zincir_sha256": _zincir_sha(onceki_sha, govde)}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(satir, ensure_ascii=False) + "\n")
+    return satir
+
+
+def gunluk_dogrula(path: Path = ON_KAYIT_PATH) -> list[str]:
+    """Zincir bozuklugu aciklamalari (bos liste = saglam)."""
+    hata, onceki = [], ""
+    for i, s in enumerate(gunluk_oku(path)):
+        govde = {k: s[k] for k in ("olay", "zaman", "kayit") if k in s}
+        if s.get("onceki_sha256") != onceki:
+            hata.append(f"satir {i}: onceki_sha256 uyusmuyor")
+        if s.get("zincir_sha256") != _zincir_sha(onceki, govde):
+            hata.append(f"satir {i}: zincir_sha256 uyusmuyor")
+        onceki = s.get("zincir_sha256", "")
+    return hata
+
+
+def kayit_dogrula(kayit: dict) -> list[str]:
+    """Kayittaki ayar/kod hash'lerini simdiki dosyalarla karsilastirir -> farkli/eksik dosya aciklamalari (bos = ayni)."""
+    fark = []
+    for alan in ("ayar_sha256", "kod_sha256"):
+        for yol, sha in kayit.get(alan, {}).items():
+            p = ROOT / yol
+            if not p.is_file():
+                fark.append(f"{alan}: {yol} yok")
+            elif sha256_dosya(p) != sha:
+                fark.append(f"{alan}: {yol} degismis")
+    return fark
 
 
 def _load(out: Path) -> dict:
@@ -149,8 +257,26 @@ def main(argv=None) -> int:
     p.add_argument("--aday-kumesi", required=True)
     p.add_argument("--gerekce", required=True)
     p.add_argument("--muhur", default=str(MUHUR_PATH))
+    p = sub.add_parser("on-kayit", help="strateji/ayar/kod hash'li on kayit gunlugu satiri ekler (veri okumaz)")
+    p.add_argument("--strateji", action="append", required=True)
+    p.add_argument("--ayar", action="append", default=[])
+    p.add_argument("--kod", action="append", default=[])
+    p.add_argument("--gunluk", default=str(ON_KAYIT_PATH))
+    p = sub.add_parser("kayit-dogrula", help="gunluk zincirini ve son kaydin hash'lerini simdiki dosyalarla karsilastirir")
+    p.add_argument("--gunluk", default=str(ON_KAYIT_PATH))
     a = ap.parse_args(argv)
     try:
+        if a.cmd == "on-kayit":
+            s = on_kayit_yaz(kayit_olustur(a.strateji, a.ayar, a.kod), Path(a.gunluk))
+            print(f"on kayit eklendi: {s['zincir_sha256']}")
+            return 0
+        if a.cmd == "kayit-dogrula":
+            satirlar = gunluk_oku(Path(a.gunluk))
+            sorun = gunluk_dogrula(Path(a.gunluk)) + (kayit_dogrula(satirlar[-1]["kayit"]) if satirlar else ["gunluk bos"])
+            print("ESIT" if not sorun else "FARKLI")
+            for x in sorun:
+                print(f"  {x}")
+            return 0 if not sorun else 1
         if a.cmd == "muhurle":
             d = muhurle(Path(a.history_dir), Path(a.muhur))
             print(f"muhur basildi: {d['dosya_sayisi']} dosya, birlesik sha256 {d['birlesik_sha256']}")
