@@ -1,0 +1,30 @@
+[Unit]
+Description=Trader canli durum yayini: saatlik ozet verisi -> repo dali canli-durum (ml/); yalniz SSH deploy anahtari, sir yok
+Documentation=file:///opt/trader/docs/sunucu-kurulum.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+# Deploy anahtari yalniz burada: /var/lib/trader-durum-yayin/.ssh/id_ed25519 (+ known_hosts). Anahtar yoksa betik atlar (cikis 0).
+# Telegram/Cloudflare/borsa anahtarlari bu birime YUKLENMEZ (EnvironmentFile yok).
+Environment=HOME=/var/lib/trader-durum-yayin
+Environment=PYTHONPATH=/opt/trader/src
+StateDirectory=trader-durum-yayin
+StateDirectoryMode=0700
+ExecStart=/bin/bash /opt/trader/deploy/durum_yayinla.sh
+TimeoutStartSec=300
+MemoryMax=300M
+CPUQuota=30%
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/opt/trader

@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader canli durum yayini zamanlayicisi (saatte bir; repo dali canli-durum)
+
+[Timer]
+OnBootSec=15min
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

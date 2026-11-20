@@ -421,3 +421,33 @@ bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh                   
 ## Disk bakimi ve disk uyarisi
 - `trader-bakim.timer` (pazar 04:20 UTC, Persistent) haftada bir `scripts/bakim_run.py` calistirir (`MemoryMax=128M`, idle IO, tek seferlik; hata yutulur). `var/` altindaki sqlite dosyalarinda WAL `checkpoint(TRUNCATE)` + yalniz guvenliyse `VACUUM`; motor/feed'in surekli acik tuttugu `market.sqlite`, `ledger.sqlite`, `state.sqlite` dosyalarinda YALNIZ `wal_checkpoint(PASSIVE)` (VACUUM yok). Silme yalniz acik izin listesiyle ve 90 gunden eski: `var/rapor/**` (md/json/csv/txt/html/png), `var/*/weekly_summaries/*.md`, `exitcf_bt_*` gecici dizinleri, `var/*/snapshots/*`; her dizinde en yeni dosya kalir. Defterler, `counterfactual.sqlite`, `market.sqlite`, `var/history*`, `var/durum/*.json` asla silinmez. Ne yapildigi `journalctl -u trader-bakim` ozetinde. Elle: `sudo -u trader python3 -I scripts/bakim_run.py --var-dir var --dry-run`.
 - Saglik denetcisi `var/` dosya sistemi kullanimi >= %80 ise "Disk dolmak uzere (%NN)" (WARN), >= %95 ise ayrica CRIT uyarisi gonderir: ilk seferde bir kez, surerse en fazla 6 saatte bir, kapaninca tek "Duzeldi". journald sistem tarafinda sinirlanir; bu is ona dokunmaz.
+
+## Canli durum dali (saatlik; `deploy/durum_yayinla.sh`, `trader-durum-yayin.timer`)
+
+Sunucu saatte bir ozet verisini repo icindeki ayri `canli-durum` dalina, `ml/` klasorune yazar (CT'nin canli-durum duzeni). Boylece
+orkestrator ve gelistirici Telegram iletimine gerek kalmadan okur. Yayimlanan dosyalar (izin listesi): `rejim.json`,
+`gunluk_ozet_v1.json`, `pano.html` (ogrenme kartlari dahil anlik pano), `mutabakat_v1.json` + `mutabakat.md` (acik/kapanan islemler,
+kasa), `strateji-veri-ml.md`, `tutarlilik_v1.json`, `etiket_kurallari_v1.json`, `durum.json` (motor durum dosyasi), `uretim.txt`.
+Defter (sqlite), ortam dosyalari ve anahtarlar yayimlanmaz; bilinen sir kaliplari gorulurse o tur hic yayimlanmaz.
+
+Kimlik yalniz sunucudaki SSH deploy anahtaridir (ozel kisim sunucudan cikmaz; GitHub'a yalniz `.pub` kismi eklenir). Anahtar yoksa
+birim sessizce atlar. Bir kez, root olarak:
+
+```bash
+install -d -o trader -g trader -m 700 /var/lib/trader-durum-yayin /var/lib/trader-durum-yayin/.ssh
+sudo -u trader ssh-keygen -t ed25519 -N "" -C "trader-durum-yayin" -f /var/lib/trader-durum-yayin/.ssh/id_ed25519
+sudo -u trader sh -c 'ssh-keyscan -t ed25519 github.com > /var/lib/trader-durum-yayin/.ssh/known_hosts'
+sudo -u trader ssh-keygen -lf /var/lib/trader-durum-yayin/.ssh/known_hosts   # SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU olmali; farkliysa DURUN
+cat /var/lib/trader-durum-yayin/.ssh/id_ed25519.pub
+```
+
+GitHub -> repo -> Settings -> Deploy keys -> Add deploy key: baslik `trader-durum-yayin`, yukaridaki `.pub` satiri, **Allow write
+access** isaretli. Sinir: deploy anahtari GitHub'da depo genelinde yazar (tek dala kisitlanamaz); betik yalniz `canli-durum`'a yazar.
+`main` icin Settings -> Rules -> Rulesets ile "Restrict updates" onerilir. Deneme:
+
+```bash
+systemctl start trader-durum-yayin.service; journalctl -u trader-durum-yayin -n 5 -o cat
+```
+
+"yayimlandi" gorulmeli. "Permission denied (publickey)" = deploy anahtari eklenmemis ya da yazma izni yok. Kapatma:
+`systemctl disable --now trader-durum-yayin.timer`.
