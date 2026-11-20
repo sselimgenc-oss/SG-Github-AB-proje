@@ -400,10 +400,11 @@
       add(mk, add(el('div'), rozetRenk(m.durum, m.renk)));
       add(mk, m.isabet.olculemedi ? satir('İsabet', m.isabet.olculemedi) : satir('İsabet', 'son ' + m.isabet.n + ' tahminin ' + m.isabet.tutan + ek(m.isabet.tutan) + ' tuttu'));
       add(mk, satir('Son 7 gün', m.onay_7g + ' onay · ' + m.ret_7g + ' ret'), katkiSatir(m.katki));
-      if (m.kapsam && m.kapsam.eksik.length) {
-        add(mk, el('div', 'yok', 'Şu kollarda yeterli kapanmış işlem yok:'));
+      if (m.kapsam && (m.kapsam.eksik.length || m.kapsam.bos)) {
+        add(mk, el('div', 'yok', 'Yapay zekâ filtresi için yeterli kapanmış işlem yok:'));
         m.kapsam.eksik.forEach(function (e) { add(mk, satir(e.kol, e.n + '/' + e.en_az, 'sol')); });
         if (m.kapsam.eksik_fazla) add(mk, el('div', 'yok', '… ve ' + m.kapsam.eksik_fazla + ' kol daha'));
+        if (m.kapsam.bos) add(mk, el('div', 'yok', m.kapsam.bos + ' kolda henüz işlem yok'));
       }
       if (m.egitim) add(mk, satir('Son eğitim', m.egitim.tarih + ' · ' + m.egitim.ornek + ' örnek'));
       add(ig, mk);

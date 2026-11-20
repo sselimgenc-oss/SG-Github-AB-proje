@@ -21,7 +21,6 @@ from . import tg_sade as TS
 TR = P.TR
 MIN_ORAN = 5            # kazanma orani / ort. kazanc-kayip icin asgari kapanan islem
 MIN_ETKI = 10           # ders / ML katkisi icin asgari sonuclu karar
-MIN_KOL_ISLEM = 10      # kol basina ML filtresi icin asgari kapanmis islem (motor: ogrenme_filtre.MIN_ISLEM)
 MIN_ISABET = 10         # ML isabeti icin asgari sonuclu tahmin
 
 REJIM_TR = {"range": "yatay piyasa", "trend": "trend", "trending": "trend", "ranging": "yatay piyasa"}
@@ -290,6 +289,13 @@ def kz_view(ctx: Ctx, start: float | None, now: datetime, curve: Mapping | None,
 
 
 # ----------------------------------------------------------------------------- ogrenme (ders + ML)
+def min_kol_islem() -> int:
+    """Kol basina ML filtresi icin asgari kapanmis islem: motorun sabiti (kopya degil). Dinamik ice aktarma: panel kaynak
+    taramasi `trader_engine` import satirini yasaklar; yalniz bu salt okunur sabit okunur."""
+    import importlib  # noqa: PLC0415
+    return int(importlib.import_module("trader_engine.ogrenme_filtre").MIN_ISLEM)
+
+
 def katki_olculemedi(n: int) -> dict:
     """Katki icin kendi sayisi: sonucu belli karar sayisi (onay/ret sayisindan farkli olabilir)."""
     return {"olculemedi": f"Henüz ölçülemedi (sonucu belli {n} karar, en az {MIN_ETKI})"}
@@ -418,7 +424,9 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
     else:
         acik, kolsay = n_paket > 0, n_paket
     arm_of = lambda d: getattr(d, "arm_id", None) or f"{d.setup}@{d.trigger_tf}"  # noqa: E731
-    tum = sorted({arm_of(d) for d in ctx.decisions if d.final_action == "entered"})
+    en_az = min_kol_islem()
+    cfg_kollar = list(P.paper_maps()[0])
+    tum = cfg_kollar or sorted({arm_of(d) for d in ctx.decisions if d.final_action == "entered"})    # payda: kagit ayarindaki kol listesi
     kapali = {}
     for t in ctx.closed:
         dd = ctx.dec.get(t.decision_id)
@@ -427,9 +435,11 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
     kapsam = None
     if acik and tum:
         aktif = [a for a in tum if a in paket_kur] if paket_kur else []
-        eksik = sorted(((a, kapali.get(a, 0)) for a in tum if a not in aktif), key=lambda x: -x[1])
-        kapsam = {"aktif": len(aktif), "toplam": len(tum), "en_az": MIN_KOL_ISLEM,
-                  "eksik": [{"kol": TS.kol_adi(a), "n": n, "en_az": MIN_KOL_ISLEM} for a, n in eksik[:6]], "eksik_fazla": max(len(eksik) - 6, 0)}
+        kalan = [a for a in tum if a not in aktif]
+        kismen = sorted(((a, kapali.get(a, 0)) for a in kalan if kapali.get(a, 0) > 0), key=lambda x: -x[1])
+        kapsam = {"aktif": len(aktif), "toplam": len(tum), "en_az": en_az,
+                  "eksik": [{"kol": TS.kol_adi(a), "n": n, "en_az": en_az} for a, n in kismen[:6]],
+                  "eksik_fazla": max(len(kismen) - 6, 0), "bos": sum(1 for a in kalan if kapali.get(a, 0) == 0)}
         durum = f"Açık, {len(aktif)}/{len(tum)} kolda çalışıyor"
         renk = "yesil" if len(aktif) == len(tum) else "sari"
     else:

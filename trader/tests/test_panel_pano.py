@@ -198,3 +198,12 @@ def test_partial_state_is_not_healthy_and_says_why():
 
 def test_katki_label_uses_resolved_count():
     assert PP.katki_olculemedi(0) == {"olculemedi": "Henüz ölçülemedi (sonucu belli 0 karar, en az 10)"}
+
+
+def test_ml_denominator_is_paper_config_arms_and_threshold_from_engine():
+    from trader_engine import ogrenme_filtre as OF
+    assert PP.min_kol_islem() == OF.MIN_ISLEM
+    arms = P.paper_maps()[0]
+    assert len(arms) >= 9                                         # payda: kagit ayarindaki gercek kol listesi
+    src = (ROOT / "src/trader_core/panel_pano.py").read_text(encoding="utf-8")
+    assert "paper_maps()[0]" in src and "MIN_KOL_ISLEM" not in src
