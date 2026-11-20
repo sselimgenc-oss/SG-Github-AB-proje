@@ -80,10 +80,10 @@ def test_etiketli_ve_etiketsiz_ayni_kararlar(cift):
     for sen in SENARYOLAR:
         oa, ob = _go(a, **sen), _go(b, **sen)
         assert _karar(oa) == _karar(ob), sen
-    a.held[:] = b.held[:] = [f"X{i}" for i in range(16)]                      # max_positions: alinmayan sinyal
+    a.held[:] = b.held[:] = [f"X{i}" for i in range(24)]                      # max_positions: alinmayan sinyal
     oa, ob = _go(a, "XRP/USDT"), _go(b, "XRP/USDT")
     assert oa.code == ob.code == "max_positions" and _karar(oa) == _karar(ob)
-    a.held[:] = b.held[:] = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT"]           # cluster_cap
+    a.held[:] = b.held[:] = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT", "AMZN/USDT", "META/USDT"]           # cluster_cap
     oa, ob = _go(a, "GOOGL/USDT"), _go(b, "GOOGL/USDT")
     assert oa.code == ob.code == "cluster_cap" and _karar(oa) == _karar(ob)
 

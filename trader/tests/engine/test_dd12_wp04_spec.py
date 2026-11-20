@@ -331,9 +331,9 @@ def test_cluster_membership_multi():
 
 
 # ------------------------------------------------------------------------------------------------ D-T6 tavanlar (kapi)
-def test_cluster_cap_tech3_blocks_4th_tech(mk):
+def test_cluster_cap_tech5_blocks_6th_tech(mk):
     e = mk()
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     out = e.decide("AMD")
     assert out.action == "skip" and out.event.skip_reason == "cluster_cap"
     assert out.event.veto_status == "not_evaluated" and out.event.final_action == "skipped"
@@ -341,40 +341,39 @@ def test_cluster_cap_tech3_blocks_4th_tech(mk):
 
 def test_nontech_stock_enters_when_tech3_full(mk):
     e = mk()
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     out = e.decide("JPM")
     assert out.action == "enter", (out.code, out.event and out.event.skip_reason)
 
 
 def test_stock5_full_blocks_any_stock(mk):
     e = mk()
-    e.fill(TEK[:2] + NONTEK[:3])               # hisse=5, teknoloji=2
-    for b in ("WMT", "AMD"):
+    e.fill(TEK[:2] + NONTEK[:6])               # hisse=8, teknoloji=2
+    for b in ("XOM", "AMD"):
         out = e.decide(b)
         assert out.action == "skip" and out.event.skip_reason == "cluster_cap", b
 
 
 def test_stock5_full_does_not_block_crypto_or_metal(mk):
     e = mk()
-    e.fill(TEK[:2] + NONTEK[:3])
+    e.fill(TEK[:2] + NONTEK[:6])
     assert e.decide("BTC").action == "enter"
     assert e.decide("XAU").action == "enter"
 
 
-def test_crypto_big_cap_4(mk):
+def test_crypto_big_cap_6_not_binding(mk):
+    """20 Kasim: kume tavani 6 > uye sayisi 5; tum uyeler acik olsa da baska kumeler etkilenmez."""
     e = mk()
-    e.fill(BUYUK[:4])
-    out = e.decide("SOL")
-    assert out.action == "skip" and out.event.skip_reason == "cluster_cap"
+    e.fill(BUYUK[:5])
     assert e.decide("DOGE").action == "enter"
 
 
-def test_crypto_other_cap_6(mk):
+def test_crypto_other_cap_9(mk):
     e = mk()
-    e.fill(DIGER[:5])
+    e.fill(DIGER[:8])
     assert e.decide("XMR").action == "enter"
     e2 = mk()
-    e2.fill(DIGER[:6])
+    e2.fill(DIGER[:9])
     out = e2.decide("XMR")
     assert out.action == "skip" and out.event.skip_reason == "cluster_cap"
 
@@ -394,36 +393,35 @@ def test_metal_one_open_other_member_enters(mk):
     assert e.decide("XAG").action == "enter"
 
 
-def test_account_cap_16(mk):
+def test_account_cap_24(mk):
     e = mk()
-    # 16 pozisyonu kume tavanlarini asmadan doldur: buyuk 4 + diger 6 + hisse 5 (tek tech yok: nontech 5? 8 nontech var) + metal 1
-    e.fill(BUYUK[:4] + DIGER[:6] + NONTEK[:5] + ["XAU"])
-    assert len(e.state.open_positions()) == 16
+    # 24 pozisyonu kume tavanlarini asmadan doldur: buyuk 5 + diger 9 + hisse 8 (tech 2 + nontech 6) + metal 2
+    e.fill(BUYUK[:5] + DIGER[:9] + NONTEK[:6] + TEK[:2] + METAL)
+    assert len(e.state.open_positions()) == 24
     out = e.decide("BZ")
     assert out.action == "skip" and out.event.skip_reason == "max_positions"
     assert out.event.veto_status == "not_evaluated"
 
 
-def test_account_cap_15_allows_16th(mk):
+def test_account_cap_23_allows_24th(mk):
     e = mk()
-    e.fill(BUYUK[:4] + DIGER[:6] + NONTEK[:5])
-    assert len(e.state.open_positions()) == 15
+    e.fill(BUYUK[:5] + DIGER[:9] + NONTEK[:6] + TEK[:2] + ["XAU"])
+    assert len(e.state.open_positions()) == 23
     assert e.decide("BZ").action == "enter"
 
 
 def test_cluster_cap_checked_before_account_cap(mk):
     e = mk()
-    e.fill(BUYUK[:4] + DIGER[:6] + NONTEK[:5] + ["XAU"])     # hesap 16 dolu
-    out = e.decide("ETH")                                    # buyuk de dolu (BTC ETH XRP BNB: ETH zaten var ama 5. uye SOL)
-    out = e.decide("SOL")
+    e.fill(BUYUK[:5] + DIGER[:9] + NONTEK[:6] + TEK[:2] + METAL)     # hesap 24 dolu, diger kume 9/9 dolu
+    out = e.decide("XMR")
     assert out.action == "skip" and out.event.skip_reason == "cluster_cap"       # sira: kume tavani -> hesap tavani
 
 
 def test_pairs_order_same_bar(mk):
     """Ayni barda sira `pairs` sirasi: ilk gelen girer, tavan dolunca sonrakiler cluster_cap alir."""
     e = mk()
-    e.fill(TEK[:2])
-    order = [b for b in TEK[2:]]            # pairs sirasinda 3 aday
+    e.fill(TEK[:4])
+    order = [b for b in TEK[4:]]            # pairs sirasinda 3 aday (teknoloji tavani 5)
     outs = []
     for b in order[:3]:
         o = e.decide(b)
@@ -472,7 +470,7 @@ def test_metal_weekend_entry_allowed(mk):
 def test_session_tag_on_skipped_rows_too(mk):
     D = utc(2026, 12, 5, 15, 0)
     e = mk(D)
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     out = e.decide("AMD")
     assert out.action == "skip" and out.event.skip_reason == "cluster_cap" and out.event.session_tag == "weekend"
 
@@ -498,7 +496,7 @@ def test_normal_bar_not_flat(mk):
 
 def test_flat_bar_precedes_cluster_cap(mk):
     e = mk()
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     out = e.decide("AMD", volume=0.0)
     assert out.event.skip_reason == "flat_bar"           # sira: kural -> tatil bari -> ... -> kume tavani
 
@@ -546,7 +544,7 @@ def test_no_lesson_means_session_closed_never_used(mk):
 def test_session_closed_precedes_cluster_cap(mk):
     D = utc(2026, 12, 5, 15, 0)
     e = mk(D)
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     _set_session_off(e.gate, {"stock": ["weekend"], "hisse": ["weekend"]})
     out = e.decide("AMD")
     assert out.event.skip_reason == "session_closed"          # sira: tatil bari -> ders-kapali seans -> kume tavani
@@ -563,7 +561,7 @@ def test_no_veto_step_in_paper_entry_and_rows_not_evaluated(mk):
 
 def test_all_rejection_rows_veto_not_evaluated(mk):
     e = mk()
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     rows = [e.decide("AMD"), e.decide("BTC", volume=0.0)]
     assert all(r.event.veto_status == "not_evaluated" for r in rows)
     assert {r.event.skip_reason for r in rows} == {"cluster_cap", "flat_bar"}
@@ -572,7 +570,7 @@ def test_all_rejection_rows_veto_not_evaluated(mk):
 def test_rejection_skip_reasons_valid_in_ledger_v5(mk):
     """Red satirlari defterde gercekten yazilabilir (ledger v5 skip_reason sozlugu)."""
     e = mk()
-    e.fill(TEK[:3])
+    e.fill(TEK[:5])
     out = e.decide("AMD")
     e.led.record_decision(out.event)
     for r in ("cluster_cap", "flat_bar", "session_closed", "max_positions"):

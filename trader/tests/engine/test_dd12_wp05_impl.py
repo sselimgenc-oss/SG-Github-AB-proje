@@ -320,7 +320,7 @@ def test_end_to_end_paper(tmp_path, hist):
     eng.status.write(eng, force=True)
     st = json.loads(Path(eng.cfg.status_path).read_text())
     cc = st["cluster_counts"]
-    assert cc["account"]["max"] == 16 and set(cc["clusters"]) >= {"kripto_buyuk", "hisse", "hisse_teknoloji"}
+    assert cc["account"]["max"] == 24 and set(cc["clusters"]) >= {"kripto_buyuk", "hisse", "hisse_teknoloji"}
     assert cc["account"]["open"] == len(eng.state.open_positions())
     assert st["ml"]["entries_blocked"] is False and st["gate"]["ok"]
     # D-T12: ayni durum/defter yeni cift (XRP) ile yeniden acilir; pozisyon, imlec ve parametre surumu korunur

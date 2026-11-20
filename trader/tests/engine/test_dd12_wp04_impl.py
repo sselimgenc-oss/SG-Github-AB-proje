@@ -59,12 +59,12 @@ def test_flat_bar_and_classes():
 
 def test_cluster_caps_multi_membership():
     cl = CFG.clusters
-    tech = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT"]
+    tech = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT", "AMZN/USDT", "META/USDT"]
     assert AG.full_cluster("GOOGL/USDT", tech, cl) == "hisse_teknoloji"
     assert AG.full_cluster("JPM/USDT", tech, cl) is None                      # teknoloji disi hisse girer
-    five = tech + ["JPM/USDT", "WMT/USDT"]
-    assert AG.full_cluster("HD/USDT", five, cl) == "hisse"
-    assert AG.account_full(16, 16) and not AG.account_full(15, 16) and not AG.account_full(99, None)
+    eight = tech + ["JPM/USDT", "WMT/USDT", "HD/USDT"]
+    assert AG.full_cluster("LLY/USDT", eight, cl) == "hisse"
+    assert AG.account_full(24, 24) and not AG.account_full(23, 24) and not AG.account_full(99, None)
 
 
 @pytest.fixture
@@ -105,11 +105,11 @@ def test_gate_paper_rows(env):
     assert _go(env, "BTC/USDT").action == "enter"
     env.g.session_off = {"hisse": {"weekend"}}
     assert _go(env, "NVDA/USDT").action == "enter"                            # kapatilmamis seansta ret yok
-    env.held[:] = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT"]
+    env.held[:] = ["NVDA/USDT", "MSFT/USDT", "AAPL/USDT", "AMZN/USDT", "META/USDT"]
     o = _go(env, "GOOGL/USDT")
     assert (o.code, o.event.skip_reason, o.event.veto_status) == ("cluster_cap", "cluster_cap", "not_evaluated")
     assert _go(env, "JPM/USDT").action == "enter"
-    env.held[:] = [f"X{i}" for i in range(16)]
+    env.held[:] = [f"X{i}" for i in range(24)]
     o = _go(env, "XRP/USDT")
     assert o.code == "max_positions" and o.event.skip_reason == "max_positions"
     env.led.record_decision(o.event)                                          # defter CHECK'i kabul eder
