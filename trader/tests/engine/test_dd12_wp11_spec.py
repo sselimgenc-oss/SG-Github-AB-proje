@@ -323,12 +323,12 @@ def test_paper_config_uses_lab_with_arms_and_caps():
     assert any(a.startswith("T1") for a in flat) and any(a.startswith("R1") for a in flat), flat
     cap = raw["arm_max_positions"]
     if isinstance(cap, int):
-        assert cap == 4
+        assert cap == 6
     else:
         assert isinstance(cap, dict) and cap
         for k, v in cap.items():
             setup = str(k).split("@")[0].upper()
-            assert v == (3 if setup in ("M1", "L1", "C1") else 4), (k, v)   # 19 Kasim: C1 (CT kadro) eklendi
+            assert v == (4 if setup in ("M1", "L1", "C1") else 6), (k, v)   # 19 Kasim: C1 (CT kadro) eklendi; 20 Kasim: tavanlar 6 / 4
 
 
 def test_paper_config_loads_and_arms_parse():

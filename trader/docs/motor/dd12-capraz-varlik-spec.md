@@ -10,7 +10,7 @@ v3 → v4 özeti: **LLM veto kaldırıldı**; risk %0,5 → %1, 10 → 16 pozisy
 
 - **Tek, düz kâğıt bot:** mevcut `learner` kâğıt motoru. Ayrı bot, kol ya da etiket yok. **İkiz yok, silinir.** Kâğıtta **gölge kip hiçbir yerde yok**; testnet/canlı yoluna dokunulmaz.
 - **İçinde her şey:** 44 enstrüman (20 kripto + 20 ABD hissesi + XAU, XAG, BZ, COPPER), bütün kurulum aileleri (trend takip, geri çekilme, kırılım, yatay piyasa) × 15dk / 1s / 4s / **1g**, ML (aday eler, kendi adayını üretir), ders, LLM aday önerisi.
-- **Risk (kâğıt):** işlem başı %1; en çok 16 eşzamanlı pozisyon; toplam açık risk %12, aynı yön %8, günlük zarar %8 (D-sentez seçenek A). Yalnız kâğıt istisnası (§4).
+- **Risk (kâğıt):** işlem başı %1; en çok 16 eşzamanlı pozisyon; toplam açık risk %12, aynı yön %8, günlük zarar %8 (D-sentez seçenek A). Yalnız kâğıt istisnası (§4). **[20 Kasım 2026 güncellemesi, kullanıcı onaylı, yalnız kâğıt: en çok 24 pozisyon; toplam açık risk %24, aynı yön %16; işlem başı %1 ve günlük zarar %8 aynı; kol tavanı 6 (M1/L1/C1: 4); küme tavanları 6/9/8/5/3/3. Kâğıt üst sınırları `PAPER_LIMITS` aynı değerlere çekildi; testnet/canlı sınırları değişmedi.]**
 - **Seans yasağı yok** (hisse ve emtia 7/24 işlem alabilir). Her aday ve işlem seans durumu etiketi taşır (§4.2); ders ve ML bundan öğrenir.
 - **ML ve ders ilk işlemden etkin.** Asgari işlem/kanıt eşiği yok (30 işlem, ≥ 300 etiketli aday, ≥ 40 aday yok), haftalık değişiklik sınırı yok, "M1'den sonra" bekleme yok (§5, §6).
 - **LLM:** **veto kaldırıldı** (kullanıcı: "veto nedir, kaldır"); kâğıtta hiçbir LLM veto kapısı yoktur. Aylık LLM bütçesi **toplam 10 $** (kullanıcı kararı, 19 Kasım): işlem notu + ders ve LLM aday önerisi; öneri sayısında günlük sınır yok, yalnız bütçe payı sınırlar (§5.4, §6.5).
@@ -71,7 +71,7 @@ Kimlik `arm_id` = `<kurulum>@<zaman dilimi>`. Katalog: `price-action-kural-katal
 
 ### 4.1 Risk (yalnız kâğıt katmanı)
 
-İşlem başı risk **%1**. `risk.py` sabitleri (toplam açık risk, aynı yön, günlük zarar, işlem başı) yalnız `mode="paper"` yapılandırmasından ayarlanabilir; testnet/canlı/geri test yapılandırmasında bu anahtarlar `ConfigError`, verilmezse eski sabitler bit bit aynıdır. Kâğıt değerleri: toplam açık risk **%12**, aynı yön **%8**, günlük zarar **%8**. (v3'teki "`risk.py` dokunulmaz" bu parametreleştirme için tek, kapsamı dar istisnadır; tarafsızlık testi D-T13 kapsar.)
+İşlem başı risk **%1**. `risk.py` sabitleri (toplam açık risk, aynı yön, günlük zarar, işlem başı) yalnız `mode="paper"` yapılandırmasından ayarlanabilir; testnet/canlı/geri test yapılandırmasında bu anahtarlar `ConfigError`, verilmezse eski sabitler bit bit aynıdır. Kâğıt değerleri: toplam açık risk **%12**, aynı yön **%8**, günlük zarar **%8**. (v3'teki "`risk.py` dokunulmaz" bu parametreleştirme için tek, kapsamı dar istisnadır; tarafsızlık testi D-T13 kapsar.) **20 Kasım 2026: kâğıt değerleri toplam açık risk %24, aynı yön %16 (günlük %8 değişmedi).**
 
 Not: %1 riskle toplam açık risk %12 tavanı, tam riskli pozisyonlarda 12. pozisyonda bağlar; 16 pozisyona ancak riski küçülmüş (kısmen kapanan, stopu girişe çekilen) pozisyonlar varken ulaşılır. Bu bilinçli kabul edilmiştir (§13).
 

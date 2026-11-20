@@ -543,6 +543,21 @@ def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
     return k
 
 
+def kucultme_view(ledger_path: str, bot: str) -> dict | None:
+    """OGRENME sekmesi 'Kademeli kucultme' karti (docs/motor/kademeli-kucultme-spec.md): boyutu kucultulen kollar
+    (carpan, son 5/10 net R). Kucultulen kol yoksa ya da okunamazsa None (kart gizlenir)."""
+    from . import kol_kucultme as KK  # noqa: PLC0415
+    led = P.open_ledger_ro(ledger_path, bot)
+    try:
+        az = KK.azaltilanlar(led.arm_results_all(KK.KAYIT_SAYISI))
+    finally:
+        led.close()
+    if not az:
+        return None
+    return {"kollar": [{"kol": a, "carpan": k.carpan, "n": k.n, "net_5": k.net_5, "net_10": k.net_10}
+                       for a, k in sorted(az.items())]}
+
+
 # ----------------------------------------------------------------------------- teknik
 def _testnet_alarmi(a: Mapping) -> bool:
     """Testnet golge botuna ait kontrol (ad ':<bot>' ekinde 'testnet'): kagit botu etkilemez; yalniz TEKNIK'te gri bilgi."""

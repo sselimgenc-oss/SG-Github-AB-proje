@@ -2609,6 +2609,28 @@ class Ledger:
             rows = c.execute(sql, args).fetchall()
         return [self._trade_from(r) for r in rows]
 
+    def arm_recent_results(self, arm_id: str, limit: int = 10) -> list[float]:
+        """Kolun son kapanan islemlerinin net R degerleri (r_multiple = komisyon/funding dusulmus), EN YENIDEN ESKIYE
+        (exit_ts, trade_id azalan), en cok `limit` (kademeli kucultme, docs/motor/kademeli-kucultme-spec.md). Salt okunur."""
+        lim = _int(limit, "limit", minimum=0)
+        with self._read() as c:
+            rows = c.execute("SELECT r_multiple FROM v_closed_trades WHERE bot=? AND arm_id=? "
+                             "ORDER BY exit_ts DESC, trade_id DESC LIMIT ?", (self.bot, str(arm_id), lim)).fetchall()
+        return [float(r["r_multiple"]) for r in rows]
+
+    def arm_results_all(self, limit: int = 10) -> dict[str, list[float]]:
+        """{arm_id: son `limit` kapanan islemin net R'si (yeniden eskiye)} (rapor/panel; salt okunur)."""
+        lim = _int(limit, "limit", minimum=0)
+        out: dict[str, list[float]] = {}
+        with self._read() as c:
+            rows = c.execute("SELECT arm_id, r_multiple FROM v_closed_trades WHERE bot=? AND arm_id IS NOT NULL "
+                             "ORDER BY exit_ts DESC, trade_id DESC", (self.bot,)).fetchall()
+        for r in rows:
+            lst = out.setdefault(r["arm_id"], [])
+            if len(lst) < lim:
+                lst.append(float(r["r_multiple"]))
+        return out
+
     def _since_where(self, c, version_id: int, exact: bool):
         if exact:
             return "param_version_id=?", [version_id]

@@ -34,8 +34,8 @@ HARD_LIMITS = {
 PAPER_LIMITS = {**HARD_LIMITS,
                 "target_trade_risk": 0.014,   # işlem başı risk kağıtta %1 (<= kilitli hedef); gevşemez
                 "daily_max_loss": 0.08,
-                "max_open_risk": 0.12,
-                "max_same_dir_risk": 0.08}
+                "max_open_risk": 0.24,   # 20 Kasim 2026: kullanici onayli kagit gevsetmesi (0.12 -> 0.24)
+                "max_same_dir_risk": 0.16}
 
 
 def _num(x, name: str = "değer") -> float:
@@ -363,3 +363,12 @@ def check_entry(state: AccountState, cand: Candidate, cfg: RiskConfig = LOCKED_C
         return _check_entry(state, cand, cfg)
     except Exception as exc:  # noqa: BLE001
         return Decision(False, f"iç hata: {exc!r}", None)
+
+
+def check_entry_scaled(state: AccountState, cand: Candidate, cfg: RiskConfig, mult: float) -> Decision:
+    """`check_entry`, hedef işlem riski `mult` (0, 1] ile ÇARPILMIŞ kopya üzerinde (yalnız küçültür; sınırlar ve diğer alanlar aynı).
+    Kademeli boyut küçültme (docs/motor/kademeli-kucultme-spec.md) kullanır; mult > 1 ya da <= 0 ValueError."""
+    m = _num(mult, "mult")
+    if not 0 < m <= 1:
+        raise ValueError(f"mult (0, 1] içinde olmalı: {m!r}")
+    return check_entry(state, cand, tightened(cfg, target_trade_risk=cfg.target_trade_risk * m))

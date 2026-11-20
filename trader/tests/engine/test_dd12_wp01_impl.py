@@ -38,17 +38,17 @@ def test_paper_config_shape():
     assert c.mode == "paper" and c.bot == "learner" and len(c.pairs) == 44
     assert set(json.loads((CFG / "engine.base.json").read_text())["pairs"]) <= set(c.pairs)
     assert len(c.optional_pairs) == 25 and set(c.optional_pairs) <= set(c.pairs)
-    assert c.max_positions == 16 and c.ml_mode == "active" and c.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
+    assert c.max_positions == 24 and c.ml_mode == "active" and c.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert c.ml_features == "v1" and c.ml_experimental is False and c.ml_pairs == () and c.ml_model_path is None
     raw_paper = json.loads((CFG / "engine.paper.json").read_text())
     assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw_paper)
-    assert [s.max_positions for s in c.clusters.values()] == [4, 6, 5, 3, 2, 2]
+    assert [s.max_positions for s in c.clusters.values()] == [6, 9, 8, 5, 3, 3]
     assert [len(s.pairs) for s in c.clusters.values()] == [5, 15, 20, 12, 2, 2]
     assert c.flat_bar_guard is True and "TRADIFI_PERPETUAL" in c.contract_types
     assert set(c.cost_overrides) == set(c.optional_pairs) - {"TON/USDT"}   # 19 Kasim: TON istege bagli kripto (not_trading), override yok
     r = c.risk_config
-    assert (r.target_trade_risk, r.max_open_risk, r.max_same_dir_risk, r.daily_max_loss) == (0.01, 0.12, 0.08, 0.08)
+    assert (r.target_trade_risk, r.max_open_risk, r.max_same_dir_risk, r.daily_max_loss) == (0.01, 0.24, 0.16, 0.08)
 
 
 def test_removed_layers():
@@ -75,7 +75,12 @@ def test_locked_defaults_bit_identical():
     with pytest.raises(ValueError):
         K.RiskConfig(max_open_risk=0.12)              # kilitli profil gevsemez
     with pytest.raises(ValueError):
-        K.paper_config(max_open_risk=0.13)             # kagit ust siniri asilmaz
+        K.paper_config(max_open_risk=0.25)             # kagit ust siniri (0.24) asilmaz
+    with pytest.raises(ValueError):
+        K.paper_config(max_same_dir_risk=0.17)
+    with pytest.raises(ValueError):
+        K.paper_config(daily_max_loss=0.09)
+    assert K.paper_config(max_open_risk=0.24, max_same_dir_risk=0.16).max_open_risk == 0.24
     with pytest.raises(ValueError):
         K.paper_config(max_trade_risk=0.03)            # yalniz PAPER_KEYS
 
@@ -98,7 +103,7 @@ def test_new_keys_rejected_outside_paper(tmp_path, mode, key, val):
     ("clusters", {"x": {"pairs": ["NVDA/USDT"], "max_positions": 1}}),
     ("cost_overrides", {"NVDA/USDT": {"open": {"slip_entry_bps": 1.0}}}),
     ("max_positions", 0), ("max_positions", True),
-    ("risk", {"max_open_risk": 0.13}), ("risk", {"max_same_dir_risk": 0.09}), ("risk", {"daily_max_loss": 0.09}),
+    ("risk", {"max_open_risk": 0.25}), ("risk", {"max_same_dir_risk": 0.17}), ("risk", {"daily_max_loss": 0.09}),
     ("risk", {"bogus": 1}), ("risk", {"target_trade_risk": 0.02}), ("target_trade_risk", 0.02),
     ("contract_types", ["SPOT"]), ("flat_bar_guard", "yes"),
 ])

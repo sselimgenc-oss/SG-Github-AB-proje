@@ -199,7 +199,7 @@ def test_arm_expired_or_forced_package_yields_candidate(m1):
 
 def test_config_and_inventory():
     cfg = json.loads((REPO / "config" / "engine.paper.json").read_text(encoding="utf-8"))
-    assert "M1@1h" in cfg["arms"] and "M1@4h" in cfg["arms"] and cfg["arm_max_positions"]["M1"] == 3
+    assert "M1@1h" in cfg["arms"] and "M1@4h" in cfg["arms"] and cfg["arm_max_positions"]["M1"] == 4
     from test_engine_module_inventory import scan_inventory
     assert scan_inventory(REPO) == []
 

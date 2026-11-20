@@ -44,7 +44,7 @@ ENERJI = {"BZ", "COPPER"}
 STOCKS20 = {"NVDA", "MSFT", "AAPL", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "BRKB", "JPM", "LLY", "WMT", "V", "ORCL",
             "XOM", "NFLX", "PLTR", "COST", "AMD", "HD"}
 COMMODITY4 = METAL | ENERJI
-CAPS = {"kripto_buyuk": 4, "kripto_diger": 6, "hisse": 5, "hisse_teknoloji": 3, "metal": 2, "enerji_sanayi": 2}
+CAPS = {"kripto_buyuk": 6, "kripto_diger": 9, "hisse": 8, "hisse_teknoloji": 5, "metal": 3, "enerji_sanayi": 3}   # 20 Kasim: kagit tavanlari gevsetildi
 
 PINNED_SHA = {
     "engine.base.json": "ba218ea0404803c9e5af7ffbd276fad79b6d0af714c94150172f7d56e674c328",   # WP-06a: yalniz veto_config yolu
@@ -224,7 +224,7 @@ def test_dt2_paper_ml_kapali_golgesiz_16_pozisyon():
     assert cfg.shadow_blocks == ("regime", "r1_disabled", "same_bar_reentry", "tf_15m")      # 19.11 (kagitta her sey acik): golge karar satirlari acik (karar yolunu etkilemez)
     assert cfg.exit_modes == {"default": {"breakeven": {"trigger_r": 1.0, "offset_bps": cfg.exit_modes["default"]["breakeven"]["offset_bps"]},
                               "partial": {"trigger_r": 1.5, "frac": 0.5}}}      # 19.11: cikis kipleri kagitta ACIK (spec varsayilanlari)
-    assert cfg.max_positions == 16
+    assert cfg.max_positions == 24
     assert cfg.target_trade_risk == 0.01                           # islem basi %1
 
 
@@ -282,7 +282,7 @@ def test_dt2_paper_yeni_anahtar_ham_json_listesi():
         assert k in raw, k
     # 19 Kasim: r03 kagitta emekli (kullanici karari)
     assert not {"ml_pairs", "ml_features", "ml_model_path", "ml_experimental"} & set(raw)
-    assert raw["shadow_blocks"] == ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"] and raw["max_positions"] == 16 and raw["ml_mode"] == "active"
+    assert raw["shadow_blocks"] == ["regime", "r1_disabled", "same_bar_reentry", "tf_15m"] and raw["max_positions"] == 24 and raw["ml_mode"] == "active"
 
 
 # --------------------------------------------------------------------------- D-T2 (yalniz --env paper)
@@ -396,8 +396,8 @@ def test_dt30_paper_risk_yuzdeleri():
     cfg = _paper()
     rc = cfg.risk_config
     assert rc.target_trade_risk == pytest.approx(0.01)
-    assert rc.max_open_risk == pytest.approx(0.12)
-    assert rc.max_same_dir_risk == pytest.approx(0.08)
+    assert rc.max_open_risk == pytest.approx(0.24)
+    assert rc.max_same_dir_risk == pytest.approx(0.16)
     assert rc.daily_max_loss == pytest.approx(0.08)
     assert rc.max_trade_risk >= rc.target_trade_risk
 

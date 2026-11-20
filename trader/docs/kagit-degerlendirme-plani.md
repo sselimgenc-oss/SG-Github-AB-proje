@@ -1,6 +1,6 @@
 # Kağıt / testnet değerlendirme planı ve günlük sapma izleyicisi eşikleri (ön kayıt v1, 17 Kasım 2026)
 
-> 18 Kasım: kullanıcı kararıyla değişti. Kâğıt bot tek ve düzdür (ikiz/gölge/deney botu yok), 44 enstrüman, tüm aileler, ML ve ders ilk işlemden etkin, risk %1/16 pozisyon. Bu planın ikiz kıyası, gölge ve canlıya geçiş (CANLI-K1 vb.) ölçütleri **[ASKIDA — kullanıcı yeniden belirleyecek]**; yalnız kâğıt izleme/raporlama kısımları geçerlidir.
+> 18 Kasım: kullanıcı kararıyla değişti. Kâğıt bot tek ve düzdür (ikiz/gölge/deney botu yok), 44 enstrüman, tüm aileler, ML ve ders ilk işlemden etkin, risk %1/16 pozisyon (20 Kasım: 24 pozisyon, toplam açık risk %24, aynı yön %16). Bu planın ikiz kıyası, gölge ve canlıya geçiş (CANLI-K1 vb.) ölçütleri **[ASKIDA — kullanıcı yeniden belirleyecek]**; yalnız kâğıt izleme/raporlama kısımları geçerlidir.
 
 **Yazan:** mentor · **Durum:** ön kayıt. Kağıt işlem (30 Kasım 2026) başlamadan yazıldı; kağıt başladıktan sonra bu belgedeki hiçbir sayı, formül ya da kural sonuca bakılarak değiştirilmez. Değişiklik gerekiyorsa §9'daki yol izlenir.
 

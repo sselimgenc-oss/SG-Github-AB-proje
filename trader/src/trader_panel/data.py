@@ -231,6 +231,10 @@ class PanelData:
                                         self.cfg.alinmayan_sonuc_path or str(dd / "alinmayan_sonuc_v1.json")) if dd else None
             except Exception:  # noqa: BLE001
                 etiket = None
+            try:
+                kucultme = PP.kucultme_view(lp, b)
+            except Exception:  # noqa: BLE001 - kucultme karti istege bagli
+                kucultme = None
             safe = {}
             for k, f in (("health", lambda: P.health_view(self.cfg.health_state, now, self.cfg.health_stale_s)),
                          ("budget", lambda: P.budget_view(self.cfg.budget_config)),
@@ -250,7 +254,7 @@ class PanelData:
             if kismi and isik["renk"] == "yesil":
                 isik = {"renk": "sari", "metin": "Sistem çalışıyor; bazı özellikler kısmen devrede"}
             return {"bot_durum": s["state"], "mod": (status or {}).get("mode"), "serit": serit, "acik": acik, "kz": kz,
-                    "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "etiket": etiket, "teknik": teknik,
+                    "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "etiket": etiket, "kucultme": kucultme, "teknik": teknik,
                     "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"], kismi, teknik.get("saglik"))}
         return self._wrap(fn)
 
