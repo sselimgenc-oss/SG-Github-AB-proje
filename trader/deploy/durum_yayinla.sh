@@ -21,7 +21,9 @@ if [ "${DURUM_YEREL:-0}" != "1" ]; then
     echo "durum-yayin: deploy anahtari yok ($anahtar); atlandi (kurulum: docs/sunucu-kurulum.md 'Canli durum dali')"
     exit 0
   fi
-  export GIT_SSH_COMMAND="ssh -i $anahtar -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$(dirname "$anahtar")/known_hosts"
+  anahtar_dizin="$(dirname "$anahtar")"
+  GIT_SSH_COMMAND="ssh -i $anahtar -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$anahtar_dizin/known_hosts"
+  export GIT_SSH_COMMAND
 fi
 gecici="$(mktemp -d)"
 trap 'rm -rf "$gecici"' EXIT
