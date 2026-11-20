@@ -189,6 +189,11 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
         except Exception as e:  # noqa: BLE001
             ortak = {"durum": f"hata:{type(e).__name__}"}
             print(f"ortak filtre egitim hatasi: {type(e).__name__}: {e}", file=sys.stderr)
+        for aile, r in sorted((ortak.get("aileler") or {}).items()):   # aile durumu paper_models.csv'de gorunur (model yoksa nedeni)
+            kollar = ",".join(f"{k}={v}" for k, v in sorted(r.get("kollar", {}).items()))
+            csv_rows.append([f"ortak_filtre_aile_{aile}_{now.date().isoformat()}", "nightly",
+                             "ridge_logistic;aile=" + aile + ";tf_ozellik=log2+onehot",
+                             f"n={r.get('n', 0)};min=10;durum={r.get('durum')};kollar={kollar}", "", r.get("model_hash", ""), now.isoformat()])
         if not args.no_m1:
             tfs = [t.strip() for t in args.m1_tfs.split(",") if t.strip()]
             if any(t not in PB_TFS for t in tfs):

@@ -562,7 +562,7 @@ class Engine:
             return None
         try:
             c = self.gate.counters
-            return {"aktif_kurulum": len(flt.aktif_kurulumlar(now)), "atladi": int(c.get("ml_filtre_atladi", 0)),
+            return {"aktif_kurulum": flt.aktif_kol_sayisi(now), "aktif_aile": flt.aktif_aileler(now), "atladi": int(c.get("ml_filtre_atladi", 0)),
                     "gecti": int(c.get("ml_filtre_gecti", 0)), "calisiyor": bool(flt.calisiyor)}
         except Exception:  # noqa: BLE001
             return None

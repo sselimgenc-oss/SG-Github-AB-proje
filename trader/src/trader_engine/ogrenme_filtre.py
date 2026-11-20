@@ -6,9 +6,16 @@ Hata/eksik/bozuk/suresi gecmis paket ya da kurulumun kapanmis islemi < MIN_ISLEM
 (fail-open; `ml_no_model` YAZILMAZ). `TRADER_OGRENME_FILTRE_KAPALI=1` filtreyi tamamen kapatir. Yalniz kagit; testnet/canli yolu
 degismez (orada ML kapisi/gecis kapisi eskisi gibi).
 
-Egitim (gece birimi `scripts/ml_retrain_run.py`, 03:10 UTC): kagit defterinden kurulum (arm_id) basina, >= MIN_ISLEM kapanmis
-islemle; her YENIDEN_ISLEM yeni kapanan islemde ya da paket YENIDEN_GUN gunu astiginda yeniden. Kilitli donem (HOLDOUT) satirlari
-egitimden dusurulur. Paketler `<defter dizini>/models/ortak_filtre/<arm>.json`.
+AILE (kurulum ailesi, 20.11): model kol (arm_id = `<kurulum>@<tf>`) basina DEGIL, AILE basina: ayni kurulumun tum zaman dilimleri
+(M1@15m, M1@1h, M1@4h, M1@1d -> aile `M1`) tek havuzda. Ailenin TOPLAM kapanmis islemi >= MIN_ISLEM olunca havuzlanmis islemlerle tek model
+egitilir ve ailenin HER koluna uygulanir (tek tek kolun 10 islemi gerekmez). Zaman dilimi modelin ozelligidir: `tf_log2_dk`
+(log2 dakika) + `tf_15m/tf_1h/tf_4h/tf_1d` (one-hot). T1 ve R1 AYRI ailelerdir (farkli `f_*` ozellik kumeleri; havuzlanmaz).
+Paket kimligi `aile:<kurulum>` (dosya `aile_<kurulum>.json`). Eski kol-basina paketler (`<kurulum>@<tf>.json`) kullanilmaz; gece
+egitiminde `eski_kol/` alt dizinine tasinir (geri alinabilir, taranmaz). Durum dosyasi anahtarlari da aile bazli (eski kol anahtarlari atilir).
+
+Egitim (gece birimi `scripts/ml_retrain_run.py`, 03:10 UTC): kagit defterinden aile basina, >= MIN_ISLEM kapanmis islemle (kollar toplami);
+her YENIDEN_ISLEM yeni kapanan (havuz) islemde ya da paket YENIDEN_GUN gunu astiginda yeniden. Kilitli donem (HOLDOUT) satirlari
+egitimden dusurulur. Paketler `<defter dizini>/models/ortak_filtre/aile_<kurulum>.json`.
 """
 from __future__ import annotations
 
@@ -33,6 +40,38 @@ YENIDEN_GUN = 20           # paket omru 21 gun: bir gun erken yenile (bosluk kal
 ENV_KAPALI = "TRADER_OGRENME_FILTRE_KAPALI"
 MODEL_ALT = ("models", "ortak_filtre")
 DURUM_DOSYASI = "ogrenme_filtre_durum.json"
+AILE_ON_EK = "aile:"
+ESKI_ALT = "eski_kol"
+TF_DAKIKA = {"15m": 15, "1h": 60, "4h": 240, "1d": 1440}   # trader_core.arm_time.ARM_TF_SECONDS / 60
+
+
+def aile_of(arm: str | None) -> str | None:
+    """`M1@15m` -> `M1`. Kurulum/tf eksik (`?`) ya da bicim bozuksa None (o kol icin filtre YOK)."""
+    if not arm or "@" not in str(arm):
+        return None
+    kur, _, tf = str(arm).partition("@")
+    if not kur or kur == "?" or tf not in TF_DAKIKA:
+        return None
+    return kur
+
+
+def tf_of(arm: str | None) -> str | None:
+    if not arm or "@" not in str(arm):
+        return None
+    tf = str(arm).partition("@")[2]
+    return tf if tf in TF_DAKIKA else None
+
+
+def aile_kimligi(aile: str) -> str:
+    return AILE_ON_EK + aile
+
+
+def tf_ozellikleri(tf: str) -> dict[str, float]:
+    """Zaman dilimi ozellikleri (egitim ve giris AYNI islevi kullanir): log2(dakika) + one-hot."""
+    d = {"tf_log2_dk": math.log2(TF_DAKIKA[tf])}
+    for k in TF_DAKIKA:
+        d[f"tf_{k}"] = 1.0 if k == tf else 0.0
+    return d
 
 
 def paket_modulleri():
@@ -86,13 +125,18 @@ class FiltreDeposu:
     def calisiyor(self) -> bool:
         return self._mod is not None
 
-    def _yol(self, arm: str) -> Path:
-        return self.klasor / f"{self._mod[0]._guvenli_ad(arm)}.json"
+    def _yol(self, kimlik: str) -> Path:
+        return self.klasor / f"{self._mod[0]._guvenli_ad(kimlik)}.json"
 
     def paket(self, arm: str, simdi: datetime) -> dict | None:
-        """Gecerli (hash + sure + n_egitim >= MIN_ISLEM) paket ya da None."""
+        """Kolun AILE paketi (gecerli: hash + sure + n_egitim >= MIN_ISLEM) ya da None. `arm` = kol kimligi (`M1@15m`)."""
+        aile = aile_of(arm)
+        return None if aile is None else self._aile_paketi(aile, simdi)
+
+    def _aile_paketi(self, aile: str, simdi: datetime) -> dict | None:
         if self._mod is None:
             return None
+        arm = aile_kimligi(aile)
         filtre = self._mod[0]
         try:
             yol = self._yol(arm)
@@ -132,6 +176,7 @@ class FiltreDeposu:
             p = self.paket(arm, simdi)
             if p is None:
                 return Karar(True, None, "filtre_yok")
+            oz = {**oz, **tf_ozellikleri(tf_of(arm))}                # aile modeli: kolun zaman dilimi ozellik olarak eklenir
             puan = float(self._mod[0].puan(p, oz))
             if not math.isfinite(puan) or not 0.0 <= puan <= 1.0:
                 return Karar(True, None, "hata")
@@ -141,6 +186,7 @@ class FiltreDeposu:
             return Karar(True, None, "hata")
 
     def aktif_kurulumlar(self, simdi: datetime) -> list[str]:
+        """Aktif AILE paketlerinin kimlikleri (`aile:M1`...). Eski kol paketleri sayilmaz."""
         if self._mod is None or not self.klasor.is_dir():
             return []
         out = []
@@ -151,9 +197,18 @@ class FiltreDeposu:
                 arm = json.loads(p.read_text(encoding="utf-8"))["meta"]["kurulum"]
             except Exception:  # noqa: BLE001
                 continue
-            if self.paket(str(arm), simdi) is not None:
+            if not str(arm).startswith(AILE_ON_EK):
+                continue
+            if self._aile_paketi(str(arm)[len(AILE_ON_EK):], simdi) is not None:
                 out.append(str(arm))
         return out
+
+    def aktif_aileler(self, simdi: datetime) -> list[str]:
+        return [k[len(AILE_ON_EK):] for k in self.aktif_kurulumlar(simdi)]
+
+    def aktif_kol_sayisi(self, simdi: datetime) -> int:
+        """Filtrenin kapsadigi kol sayisi (aktif aile x zaman dilimi)."""
+        return len(self.aktif_aileler(simdi)) * len(TF_DAKIKA)
 
 
 # ---------------------------------------------------------------------------------------------- egitim (gece birimi)
@@ -187,9 +242,40 @@ def adaylar_defterden(led) -> list:
     return out
 
 
+def _eski_kol_paketlerini_ayir(klasor: Path) -> int:
+    """Eski kol-basina paketleri (`@` iceren ad) `eski_kol/` altina tasir (silmez); taramalar yalniz ust dizine bakar."""
+    n = 0
+    if not klasor.is_dir():
+        return 0
+    for p in sorted(klasor.glob("*@*.json")):
+        try:
+            hedef = klasor / ESKI_ALT
+            hedef.mkdir(exist_ok=True)
+            os.replace(p, hedef / p.name)
+            n += 1
+        except OSError as e:
+            log.warning("eski kol paketi tasinamadi (%s): %s", p.name, e)
+    return n
+
+
+def aile_adaylari(adaylar) -> dict[str, list]:
+    """Kol adaylarini aile bazinda havuzlar: kurulum -> `aile:<kurulum>`, ozelliklere zaman dilimi eklenir. Tanimsiz kol atlanir."""
+    import dataclasses
+    by: dict[str, list] = {}
+    for a in adaylar:
+        aile, tf = aile_of(a.kurulum), tf_of(a.kurulum)
+        if aile is None or tf is None:
+            continue
+        by.setdefault(aile, []).append(dataclasses.replace(a, kurulum=aile_kimligi(aile),
+                                                           ozellikler={**a.ozellikler, **tf_ozellikleri(tf)},
+                                                           cikis={**a.cikis, "kol": a.kurulum}))
+    return by
+
+
 def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yolu: str | os.PathLike | None = None) -> dict:
-    """Kurulum basina (>= MIN_ISLEM kapanmis islem) yeniden egitim kurali: son egitimden bu yana >= YENIDEN_ISLEM yeni islem ya da
-    >= YENIDEN_GUN gun. Holdout satirlari `adaylar_defterden`de dusuruldu; `egit` kilit aralikla ayrica dusurur. Donus: rapor."""
+    """AILE basina (kollar toplami >= MIN_ISLEM kapanmis islem) yeniden egitim kurali: son egitimden bu yana >= YENIDEN_ISLEM yeni
+    islem ya da >= YENIDEN_GUN gun. Holdout satirlari `adaylar_defterden`de dusuruldu; `egit` kilit aralikla ayrica dusurur.
+    Donus: {"durum", "aileler": {aile: {n, kollar:{arm:n}, durum, model_hash?}}, "eski_tasinan"}."""
     mod = paket_modulleri()
     if mod is None:
         return {"durum": "paket_yok"}
@@ -202,16 +288,22 @@ def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yol
         durum = {}
     if not isinstance(durum, dict):
         durum = {}
+    durum = {k: v for k, v in durum.items() if str(k).startswith(AILE_ON_EK)}   # eski kol anahtarlari atilir
+    eski = _eski_kol_paketlerini_ayir(Path(klasor))
     kilit = [HOLDOUT]
-    by: dict[str, list] = {}
-    for a in adaylar:
-        by.setdefault(a.kurulum, []).append(a)
+    by = aile_adaylari(adaylar)
     rapor: dict[str, dict] = {}
-    for arm in sorted(by):
-        n = sum(1 for a in by[arm] if a.r is not None)
-        son = durum.get(arm) if isinstance(durum.get(arm), dict) else None
+    for aile in sorted(by):
+        kimlik = aile_kimligi(aile)
+        kollar: dict[str, int] = {}
+        for a in by[aile]:
+            if a.r is not None:
+                kol = a.cikis.get("kol", "?")
+                kollar[kol] = kollar.get(kol, 0) + 1
+        n = sum(kollar.values())
+        son = durum.get(kimlik) if isinstance(durum.get(kimlik), dict) else None
         if n < MIN_ISLEM:
-            rapor[arm] = {"n": n, "durum": "az_islem"}
+            rapor[aile] = {"n": n, "kollar": kollar, "durum": "az_islem"}
             continue
         if son is not None:
             try:
@@ -219,20 +311,22 @@ def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yol
             except Exception:  # noqa: BLE001
                 gun = YENIDEN_GUN
             if n - int(son.get("n", 0)) < YENIDEN_ISLEM and gun < YENIDEN_GUN:
-                rapor[arm] = {"n": n, "durum": "guncel"}
+                rapor[aile] = {"n": n, "kollar": kollar, "durum": "guncel"}
                 continue
         try:
-            paket = filtre.egit(arm, by[arm], olusturma=simdi, kilit=kilit)
-            yol = Path(klasor) / f"{filtre._guvenli_ad(arm)}.json"
+            paket = filtre.egit(kimlik, by[aile], olusturma=simdi, kilit=kilit)
+            yol = Path(klasor) / f"{filtre._guvenli_ad(kimlik)}.json"
             if paket is not None:
                 filtre.kaydet(paket, klasor)
             elif yol.exists():
                 yol.unlink()                                  # tek sinif: eski model de gecersiz => filtre YOK
-            durum[arm] = {"zaman": simdi.isoformat(), "n": n, "model": paket is not None}
-            rapor[arm] = {"n": n, "durum": "ok" if paket is not None else "tek_sinif"}
-        except Exception as e:  # noqa: BLE001 - bir kurulumun hatasi digerini ve gece birimini durdurmaz
-            log.warning("ML filtre egitimi basarisiz (%s): %s: %s", arm, type(e).__name__, e)
-            rapor[arm] = {"n": n, "durum": "hata"}
+            durum[kimlik] = {"zaman": simdi.isoformat(), "n": n, "model": paket is not None}
+            rapor[aile] = {"n": n, "kollar": kollar, "durum": "ok" if paket is not None else "tek_sinif"}
+            if paket is not None:
+                rapor[aile]["model_hash"] = paket["meta"]["model_hash"]
+        except Exception as e:  # noqa: BLE001 - bir ailenin hatasi digerini ve gece birimini durdurmaz
+            log.warning("ML filtre egitimi basarisiz (%s): %s: %s", aile, type(e).__name__, e)
+            rapor[aile] = {"n": n, "kollar": kollar, "durum": "hata"}
     try:
         Path(klasor).mkdir(parents=True, exist_ok=True)
         tmp = dy.with_name(f".{dy.name}.tmp")
@@ -240,4 +334,4 @@ def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yol
         os.replace(tmp, dy)
     except OSError as e:
         log.warning("ML filtre durumu yazilamadi: %s", e)
-    return {"durum": "ok", "kurulumlar": rapor}
+    return {"durum": "ok", "aileler": rapor, "eski_tasinan": eski}

@@ -86,7 +86,9 @@ def test_ogrenme_filtre_deposu_eski_paketi_yeni_ozelliklerle_puanlar(tmp_path):
     from ortak_ogrenme import filtre
     from trader_engine.ogrenme_filtre import FiltreDeposu, ozellikler
     eski = [_aday(i, 1.0 if i % 2 else -1.0, atr_ratio=1.0 + i * 0.1, stop_dist_pct=0.01) for i in range(20)]
-    filtre.kaydet(filtre.egit("C1@1h", eski, olusturma=datetime(2026, 12, 2, tzinfo=UTC)), tmp_path)
+    import dataclasses
+    eski = [dataclasses.replace(a, kurulum="aile:C1") for a in eski]        # aile modeli (kol C1@1h -> aile C1)
+    filtre.kaydet(filtre.egit("aile:C1", eski, olusturma=datetime(2026, 12, 2, tzinfo=UTC)), tmp_path)
     oz = ozellikler(side="long", regime="range", atr_ratio=1.3, session_tag=None, pair="BTC/USDT", planned_entry=100.0,
                     planned_stop=99.0, features={"ct_long": 12, "ct_short": 3, "ct_baskinlik": 0.8, "ct_yon": 1})
     assert "f_ct_trader_sayisi" in oz
