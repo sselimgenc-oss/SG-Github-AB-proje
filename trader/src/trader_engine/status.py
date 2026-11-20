@@ -7,6 +7,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from trader_core import giris_izi as GI
+
 from .clock import Clock
 from .config import EngineConfig
 from .fileio import atomic_write_json, fmt_ts, heartbeat_read, heartbeat_write, FileIoError
@@ -96,6 +98,16 @@ class StatusWriter:
         self._hb_prev: str | None = None
         self._hb_read = False
 
+    def _ayar_sha(self) -> str | None:
+        """6c: etkin yapilandirmanin tam sha256'si (bir kez); hata durumu bozmaz."""
+        if not hasattr(self, "_ayar"):
+            try:
+                self._ayar = GI.ayar_sha256(self.cfg)
+            except Exception as e:  # noqa: BLE001
+                log.warning("ayar_surumu hesaplanamadi: %s", e)
+                self._ayar = None
+        return self._ayar
+
     def build(self, engine) -> dict:
         now = self.clock.now()
         f = engine.status_fields()
@@ -119,7 +131,7 @@ class StatusWriter:
             "schema": SCHEMA, "bot": self.cfg.bot, "mode": self.cfg.mode, "pid": os.getpid(),
             "started_at": _z(self.started_at), "loop_at": _z(now), "last_minute_ts": _z(f["last_minute_ts"]),
             "last_decision_bar_close": _z(f["last_decision_close"]), "last_candle_open": _z(f["last_candle_open"]),
-            "trigger_tf": f["tf"], "param_version_id": f["param_version_id"],
+            "trigger_tf": f["tf"], "param_version_id": f["param_version_id"], "ayar_surumu": self._ayar_sha(),
             "strategy": {"name": f["strategy_name"], "version": f["strategy_version"]},
             "entries_open": bool(f["entries_open"]) and not ml_blocked, "gate": {"ok": gate_code == "ok", "code": gate_code},
             "kill": bool(f["kill"]), "kill_state": f["kill_state"], "entries_blocked_reason": blocked,
