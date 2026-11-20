@@ -59,7 +59,7 @@ def test_every_trader_service_is_in_trader_slice():
 def test_ml_retrain_unit_limits_and_command():
     txt = _unit("trader-ml-retrain.service")
     assert _mem(txt, "MemoryHigh") == 250 and _mem(txt, "MemoryMax") == 350       # WP-18 olcumu: tepe ~263 MB
-    assert "Slice=trader.slice" in txt and "ml_retrain_run.py --once" in txt and "TimeoutStartSec=300" in txt
+    assert "Slice=trader.slice" in txt and "ml_retrain_run.py --once" in txt and "TimeoutStartSec=900" in txt
     assert "OnFailure=trader-health-fail@%n.service" in txt
 
 
