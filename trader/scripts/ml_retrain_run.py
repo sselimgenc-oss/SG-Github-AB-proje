@@ -82,6 +82,40 @@ def _hist_tail(bars, pair: str, cap: int, cutoff: datetime) -> list[dict]:
     return rows[-cap:]
 
 
+def _m1_tf(tf, recs, bases, *, history_dir, models_dir, now, max_rows, csv_rows, PB) -> dict:
+    bars_by: dict = {}
+    for b in bases:
+        bars = _load_bars(history_dir, b, tf)
+        if bars is not None:
+            bars_by[f"{b}/USDT"] = bars
+    cap = max(1, max_rows // max(1, len(bars_by)))
+    hist: list = []
+    for pair, bars in bars_by.items():
+        hist.extend(_hist_tail(bars, pair, cap, LOCK_START))          # kilit oncesi; ciftbasina kuyruk
+    paper, pstats = PB._paper_rows(recs, bars_by, tf, PB.TF_DELTA[tf])
+    paper_kept, dropped = TR.split_lock(paper)
+    rows = hist + paper_kept
+    pkg = TR.train_tf(rows, arm_id=f"M1@{tf}", created_at=now, max_rows=max_rows)
+    sha = ""
+    if pkg is not None:
+        PK.save_package(pkg, models_dir)
+        sha = pkg["meta"]["model_hash"]
+    status = "no_model" if pkg is None else "ok"
+    reason = None
+    if pkg is None:   # paket yok: nedeni gorunur yap ("model yok: N örnek, en az M"); esik uydurulmaz
+        ys = {float(r["y"]) for r in rows}
+        reason = TR.no_model_reason(len(rows), len(ys) if rows else None)
+    res = {"status": status, "hist_rows": len(hist), "paper_rows": len(paper_kept), "lock_dropped": dropped,
+               "paper_stats": pstats, "pairs": len(bars_by), "reason": reason}
+    if csv_rows is not None:
+        csv_rows.append([f"m1_nightly_{tf}_{now.date().isoformat()}", "nightly_m1",
+                         f"ridge_logistic;M1@{tf};stop={PB.PF.STOP_ATR};tp={PB.PF.TARGET_ATR};h={PB.PF.HORIZON};q={TR.THRESHOLD_Q}",
+                         f"hist<{LOCK_START.date()};paper>=kilit_sonrasi;rows={len(rows)};lock_dropped={dropped};status={status}" + (f";{reason}" if reason else ""),
+                         "", sha, now.isoformat()])
+    del rows, hist, paper, paper_kept, pkg, bars_by
+    return res
+
+
 def m1_nightly(led, cf_path: str | None, *, history_dir: str, tfs, models_dir: str, now: datetime, max_rows: int = M1_MAX_ROWS,
                csv_rows: list | None = None) -> dict:
     """M1 (her zaman dilimi) gece egitimi. Kilit sonrasi kagit kayitlari + kilit oncesi tarihsel barlar; kilit disi tutulur.
@@ -98,36 +132,16 @@ def m1_nightly(led, cf_path: str | None, *, history_dir: str, tfs, models_dir: s
                     for p in glob.glob(os.path.join(history_dir, "*_USDT_USDT-*-futures.feather"))})
     out: dict = {}
     for tf in tfs:
-        bars_by: dict = {}
-        for b in bases:
-            bars = _load_bars(history_dir, b, tf)
-            if bars is not None:
-                bars_by[f"{b}/USDT"] = bars
-        cap = max(1, max_rows // max(1, len(bars_by)))
-        hist: list = []
-        for pair, bars in bars_by.items():
-            hist.extend(_hist_tail(bars, pair, cap, LOCK_START))          # kilit oncesi; ciftbasina kuyruk
-        paper, pstats = PB._paper_rows(recs, bars_by, tf, PB.TF_DELTA[tf])
-        paper_kept, dropped = TR.split_lock(paper)
-        rows = hist + paper_kept
-        pkg = TR.train_tf(rows, arm_id=f"M1@{tf}", created_at=now, max_rows=max_rows)
-        sha = ""
-        if pkg is not None:
-            PK.save_package(pkg, models_dir)
-            sha = pkg["meta"]["model_hash"]
-        status = "no_model" if pkg is None else "ok"
-        reason = None
-        if pkg is None:   # paket yok: nedeni gorunur yap ("model yok: N örnek, en az M"); esik uydurulmaz
-            ys = {float(r["y"]) for r in rows}
-            reason = TR.no_model_reason(len(rows), len(ys) if rows else None)
-        out[tf] = {"status": status, "hist_rows": len(hist), "paper_rows": len(paper_kept), "lock_dropped": dropped,
-                   "paper_stats": pstats, "pairs": len(bars_by), "reason": reason}
-        if csv_rows is not None:
-            csv_rows.append([f"m1_nightly_{tf}_{now.date().isoformat()}", "nightly_m1",
-                             f"ridge_logistic;M1@{tf};stop={PB.PF.STOP_ATR};tp={PB.PF.TARGET_ATR};h={PB.PF.HORIZON};q={TR.THRESHOLD_Q}",
-                             f"hist<{LOCK_START.date()};paper>=kilit_sonrasi;rows={len(rows)};lock_dropped={dropped};status={status}" + (f";{reason}" if reason else ""),
-                             "", sha, now.isoformat()])
-        del rows, hist, paper, paper_kept, pkg, bars_by
+        try:
+            out[tf] = _m1_tf(tf, recs, bases, history_dir=history_dir, models_dir=models_dir, now=now, max_rows=max_rows,
+                             csv_rows=csv_rows, PB=PB)
+        except Exception as e:  # noqa: BLE001 - bir zaman diliminin hatasi digerlerini durdurmaz; durum 'error' (saglik gorunur)
+            reason = f"{type(e).__name__}: {str(e)[:120]}"
+            print(f"M1 {tf} egitim hatasi: {reason}", file=sys.stderr)
+            out[tf] = {"status": "error", "reason": reason}
+            if csv_rows is not None:
+                csv_rows.append([f"m1_nightly_{tf}_{now.date().isoformat()}", "nightly_m1",
+                                 f"ridge_logistic;M1@{tf}", f"status=error;{reason}", "", "", now.isoformat()])
     return out
 
 
@@ -186,6 +200,9 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
             except Exception as e:  # noqa: BLE001
                 m1_err = f"{type(e).__name__}: {e}"
                 print(f"M1 egitim hatasi: {m1_err}", file=sys.stderr)
+            failed = sorted(t for t, v in m1.items() if isinstance(v, dict) and v.get("status") == "error")
+            if failed and m1_err is None:
+                m1_err = f"tf hatasi: {','.join(failed)}"          # cikis kodu 3 (saglik gorunurlugu); digerleri egitildi
         csvp = Path(_resolve(args.paper_models_csv))
         csvp.parent.mkdir(parents=True, exist_ok=True)
         new = not csvp.exists()

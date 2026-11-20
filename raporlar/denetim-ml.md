@@ -61,3 +61,14 @@ Ayrı yerel dalda para yoluna 5 bilinçli hata (aynı yön riski işareti, günl
 3. Bulgu 2 — zaman dilimi başına try/except.
 4. Mutasyon boşlukları için sınır testleri (`exit_modes` öncelikli).
 5. Bulgu 3 — karar konusu (Fable/kullanıcı).
+
+## Düzeltmeler (20.11)
+
+Tek değişiklik kümesi, işlem kararı/risk limiti değişmedi (bu commit; dal `denetim-duzelt`):
+
+1. **Bulgu 1 — `slippage_exit`:** kısmi çıkış sonrası kayma artık SON bacağın gerçek dolum fiyatından hesaplanır (`ClosedTrade.leg_exit_price` → outbox `leg_exit_price` → `TradeExit.leg_exit_price` → `ledger._write_exit`). `exit_price` (karma), brüt/gerçekleşen PnL ve mutabakat aynen; şema değişmedi. `drift_monitor` M2_stop/M3 ve `metrics.slip_cost` doğru değeri okur.
+2. **Bulgu 2 — M1 gece eğitimi:** `ml_retrain_run.m1_nightly` zaman dilimi başına try/except; hatalı tf `status="error"` + kısa neden (çıktı ve CSV), diğer tf'ler eğitilir; en az bir tf hatalıysa çıkış kodu yine 3.
+3. **Bulgu 4 — kısmi çıkış emri:** `engine._submit_partial_order` ile (order_manager.py dondurulmuş dosya; `OrderManager._apply_result` yolu) `orders` tablosuna yazılır (pozisyon `closing`e geçmez); dolumda satır `filled` olur; `_duplicate_exit` kısmi dolumun ikinci teslimini yok sayar (tam kapanış sayılmaz).
+4. **Mutasyon boşlukları:** `tests/test_denetim_risk_sinir.py` (check_entry/size_position eşitlik sınırları, paper_config, tightened, pozitif alan) ve `tests/test_denetim_cikis_kipleri_sinir.py` (exit_modes bayrak varsayılanı, partial_due, reached_r, NaN süzgeci, tighter, partial_qty). Yeni testler: `tests/engine/test_denetim_cikis_duzelt.py`, `tests/engine/test_denetim_m1_izolasyon.py`.
+
+Bulgu 3 ve sekiz şüphe değiştirilmedi.

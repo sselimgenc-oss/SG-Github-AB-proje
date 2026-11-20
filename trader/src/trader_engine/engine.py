@@ -37,7 +37,7 @@ from .position_manager import (apply_entry_fill, apply_exit_fill, apply_exit_mod
                                build_trade_exit, close_position, evaluate_exit, exec_fields, exec_payload,
                                fill_risk_violation, partial_due, update_excursion)
 from .reconcile import Reconciler, ReconcileReport
-from .state import StateStore, iso_z
+from .state import OrderRow, StateStore, iso_z
 from .status import StatusWriter
 from .strategies.base import Strategy, StrategyError
 from .strategies.price_action_v1_ml import load_engine_model
@@ -1292,6 +1292,9 @@ class Engine:
         row = self.state.get_order(fill.client_id) if fill.client_id else None
         if row is None or row.trade_id is None or row.status != "filled":
             return False
+        pk = self.state.kv_get(f"partial:{row.trade_id}")
+        if isinstance(pk, dict) and pk.get("state") == "done" and pk.get("cid") == fill.client_id:
+            return True                                         # kismi cikis dolumunun ikinci teslimi: tam kapanis DEGIL
         owner = self.state.get_position(row.trade_id)
         return owner is not None and owner.status == "closed"
 
@@ -1593,13 +1596,27 @@ class Engine:
                            created_ts=self.clock.now())
         with self.state.tx():
             self.state.kv_set(f"partial:{pos.trade_id}", {"state": "pending", "cid": cid, "qty": q})
-        res = self.broker.market_order(req)
-        if res.status == "rejected":
+        out = self._submit_partial_order(pos, req)         # emir `orders` tablosuna yazilir (normal cikislarla ayni yol)
+        if out.order.status == "rejected":
             with self.state.tx():
-                self.state.kv_set(f"partial:{pos.trade_id}", {"state": "skipped", "why": f"rejected:{res.reason}"})
+                self.state.kv_set(f"partial:{pos.trade_id}", {"state": "skipped", "why": f"rejected:{out.order.detail}"})
             self._c["partial_skipped"] += 1
         else:
             self._c["partial_submitted"] += 1
+
+    def _submit_partial_order(self, pos: Position, req: OrderRequest):
+        """Kismi kar alma emri (yalniz benzetimli broker): emir satiri `orders`a yazilir (POST'tan once commit), sonuc
+        normal cikislarla ayni `_apply_result` yoluyla uygulanir; normal cikisin aksine pozisyon `closing`e GECMEZ."""
+        now = self.clock.now()
+        row = OrderRow(client_id=req.client_id, pair=req.pair, role=req.role, order_side=req.order_side, qty=req.qty,
+                       trigger_price=None, reduce_only=req.reduce_only, status="pending",
+                       signal_bar_close_ts=req.signal_bar_close_ts, seq=0, attempts=0, trade_id=pos.trade_id,
+                       broker_order_id=None, detail=None, created_ts=now, updated_ts=now)
+        with self.state.tx():
+            self.state.insert_order(row)
+        self.orders._put_meta(req.client_id, {"order_ts": now})        # noqa: SLF001
+        res = self.broker.market_order(req)
+        return self.orders._apply_result(row, res, None)              # noqa: SLF001
 
     def _partial_fill(self, pos: Position, fill, pk: dict) -> bool:
         """Kismi cikis dolumu: pozisyon acik kalir (adet/marjin azalir), dolum `partial:<id>`'e yazilir, stop kalan adede
@@ -1615,6 +1632,7 @@ class Engine:
                                                           "ts": iso_z(fill.ts)})
             self.state.update_position(pos.trade_id, qty=rest,
                                        margin=float(pos.margin) * rest / float(pos.qty))
+            self._mark_order(fill.client_id, "filled")           # `_duplicate_exit` ikinci teslimi gorur
         self._c["partial_fills"] += 1
         cur = self.state.get_position(pos.trade_id)
         if cur is not None and cur.status == "open":
@@ -1649,7 +1667,8 @@ class Engine:
         if not (isinstance(pk, dict) and pk.get("state") == "done"):
             return closed
         px = XM.blend_exit(float(pk["qty"]), float(pk["price"]), float(pos.qty), float(closed.exit_price))
-        return replace(closed, exit_price=px, fee_exit=float(closed.fee_exit) + float(pk["fee"]))
+        return replace(closed, exit_price=px, fee_exit=float(closed.fee_exit) + float(pk["fee"]),
+                       leg_exit_price=float(closed.exit_price))   # kayma: son bacak dolumu / planlanan cikis (karma degil)
 
     # ------------------------------------------------------------------ girisler (kapili)
     def _entries(self, D: datetime, frames: Mapping[str, SignalFrame]) -> None:

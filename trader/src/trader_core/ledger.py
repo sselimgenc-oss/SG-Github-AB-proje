@@ -529,6 +529,9 @@ class TradeExit:
     order_ref_src: str | None = None
     decision_price: float | None = None
     exit_regime: str | None = None
+    # Kismi cikis sonrasi: SON bacagin gercek dolum fiyati. YALNIZ `slippage_exit` hesabinda (planlanan cikisa karsi) kullanilir;
+    # `exit_price` (karma), brut/gerceklesen PnL ve mutabakat degismez. Sema degismez (yeni sutun yok).
+    leg_exit_price: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1879,10 +1882,13 @@ class Ledger:
             if mfp <= 0 or map_ <= 0:
                 raise LedgerValidationError("uc fiyatlar > 0 olmali")
         ex = _prep_exec(x, exit_=True)
+        leg = _opt_num(x.leg_exit_price, "leg_exit_price")
+        if leg is not None and leg <= 0:
+            raise LedgerValidationError("leg_exit_price > 0 olmali")
         try:
             with self._tx() as c:
                 return self._write_exit(c, tid, xts, price, reason, pex, fee, fund, sup, now,
-                                        mfp, map_, etf, ex)
+                                        mfp, map_, etf, ex, leg)
         except LedgerWriteError:
             self._on_write_failure()
             if spool:
@@ -1890,11 +1896,11 @@ class Ledger:
                                     "exit_reason": reason, "planned_exit": pex, "fee_exit": fee,
                                     "funding_paid": fund, "supersedes_id": sup,
                                     "max_favorable_price": mfp, "max_adverse_price": map_,
-                                    "excursion_tf": etf, **ex})
+                                    "excursion_tf": etf, "leg_exit_price": leg, **ex})
             raise
 
     def _write_exit(self, c, tid, xts, price, reason, pex, fee, fund, sup, now,
-                    mfp=None, map_=None, etf=None, ex=None) -> int:
+                    mfp=None, map_=None, etf=None, ex=None, leg=None) -> int:
         bot = self.bot
         ent = c.execute(
             "SELECT * FROM trade_entries e WHERE e.bot=? AND e.trade_id=? "
@@ -1945,7 +1951,8 @@ class Ledger:
         r = realized / ent["planned_risk"]
         slip = None
         if pex is not None:
-            slip = (pex - price) / pex if side == "long" else (price - pex) / pex
+            sp = price if leg is None else leg          # kismi cikista kayma SON bacagin dolumundan (karma fiyattan degil)
+            slip = (pex - sp) / pex if side == "long" else (sp - pex) / pex
         return self._insert(c, "trade_exits", dict(
             bot=bot, trade_id=tid, exit_ts=xts, exit_price=price, exit_reason=reason, planned_exit=pex,
             fee_exit=fee, funding_paid=fund, gross_pnl=gross, realized_pnl=realized, r_multiple=r,
@@ -2866,7 +2873,7 @@ class Ledger:
                             d.get("max_favorable_price"), d.get("max_adverse_price"), d.get("excursion_tf"),
                             _parse_ts(d.get("order_ts")), _parse_ts(d.get("order_ack_ts")),
                             d.get("order_ref_price"), d.get("order_ref_spread"), d.get("order_ref_src"),
-                            d.get("decision_price"), d.get("exit_regime")),
+                            d.get("decision_price"), d.get("exit_regime"), d.get("leg_exit_price")),
                             spool=False)
                     done += 1
                 except LedgerWriteError:

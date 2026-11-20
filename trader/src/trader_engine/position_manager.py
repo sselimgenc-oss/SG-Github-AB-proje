@@ -52,6 +52,7 @@ class ClosedTrade:
     max_favorable_price: float | None
     max_adverse_price: float | None
     excursion_tf: str | None
+    leg_exit_price: float | None = None        # kismi cikis sonrasi: SON bacagin dolum fiyati (yalniz slippage_exit icin)
 
 
 _NONE = ExitDecision("none", None, None, None)
@@ -288,6 +289,8 @@ def build_trade_exit(pos: Position, closed: ClosedTrade, excursion_tf: str | Non
          "exit_reason": closed.exit_reason, "planned_exit": closed.planned_exit, "fee_exit": closed.fee_exit,
          "funding_paid": closed.funding_paid, "max_favorable_price": mfp, "max_adverse_price": mapr,
          "excursion_tf": tf}
+    if closed.leg_exit_price is not None:
+        d["leg_exit_price"] = closed.leg_exit_price
     if ex:
         d.update(ex)
     return d
