@@ -238,6 +238,9 @@ class EntryGate:
     def _ayar_surumu(self) -> str | None:
         """6c: etkin yapilandirmanin kisa sha256'si (bir kez hesaplanir); hesap hatasi karari bozmaz (None = eklenmez)."""
         if not hasattr(self, "_ayar_kisa"):
+            if self.cfg.mode == "backtest":                        # geri test altin ozetleri (tarafsizlik) bit bit ayni kalir
+                self._ayar_kisa = None
+                return None
             try:
                 self._ayar_kisa = GI.ayar_kisa(self.cfg)
             except Exception as e:  # noqa: BLE001
