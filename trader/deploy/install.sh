@@ -669,6 +669,10 @@ echo "Surum: ${COMMIT} (${RELEASE_FILE})"
 if [ -e "${UNIT_DIR}/trader-mutabakat.service" ]; then
   if systemctl start --no-block trader-mutabakat.service >/dev/null 2>&1; then echo "Baslatildi: trader-mutabakat.service (kurulum sonrasi)"; else echo "UYARI: trader-mutabakat.service baslatilamadi (kurulum devam ediyor)."; fi
 fi
+# Strateji verisi (beyin firtinasi): sessiz tek Telegram belgesi; birim kendi isaret dosyasiyla (var/durum/strateji_veri_gonderildi.json) bir kez gonderir. Salt okunur, kurulumu durdurmaz:
+if [ -e "${UNIT_DIR}/trader-strateji-veri.service" ]; then
+  if systemctl start --no-block trader-strateji-veri.service >/dev/null 2>&1; then echo "Baslatildi: trader-strateji-veri.service (kurulum sonrasi, tek seferlik)"; else echo "UYARI: trader-strateji-veri.service baslatilamadi (kurulum devam ediyor)."; fi
+fi
 if [ -n "$LIVE_WARN" ]; then echo "UYARI: $LIVE_WARN"; fi
 if [ "$NO_LIVE" -eq 1 ]; then echo "UYARI (--no-live): /etc/trader-telegram.env, /etc/trader-health.env (LIVE_BOTS, LIVE_VAR_DIR, LIVE_PAUSE_FILE, KILL_FILE, ENGINE_STATUS_PATH, LEDGER_PATH, LADDER_BOTS) ve /etc/trader-lesson.env (LEDGER_PATH) hala CANLI yollari tasiyor olabilir; elle kagit degerlerine alin."; fi
 if [ "$LIVE" -eq 1 ]; then echo "CANLI birim kuruldu ve etkin ama BASLATILMADI (systemctl start trader-engine-live yalniz canliya gecis gunu listesiyle)."; fi
