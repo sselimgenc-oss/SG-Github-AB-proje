@@ -147,10 +147,14 @@ class TelegramError(Exception):
         self.retry_after = retry_after
 
 
-def default_http_post(url: str, json: Any = None, timeout: Any = None, token: str | None = None):
+def default_http_post(url: str, json: Any = None, timeout: Any = None, token: str | None = None, files: Any = None):
     import requests
     try:
-        r = requests.post(url, json=json, timeout=timeout)
+        if files:                      # sendDocument: multipart; alanlar form verisi (bool -> "true"/"false")
+            data = {k: (str(v).lower() if isinstance(v, bool) else v) for k, v in (json or {}).items()}
+            r = requests.post(url, data=data, files=files, timeout=timeout)
+        else:
+            r = requests.post(url, json=json, timeout=timeout)
     except Exception as e:  # noqa: BLE001  istisna metni token tasir: maskelenir, zincir basilmaz
         log.warning("http hatasi: %s", mask(type(e).__name__, token))
         return 0, {}
@@ -166,12 +170,15 @@ class TelegramClient:
         if not token:
             raise ValueError("token yok")
         self._token = token
-        self._post = http_post or (lambda url, json=None, timeout=None: default_http_post(url, json, timeout, token))
+        self._post = http_post or (lambda url, json=None, timeout=None, files=None: default_http_post(url, json, timeout, token, files))
         self.sleep = sleep
 
-    def call(self, method: str, payload: dict, timeout=(5, 10)) -> Any:
+    def call(self, method: str, payload: dict, timeout=(5, 10), files: dict | None = None) -> Any:
         try:
-            status, body = self._post(f"{API}/bot{self._token}/{method}", json=payload, timeout=timeout)
+            if files:                           # yalniz dosya gonderiminde `files` iletilir (mevcut sahte gonderici imzalari bozulmaz)
+                status, body = self._post(f"{API}/bot{self._token}/{method}", json=payload, timeout=timeout, files=files)
+            else:
+                status, body = self._post(f"{API}/bot{self._token}/{method}", json=payload, timeout=timeout)
         except Exception as e:  # noqa: BLE001
             raise TelegramError("transient", 0, desc=mask(type(e).__name__, self._token)) from None
         if status == 200 and body.get("ok") is True:
@@ -192,6 +199,16 @@ class TelegramClient:
         if reply_markup is not None:
             p["reply_markup"] = reply_markup
         res = self.call("sendMessage", p)
+        if not isinstance(res, dict) or "message_id" not in res:
+            raise TelegramError("transient", 200, desc="message_id yok")
+        return res
+
+    def send_document(self, chat_id, filename: str, content: bytes, caption: str = "", *, disable_notification: bool = True) -> dict:
+        """sendDocument (multipart/form-data): `content` bayt, `caption` <= 1024 karakter; varsayilan SESSIZ."""
+        p = {"chat_id": chat_id, "disable_notification": bool(disable_notification)}
+        if caption:
+            p["caption"] = caption[:1024]
+        res = self.call("sendDocument", p, timeout=(5, 60), files={"document": (filename, content, "text/markdown")})
         if not isinstance(res, dict) or "message_id" not in res:
             raise TelegramError("transient", 200, desc="message_id yok")
         return res
