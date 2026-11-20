@@ -604,8 +604,15 @@ def mutabakat_view(path: str) -> dict | None:
 
 def teknik_view(*, health: Mapping | None, risk_rows: list | None, budget: Mapping | None, tut: Mapping | None,
                 pbo: Mapping | None, ctx: Ctx | None, ml_filtre: Mapping | None, ders: Mapping | None,
-                mutabakat: Mapping | None = None) -> dict:
+                mutabakat: Mapping | None = None, dayaniklilik: Mapping | None = None) -> dict:
     out: dict[str, Any] = {}
+    if isinstance(dayaniklilik, Mapping):
+        kar = [f"{r.get('birim')}: art arda kod hatası, yeni işlem açmıyor (açık pozisyonlar sürüyor)"
+               for r in dayaniklilik.get("karantina") or [] if isinstance(r, Mapping) and r.get("durum") == "aktif"]
+        sem = [f"{r.get('cift')}: borsada işlem dışı, yeni giriş yok" + (" (açık pozisyon var)" if r.get("open") else "")
+               for r in dayaniklilik.get("sembol") or [] if isinstance(r, Mapping)]
+        if kar or sem:
+            out["dayaniklilik"] = {"karantina": kar, "sembol": sem}
     if mutabakat:
         out["mutabakat"] = dict(mutabakat)
     if health:

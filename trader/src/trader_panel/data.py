@@ -248,7 +248,8 @@ class PanelData:
                 except Exception:  # noqa: BLE001
                     safe[k] = None
             teknik = PP.teknik_view(health=safe["health"], risk_rows=safe["risk"], budget=safe["budget"], tut=safe["tut"],
-                                    pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders, mutabakat=safe["mut"])
+                                    pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders, mutabakat=safe["mut"],
+                                    dayaniklilik=(status or {}).get("dayaniklilik"))
             isik = PP._problem(teknik.get("saglik"), s["state"], serit["risk"], safe["budget"])
             kismi = PP.kismi_durum(ders, ml)
             if kismi and isik["renk"] == "yesil":

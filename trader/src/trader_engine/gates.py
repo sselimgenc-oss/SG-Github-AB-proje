@@ -430,6 +430,9 @@ class EntryGate:
             return self._ignore("no_param_version")
         if not pre.ok:                                                                  # 4-8
             return self._skip(row, tf, pre.code, skip_reason=pre.skip_reason, veto_reason="gate:" + pre.code, **tk)
+        sb = getattr(self, "symbol_blocked", None)                                      # 8b: saatlik sembol izleyici (4f)
+        if sb is not None and sb(pair):                                                 # TRADING disi sembolde YENI giris yok
+            return self._skip(row, tf, "symbol_not_trading", skip_reason="other", veto_reason="gate:symbol_not_trading", **tk)
         try:                                                                            # 9
             rules = self.rules_fn(pair)
         except Exception as e:  # noqa: BLE001 - DataError/RulesError/baska: fail-closed

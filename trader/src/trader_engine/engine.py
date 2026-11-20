@@ -42,6 +42,8 @@ from .status import StatusWriter
 from .strategies.base import Strategy, StrategyError
 from .strategies.price_action_v1_ml import load_engine_model
 from .strategies.registry import check_param_keys, get_strategy, make_label, parse_label
+from .arm_quarantine import ArmQuarantine, KV_KEY as QUARANTINE_KV, take_release_request
+from .tur_koruyucu import TurKoruyucu
 from .strategy_runner import MultiArmSignalSource, SignalFrame, SignalSource, WindowedSignalSource
 from .types import BrokerEvent, Fill, Intent, OrderRequest, Position, order_side_for
 
@@ -163,6 +165,7 @@ class Engine:
         if tick_fn is not None:
             self.orders.tick_fn = tick_fn                    # legacy_compat: giris-ayi tarihsel tick
         self.gate = EntryGate(cfg, ledger, state, kill, veto, clock, broker, rules_fn, entry_ref_fn, pause, ladder)
+        self.gate.symbol_blocked = lambda p: self.sembol_izleyici is not None and self.sembol_izleyici.is_blocked(p)   # 4f
         if cfg.mode == "paper":                  # DD-12 WP-13: ders kapattigi kurulumlar (salt okunur dosya; yoksa hepsi acik)
             _arms_path = Path(cfg.ledger_path).parent / "arms_off.json"
             self.gate.arms_off = lambda: load_arms_off(_arms_path)
@@ -219,6 +222,9 @@ class Engine:
         self._last_reconcile: datetime | None = None
         self._entry_events: dict[int, object] = {}
         self._started = False
+        self.quarantine: ArmQuarantine | None = getattr(signals, "quarantine", None)   # 4b: kurulum kod hatasi karantinasi
+        self.sembol_izleyici = None                             # 4f: sembol_izleme.SembolIzleyici (cli kurar); None = kapali
+        self._tur_koruyucu = TurKoruyucu(self)                  # 4c
         self._ban_until: datetime | None = None
         self._exit_throttle: dict[int, datetime] = {}
         self._naked_rows: list[dict] = []
@@ -444,6 +450,7 @@ class Engine:
             "records": self.records_block(),
             "pause": self._pause_status(),
             "risk_ladder": self._ladder_status(),
+            "dayaniklilik": self._dayaniklilik_status(),
             **({} if self.is_paper else {"exchange": self._exchange_status()}),
         }
 
@@ -899,6 +906,8 @@ class Engine:
             self._reconcile_orphan_decisions()
         self._refresh_params()
         self._init_tf_and_strategy()
+        if self.quarantine is not None:
+            self.quarantine.load(self.state.kv_get(QUARANTINE_KV))
         if self.is_paper:
             snap = self.state.kv_get("broker_snapshot")
             if snap:
@@ -1394,7 +1403,9 @@ class Engine:
     # ================================================================== karar adimi
     def decision_step(self, D: datetime) -> None:
         self._exit_retry = None                                 # DD-6 D11: yeni karar adimi eski bekleyen denemeyi gecersiz kilar
-        if not self._guard("decision", lambda: self._decision_step(D)):
+        ok = self._guard("decision", lambda: self._decision_step(D))
+        self._karantina_kaydet()                                # 4b: tx geri alinsa bile karantina kaydi kalici
+        if not ok:
             if not self.is_paper and self.cfg.mode in ("testnet", "live"):
                 self._schedule_exit_retry(D)
         else:
@@ -1913,22 +1924,63 @@ class Engine:
         self.start()
         try:
             while not self._stop:
-                now = self.clock.now()
-                if not self.is_paper and self.cfg.mode in ("testnet", "live"):
-                    self.live_tick(now)
-                    self.clock.sleep(self.cfg.loop_sleep_s)
-                    continue
-                try:
-                    self.advance_to(now)
-                except ClockError as e:
-                    log.critical("%s", e)
-                self._periodic_reconcile(now)
-                self._periodic_input_check(now)
-                if self.status is not None:
-                    self.status.write(self)
-                self.clock.sleep(self.cfg.loop_sleep_s)
+                self._tur_koruyucu.calistir(self._loop_turn)        # 4c: gecici hatada sinirsiz bekleme, kagitta tur-bellek geri yukleme
         finally:
             self.shutdown("stop")
+
+    def _loop_turn(self) -> None:
+        now = self.clock.now()
+        if not self.is_paper and self.cfg.mode in ("testnet", "live"):
+            self.live_tick(now)
+            self.clock.sleep(self.cfg.loop_sleep_s)
+            return
+        try:
+            self.advance_to(now)
+        except ClockError as e:
+            log.critical("%s", e)
+        self._periodic_reconcile(now)
+        self._periodic_input_check(now)
+        if self.status is not None:
+            self.status.write(self)
+        self.clock.sleep(self.cfg.loop_sleep_s)
+
+    # ------------------------------------------------------------------ 4b / 4f: karantina ve sembol izleyici
+    def _karantina_kaydet(self) -> None:
+        q = self.quarantine
+        if q is None or not q.dirty:
+            return
+        try:
+            with self.state.tx():
+                self.state.kv_set(QUARANTINE_KV, q.dump() or None)
+            q.dirty = False
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.error("karantina kaydi yazilamadi: %r", e)
+
+    def _dayaniklilik_tick(self, now: datetime) -> None:
+        """Dakikada bir: karantina kaldirma istegi + saatlik sembol kontrolu. Hicbir istisna sizmaz."""
+        try:
+            q = self.quarantine
+            if q is not None:
+                req = take_release_request(os.path.dirname(self.cfg.path("x")))
+                if req:
+                    rel = q.release(req)
+                    log.warning("karantina kaldirma istegi (%s): %s", req, rel or "eslesen yok")
+                self._karantina_kaydet()
+            iz = self.sembol_izleyici
+            if iz is not None:
+                iz.check(now)
+        except StateError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.error("dayaniklilik kontrolu hatasi: %r", e)
+
+    def _dayaniklilik_status(self) -> dict:
+        q, iz = self.quarantine, self.sembol_izleyici
+        return {"karantina": q.status() if q is not None else [],
+                "sembol": iz.status() if iz is not None else [],
+                "tur_hatalari": {"toplam": self._tur_koruyucu.total, "son": self._tur_koruyucu.last_error}}
 
     def _periodic_input_check(self, now: datetime) -> None:
         """Calisirken kural/veri sayaclarini (`rules_missing`, `data_stale`) dakikada bir tazeler; karar vermez."""
@@ -1938,6 +1990,7 @@ class Engine:
         if last is not None and (now - last).total_seconds() < 60:
             return
         self._last_input_check = now
+        self._dayaniklilik_tick(now)
         try:
             self.check_inputs()
         except Exception as e:  # noqa: BLE001
@@ -2407,8 +2460,10 @@ def _assemble_engine(cfg: EngineConfig, clock: Clock, view: MarketView, broker: 
         else:
             ml_model, ml_error = load_engine_model(cfg.ml_model_path, strategy.ml_mode, clock.now(),
                                                    experimental=cfg.ml_experimental, paper_active=paper_active)
-    signals = signal_source_class(strategy)(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
-                      ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None)
+    sig_cls = signal_source_class(strategy)
+    extra = {"quarantine": ArmQuarantine(now_fn=clock.now)} if sig_cls is MultiArmSignalSource else {}
+    signals = sig_cls(view, strategy, strict=False, ml_model=ml_model, ml_error=ml_error,
+                      ml_v2=ml_v2, pairs=ml_ctx_pairs if ml_v2 is not None else None, **extra)
     if live_broker_new:
         _check_rules_drift(broker, view, cfg)
     return Engine(cfg, clock=clock, view=view, broker=broker, ledger=led, state=state, signals=signals,
