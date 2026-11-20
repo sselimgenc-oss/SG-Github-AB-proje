@@ -63,9 +63,3 @@ Makine özeti `research/holdout/pbo_ozet.json` dosyasına yazılır.
 - Yeni bağımlılık eklenmez.
 - Testler sentetik veriyle yazılır. Holdout tarihleri ve `var/history` yazımı yalnız `test_no_holdout_in_tests.py` kurallarına uygun dosyalarda geçer. Mühür testleri `tmp_path` altındaki sentetik dosyalarla yapılır.
 - Sunucu birimi, Telegram ya da pano işi yoktur.
-
-## Ek: strateji/ayar/kod hash'i, on kayit gunlugu, budama (1L3A'dan uyarlandi)
-
-- `holdout_muhur.py` `kayit_olustur` / `on_kayit_yaz` / `gunluk_dogrula` / `kayit_dogrula`: strateji listesi, ayar ve kod dosyalarinin sha256'si ile git commit'i, hash zincirli yalniz-ekleme JSONL gunlugune (`research/holdout/on_kayit_gunlugu.jsonl`) holdout degerlendirmesinden ONCE yazilir. `muhurle(..., kayit=...)` istege bagli "kayit" anahtari ekler; `dogrula` bu alanlari okumaz, mevcut muhur ESIT kalir.
-- Budama (kapi gecerse zayif stratejiyi setten cikarma) UYGULANMADI: holdout sonucunu okuyup muhurlu seti degistirir, muhurun "icerige dokunma" anlamiyla celisir. Karar insana ve yeni on kayda birakilir.
-- Yalniz rapor/kayit araci; canli/paper motoruna etkisi yoktur.
