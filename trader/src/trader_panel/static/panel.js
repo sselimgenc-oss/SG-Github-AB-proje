@@ -1,16 +1,17 @@
 /* panel.js
  * KOPYA/UYARLAMA kaynagi: /home/user/sselimgenc-oss/1l3a-proje/motor/canli/pano.py, JS dizgisi (satir 329-380; 1L3A kullanicinin kendi projesi,
- * 2026-11-16): tema dugmesi (K tema anahtari), tablo siralama (th tiklama, data-v), yenile/yazdir dugmesi.
- * Bu depoya ozgu: fetch ile kismi yenileme, sekmeler, tum cizimler. Her metin textContent ile basilir; innerHTML yok.
- * Canli kipte bayatlik sunucudan gelir (§5); anlik goruntu kipinde ek olarak uretim damgasindan istemci tarafinda hesaplanir (§13). Dis URL yok.
+ * 2026-11-16): tema dugmesi (K tema anahtari), yenile dugmesi. Bu depoya ozgu: sekmeler, tum cizimler.
+ * Her metin textContent ile basilir; HTML dizgisi yok. Sayilar ve Turkce metinler sunucudan hazir gelir; burada yalniz bicim/yerlesim.
+ * Anlik goruntu kipinde veri gomulu (ag yok); canli kipte fetch. Yeniden cizim yok: 5 dk'da bir sayfa yenilenir. Dis URL yok.
  */
 (function () {
   'use strict';
-  var TOP_MS = 10000, TAB_MS = 30000;                       // spec §10.8: ust serit 10 sn, gerisi 30 sn
-  var TABS = [['ozet', 'ÖZET'], ['pozisyonlar', 'POZİSYONLAR'], ['islemler', 'İŞLEMLER'], ['butce', 'BÜTÇE'],
-              ['ders', 'DERS'], ['ogrenme', 'ÖĞRENME'], ['dogrulama', 'DOĞRULAMA'], ['saglik', 'SAĞLIK']];
-  var BOT_AD = {learner: 'öğrenen'};
-  var S = {bot: 'learner', tab: 'ozet', status: null, conn: true, gen: null, day: null, trades: null};
+  var YENILE_S = 300;                                         // sayfa yenileme: 5 dk
+  var SAYFA = 20;                                             // tablo: 20 satir + daha fazla
+  var TABS = [['ozet', 'ÖZET'], ['acik', 'AÇIK'], ['kapanan', 'KAPANAN'], ['kz', 'K/Z'], ['ogrenme', 'ÖĞRENME'], ['teknik', 'TEKNİK']];
+  var DONEMLER = [['bugun', 'Bugün'], ['7g', '7 gün'], ['30g', '30 gün'], ['tumu', 'Tümü']];
+  var BOT = 'learner';
+  var S = {tab: 'ozet', pano: null, kapanan: {}, donem: 'bugun', t0: Date.now(), gen: null};
   var $ = function (i) { return document.getElementById(i); };
 
   /* ---------- DOM yardimcilari (yalniz textContent) ---------- */
@@ -34,26 +35,24 @@
 
   /* ---------- bicim ---------- */
   function num(x) { return typeof x === 'number' && isFinite(x); }
-  function f2(x, d) { return num(x) ? x.toFixed(d === undefined ? 2 : d) : '—'; }
-  function sgn(x, d) { return num(x) ? (x > 0 ? '+' : '') + x.toFixed(d === undefined ? 2 : d) : '—'; }
-  function usd(x, s) { return num(x) ? (s ? sgn(x) : f2(x)) + ' $' : '—'; }
-  function pct(x, d, s) { return num(x) ? (s && x > 0 ? '+' : '') + (x * 100).toFixed(d === undefined ? 2 : d) + ' %' : '—'; }
-  function cls(x) { return !num(x) || x === 0 ? '' : (x > 0 ? 'iyi' : 'kotu'); }
-  function kzTxt(p) {                                         // "+7.61 (+2.96%)"; unrealized_pct zaten yuzde
-    return num(p.unrealized_pnl_usd) ? sgn(p.unrealized_pnl_usd) + (num(p.unrealized_pct) ? ' (' + sgn(p.unrealized_pct) + '%)' : '') : '—';
-  }
-  function tsi(iso) {                                         // UTC ...Z -> TSİ (sabit UTC+3), yalniz bicim
-    var t = Date.parse(iso);
-    return isFinite(t) ? new Date(t + 3 * 3600000).toISOString().replace('T', ' ').slice(0, 16) : '—';
-  }
-  function tsiDay(iso) { var t = Date.parse(iso); return isFinite(t) ? new Date(t + 3 * 3600000).toISOString().slice(0, 10) : null; }
+  function f2(x) { return num(x) ? x.toFixed(2) : '—'; }
+  function sgn(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + Math.abs(x).toFixed(2) : '—'; }
+  function usd(x) { return num(x) ? f2(x) + ' $' : '—'; }
+  function usdS(x) { return num(x) ? sgn(x) + ' $' : '—'; }
+  function pc(x) { return num(x) ? sgn(x) + '%' : ''; }
+  function px(x) { return !num(x) ? '—' : (Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(3)); }
+  function cls(x) { return !num(x) || Math.abs(x) < 0.005 ? '' : (x > 0 ? 'iyi' : 'kotu'); }
   function ago(s) {
-    if (!num(s)) return '—';
-    if (s < 90) return Math.round(s) + ' sn';
-    if (s < 5400) return Math.round(s / 60) + ' dk';
-    return (s / 3600).toFixed(1) + ' sa';
+    if (!num(s) || s < 90) return 'az önce';
+    if (s < 5400) return Math.round(s / 60) + ' dk önce';
+    return (s / 3600).toFixed(1) + ' sa önce';
   }
-  function bytes(b) { return num(b) ? (b / 1048576 >= 1024 ? (b / 1073741824).toFixed(2) + ' GiB' : Math.round(b / 1048576) + ' MiB') : '—'; }
+  function etiketTsi(iso) {                                   // yalniz gosterim: TSİ (sabit +3)
+    var t = Date.parse(iso);
+    if (!isFinite(t)) return '—';
+    var d = new Date(t + 3 * 3600000).toISOString();
+    return d.slice(8, 10) + '.' + d.slice(5, 7) + ' ' + d.slice(11, 16);
+  }
 
   /* ---------- ag ---------- */
   var SNAP = window.__SNAPSHOT__ || null;                      // anlik goruntu kipi: veri gomulu, ag yok
@@ -63,644 +62,435 @@
     if (!SNAP || !b) return;
     var age = (Date.now() - Date.parse(SNAP.generated_at)) / 1000;
     if (!isFinite(age) || age > SNAP_STALE_S) {
-      b.textContent = 'BAYAT GÖRÜNÜM: bu sayfa ' + (isFinite(age) ? ago(age) : 'bilinmeyen süre') + ' önce üretildi (yayın durmuş olabilir); Yenile ile tekrar yükleyin.';
+      b.textContent = 'BAYAT GÖRÜNÜM: bu sayfa ' + (isFinite(age) ? ago(age).replace(' önce', '') : 'bilinmeyen süre') + ' önce üretildi; Yenile ile tekrar yükleyin.';
       b.style.display = '';
     } else { b.style.display = 'none'; }
   }
   function get(path) {
     if (SNAP) {
       var v = SNAP.data[path];
-      S.conn = true;
-      return Promise.resolve(v === undefined ? {ok: false, code: 'anlik_goruntude_yok'} : v);
+      return Promise.resolve(v === undefined ? {ok: false} : v);
     }
-    return fetch(path, {cache: 'no-store'}).then(function (r) { return r.json(); }).then(function (j) { S.conn = true; return j; },
-      function () { S.conn = false; return {ok: false, code: 'baglanti'}; });
+    return fetch(path, {cache: 'no-store'}).then(function (r) { return r.json(); }, function () { return {ok: false, baglanti: true}; });
   }
-  function nodata(code) {
-    var d = el('div', 'yok');
-    add(d, el('b', '', 'Veri yok'), document.createTextNode(' — okunamadı: ' + (code || 'bilinmiyor')));
+
+  /* ---------- parcalar ---------- */
+  function kart(baslik, sag, extra) {
+    var k = el('div', 'kart' + (extra ? ' ' + extra : ''));
+    var h = el('h2');
+    add(h, el('span', '', baslik));
+    if (sag) add(h, sag);
+    add(k, h);
+    return k;
+  }
+  function satir(ad, val, c) { return add(el('div', 'satir'), el('span', '', ad), el('b', c || '', val)); }
+  function link(txt, tab) {
+    var a = el('button', 'lnk', txt);
+    a.type = 'button';
+    a.addEventListener('click', function () { sec(tab); });
+    return a;
+  }
+  function rozetRenk(txt, renk) { return el('span', 'rt ' + (renk || ''), txt); }
+  function yok(txt) { return el('div', 'yok', txt); }
+  function sym(coin, yon, kol) {
+    var d = el('div');
+    add(d, el('b', 'n', coin), el('span', 'yon ' + yon, yon));
+    if (kol) add(d, el('div', 'u', kol));
     return d;
   }
-  function panel(title, right, extra) {
-    var p = el('div', 'p' + (extra ? ' ' + extra : ''));
-    var pb = el('div', 'pb', title);
-    add(pb, el('span', '', right || ''));
-    var pi = el('div', 'pi');
-    add(p, pb, pi);
-    p._body = pi; p._right = pb.lastChild;
-    return p;
+  function kzHucre(kz, yuzde) {
+    var d = el('div', 'sg');
+    add(d, el('div', 'n ' + cls(kz), usdS(kz)));
+    if (num(yuzde)) add(d, el('div', 'u ' + cls(yuzde), pc(yuzde)));
+    return d;
   }
-  function box(label, val, vcls) {
-    var k = el('div', 'kart');
-    var d = el('div', 'd' + (vcls ? ' ' + vcls : ''), val);
-    return add(k, el('div', 'e', label), d);
-  }
-  function row(label, val, vcls) {
-    var r = el('div', 'sat');
-    return add(r, el('span', '', label), el('b', vcls || '', val));
-  }
-  function table(head, rows, opts) {                            // rows: [[text | {t, v, c}]]
-    var w = el('div', 'tw'), t = el('table', 'sirala'), th = el('thead'), hr = el('tr'), tb = el('tbody');
-    head.forEach(function (h, i) {
-      var c = el('th', opts && opts.right && opts.right.indexOf(i) >= 0 ? 'sg' : '', h);
-      hr.appendChild(c);
+  function ayrinti(pairs) {
+    var d = el('div', 'dl');
+    pairs.forEach(function (p) {
+      if (p[1] === null || p[1] === undefined || p[1] === '' || p[1] === '—') return;
+      var c = el('div', p[2] ? 'g' : '');
+      add(c, el('span', '', p[0]), document.createTextNode(String(p[1])));
+      add(d, c);
     });
-    th.appendChild(hr);
-    rows.forEach(function (r) {
-      var tr = el('tr');
-      r.forEach(function (c, i) {
-        var o = (c !== null && typeof c === 'object') ? c : {t: c};
-        var td = el('td', (opts && opts.right && opts.right.indexOf(i) >= 0 ? 'sg ' : '') + (o.c || ''), o.t);
-        if (o.v !== undefined && o.v !== null) td.setAttribute('data-v', String(o.v));
+    return d;
+  }
+  /* 4 sutunlu tablo; satira dokununca ayrinti acilir. rows: [{cells: [node x4], detail: [[ad, deger]]}] */
+  function tablo(head, rows, sagCols) {
+    var w = el('div'), t = el('table'), cg = el('colgroup'), th = el('thead'), hr = el('tr'), tb = el('tbody');
+    ['c1', 'c2', 'c3', 'c4'].forEach(function (c) { add(cg, el('col', c)); });
+    head.forEach(function (h, i) { add(hr, el('th', sagCols.indexOf(i) >= 0 ? 'sg' : '', h)); });
+    add(t, cg, add(th, hr), tb);
+    var gosterilen = 0, btn = null;
+    function ciz() {
+      var son = Math.min(gosterilen + SAYFA, rows.length);
+      for (var i = gosterilen; i < son; i++) tb.appendChild(satirYap(rows[i]));
+      gosterilen = son;
+      if (btn) { if (gosterilen >= rows.length) btn.style.display = 'none'; else btn.textContent = 'Daha fazla (' + (rows.length - gosterilen) + ')'; }
+    }
+    function satirYap(r) {
+      var tr = el('tr', 'satir-t'), dty = null;
+      tr.setAttribute('tabindex', '0');
+      tr.setAttribute('aria-expanded', 'false');
+      r.cells.forEach(function (c, i) {
+        var td = el('td', sagCols.indexOf(i) >= 0 ? 'sg' : '');
+        td.appendChild(c);
         tr.appendChild(td);
       });
-      tb.appendChild(tr);
-    });
-    add(t, th, tb);
-    sortable(t);
-    return add(w, t);
-  }
-  // pano.py JS: tablo siralama (th tiklama, data-v) — uyarlandi
-  function sortable(t) {
-    var hs = t.tBodies[0];
-    Array.prototype.forEach.call(t.tHead.rows[0].cells, function (th) {
-      th.addEventListener('click', function () {
-        var i = th.cellIndex, y = th.getAttribute('data-yon') === '-1' ? 1 : -1;
-        Array.prototype.forEach.call(t.tHead.rows[0].cells, function (x) { x.removeAttribute('data-yon'); });
-        th.setAttribute('data-yon', String(y));
-        var sat = Array.prototype.slice.call(hs.rows), sy = sat.every(function (r) {
-          var v = r.cells[i] && r.cells[i].getAttribute('data-v'); return v !== null && v !== '' && isFinite(Number(v));
-        });
-        var g = function (r) { var c = r.cells[i]; return sy ? Number(c.getAttribute('data-v')) : (c.getAttribute('data-v') || c.textContent).toLowerCase(); };
-        sat.sort(function (a, b) { var x = g(a), z = g(b); return (x < z ? -1 : x > z ? 1 : 0) * (-y); });
-        sat.forEach(function (r) { hs.appendChild(r); });
-      });
-    });
+      function ac() {
+        var acik = tr.getAttribute('aria-expanded') === 'true';
+        if (acik) { if (dty && dty.parentNode) dty.parentNode.removeChild(dty); tr.setAttribute('aria-expanded', 'false'); return; }
+        dty = el('tr', 'dty');
+        var td = el('td');
+        td.setAttribute('colspan', '4');
+        td.appendChild(ayrinti(r.detail));
+        dty.appendChild(td);
+        tb.insertBefore(dty, tr.nextSibling);
+        tr.setAttribute('aria-expanded', 'true');
+      }
+      tr.addEventListener('click', ac);
+      tr.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ac(); } });
+      return tr;
+    }
+    ciz();
+    add(w, t);
+    if (rows.length > SAYFA) {
+      btn = el('button', 'daha', 'Daha fazla (' + (rows.length - gosterilen) + ')');
+      btn.type = 'button';
+      btn.addEventListener('click', ciz);
+      add(w, btn);
+    }
+    return w;
   }
 
-  /* ---------- grafikler (satir ici SVG, kendi cizimimiz) ---------- */
-  function lineChart(ys, o) {                                   // ys: sayilar; o.area, o.neg
-    var W = 1000, H = 300, n = ys.length, mn = Math.min.apply(null, ys), mx = Math.max.apply(null, ys);
-    if (o.zero) { mn = Math.min(mn, 0); mx = Math.max(mx, 0); }
+  /* ---------- grafik (satir ici SVG) ---------- */
+  function cizgiGrafik(egri) {
+    var ys = egri.map(function (p) { return p[1]; }), W = 1000, H = 300, n = ys.length;
+    var mn = Math.min.apply(null, ys), mx = Math.max.apply(null, ys);
     if (mx === mn) { mx += 1; mn -= 1; }
     var X = function (i) { return n < 2 ? W / 2 : i * W / (n - 1); }, Y = function (v) { return H - (v - mn) / (mx - mn) * H; };
-    var svg = sv('svg', {viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img', 'aria-label': o.label});
+    var svg = sv('svg', {viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Kasa eğrisi, son 30 gün'});
     [0, 0.5, 1].forEach(function (f) { svg.appendChild(sv('line', {x1: 0, x2: W, y1: f * H, y2: f * H, 'class': 'izg'})); });
-    if (o.base !== undefined && o.base >= mn && o.base <= mx) svg.appendChild(sv('line', {x1: 0, x2: W, y1: Y(o.base), y2: Y(o.base), 'class': 'baz'}));
     var d = ys.map(function (v, i) { return (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1); }).join(' ');
-    var yb = o.zero ? Y(0) : H;
-    svg.appendChild(sv('path', {d: d + ' L' + X(n - 1).toFixed(1) + ' ' + yb.toFixed(1) + ' L' + X(0).toFixed(1) + ' ' + yb.toFixed(1) + ' Z', 'class': 'alan' + (o.neg ? ' k' : '')}));
-    svg.appendChild(sv('path', {d: d, 'class': 'cizgi' + (o.neg ? ' k' : '')}));
-    return {svg: svg, min: mn, max: mx};
-  }
-  function chartBox(c, fmt, t0, t1, extra) {
-    var g = el('div', 'gk' + (extra ? ' ' + extra : ''));
-    var yt = el('div', 'yt');
-    add(yt, el('span', '', fmt(c.max)), el('span', '', fmt(c.min)));
-    var ek = el('div', 'ek');
-    add(ek, el('span', '', t0), el('span', '', t1));
-    return add(g, yt, c.svg, ek);
-  }
-  function barChart(vals) {                                     // gunluk K/Z cubuklari
-    var W = 1000, H = 300, n = vals.length, mx = Math.max.apply(null, vals.map(Math.abs).concat([1e-9]));
-    var svg = sv('svg', {viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Günlük K/Z'});
-    svg.appendChild(sv('line', {x1: 0, x2: W, y1: H / 2, y2: H / 2, 'class': 'taban'}));
-    var bw = W / Math.max(n, 1);
-    vals.forEach(function (v, i) {
-      var h = Math.abs(v) / mx * (H / 2 - 4);
-      svg.appendChild(sv('rect', {x: (i * bw + bw * 0.15).toFixed(1), width: (bw * 0.7).toFixed(1), y: (v >= 0 ? H / 2 - h : H / 2).toFixed(1),
-        height: Math.max(h, 0.5).toFixed(1), 'class': v >= 0 ? 'bi' : 'bk'}));
-    });
-    return {svg: svg, min: -mx, max: mx};
+    var neg = ys[n - 1] < ys[0];
+    svg.appendChild(sv('path', {d: d + ' L' + X(n - 1).toFixed(1) + ' ' + H + ' L' + X(0).toFixed(1) + ' ' + H + ' Z', 'class': 'alan' + (neg ? ' k' : '')}));
+    svg.appendChild(sv('path', {d: d, 'class': 'cizgi' + (neg ? ' k' : '')}));
+    var g = el('div', 'gk'), yt = el('div', 'yt'), ek = el('div', 'ek');
+    add(yt, el('span', '', mx.toFixed(0)), el('span', '', mn.toFixed(0)));
+    add(ek, el('span', '', egri[0][0]), el('span', '', egri[n - 1][0]));
+    return add(g, yt, svg, ek);
   }
 
-  /* ---------- ust serit, bantlar ---------- */
-  function renderTop(st) {
-    var b = $('bantlar'); clear(b);
-    if (!S.conn) add(b, el('div', 'uyari bayat-bant', 'Panel bağlantısı yok: sunucuya ulaşılamıyor, ekrandaki değerler güncel değil.'));
-    if (!st || !st.ok) {
-      if (st) add(b, el('div', 'uyari kritik', 'Durum okunamadı: ' + (st.code || '?')));
+  /* ---------- ust serit ---------- */
+  function sk(e, big, alt, bigCls, extra) {
+    var k = el('div', 'ks' + (extra ? ' ' + extra : ''));
+    return add(k, el('div', 'e', e), el('div', 'b ' + (bigCls || ''), big), alt ? el('div', 'a', alt) : null);
+  }
+  function renderTop(p) {
+    var b = clear($('bantlar')), z = clear($('serit'));
+    if (!p || !p.ok) {
+      add(b, el('div', 'uyari' + (p && p.baglanti ? ' bayat-bant' : ' kritik'),
+        p && p.baglanti ? 'Panel bağlantısı yok; ekrandaki değerler güncel değil.' : 'Veri şu an okunamıyor. Birazdan yeniden denenecek.'));
       return;
     }
-    var kill = st.kill_file_exists === true;
-    ['learner'].forEach(function (k) {
-      var x = st.bots[k];
-      if (x.state !== 'live') add(b, el('div', 'uyari bayat-bant', BOT_AD[k] + ' — ' + x.banner));
-      else if (x.data.kill) kill = true;
-    });
-    if (kill) add(b, el('div', 'uyari kritik', 'KILL AKTİF: yeni giriş yok (kill dosyası/durum).'));
-    var cur = st.bots[S.bot], z = $('serit'); clear(z);
-    var ro = $('rozet');
-    if (cur.state === 'live') {
-      var d = cur.data;
-      ro.hidden = false; ro.textContent = String(d.mode || '').toUpperCase(); ro.className = 'rozet r-' + String(d.mode || '');
-      var gate = d.entries_open ? 'giriş açık' : 'giriş kapalı' + (d.entries_blocked_reason ? ' (' + d.entries_blocked_reason + ')' : '');
-      var st2 = d.strategy && typeof d.strategy === 'object' ? (d.strategy.name || '') + ' ' + (d.strategy.version || '') : '';
-      add(z, box('Equity', usd(d.equity)), box('Gün başı equity', usd(d.day_start_equity)),
-        box('Açık pozisyon', String((d.open_positions || []).length)),
-        box('AÇIK K/Z', num(d.unrealized_pnl_usd) ? sgn(d.unrealized_pnl_usd) + ' $' : '—', cls(d.unrealized_pnl_usd)),
-        box('Kapı', (d.gate_code || '—'), d.gate_code === 'ok' ? 'iyi' : 'kotu'),
-        box('Giriş', gate, d.entries_open ? 'iyi' : 'uyarir'),
-        box('Sürüm', 'v' + (d.param_version_id === null || d.param_version_id === undefined ? '—' : d.param_version_id) + ' · ' + (d.trigger_tf || '—') + ' · ' + st2));
-    } else {
-      ro.hidden = true;
-      add(z, box('Durum', 'veri yok: ' + (cur.code || '?'), 'kotu'), box('Son döngü', cur.loop_at ? tsi(cur.loop_at) : '—'));
-    }
+    var s = p.serit, r = s.risk, ro = $('rozet');
+    if (p.mod) { ro.hidden = false; ro.textContent = p.mod === 'live' ? 'CANLI' : 'KÂĞIT'; } else ro.hidden = true;
+    add(z,
+      sk('Kasa', usd(s.kasa), num(s.kasa_yuzde) ? pc(s.kasa_yuzde) + ' başlangıca göre' : ''),
+      sk('Bugün K/Z', usdS(s.bugun), pc(s.bugun_yuzde), cls(s.bugun)),
+      sk('Toplam K/Z', usdS(s.toplam), pc(s.toplam_yuzde), cls(s.toplam)),
+      sk('Açık poz.', String(s.acik), num(s.acik_kz) ? usdS(s.acik_kz) + ' açık K/Z' : '', ''),
+      sk('Zirveden düşüş', usdS(s.dusus), pc(s.dusus_yuzde), cls(s.dusus)),
+      add(el('div', 'ks risk ' + r.renk), el('div', 'e', 'Risk durumu'),
+        add(el('div', 'b'), el('span', 'nokta'), el('span', '', r.metin)), el('div', 'a', r.alt)));
   }
 
   /* ---------- sekmeler ---------- */
-  function statusCur() { return S.status && S.status.ok ? S.status.bots[S.bot] : null; }
-
-  function tabOzet(root) {
-    clear(root);
-    var ig = el('div', 'ig'), bot = S.bot;
-    var pCurve = panel('Özsermaye eğrisi', '', 'g2 yuk'), pRisk = panel('Risk payı', 'limitler risk kilidi oranlarıyla'),
-        pHealth = panel('Sağlık', ''), pDd = panel('Zirveden düşüş', ''), pKz = panel('Günlük K/Z', ''),
-        pCal = panel('Takvim (günlük K/Z ısı haritası)', 'gün seç: işlemler', 'g3');
-    var sag = el('div', 'sag s1');
-    add(sag, pRisk, pHealth);
-    add(ig, pCurve, sag, pDd, pKz, pCal);
-    add(root, ig);
-    [pCurve, pRisk, pHealth, pDd, pKz, pCal].forEach(function (p) { add(p._body, el('div', 'yok', 'yükleniyor…')); });
-
-    get('/api/curve?bot=' + bot).then(function (c) {
-      [pCurve, pDd, pKz, pCal].forEach(function (p) { clear(p._body); });
-      if (!c.ok) { [pCurve, pDd, pKz, pCal].forEach(function (p) { add(p._body, nodata(c.code)); }); return; }
-      S.gen = c.generated_at;
-      var pts = c.points, last = pts.length ? pts[pts.length - 1] : null;
-      pCurve._right.textContent = c.base === 'equity' && last ? usd(last[1]) : (last ? 'K/Z ' + usd(last[1], true) : '');
-      if (pts.length) {
-        var ch = lineChart(pts.map(function (p) { return p[1]; }), {label: 'Özsermaye eğrisi', base: c.start === null ? 0 : c.start});
-        add(pCurve._body, chartBox(ch, function (v) { return f2(v, 0); }, tsi(pts[0][0]), tsi(pts[pts.length - 1][0])));
-      } else add(pCurve._body, el('div', 'yok', 'Henüz kapanan işlem yok.'));
-      if (c.truncated) add(pCurve._body, el('div', 'alt', 'Eğri son ' + c.total_closed + ' işlemle sınırlı.'));
-      add(pCurve._body, el('div', 'bol'));
-      var hb = el('div', 'izgara c4');
-      add(hb, box('Max düşüş', c.max_dd_pct === null ? usd(c.max_dd_abs) : pct(c.max_dd_pct)),
-        box('Başlangıç', c.start === null ? 'okunamadı' : usd(c.start)),
-        box('Zirve özsermaye', c.peak === null ? 'okunamadı' : usd(c.peak)), box('Kapanan işlem', String(c.total_closed)));
-      add(pCurve._body.lastChild, hb);
-      pCurve._body.lastChild.setAttribute('title', 'Hesap: başlangıç (motor yapılandırması wallet_start) + kapanan işlemlerin gerçekleşen K/Z toplamı.');
-      if (pts.length) {
-        var key = c.max_dd_pct === null ? 2 : 3, dd = lineChart(pts.map(function (p) { return p[key]; }), {label: 'Zirveden düşüş', neg: true, zero: true, base: 0});
-        pDd._right.textContent = c.max_dd_pct === null ? usd(last[2]) : pct(last[3]);
-        add(pDd._body, chartBox(dd, function (v) { return c.max_dd_pct === null ? f2(v, 0) : pct(v, 1); }, tsi(pts[0][0]), tsi(pts[pts.length - 1][0]), 'dus'));
-      } else add(pDd._body, el('div', 'yok', 'Henüz kapanan işlem yok.'));
-      if (c.daily.length) {
-        var bc = barChart(c.daily.map(function (d) { return d.pnl; }));
-        pKz._right.textContent = usd(c.daily[c.daily.length - 1].pnl, true);
-        add(pKz._body, chartBox(bc, function (v) { return f2(v, 1); }, c.daily[0].day, c.daily[c.daily.length - 1].day, 'kz'));
-      } else add(pKz._body, el('div', 'yok', 'Henüz kapanan işlem yok.'));
-      renderCalendar(pCal._body, c.daily);
-    });
-
-    get('/api/risk?bot=' + bot).then(function (r) {
-      clear(pRisk._body);
-      if (!r.ok) { add(pRisk._body, nodata(r.code)); return; }
-      r.rows.forEach(function (x) {
-        var m = el('div', 'mr'), over = num(x.pct) && x.pct >= 80;
-        add(m, row(x.label, usd(x.used) + ' / ' + usd(x.limit) + ' (' + (num(x.pct) ? x.pct.toFixed(0) + ' %' : '—') + ')'));
-        var cb = el('div', 'cubuk' + (num(x.pct) && x.pct >= 100 ? ' k' : over ? ' u' : '')), i = el('i');
-        i.style.width = (num(x.pct) ? Math.min(100, Math.max(0, x.pct)) : 0) + '%';
-        add(m, add(cb, i));
-        add(pRisk._body, m);
-      });
-    });
-
-    get('/api/health').then(function (h) {
-      clear(pHealth._body);
-      if (!h.ok) { add(pHealth._body, nodata(h.code)); }
-      else {
-        pHealth._right.textContent = h.overall || '—';
-        add(pHealth._body, row('Son denetim', h.check_stale ? 'çalışmıyor (' + ago(h.age_s) + ' önce)' : ago(h.age_s) + ' önce', h.check_stale ? 'kotu' : 'iyi'),
-          row('Açık uyarı', String(h.alerts.length), h.alerts.length ? 'uyarir' : 'iyi'));
-      }
-      var sc = S.status && S.status.ok ? S.status.bots : null;
-      if (sc) ['learner'].forEach(function (k) {
-        add(pHealth._body, row('Döngü ' + BOT_AD[k], sc[k].state === 'live' ? ago(sc[k].age_s) + ' önce' : 'BAYAT/yok', sc[k].state === 'live' ? 'iyi' : 'kotu'));
-      });
-    });
-  }
-
-  function renderCalendar(body, daily) {
-    var map = {}; daily.forEach(function (d) { map[d.day] = d; });
-    var end = S.gen ? tsiDay(S.gen) : null;
-    if (!end) { add(body, el('div', 'yok', 'Takvim için zaman yok.')); return; }
-    var mx = Math.max.apply(null, daily.map(function (d) { return Math.abs(d.pnl); }).concat([1e-9]));
-    var e = new Date(end + 'T00:00:00Z'), dow = (e.getUTCDay() + 6) % 7;           // Pazartesi = 0
-    var start = new Date(e.getTime() - (41 - (6 - dow)) * 86400000);
-    var tk = el('div', 'tkv'), g = el('div', 'tkg');
-    ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'].forEach(function (x) { add(g, el('div', 'bsl', x)); });
-    var det = el('div', 'gd');
-    for (var i = 0; i < 42; i++) {
-      var dt = new Date(start.getTime() + i * 86400000), ds = dt.toISOString().slice(0, 10), v = map[ds];
-      if (dt > e) break;
-      if (!v) { var b0 = el('div', 'tkb'); add(b0, el('span', 'gn', ds.slice(8) + '.' + ds.slice(5, 7))); add(g, b0); continue; }
-      var b = el('button', 'tk');
-      add(b, el('span', 'gn', ds.slice(8) + '.' + ds.slice(5, 7)), el('span', 'pn ' + cls(v.pnl), sgn(v.pnl, 1)));
-      var a = Math.min(0.55, 0.08 + Math.abs(v.pnl) / mx * 0.47);
-      b.style.background = 'color-mix(in srgb,' + (v.pnl >= 0 ? 'var(--iyi)' : 'var(--kotu)') + ' ' + Math.round(a * 100) + '%,var(--bg))';
-      b.setAttribute('data-gun', ds);
-      b.addEventListener('click', (function (day, btn) { return function () {
-        Array.prototype.forEach.call(g.querySelectorAll('.tk'), function (x) { x.classList.toggle('sec', x === btn); });
-        showDay(det, day);
-      }; })(ds, b));
-      add(g, b);
-    }
-    add(tk, g); add(body, tk, det);
-  }
-  function showDay(box_, day) {
-    clear(box_); box_.classList.add('ac');
-    add(box_, el('h4', '', day + ' — o günün işlemleri'), el('div', 'yok', 'yükleniyor…'));
-    get('/api/ledger?bot=' + S.bot + '&day=' + day).then(function (r) {
-      clear(box_); add(box_, el('h4', '', day + ' — o günün işlemleri'));
-      if (!r.ok) { add(box_, nodata(r.code)); return; }
-      if (!r.closed.length) { add(box_, el('div', 'yok', 'Bu gün kapanan işlem yok.')); return; }
-      add(box_, tradesTable(r.closed));
-    });
-  }
-
-  function tradesTable(list) {
-    var rows = list.map(function (t) {
-      return [{t: tsi(t.exit_ts), v: Date.parse(t.exit_ts)}, t.pair, t.side === 'long' ? 'long' : 'short', t.setup || '',
-        {t: f2(t.entry_price, 4), v: t.entry_price}, {t: f2(t.exit_price, 4), v: t.exit_price},
-        {t: sgn(t.realized_pnl), v: t.realized_pnl, c: cls(t.realized_pnl)}, {t: sgn(t.r_multiple), v: t.r_multiple, c: cls(t.r_multiple)},
-        {t: f2((t.fee_entry || 0) + (t.fee_exit || 0), 3), v: (t.fee_entry || 0) + (t.fee_exit || 0)}, t.exit_reason || ''];
-    });
-    return table(['Çıkış (TSİ)', 'Sembol', 'Yön', 'Kurulum', 'Giriş', 'Çıkış', 'K/Z $', 'R', 'Ücret', 'Neden'], rows, {right: [4, 5, 6, 7, 8]});
-  }
-
-  function tabPoz(root) {
-    clear(root);
-    var cur = statusCur(), p1 = panel('Açık pozisyonlar (motor durumu)', '', 'g2'), p2 = panel('Açık işlemler (defter)', ''), ig = el('div', 'ig');
-    add(ig, p1, p2); add(root, ig);
-    if (!cur || cur.state !== 'live') add(p1._body, nodata('bayat: ' + (cur ? cur.code : 'status')));
-    else {
-      var ps = cur.data.open_positions || [];
-      if (!ps.length) add(p1._body, el('div', 'yok', 'Açık pozisyon yok.'));
-      else add(p1._body, table(['İşlem', 'Sembol', 'Yön', 'Miktar', 'Giriş', 'Mark', 'Tutar $', 'K/Z', 'Stop'], ps.map(function (p) {
-        return [String(p.trade_id), p.pair, p.side, {t: f2(p.qty, 4), v: p.qty}, {t: f2(p.entry_price, 4), v: p.entry_price},
-          {t: f2(p.mark, 4), v: p.mark}, {t: f2(p.notional_usd), v: p.notional_usd},
-          {t: kzTxt(p), v: p.unrealized_pnl_usd, c: cls(p.unrealized_pnl_usd)}, {t: f2(p.stop, 4), v: p.stop}];
-      }), {right: [3, 4, 5, 6, 7, 8]}));
-    }
-    get('/api/ledger?bot=' + S.bot).then(function (r) {
-      clear(p2._body);
-      if (!r.ok) { add(p2._body, nodata(r.code)); return; }
-      if (!r.open.length) add(p2._body, el('div', 'yok', 'Açık işlem yok.'));
-      else add(p2._body, table(['İşlem', 'Sembol', 'Yön', 'Kaldıraç', 'Giriş zamanı (TSİ)', 'Planlanan risk'], r.open.map(function (t) {
-        return [String(t.trade_id), t.pair, t.side, {t: String(t.leverage) + 'x', v: t.leverage}, {t: tsi(t.entry_ts), v: Date.parse(t.entry_ts)},
-          {t: usd(t.planned_risk), v: t.planned_risk}];
-      }), {right: [3, 5]}));
-      if (cur && cur.state === 'live') {
-        var a = (cur.data.open_positions || []).map(function (p) { return p.trade_id; }).sort().join(','), b = r.open.map(function (t) { return t.trade_id; }).sort().join(',');
-        if (a !== b) { p2._right.textContent = ''; add(p2._body, el('div', 'cip kotu', 'Uyuşmazlık: motor durumu ile defter açık işlemleri aynı değil')); }
-      }
-    });
-  }
-
-  function tabIslem(root) {
-    clear(root);
-    var p = panel('Son kapanan işlemler', 'son 200'), pd = panel('Karar olayları (bugün)', 'atlama nedenleri'), ig = el('div', 'ig');
-    add(ig, add(el('div', 'g2'), p), pd); add(root, ig);
-    var fb = el('div', 'fbar2'), selS = el('select'), selY = el('select'), say = el('span', 'so');
-    add(selS, new Option('tüm semboller', '')); add(selY, new Option('tüm yönler', ''), new Option('long', 'long'), new Option('short', 'short'));
-    add(fb, selS, selY, say);
-    var tb = el('div');
-    add(p._body, fb, tb);
-    function draw() {
-      clear(tb);
-      var l = (S.trades || []).filter(function (t) { return (!selS.value || t.pair === selS.value) && (!selY.value || t.side === selY.value); });
-      say.textContent = l.length + ' işlem';
-      add(tb, l.length ? tradesTable(l) : el('div', 'yok', 'Eşleşen işlem yok.'));
-    }
-    selS.addEventListener('change', draw); selY.addEventListener('change', draw);
-    get('/api/ledger?bot=' + S.bot).then(function (r) {
-      if (!r.ok) { clear(p._body); add(p._body, nodata(r.code)); clear(pd._body); add(pd._body, nodata(r.code)); return; }
-      S.trades = r.closed;
-      var seen = {};
-      r.closed.forEach(function (t) { seen[t.pair] = 1; });
-      Object.keys(seen).sort().forEach(function (k) { add(selS, new Option(k, k)); });
-      draw();
-      var d = r.decisions, s = r.summary;
-      add(pd._body, row('Gün', r.day), row('Karar', String(d.total)), row('Girilen', String(d.entered)), row('Atlanan', String(d.skipped)),
-        row('Günün kapanan işlemi', s.closed + ' · K/Z ' + usd(s.pnl, true)));
-      var ks = Object.keys(d.skip_reasons);
-      if (ks.length) add(pd._body, table(['Atlama nedeni', 'Sayı'], ks.map(function (k) { return [k, {t: String(d.skip_reasons[k]), v: d.skip_reasons[k]}]; }), {right: [1]}));
-      else add(pd._body, el('div', 'yok', 'Atlanan karar yok.'));
-    });
-  }
-
-  function tabButce(root) {
-    clear(root);
-    var p = panel('Yapay zekâ bütçesi', ''); add(root, add(el('div', 'ig'), p));
-    get('/api/budget').then(function (b) {
-      clear(p._body);
-      if (!b.ok) { add(p._body, nodata(b.code)); return; }
-      p._right.textContent = b.day;
-      add(p._body, row('Ay', usd(b.month_used_usd) + ' / ' + usd(b.monthly_cap_usd) + ' (' + b.month_state + ')', b.month_state === 'ok' ? 'iyi' : 'uyarir'));
-      Object.keys(b.services).forEach(function (k) {
-        var v = b.services[k], m = el('div', 'mr'), cb = el('div', 'cubuk' + (v.state === 'ok' ? '' : ' k')), i = el('i');
-        i.style.width = Math.min(100, v.pct || 0) + '%';
-        add(m, row({haftalik_ozet: 'haftalık özet', lesson: 'ders'}[k] || k, usd(v.used_usd) + ' / ' + usd(v.cap_usd) + ' (' + v.state + ')'), add(cb, i));
-        add(p._body, m);
-      });
-      if (!b.prices_verified) add(p._body, el('div', 'cip uyari', 'Fiyatlar doğrulanmadı'));
-      if (b.provider_blocked_until) add(p._body, el('div', 'cip kotu', 'Sağlayıcı engelli: ' + tsi(b.provider_blocked_until) + ' TSİ\'ye kadar'));
-    });
-  }
-
-  function tabDers(root) {
-    clear(root);
-    var p = panel('Ders önerileri', ''); add(root, add(el('div', 'ig'), p));
-    get('/api/lesson').then(function (r) {
-      clear(p._body);
-      if (!r.ok) { add(p._body, nodata(r.code)); return; }
-      p._right.textContent = r.open_count ? r.open_count + ' bekleyen' : 'bekleyen yok';
-      if (r.open_requests.length) {
-        r.open_requests.forEach(function (q) {
-          var c = el('div', 'koc uyari');
-          add(c, el('div', '', (q.param || '?') + ': ' + (q.from === null ? '?' : q.from) + ' → ' + (q.to === null ? '?' : q.to) + ' (' + (q.scope || '?') + ')'),
-            el('div', 'alt', 'Onay Telegram\'dan: /onayla ' + q.request_id));
-          add(p._body, c);
-        });
-      } else add(p._body, el('div', 'yok', 'Bekleyen öneri yok.'));
-      add(p._body, row('Gölge dönem', r.shadow ? 'gün ' + r.shadow.day + '/' + (r.shadow.total === null ? '?' : r.shadow.total) + ' (bitiş ' + r.shadow.end + ')' : 'başlamadı'));
-      add(p._body, row('Son çalışma', r.last_run ? r.last_run.day + ' ' + (r.last_run.status || 'olay yok') + (r.last_run.code ? '/' + r.last_run.code : '') : 'yok'));
-      if (Array.isArray(r.proposals) && r.proposals.length) {
-        add(p._body, el('h4', '', 'Defterdeki öneriler'));
-        add(p._body, table(['No', 'Durum', 'Değişiklik'], r.proposals.map(function (x) { return [String(x.id), x.status, JSON.stringify(x.changes)]; })));
-      } else if (r.proposals && r.proposals.code) add(p._body, nodata(r.proposals.code));
-    });
-  }
-
-  var OGR_SINIF = {kripto: 'kripto', hisse: 'hisse senedi', emtia: 'metal / enerji'};
-  var OGR_SEANS = {open: 'açık', closed: 'kapalı', weekend: 'hafta sonu'};
-
-  function tabOgrenme(root) {
-    clear(root);
-    var pk = panel('Kurulum karnesi', ''), pd = panel('Ders', ''), pm = panel('Makine öğrenmesi', ''),
-        ps = panel('Seans ve varlık sınıfı (ort. R, alınan)', ''), po = panel('Açık pozisyonlar', ''),
-        pw = panel('Haftalık özet ve harcama', '');
-    add(root, add(el('div', 'ig'), pk, pd, pm, ps, po, pw));
-    var all = [pk, pd, pm, ps, po, pw];
-    get('/api/learning').then(function (L) {
-      all.forEach(function (p) { clear(p._body); });
-      if (!L.ok) { all.forEach(function (p) { add(p._body, nodata(L.code)); }); return; }
-      if (L.ledger_error) { [pk, pd, pm, ps, po].forEach(function (p) { add(p._body, nodata(L.ledger_error)); }); }
-      else {
-      // kurulum karnesi
-      var arms = (L.scorecard || []).filter(function (c) { return c.candidates > 0; });
-      if (arms.length) add(pk._body, table(['Kurulum', 'Aday', 'Alınan', 'Ort. R (alınan)', 'Ort. R (alınan + alınsaydı)', 'Sanal kasa ($)', 'En derin düşüş (%)', 'Durum'],
-        arms.map(function (c) { var kt = (c.kasa || {}).taken; return [c.arm, String(c.candidates), String(c.taken), sgn(c.mean_r_taken), sgn(c.mean_r_taken_cf),
-          kt ? f2(kt.equity) : '—', kt ? (kt.max_dd_pct > 0 ? '-' + f2(kt.max_dd_pct) : f2(0)) : '—',
-          c.state === 'closed' ? 'kapalı' : 'açık']; }), {right: [1, 2, 3, 4, 5, 6]}));
-      else add(pk._body, el('div', 'yok', 'Henüz aday yok.'));
-      // ders
-      var ds = L.lesson || {};
-      pd._right.textContent = ds.brake_active ? 'fren aktif' : '';
-      add(pd._body, row('Uygulanan değişiklik', String(ds.applied || 0)), row('Geri alınan', String(ds.rollbacks || 0)),
-        row('−10 R freni', ds.brake_active ? 'AKTİF: referans sürüme dönüldü' : 'yok', ds.brake_active ? 'kotu' : 'iyi'),
-        row('Kapalı kurulumlar', (ds.closed_arms || []).length ? ds.closed_arms.join(', ') : 'yok'));
-      if ((ds.events || []).length) add(pd._body, table(['Zaman (TSİ)', 'Olay', 'Neden'], ds.events.map(function (e) {
-        return [tsi(e.at), e.kind, e.reason || '—'];
-      })));
-      // makine öğrenmesi
-      var ml = L.ml || {};
-      add(pm._body, row('Süzgeçte elenen', String(ml.eliminated || 0)), row('Süzgeçten geçen', String(ml.passed || 0)),
-        row('Alınsaydı etkisi', ml.effect_r === null || ml.effect_r === undefined ? '—' : sgn(ml.effect_r) + ' R'),
-        row('M1 aday / giriş', (ml.m1_candidates || 0) + ' / ' + (ml.m1_taken || 0)));
-      // seans ve varlık sınıfı
-      var srows = [];
-      ['open', 'closed', 'weekend'].forEach(function (s) {
-        var cs = (L.sessions || {})[s] || {};
-        Object.keys(cs).forEach(function (k) { srows.push([OGR_SEANS[s], OGR_SINIF[k] || k, String(cs[k].taken), sgn(cs[k].mean_r_taken)]); });
-      });
-      if (srows.length) add(ps._body, table(['Seans', 'Varlık', 'Alınan', 'Ort. R (alınan)'], srows, {right: [2, 3]}));
-      else add(ps._body, el('div', 'yok', 'Henüz işlem yok.'));
-      var crows = Object.keys(L.asset_class || {}).map(function (k) { return [OGR_SINIF[k] || k, String(L.asset_class[k].taken), sgn(L.asset_class[k].mean_r_taken)]; });
-      if (crows.length) add(ps._body, el('h4', '', 'Varlık sınıfı'), table(['Varlık', 'Alınan', 'Ort. R (alınan)'], crows, {right: [1, 2]}));
-      // açık pozisyonlar
-      var op = L.open || {};
-      po._right.textContent = String(op.total || 0);
-      add(po._body, row('Toplam açık', String(op.total || 0)));
-      var kc = Object.keys(op.by_cluster || {}), ka = Object.keys(op.by_arm || {});
-      if (kc.length) add(po._body, el('h4', '', 'Küme'), table(['Küme', 'Açık'], kc.map(function (k) { return [k, String(op.by_cluster[k])]; }), {right: [1]}));
-      if (ka.length) add(po._body, el('h4', '', 'Kurulum'), table(['Kurulum', 'Açık'], ka.map(function (k) { return [k, String(op.by_arm[k])]; }), {right: [1]}));
-      }
-      // haftalık özet ve harcama
-      var b = L.budget;
-      if (b && !b.code) add(pw._body, row('Yapay zekâ (ay)', usd(b.month_used_usd) + ' / ' + usd(b.monthly_cap_usd)));
-      else add(pw._body, row('Yapay zekâ (ay)', b && b.code ? 'okunamadı: ' + b.code : '—'));
-      if (L.weekly_summary) {
-        add(pw._body, el('h4', '', 'Haftalık özet (' + L.weekly_summary.week + ')'), el('pre', 'hozet', L.weekly_summary.text));
-      } else add(pw._body, el('div', 'yok', 'Haftalık özet henüz yok.'));
-    });
-  }
-
-  function tabDogrulama(root) {
-    clear(root);
-    var pt = panel('Tutarlılık (kâğıt – geri test, haftalık)', ''), pp = panel('PBO / Holdout', ''), ig = el('div', 'ig');
-    var pc = panel('Çıkış kanıtı (başka çıkış olsaydı ne olurdu?)', ''), ph = panel('Haber / duygu', ''), phs = panel('Haber ve duygu × sonuç', ''), pas = panel('Alınmayan sinyal × sonuç (R)', '');
-    add(ig, pt, pp, pc, ph, phs, pas); add(root, ig);
-    function rTr(x) { return num(x) ? (x > 0 ? '+' : '') + x.toFixed(2).replace('.', ',') + 'R' : '—'; }
-    function kanit(o) { return o && o.n ? {t: rTr(o.delta_r) + ' (' + o.n + ' işlem)', v: o.delta_r, c: num(o.delta_r) ? (o.delta_r > 0 ? 'iyi' : (o.delta_r < 0 ? 'kotu' : '')) : ''} : {t: 'veri yok', v: ''}; }
-    get('/api/ciktikaniti').then(function (c) {
-      clear(pc._body);
-      if (!c.ok) { add(pc._body, nodata(c.code)); return; }
-      if (!c.var) { add(pc._body, el('div', 'yok', 'veri yok' + (c.neden ? ' (' + c.neden + ')' : ''))); return; }
-      pc._right.textContent = (c.bekleyen || []).length ? 'öneri bekliyor' : 'son ' + c.pencere_gun + ' gün';
-      add(pc._body, el('div', 'yok', 'Artı değer, o çıkış açık olsaydı mevcut çıkıştan daha çok kazanılacaktı demektir. Yalnız bilgi: hiçbir şey kendiliğinden değişmez.'));
-      add(pc._body, row('Son hesap (iz sürme)', c.son_kosu_v1 ? tsi(c.son_kosu_v1) + ' TSİ' : 'veri yok'),
-        row('Son hesap (başa-baş / kısmi)', c.son_kosu_v2 ? tsi(c.son_kosu_v2) + ' TSİ' : 'veri yok'));
-      add(pc._body, table(['Kurulum', 'İşlem', 'İz sürme yukarı', 'İz sürme aşağı', 'Başa-baş açık olsaydı', 'Kısmi kâr açık olsaydı', 'Öneri'],
-        c.kurulumlar.map(function (k) {
-          return [k.kurulum, {t: String(k.islem), v: k.islem}, kanit(k.trail_yukari), kanit(k.trail_asagi), kanit(k.basabas), kanit(k.kismi),
-                  {t: k.bekleyen.length ? 'öneri bekliyor' : '—', c: k.bekleyen.length ? 'uyarir' : ''}];
-        }), {right: [1, 2, 3, 4, 5]}));
-    });
-    get('/api/haber').then(function (h) {
-      clear(ph._body);
-      if (!h.ok) { add(ph._body, nodata(h.code)); return; }
-      if (!h.var) { add(ph._body, el('div', 'yok', 'veri yok' + (h.neden ? ' (' + h.neden + ')' : ''))); return; }
-      var yas = num(h.yas_dk) ? (h.yas_dk < 90 ? Math.max(h.yas_dk, 0) + ' dk' : (h.yas_dk / 60).toFixed(1).replace('.', ',') + ' saat') : '—';
-      ph._right.textContent = 'önbellek ' + yas;
-      add(ph._body, row('Korku-Açgözlülük', h.duygu ? h.duygu.deger + ' / 100 — ' + h.duygu.sinif_tr : 'veri yok'));
-      var TON = {pozitif: 'olumlu', negatif: 'olumsuz', notr: 'nötr'};
-      add(ph._body, row('En çok anılan coinler (24 saat)', (h.coinler || []).length ? h.coinler.map(function (x) {
-        return x.coin + ' (' + x.adet_24s + ' haber, ' + (TON[x.ton] || 'ton yok') + ')'; }).join(', ') : 'veri yok'));
-      add(ph._body, row('Önbellek yaşı', yas));
-    });
-    get('/api/habersonuc').then(function (h) {
-      clear(phs._body);
-      if (!h.ok) { add(phs._body, nodata(h.code)); return; }
-      if (!h.var) { add(phs._body, el('div', 'yok', 'veri yok' + (h.neden ? ' (' + h.neden + ')' : ''))); return; }
-      phs._right.textContent = 'son ' + (h.pencere_gun || 7) + ' gün · tüm zamanlar';
-      function tab(ad, satirlar) {
-        return table([ad, 'İşlem', 'Kazanan', 'İsabet %', 'Toplam PnL $', 'Ort. PnL $'], (satirlar || []).map(function (r) {
-          return [r.etiket, {t: String(r.n), v: r.n}, {t: String(r.kazanan), v: r.kazanan}, {t: f2(r.isabet_yuzde, 1), v: r.isabet_yuzde},
-                  {t: sgn(r.toplam_pnl), v: r.toplam_pnl, c: cls(r.toplam_pnl)}, {t: f2(r.ortalama_pnl), v: r.ortalama_pnl}];
-        }), {right: [1, 2, 3, 4, 5]});
-      }
-      [['tablolar', 'Son ' + (h.pencere_gun || 7) + ' gün'], ['tum_zamanlar', 'Tüm zamanlar']].forEach(function (d) {
-        var b = h[d[0]] || {};
-        add(phs._body, el('h4', '', d[1] + ' — Duygu (Fear & Greed)'), tab('Duygu', b.duygu), el('h4', '', d[1] + ' — Haber tonu'), tab('Haber tonu', b.haber_ton));
-      });
-      add(phs._body, el('div', 'yok', (h.notlar || []).join(' ')));
-    });
-    get('/api/alinmayansonuc').then(function (h) {
-      clear(pas._body);
-      if (!h.ok) { add(pas._body, nodata(h.code)); return; }
-      if (!h.var) { add(pas._body, el('div', 'yok', 'veri yok' + (h.neden ? ' (' + h.neden + ')' : ''))); return; }
-      pas._right.textContent = 'son ' + (h.pencere_gun || 7) + ' gün · tüm zamanlar · birim R';
-      function tab(satirlar) {
-        return table(['Neden', 'İşlem', 'Kazanan', 'İsabet %', 'Toplam PnL (R)', 'Ort. PnL (R)'], (satirlar || []).map(function (r) {
-          return [r.etiket, {t: String(r.n), v: r.n}, {t: String(r.kazanan), v: r.kazanan}, {t: f2(r.isabet_yuzde, 1), v: r.isabet_yuzde},
-                  {t: sgn(r.toplam_pnl), v: r.toplam_pnl, c: cls(r.toplam_pnl)}, {t: f2(r.ortalama_pnl), v: r.ortalama_pnl}];
-        }), {right: [1, 2, 3, 4, 5]});
-      }
-      function coz(o) {
-        var k = Object.keys(o || {});
-        return k.length ? 'Çözülmedi: ' + k.map(function (x) { return x + ' ' + o[x]; }).join(', ') : '';
-      }
-      [['tablolar', 'Son ' + (h.pencere_gun || 7) + ' gün'], ['tum_zamanlar', 'Tüm zamanlar']].forEach(function (d) {
-        var b = h[d[0]] || {};
-        add(pas._body, el('h4', '', d[1] + ' — Engel nedenine göre'), tab(b.neden), el('div', 'yok', coz((h.cozulmedi || {})[d[0]])));
-      });
-      add(pas._body, el('div', 'yok', h.not || ''));
-    });
-    get('/api/tutarlilik').then(function (t) {
-      clear(pt._body);
-      if (!t.ok) { add(pt._body, nodata(t.code)); return; }
-      if (!t.var) { add(pt._body, el('div', 'yok', 'rapor yok' + (t.neden ? ' (' + t.neden + ')' : ''))); return; }
-      pt._right.textContent = t.uyari ? 'UYARI' : 'uyarı yok';
-      var dn = t.donem || {};
-      add(pt._body, row('Dönem', (dn.bas ? tsi(dn.bas).slice(0, 10) : '—') + ' → ' + (dn.bit ? tsi(dn.bit).slice(0, 10) : '—')),
-        row('Üretim', tsi(t.uretim) + ' TSİ'));
-      if (t.uyari) add(pt._body, el('div', 'uyari', 'Tutarlılık sapması: ' + (t.uyari_nedenleri || []).join('; ')));
-      add(pt._body, table(['Kurulum', 'Eşleşme', 'Giriş kayma (bps)', 'Çıkış kayma (bps)', 'Kâğıt R', 'Geri test R', 'Uyarı'],
-        t.kurulumlar.map(function (k) {
-          return [k.ad, {t: pct(k.eslesme_orani, 1), v: k.eslesme_orani}, sgn(k.giris_kayma_bps_ort, 1), sgn(k.cikis_kayma_bps_ort, 1),
-                  sgn(k.kagit_R), sgn(k.bt_R), {t: k.uyari.length ? 'evet' : '—', c: k.uyari.length ? 'kotu' : ''}];
-        }), {right: [1, 2, 3, 4, 5]}));
-      if (t.not) add(pt._body, el('div', 'yok', t.not));
-    });
-    get('/api/pbo').then(function (r) {
-      clear(pp._body);
-      if (!r.ok) { add(pp._body, nodata(r.code)); return; }
-      var m = r.muhur || {}, p = r.pbo || {};
-      if (m.var) {
-        pp._right.textContent = m.acildi === true ? 'holdout AÇILDI' : (m.acildi === false ? 'holdout mühürlü' : 'mühür');
-        add(pp._body, row('Mühür tarihi', m.muhur_tarihi ? tsi(m.muhur_tarihi) + ' TSİ' : '—'),
-          row('Mühürlü dosya', m.dosya_sayisi === null ? '—' : String(m.dosya_sayisi)),
-          row('Açıldı', m.acildi === null ? '—' : (m.acildi ? 'evet' : 'hayır'), m.acildi ? 'kotu' : ''));
-        if (m.hash12) add(pp._body, row('Özet (ilk 12)', m.hash12));
-      } else add(pp._body, el('div', 'yok', 'mühür dosyası yok' + (m.neden ? ' (' + m.neden + ')' : '')));
-      if (!p.var) { add(pp._body, el('div', 'yok', 'PBO raporu yok' + (p.neden ? ' (' + p.neden + ')' : ''))); return; }
-      add(pp._body, table(['Aile', 'PBO', 'DSR', 'Yapılandırma', 'T', 'Durum'], p.aileler.map(function (a) {
-        return [a.aile, {t: f2(a.pbo, 3), v: a.pbo}, {t: f2(a.dsr, 3), v: a.dsr}, {t: a.n_yapilandirma === null ? '—' : String(a.n_yapilandirma), v: a.n_yapilandirma},
-                {t: a.T === null ? '—' : String(a.T), v: a.T}, a.yorum || a.durum];
-      }), {right: [1, 2, 3, 4]}));
-    });
-  }
-
-  function tabSaglik(root) {
-    clear(root);
-    var p = panel('Sağlık', ''), ps = panel('Süreç / kaynak', ''), ig = el('div', 'ig');
-    add(ig, p, ps); add(root, ig);
-    get('/api/health').then(function (h) {
-      clear(p._body);
-      if (!h.ok) { add(p._body, nodata(h.code)); return; }
-      p._right.textContent = h.overall || '—';
-      if (h.check_stale) add(p._body, el('div', 'uyari kritik', 'Sağlık denetimi çalışmıyor: son çalışma ' + (h.last_run_at ? tsi(h.last_run_at) + ' TSİ' : 'bilinmiyor')));
-      add(p._body, row('Son denetim', h.last_run_at ? tsi(h.last_run_at) + ' TSİ' : '—'));
-      if (h.alerts.length) add(p._body, table(['Kontrol', 'Kod', 'İlk görülme', 'Ardışık', 'Bildirildi'], h.alerts.map(function (a) {
-        return [a.name, a.code, a.first_seen ? tsi(a.first_seen) : '—', String(a.consecutive === null ? '—' : a.consecutive), a.alerted ? 'evet' : 'hayır'];
-      })));
-      else add(p._body, el('div', 'yok', 'Açık uyarı yok.'));
-      var rc = Object.keys(h.restart_counts);
-      if (rc.length) add(p._body, el('h4', '', 'Yeniden başlatma sayaçları'), table(['Birim', 'Sayı'], rc.map(function (k) { return [k, String(h.restart_counts[k])]; })));
-    });
-    get('/api/system').then(function (s) {
-      clear(ps._body);
-      if (!s.ok) { add(ps._body, nodata(s.code)); return; }
-      add(ps._body, row('Boş bellek', bytes(s.mem_available) + ' / ' + bytes(s.mem_total), s.mem_level),
-        row('Takas', bytes(s.swap_used) + ' / ' + bytes(s.swap_total), s.swap_level),
-        row('Boş disk', bytes(s.disk_free) + ' / ' + bytes(s.disk_total), s.disk_level || ''));
-    });
-  }
-
-  var RENDER = {ozet: tabOzet, pozisyonlar: tabPoz, islemler: tabIslem, butce: tabButce, ders: tabDers, ogrenme: tabOgrenme, dogrulama: tabDogrulama, saglik: tabSaglik};
-
-  /* ---------- sekme rozetleri (2026-11-18): acik pozisyon, kapanan islem, bekleyen ders, acik uyari ---------- */
-  function badge(t, n, kotu) {
-    var b = document.querySelector('.tabs button[data-t="' + t + '"]');
-    if (!b) return;
-    var e = b.querySelector('em');
-    if (!num(n)) { if (e) b.removeChild(e); return; }
-    if (!e) { e = el('em'); b.appendChild(e); }
-    e.textContent = String(n);
-    e.className = kotu && n > 0 ? 'k' : '';
-  }
-  function refreshBadges() {
-    var cur = statusCur();
-    badge('pozisyonlar', cur && cur.state === 'live' ? (cur.data.open_positions || []).length : null);
-    get('/api/ledger?bot=' + S.bot).then(function (r) {
-      if (!r.ok) { badge('islemler', null); return; }
-      if (!(cur && cur.state === 'live')) badge('pozisyonlar', r.open.length);
-      badge('islemler', r.closed.length);
-    });
-    get('/api/lesson').then(function (r) { badge('ders', r.ok ? r.open_count || 0 : null); });
-    get('/api/learning').then(function (r) {
-      badge('ogrenme', r.ok ? (r.lesson.closed_arms || []).length : null, !!(r.ok && r.lesson.brake_active));
-    });
-    get('/api/health').then(function (h) { badge('saglik', h.ok ? h.alerts.length : null, true); });
-  }
-
-  /* ---------- dongu ---------- */
-  function setGen(st) {
-    if (st && st.ok) { S.gen = st.generated_at; $('uretim').textContent = 'sunucu: ' + tsi(st.generated_at) + ' TSİ'; }
-  }
-  function refreshTop() {
-    return get('/api/status').then(function (st) { S.status = st; setGen(st); renderTop(st); });
-  }
-  function refreshTab() {
-    var root = $('sek-' + S.tab);
-    RENDER[S.tab](root);
-  }
-  function showTab(t) {
+  function sec(t) {
     S.tab = t;
-    Array.prototype.forEach.call(document.querySelectorAll('.tabs button'), function (b) { b.classList.toggle('on', b.getAttribute('data-t') === t); });
-    Array.prototype.forEach.call(document.querySelectorAll('.sek'), function (s) { s.classList.toggle('on', s.id === 'sek-' + t); });
-    try { localStorage.setItem('trader-sekme', t); } catch (e) { /* yok say */ }
-    refreshTab();
+    try { localStorage.setItem('pano_sekme', t); } catch (e) { /* tarayici deposu yoksa sorun degil */ }
+    TABS.forEach(function (x) {
+      var s = $('sek-' + x[0]), bt = $('tab-' + x[0]);
+      if (s) s.className = 'sek' + (x[0] === t ? ' on' : '');
+      if (bt) bt.className = x[0] === t ? 'on' : '';
+    });
+    if (t === 'kapanan') yukleKapanan();
+  }
+  function kurTabs() {
+    var n = clear($('tabs'));
+    TABS.forEach(function (x) {
+      var b = el('button', '', x[1]);
+      b.type = 'button';
+      b.id = 'tab-' + x[0];
+      b.addEventListener('click', function () { sec(x[0]); });
+      add(n, b);
+    });
   }
 
-  function init() {
-    var nav = $('tabs');
-    TABS.forEach(function (t) {
-      var b = el('button', '', t[1]); b.type = 'button'; b.setAttribute('data-t', t[0]);
-      b.addEventListener('click', function () { showTab(t[0]); });
-      nav.appendChild(b);
-    });
-    $('yenile').addEventListener('click', function () { if (SNAP) { location.reload(); return; } refreshTop(); refreshTab(); refreshBadges(); });
-    snapBanner(); setInterval(snapBanner, 30000);
-    // pano.py JS: tema dugmesi (uyarlandi)
-    (function () {
-      var k = 'trader-tema', h = document.documentElement;
-      try { var t = localStorage.getItem(k); if (t) h.setAttribute('data-theme', t); } catch (e) { /* yok say */ }
-      $('tema').addEventListener('click', function () {
-        var m = h.getAttribute('data-theme'), koyu = m ? m === 'dark' : true, y = koyu ? 'light' : 'dark';
-        h.setAttribute('data-theme', y);
-        try { localStorage.setItem(k, y); } catch (e) { /* yok say */ }
-      });
-    })();
-    var first = 'ozet';
-    try { var s = localStorage.getItem('trader-sekme'); if (s && RENDER[s]) first = s; } catch (e) { /* yok say */ }
-    refreshTop().then(function () { showTab(first); refreshBadges(); });
-    setInterval(function () { if (!document.hidden) refreshTop(); }, TOP_MS);
-    setInterval(function () { if (!document.hidden) { refreshTab(); refreshBadges(); } }, TAB_MS);
-    document.addEventListener('visibilitychange', function () { if (!document.hidden) { refreshTop(); refreshTab(); refreshBadges(); } });
+  function yokKart(txt) { return add(kart('Veri'), yok(txt)); }
+
+  function kzHatasi(root, p) {
+    clear(root);
+    add(root, yokKart('Veri şu an okunamıyor.'));
   }
-  init();
+
+  /* ÖZET */
+  function tabOzet(root, p) {
+    clear(root);
+    var ig = add(el('div', 'ig iki'));
+    if (p.isik.renk === 'kirmizi') add(ig, isikKart(p));
+    var y = kart('Ne yapmalıyım?');
+    add(y, el('div', 'buyuk', p.yapmali));
+    add(ig, y);
+    var a = p.acik, k = kart('Açık işlemler', link('Tümü', 'acik'));
+    if (!a.n) add(k, yok('Şu an açık işlem yok.'));
+    else {
+      add(k, satir('Adet', String(a.n)), satir('Toplam K/Z', usdS(a.kz), cls(a.kz)));
+      if (a.en_iyi) add(k, satir('En iyi', a.en_iyi.coin + ' ' + usdS(a.en_iyi.kz), cls(a.en_iyi.kz)));
+      if (a.en_kotu) add(k, satir('En kötü', a.en_kotu.coin + ' ' + usdS(a.en_kotu.kz), cls(a.en_kotu.kz)));
+    }
+    add(ig, k);
+    var s3 = kart('Son kapanan işlemler', link('Tümü', 'kapanan'));
+    if (!p.son3.length) add(s3, yok('Henüz kapanan işlem yok.'));
+    p.son3.forEach(function (r) {
+      var d = el('div', 'satir');
+      var sol = add(el('span'), el('b', '', r.coin), el('span', 'yon ' + r.yon, r.yon), el('span', 'u sol', ' ' + r.kapanis));
+      add(d, sol, el('b', cls(r.kz), usdS(r.kz) + ' · ' + r.neden));
+      add(s3, d);
+    });
+    add(ig, s3);
+    if (p.ders) {
+      var d = kart('Ders', link('Ayrıntı', 'ogrenme'));
+      add(d, add(el('div'), rozetRenk(p.ders.durum, p.ders.renk)));
+      if (p.ders.son) add(d, el('div', 'yok', p.ders.son.tarih + ' · ' + p.ders.son.metin));
+      add(ig, d);
+    }
+    if (p.ml) {
+      var m = kart('Makine öğrenmesi', link('Ayrıntı', 'ogrenme'));
+      add(m, add(el('div'), rozetRenk(p.ml.durum, p.ml.renk)));
+      add(m, el('div', 'yok', p.ml.isabet.olculemedi ? p.ml.isabet.olculemedi : 'Son ' + p.ml.isabet.n + ' tahminin ' + p.ml.isabet.tutan + '\'i tuttu'));
+      add(ig, m);
+    }
+    if (p.isik.renk !== 'kirmizi') add(ig, isikKart(p));
+    add(root, ig);
+  }
+  function isikKart(p) {
+    var k = kart('Durum', null, p.isik.renk === 'kirmizi' ? 'kirmizi' : '');
+    return add(k, add(el('div', 'buyuk'), el('span', 'nokta'), document.createTextNode(' ' + p.isik.metin)),
+      p.isik.renk === 'kirmizi' ? link('Teknik ayrıntı', 'teknik') : null);
+  }
+
+  /* AÇIK */
+  function tabAcik(root, p) {
+    clear(root);
+    var a = p.acik, k = kart('Açık işlemler');
+    if (!a.n) { add(k, yok('Şu an açık işlem yok.')); add(root, k); return; }
+    add(k, add(el('div', 'ozet-ic'), el('span', '', a.n + ' işlem'), add(el('span'), document.createTextNode('K/Z '), el('b', cls(a.kz), usdS(a.kz))),
+      num(a.kasa_yuzde) ? el('span', '', 'kasanın %' + a.kasa_yuzde.toFixed(0) + '\'i kullanımda') : null));
+    var rows = a.rows.map(function (r) {
+      var gn = add(el('div'), el('div', 'n', px(r.giris)), el('div', 'u', '→ ' + px(r.simdi)));
+      return {cells: [sym(r.coin, r.yon, r.kol), gn, kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.sure))],
+        detail: [['Stop', px(r.stop)], ['Hedef', px(r.hedef)], ['Büyüklük', usd(r.buyukluk)], ['Kaldıraç', r.kaldirac ? r.kaldirac + 'x' : ''],
+          ['Kol', r.kol], ['Açılış', r.acilis], ['Açılış nedeni', r.neden, 1]]};
+    });
+    add(k, tablo(['Sembol', 'Giriş → şimdi', 'K/Z', 'Süre'], rows, [2, 3]));
+    add(root, k);
+  }
+
+  /* KAPANAN */
+  function yukleKapanan() {
+    var root = $('sek-kapanan'), d = S.donem;
+    function ciz(v) {
+      clear(root);
+      var k = kart('Kapanan işlemler'), bar = el('div', 'donem');
+      DONEMLER.forEach(function (x) {
+        var b = el('button', x[0] === S.donem ? 'on' : '', x[1]);
+        b.type = 'button';
+        b.addEventListener('click', function () { S.donem = x[0]; yukleKapanan(); });
+        add(bar, b);
+      });
+      add(k, bar);
+      if (!v || !v.ok) { add(k, yok('Veri şu an okunamıyor.')); add(root, k); return; }
+      if (!v.n) { add(k, yok('Bu dönemde kapanan işlem yok.')); add(root, k); return; }
+      add(k, add(el('div', 'ozet-ic'), el('span', '', v.n + ' işlem'), el('span', '', 'kazanan %' + v.kazanan_yuzde.toFixed(0)),
+        add(el('span'), document.createTextNode('net '), el('b', cls(v.net), usdS(v.net)))));
+      var rows = v.rows.map(function (r) {
+        return {cells: [sym(r.coin, r.yon), el('div', 'n', r.kapanis), kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.neden))],
+          detail: [['Giriş', px(r.giris)], ['Çıkış', px(r.cikis)], ['Süre', r.sure], ['Komisyon', usd(r.komisyon)], ['Kol', r.kol],
+            ['Açılış', r.acilis], ['Ders', r.ders ? 'Bu işlemde ders etkili oldu' : '', 1]]};
+      });
+      add(k, tablo(['Sembol', 'Kapanış', 'K/Z', 'Neden'], rows, [2, 3]));
+      if (v.daha_fazla) add(k, el('div', 'yok', 'Daha eski ' + v.daha_fazla + ' işlem listede gösterilmiyor.'));
+      add(root, k);
+    }
+    if (S.kapanan[d]) { ciz(S.kapanan[d]); return; }
+    get('/api/kapanan?bot=' + BOT + '&period=' + d).then(function (v) { S.kapanan[d] = v; if (S.donem === d) ciz(v); });
+  }
+
+  /* K/Z */
+  function tabKz(root, p) {
+    clear(root);
+    var z = p.kz, ig = el('div', 'ig iki');
+    if (z.egri) { var g = kart('Kasa eğrisi · 30 gün'); add(g, cizgiGrafik(z.egri)); add(ig, g); }
+    var d = kart('Dönem K/Z'), g4 = el('div', 'd4');
+    [['bugun', 'Bugün'], ['7g', '7 gün'], ['30g', '30 gün'], ['tumu', 'Toplam']].forEach(function (x) {
+      var v = z.donemler[x[0]];
+      add(g4, sk(x[1], usdS(v.kz), pc(v.yuzde), cls(v.kz)));
+    });
+    add(d, g4); add(ig, d);
+    if (z.oran) {
+      var o = kart('Kazanma oranı');
+      if (z.oran.olculemedi) add(o, yok(z.oran.olculemedi));
+      else add(o, satir('Kazanan işlem', '%' + z.oran.kazanma_yuzde.toFixed(0) + ' (' + z.oran.n + ' işlem)'),
+        satir('Ortalama kazanç', usdS(z.oran.ort_kazanc), 'iyi'), satir('Ortalama kayıp', usdS(z.oran.ort_kayip), 'kotu'));
+      add(ig, o);
+    }
+    if (z.kol.length) {
+      var kk = kart('Kaynağa göre K/Z');
+      z.kol.forEach(function (r) { add(kk, satir(r.kol + ' · ' + r.n + ' işlem', usdS(r.kz), cls(r.kz))); });
+      add(ig, kk);
+    }
+    if (z.masraf) {
+      var m = kart('Masraflar');
+      add(m, satir('Komisyon · 30 gün', usd(z.masraf['30g'].komisyon)), satir('Fonlama · 30 gün', usdS(-z.masraf['30g'].fonlama)),
+        satir('Komisyon · toplam', usd(z.masraf.tumu.komisyon)), satir('Fonlama · toplam', usdS(-z.masraf.tumu.fonlama)));
+      add(ig, m);
+    }
+    add(root, ig);
+  }
+
+  /* ÖĞRENME */
+  function katkiSatir(k) {
+    if (k.olculemedi) return satir('Katkı', k.olculemedi);
+    return satir('Katkı', (k.yaklasik ? '≈ ' : '') + usdS(k.usd) + ' (' + k.n + ' karar)', cls(k.usd));
+  }
+  function tabOgrenme(root, p) {
+    clear(root);
+    var ig = el('div', 'ig iki');
+    if (p.ders) {
+      var d = p.ders, k = kart('Ders kartı');
+      add(k, add(el('div'), rozetRenk(d.durum, d.renk)));
+      if (d.son) add(k, satir('Son öğrendiği', d.son.tarih), el('div', 'yok', d.son.metin));
+      add(k, satir('Son 7 günde etkilediği işlem', String(d.degisen_7g)), katkiSatir(d.katki));
+      add(ig, k);
+      if (d.son5.length) {
+        var l = kart('Son dersler');
+        d.son5.forEach(function (s) { add(l, satir(s.tarih, s.metin, s.geri ? 'kotu' : '')); });
+        add(ig, l);
+      }
+    }
+    if (p.ml) {
+      var m = p.ml, mk = kart('Makine öğrenmesi');
+      add(mk, add(el('div'), rozetRenk(m.durum, m.renk)));
+      add(mk, m.isabet.olculemedi ? satir('İsabet', m.isabet.olculemedi) : satir('İsabet', 'son ' + m.isabet.n + ' tahminin ' + m.isabet.tutan + '\'i tuttu'));
+      add(mk, satir('Son 7 gün', m.onay_7g + ' onay · ' + m.ret_7g + ' ret'), katkiSatir(m.katki));
+      if (m.egitim) add(mk, satir('Son eğitim', m.egitim.tarih + ' · ' + m.egitim.ornek + ' örnek'));
+      add(ig, mk);
+      if (m.son5.length) {
+        var ls = kart('Son 5 karar');
+        m.son5.forEach(function (s) {
+          add(ls, add(el('div', 'satir'), add(el('span'), el('b', '', s.coin), el('span', 'u sol', ' ' + s.tarih)),
+            el('b', s.karar === 'Aldı' ? 'iyi' : '', s.karar + ' · ' + s.sonuc)));
+        });
+        add(ig, ls);
+      }
+    }
+    if (!p.ders && !p.ml) add(ig, yokKart('Henüz öğrenme verisi yok.'));
+    add(root, ig);
+  }
+
+  /* TEKNİK (katlı) */
+  function katli(baslik, renk, bodyFn, ac) {
+    var d = el('details'), s = el('summary');
+    if (ac) d.setAttribute('open', '');
+    add(s, el('span', '', baslik), renk ? el('span', 'nokta ' + renk) : null);
+    add(d, s, bodyFn(el('div')));
+    return d;
+  }
+  function bar(ad, kul, lim, pct) {
+    var w = el('div', 'lim'), r = el('div', 'r');
+    add(r, el('span', '', ad), el('b', '', f2(kul) + ' / ' + f2(lim) + ' $'));
+    var c = el('div', 'cub'), i = el('i', pct >= 90 ? 'k' : (pct >= 70 ? 's' : ''));
+    i.style.width = Math.min(Math.max(num(pct) ? pct : 0, 0), 100) + '%';
+    return add(w, r, add(c, i));
+  }
+  function tabTeknik(root, p) {
+    clear(root);
+    var t = p.teknik;
+    if (t.saglik) {
+      add(root, katli('Sağlık', t.saglik.renk, function (b) {
+        add(b, add(el('div'), rozetRenk(t.saglik.durum, t.saglik.renk)));
+        t.saglik.uyarilar.forEach(function (u) { add(b, el('div', 'yok', u)); });
+        if (t.saglik.kontrol_bayat) add(b, el('div', 'yok kotu', 'Sağlık kontrolü bir süredir çalışmamış.'));
+        return b;
+      }, t.saglik.renk !== 'yesil'));
+    }
+    if (t.limitler) add(root, katli('Risk limitleri', '', function (b) {
+      t.limitler.forEach(function (r) { add(b, bar(r.ad, r.kullanilan, r.limit, r.yuzde)); });
+      return b;
+    }));
+    if (t.kapilar) add(root, katli('Kalite kapıları', '', function (b) {
+      t.kapilar.forEach(function (r) { add(b, satir(r.ad, r.not, r.ok ? 'iyi' : 'kotu')); });
+      return b;
+    }));
+    if (t.model) add(root, katli('Model ayrıntısı', '', function (b) {
+      t.model.forEach(function (r) { add(b, satir(r.ad + ' · bugünkü çağrı', String(r.cagri_bugun)), satir('Bu ay maliyet', usd(r.maliyet_ay))); });
+      return b;
+    }));
+    if (t.butce) add(root, katli('Bütçe', '', function (b) {
+      return add(b, satir('Bu ay kullanılan', usd(t.butce.kullanilan)), satir('Aylık tavan', usd(t.butce.tavan)));
+    }));
+    if (t.kayitlar) add(root, katli('Kayıtlar', '', function (b) {
+      return add(b, satir('Kapanan işlem', String(t.kayitlar.kapanan)), satir('Açık işlem', String(t.kayitlar.acik)), satir('Değerlendirilen fırsat', String(t.kayitlar.karar)));
+    }));
+    if (t.dogrulama) add(root, katli('Backtest / doğrulama', '', function (b) {
+      if (num(t.dogrulama.eslesme)) add(b, satir('Kâğıt ile geçmiş test eşleşmesi', '%' + (t.dogrulama.eslesme * 100).toFixed(0)));
+      if (num(t.dogrulama.pbo)) add(b, satir('Aşırı uyum riski (en yüksek)', '%' + (t.dogrulama.pbo * 100).toFixed(0)));
+      if (t.dogrulama.uyari) add(b, el('div', 'yok kotu', 'Doğrulama raporunda uyarı var.'));
+      return b;
+    }));
+    if (!root.firstChild) add(root, yokKart('Teknik veri yok.'));
+  }
+
+  function ciz(p) {
+    renderTop(p);
+    ['ozet', 'acik', 'kz', 'ogrenme', 'teknik'].forEach(function (k) { clear($('sek-' + k)); });
+    if (!p || !p.ok) { add($('sek-ozet'), yokKart('Veri şu an okunamıyor.')); return; }
+    S.gen = p.generated_at;
+    tabOzet($('sek-ozet'), p); tabAcik($('sek-acik'), p); tabKz($('sek-kz'), p); tabOgrenme($('sek-ogrenme'), p); tabTeknik($('sek-teknik'), p);
+  }
+
+  /* ---------- baslat ---------- */
+  function guncellemeEtiketi() {
+    var u = $('uretim'), g = SNAP ? SNAP.generated_at : null;
+    var s = g ? (Date.now() - Date.parse(g)) / 1000 : (Date.now() - S.t0) / 1000;
+    u.textContent = 'son güncelleme ' + ago(s);
+    if ((Date.now() - S.t0) / 1000 >= YENILE_S && location && typeof location.reload === 'function') location.reload();
+  }
+  function tema(v) {
+    document.documentElement.setAttribute('data-theme', v);
+    try { localStorage.setItem('pano_tema', v); } catch (e) { /* onemsiz */ }
+  }
+  function baslat() {
+    var iframe = false;
+    try { iframe = window.self !== window.top; } catch (e) { iframe = true; }
+    if (iframe) document.documentElement.classList.add('gomulu');          // gomulu: kendi basligi ve Yenile/Tema yok
+    var kay = null;
+    try { kay = localStorage.getItem('pano_tema'); } catch (e) { kay = null; }
+    var koyu = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    tema(kay === 'light' || kay === 'dark' ? kay : (koyu ? 'dark' : 'light'));
+    $('tema').addEventListener('click', function () {
+      tema(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    });
+    $('yenile').addEventListener('click', function () { location.reload(); });
+    if ($('snap-bant')) $('snap-bant').style.display = 'none';
+    snapBanner();
+    kurTabs();
+    var son = null;
+    try { son = localStorage.getItem('pano_sekme'); } catch (e) { son = null; }
+    sec(TABS.some(function (x) { return x[0] === son; }) ? son : 'ozet');
+    if (SNAP) $('damga').style.display = 'none';
+    get('/api/pano?bot=' + BOT).then(function (p) { S.pano = p; ciz(p); guncellemeEtiketi(); if (S.tab === 'kapanan') yukleKapanan(); });
+    setInterval(function () { snapBanner(); guncellemeEtiketi(); }, 30000);     // yalniz etiket; ekran yeniden cizilmez
+  }
+  baslat();
 })();

@@ -17,7 +17,7 @@ from trader_core import panel_data as P
 
 ENDPOINTS = ["/api/status", "/api/ledger?bot=learner", f"/api/ledger?bot=learner&day={DAY}",
              "/api/curve?bot=learner", "/api/risk?bot=learner", "/api/budget",
-             "/api/lesson", "/api/health", "/api/system", "/healthz", "/", "/static/panel.js"]
+             "/api/lesson", "/api/pano?bot=learner", "/api/kapanan?bot=learner&period=7g", "/api/health", "/api/system", "/healthz", "/", "/static/panel.js"]
 
 
 def snap(root: Path, skip=(".sqlite-shm",)) -> dict:

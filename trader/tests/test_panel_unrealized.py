@@ -88,8 +88,8 @@ def test_panel_passthrough(tmp_path):
 def test_panel_js_safe_and_columns():
     js = (ROOT / "src/trader_panel/static/panel.js").read_text(encoding="utf-8")
     assert not re.search(r"\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML", js)
-    assert "'Mark'" in js and "'Tutar $'" in js and "'K/Z'" in js and "AÇIK K/Z" in js
-    assert re.search(r"unrealized_pnl_usd", js)
+    assert "'K/Z'" in js and "açık K/Z" in js and "'Giriş → şimdi'" in js        # yeni 4 sutunlu tablo; Mark/Tutar ayrintiya tasindi
+    assert "'Büyüklük'" in js and "acik_kz" in js
 
 
 def test_snapshot_embeds_unrealized(tmp_path):

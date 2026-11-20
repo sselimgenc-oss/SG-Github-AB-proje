@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from trader_core import panel_data as P
+from trader_core import panel_pano as PP
 
 BOTS = ("learner",)
 DEFAULT_PORT = 8787
@@ -188,6 +189,65 @@ class PanelData:
             d = s["data"]
             return P.risk_usage(self._ledger_path(b), b, d.get("equity"), d.get("day_start_equity"),
                                 P.today_tr(self.now()))
+        return self._wrap(fn)
+
+    def _kill_file(self) -> bool | None:
+        kf = self.cfg.kill_file
+        try:
+            return os.path.exists(kf) if kf else None
+        except OSError:
+            return None
+
+    def pano(self, bot: str | None) -> dict:
+        """Yeni pano govdesi: serit, ozet parcalari, acik, k/z, ogrenme, teknik (hepsi sade Turkce; gosterim)."""
+        def fn() -> dict:
+            b = self._bot(bot)
+            now = self.now()
+            s = self._live(b)
+            live = s["state"] == "live"
+            status = s["data"] if live else None
+            lp = self._ledger_path(b)
+            ctx = PP.Ctx(lp, b)
+            start = self._wallet_start()
+            try:
+                curve = P.equity_curve(lp, b, start, self.cfg.curve_limit)
+            except P.SectionError:
+                curve = None
+            serit = PP.serit_view(ctx, status, s["state"], self._kill_file(), start, now, curve)
+            acik = PP.open_view(ctx, status, now)
+            kz = PP.kz_view(ctx, start, now, curve, P.paper_maps()[0])
+            mlf = (status or {}).get("ml_filtre")
+            try:
+                ders = PP.ders_view(lp, ctx, now, live)
+            except Exception:  # noqa: BLE001 - ders okunamazsa kart gizlenir
+                ders = None
+            try:
+                ml = PP.ml_view(lp, ctx, now, mlf)
+            except Exception:  # noqa: BLE001
+                ml = None
+            safe = {}
+            for k, f in (("health", lambda: P.health_view(self.cfg.health_state, now, self.cfg.health_stale_s)),
+                         ("budget", lambda: P.budget_view(self.cfg.budget_config)),
+                         ("risk", lambda: P.risk_usage(lp, b, status["equity"], status["day_start_equity"], P.today_tr(now))["rows"]),
+                         ("tut", lambda: P.tutarlilik_view(self._tut_path(), now)),
+                         ("pbo", lambda: P.pbo_view(self._holdout_path("pbo_path", "pbo_ozet.json"),
+                                                    self._holdout_path("muhur_path", "muhur.json")))):
+                try:
+                    safe[k] = f()
+                except Exception:  # noqa: BLE001
+                    safe[k] = None
+            teknik = PP.teknik_view(health=safe["health"], risk_rows=safe["risk"], budget=safe["budget"], tut=safe["tut"],
+                                    pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders)
+            isik = PP._problem(teknik.get("saglik"), s["state"], serit["risk"], safe["budget"])
+            return {"bot_durum": s["state"], "mod": (status or {}).get("mode"), "serit": serit, "acik": acik, "kz": kz,
+                    "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "teknik": teknik,
+                    "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"])}
+        return self._wrap(fn)
+
+    def kapanan(self, bot: str | None, period: str | None) -> dict:
+        def fn() -> dict:
+            b = self._bot(bot)
+            return PP.closed_view(self._ledger_path(b), b, period or "bugun", self.now(), self.cfg.closed_limit)
         return self._wrap(fn)
 
     def budget(self) -> dict:
