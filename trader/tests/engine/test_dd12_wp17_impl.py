@@ -201,7 +201,8 @@ def test_panel_endpoint_and_tab(world, tmp_path):
     assert v["ok"] is True and v["scorecard"] and v["lesson"]["brake_active"] is True
     assert "/api/learning" in SRV.build_api(data)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    assert 'id="sek-ogrenme"' in html and 'id="sek-ders"' in html and 'id="sek-saglik"' in html
+    # 20.11 yeni pano (6 sekme): ders + ML ogrenme sekmesinde, saglik teknik sekmesinde; veri /api/pano'dan
+    assert 'id="sek-ogrenme"' in html and 'id="sek-teknik"' in html
     js = (STATIC / "panel.js").read_text(encoding="utf-8")
-    assert "['ogrenme', 'ÖĞRENME']" in js and "ogrenme: tabOgrenme" in js and "/api/learning" in js
+    assert "['ogrenme', 'ÖĞRENME']" in js and "/api/pano" in js
     assert ".innerHTML" not in js and "insertAdjacentHTML" not in js           # yalniz textContent ile basilir
