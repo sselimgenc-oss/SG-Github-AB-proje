@@ -1,0 +1,10 @@
+# Telegram /geri_al onaylanınca l3a bu dosyayı yazar; root güncelleyici anında uygular ve siler.
+[Unit]
+Description=1L3A geri alma istegi (Telegram /geri_al)
+
+[Path]
+PathExists=/var/lib/1l3a-paper/durum/GERI_AL
+Unit=1l3a-guncelle-istek.service
+
+[Install]
+WantedBy=multi-user.target

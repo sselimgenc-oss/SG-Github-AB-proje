@@ -1,0 +1,15 @@
+# 2026-11-16 ilk tarama. Kart yok: yayim tarihi >= 2026-11-01 dogrulanabilen aday bulunamadi.
+Mroziewicz-Slepaczuk WFO MA intraday BTC | arxiv.org/abs/2602.10785 | 2026-02 | tarih 1 Kasim oncesi
+Crypto.com RWA perp carry/rotasyon raporu | crypto.com/research/rwa-enhancing-portfolio-beyond-crypto-aug-2026 | 2026-08 | tarih eski; vendor raporu, Binance evreni degil
+Gautam-Kanna crypto-momentum-reversal | github.com/Gautam-Kanna/crypto-momentum-reversal | tarih dogrulanamadi | t=0.82 anlamsiz; kesit mom/reversal ailesinin varyanti
+Medium "Inverted Clocks" seans paterni | medium.com/coinmonks/crypto-markets-run-on-inverted-clocks-... | 2026-02 | tarih eski; saat-penceresi ailesi, AI yazimi
+Kvants breakout-retest rehberi | studio.kvants.ai/blog/breakout-retest-strategy | 2026-10-15 | tarih eski; egitim yazisi, kirilim ailesi
+Quantpedia Premium Update 7 Kasim | quantpedia.com/?p=43236 | yil belirsiz | tarih dogrulanamadi; icerik acilamadi (alan adi engelli)
+# 2. tur (arXiv q-fin.TR/PM + Quantpedia taramasi)
+End-of-Day Reversal After 2019 | arxiv.org/abs/2611.09286 | 2026-11-06 | ~3 bps/gun (2020+ 1.69 bps), maliyet sonrasi anlamsiz; kesit-ters-donus/gunici ailesi
+Global Seasonality Factor Investing | arxiv.org/abs/2611.15657 | 2026-11-11 | nonlinear ML modelleri; vadeli, hizli mevsimsellik maliyetle negatif; gun-takvim-olay ailesi
+Idiosyncratic Market Effects in TSMOM | arxiv.org/abs/2611.15646 | 2026-11-11 | istatistiksel ogrenme (ML); zaman-serisi-momentum ailesi
+Logic of Factor Portfolios | arxiv.org/abs/2611.09834 | 2026-11-06 | strateji degil, analiz cercevesi; hisse faktor
+Pumpfun Team-Following | arxiv.org/abs/2611.11436 | 2026-11 | Solana meme coin, zincir ustu veri, Binance evreni disi
+Bitcoin Runs on a Clock (Quantpedia) | quantpedia.com/bitcoin-runs-on-a-clock-... | 2026-10-19 | tarih eski; 3 tepe ornegi, retrospektif
+Dig.: LLM ajan, enerji/BESS, optimal yurutme, market making, RL (q-fin.TR 2611.*) | - | 2026-11 | ML/emir defteri/strateji degil

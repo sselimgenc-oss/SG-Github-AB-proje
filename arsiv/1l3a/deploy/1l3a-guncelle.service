@@ -1,0 +1,18 @@
+# 1L3A otomatik güncelleme (root, oneshot). Zamanlayıcı: 1l3a-guncelle.timer (saatlik); GERI_AL isteği: 1l3a-guncelle-istek.path
+# Yalnız ileri sarma + GitHub CI başarılıysa kurar; kayıt /var/lib/1l3a-guncelle (l3a okuyabilsin: 0755). Telegram anahtarları /etc/1l3a-paper.env.
+[Unit]
+Description=1L3A otomatik guncelleme
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=-/etc/1l3a-paper.env
+StateDirectory=1l3a-guncelle
+StateDirectoryMode=0755
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.oto_guncelle
+TimeoutStartSec=1800

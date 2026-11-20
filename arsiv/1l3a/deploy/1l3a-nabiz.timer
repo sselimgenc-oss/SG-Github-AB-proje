@@ -1,0 +1,10 @@
+[Unit]
+Description=1L3A dis nabiz (5 dakikada bir)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

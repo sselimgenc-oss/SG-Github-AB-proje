@@ -1,0 +1,15 @@
+# GERI_AL istek dosyası görülünce çalışır (1l3a-guncelle-istek.path). Güncelleyici dosyayı siler (silinmezse path birimi döngüye girer).
+[Unit]
+Description=1L3A geri alma (istek dosyasi)
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=-/etc/1l3a-paper.env
+StateDirectory=1l3a-guncelle
+StateDirectoryMode=0755
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.oto_guncelle
+TimeoutStartSec=1800

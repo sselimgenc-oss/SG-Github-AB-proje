@@ -1,0 +1,4 @@
+{
+  "aciklama": "Elle doldurulur. olaylar: [{\"ad\": \"FOMC\", \"zaman\": \"2026-12-09T19:00:00Z\"}] biçiminde FOMC/CPI/NFP olay zamanları (UTC). Karar anı olaydan +-2 saat içindeyse işlem/alinmayan sinyal kaydına takvim_bayragi olarak olay adı yazılır. Tarihleri resmi takvimden doğrulamadan EKLEME; bu dosya yalnız kayıt içindir, hiçbir karara etki etmez. 2026-12 ve 2027-Q1 tarihleri henüz doğrulanmadı (bilerek boş).",
+  "olaylar": []
+}

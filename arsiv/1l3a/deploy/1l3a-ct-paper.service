@@ -1,0 +1,35 @@
+# 1L3A ct_konsensus paper hesabı (CT trader kadrosu yön özeti -> sanal işlem; gerçek emir YOK, canlı yürütücüye bağlı DEĞİL). Kurulum: deploy/KURULUM.md "14".
+# Mevcut 10'lu paper servisinden (1l3a-paper) AYRI süreç ve AYRI durum dizini (/var/lib/1l3a-ct-paper/durum/ct_konsensus); onun imzasına/durumuna dokunmaz.
+# Telegram anahtarları paper servisiyle aynı /etc/1l3a-paper.env dosyasından gelir (repoya ASLA girmez). Kadro adresi: L3A_CT_URL (varsayılan kodda).
+# Yeniden başlatma ve hata bildirimi 1l3a-paper.service ile aynıdır. Elle düzeltip yeniden başlatma: sudo systemctl reset-failed 1l3a-ct-paper && sudo systemctl restart 1l3a-ct-paper
+[Unit]
+Description=1L3A ct_konsensus paper hesabi
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=8
+OnFailure=1l3a-bildirim@%n.service
+
+[Service]
+Type=simple
+User=l3a
+Group=l3a
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=-/etc/1l3a-paper.env
+StateDirectory=1l3a-ct-paper
+Environment=PYTHONUNBUFFERED=1
+Environment=L3A_KILIT_LOG=/var/lib/1l3a-ct-paper/kilit_acilis.jsonl
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.ct_paper --durum ${STATE_DIRECTORY}/durum/ct_konsensus
+Restart=on-failure
+RestartSec=30
+RestartSteps=5
+RestartMaxDelaySec=600
+TimeoutStopSec=120
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

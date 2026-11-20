@@ -1,0 +1,37 @@
+# 1L3A aday paper hesapları (haftalık tarama kartları DOĞRUDAN paper'a girer; gerçek emir YOK, canlı yürütücüye bağlı DEĞİL). Kod: motor/canli/aday_paper.py
+# Gözetmen süreç stratejiler/aday_paper_listesi.json'u okur, her aday için ayrı alt süreç/hesap (durum/adaylar/<kimlik>/) çalıştırır; liste boşsa boşta bekler.
+# Mevcut 10'lu paper (1l3a-paper) ve ct-paper'dan AYRI; onların imzasına/durumuna dokunmaz. Telegram anahtarları /etc/1l3a-paper.env'den (repoya ASLA girmez).
+# Kurulum otomatik: motor/canli/oto_guncelle.py OTOMATIK_KURULACAK listesindeki yeni birimi kopyalar + enable --now (elle komut gerekmez).
+# Elle düzeltip yeniden başlatma: sudo systemctl reset-failed 1l3a-aday-paper && sudo systemctl restart 1l3a-aday-paper
+[Unit]
+Description=1L3A aday paper hesaplari
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=8
+OnFailure=1l3a-bildirim@%n.service
+
+[Service]
+Type=simple
+User=l3a
+Group=l3a
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=-/etc/1l3a-paper.env
+StateDirectory=1l3a-paper
+Environment=PYTHONUNBUFFERED=1
+Environment=L3A_KILIT_LOG=/var/lib/1l3a-paper/kilit_acilis_aday.jsonl
+Environment=L3A_ADAY_DURUM=/var/lib/1l3a-paper/durum/adaylar
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.aday_paper --durum ${L3A_ADAY_DURUM}
+Restart=on-failure
+RestartSec=30
+RestartSteps=5
+RestartMaxDelaySec=600
+TimeoutStopSec=120
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

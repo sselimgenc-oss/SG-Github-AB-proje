@@ -1,0 +1,35 @@
+# 1L3A Telegram komut servisi: /durum, /rapor, /kurulumlar, /ders, /durdur, /devam, /hepsini_kapat (iki adımlı onay), /yardim. Gerçek emir YOK; yalnız durum dosyalarını okur ve durdurma bayrağını yazar.
+# getUpdates YALNIZ bu serviste yapılır (paper servisi yalnız sendMessage gönderir); iki süreç aynı token'la getUpdates yaparsa Telegram 409 verir.
+# Anahtarlar YALNIZ /etc/1l3a-paper.env içinde (izin 600; paper servisiyle aynı dosya); repoya ASLA girmez. Kurulum: deploy/KURULUM.md "15".
+# StateDirectory paper ile AYNI (1l3a-paper): durdurma bayrağı /var/lib/1l3a-paper/durum/DURDUR (L3A_DURDUR_DOSYA ile değişebilir) -> paper, ct_konsensus
+# (okuma) ve canlı yürütücü (paper niyetlerini taşır) aynı bayrağı görür. Komut servisi canlı borsaya dokunmaz.
+[Unit]
+Description=1L3A Telegram komut servisi
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=20
+OnFailure=1l3a-bildirim@%n.service
+
+[Service]
+Type=simple
+User=l3a
+Group=l3a
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=-/etc/1l3a-paper.env
+StateDirectory=1l3a-paper
+Environment=PYTHONUNBUFFERED=1
+Environment=L3A_CT_DURUM=/var/lib/1l3a-ct-paper/durum/ct_konsensus
+Environment=L3A_ADAY_DURUM=/var/lib/1l3a-paper/durum/adaylar
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.telegram_komut --durum ${STATE_DIRECTORY}/durum
+Restart=always
+RestartSec=10
+TimeoutStopSec=45
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

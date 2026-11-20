@@ -1,0 +1,19 @@
+# 1L3A dış nabız: sunucunun sağlığını Cloudflare Worker'a bildirir (deploy/nabiz_worker.js). Zamanlayıcı: 1l3a-nabiz.timer (5 dk).
+# NABIZ_URL ve NABIZ_ANAHTAR /etc/1l3a-nabiz.env içindedir (repoya girmez). Ağ hatası servisi başarısız saymaz (OnFailure yok).
+[Unit]
+Description=1L3A dis nabiz (Cloudflare Worker'a)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=l3a
+Group=l3a
+WorkingDirectory=/opt/1l3a
+EnvironmentFile=/etc/1l3a-nabiz.env
+ExecStart=/opt/1l3a/.venv/bin/python -m motor.canli.nabiz
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
