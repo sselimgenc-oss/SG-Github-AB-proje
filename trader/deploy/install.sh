@@ -652,10 +652,6 @@ done
 for u in trader-veto.service trader-veto.timer trader-engine@twin.service trader-engine-retry@twin.timer; do
   if [ -e "${UNIT_DIR}/$u" ]; then echo "UYARI: eski birim duruyor: $u (install.sh'i yeniden calistirin veya elle kaldirin)"; fi
 done
-# Islem mutabakati bir kez de kurulum/yeniden baslatmalardan SONRA calissin (kosan birimler yeni kodla; yalniz bilgi, kurulumu durdurmaz)
-if [ -e "${UNIT_DIR}/trader-mutabakat.service" ]; then
-  if systemctl start --no-block trader-mutabakat.service >/dev/null 2>&1; then echo "Baslatildi: trader-mutabakat.service (kurulum sonrasi)"; else echo "UYARI: trader-mutabakat.service baslatilamadi (kurulum devam ediyor)."; fi
-fi
 say "OZET"
 echo "Calisan Trader birimleri:"
 systemctl list-units 'trader-*' --no-legend --plain 2>/dev/null | awk '{print "  " $1 "  " $3 "/" $4}' || true
@@ -668,6 +664,11 @@ printf 'COMMIT=%s\n' "$COMMIT" > "${RELEASE_FILE}.tmp"
 chmod 0644 "${RELEASE_FILE}.tmp"
 mv -f "${RELEASE_FILE}.tmp" "$RELEASE_FILE"
 echo "Surum: ${COMMIT} (${RELEASE_FILE})"
+# Islem mutabakati bir kez de kurulum/yeniden baslatmalardan SONRA calissin (kosan birimler yeni kodla; yalniz bilgi, kurulumu durdurmaz). Surum kimligi /etc/trader-release'ten okunur:
+# bu yuzden surum dosyasi yazildiktan SONRA baslatilir (yoksa eski commit okunur ve ozet bir tur gecikir)
+if [ -e "${UNIT_DIR}/trader-mutabakat.service" ]; then
+  if systemctl start --no-block trader-mutabakat.service >/dev/null 2>&1; then echo "Baslatildi: trader-mutabakat.service (kurulum sonrasi)"; else echo "UYARI: trader-mutabakat.service baslatilamadi (kurulum devam ediyor)."; fi
+fi
 if [ -n "$LIVE_WARN" ]; then echo "UYARI: $LIVE_WARN"; fi
 if [ "$NO_LIVE" -eq 1 ]; then echo "UYARI (--no-live): /etc/trader-telegram.env, /etc/trader-health.env (LIVE_BOTS, LIVE_VAR_DIR, LIVE_PAUSE_FILE, KILL_FILE, ENGINE_STATUS_PATH, LEDGER_PATH, LADDER_BOTS) ve /etc/trader-lesson.env (LEDGER_PATH) hala CANLI yollari tasiyor olabilir; elle kagit degerlerine alin."; fi
 if [ "$LIVE" -eq 1 ]; then echo "CANLI birim kuruldu ve etkin ama BASLATILMADI (systemctl start trader-engine-live yalniz canliya gecis gunu listesiyle)."; fi

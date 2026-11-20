@@ -251,7 +251,7 @@ class PanelData:
                 isik = {"renk": "sari", "metin": "Sistem çalışıyor; bazı özellikler kısmen devrede"}
             return {"bot_durum": s["state"], "mod": (status or {}).get("mode"), "serit": serit, "acik": acik, "kz": kz,
                     "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "etiket": etiket, "teknik": teknik,
-                    "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"], kismi)}
+                    "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"], kismi, teknik.get("saglik"))}
         return self._wrap(fn)
 
     def kapanan(self, bot: str | None, period: str | None) -> dict:

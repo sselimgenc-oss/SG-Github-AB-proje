@@ -140,7 +140,7 @@ def test_panel_js_free_of_forbidden_text():
 
 def test_panel_js_new_structure():
     js = (STATIC / "panel.js").read_text(encoding="utf-8")
-    for t in ("ÖZET", "AÇIK", "KAPANAN", "K/Z", "ÖĞRENME", "TEKNİK", "Risk durumu", "Zirveden düşüş", "Toplam K/Z", "Bugün K/Z",
+    for t in ("ÖZET", "AÇIK", "KAPANAN", "K/Z", "ÖĞRENME", "TEKNİK", "Risk durumu", "Zirveden düşüş", "Kapanan K/Z", "Kasa = başlangıç + kapanan K/Z + açık K/Z − açık işlemlerin giriş komisyonu", "'açık K/Z ' + usdS(s.acik_kz)", "Bugün K/Z",
               "window.self !== window.top", "data-theme", "YENILE_S = 300", "son güncelleme"):
         assert t in js, t
     assert "TAB_MS" not in js and "setInterval" in js and "location.reload" in js
@@ -207,3 +207,39 @@ def test_ml_denominator_is_paper_config_arms_and_threshold_from_engine():
     assert len(arms) >= 9                                         # payda: kagit ayarindaki gercek kol listesi
     src = (ROOT / "src/trader_core/panel_pano.py").read_text(encoding="utf-8")
     assert "paper_maps()[0]" in src and "trader_engine" not in src.replace("ogrenme_filtre.MIN_ISLEM", "")      # core motoru ice aktarmaz; sabit esitligi yukarida
+
+
+def _h(overall, *fps):
+    return {"overall": overall, "check_stale": False,
+            "alerts": [{"name": n, "code": c, "level": lv} for n, c, lv in fps]}
+
+
+def _tv(health):
+    return PP.teknik_view(health=health, risk_rows=None, budget=None, tut=None, pbo=None, ctx=None, ml_filtre=None, ders=None)
+
+
+def test_saglik_uyarisi_adiyla_gorunur_ve_isik_ne_yapmali():
+    t = _tv(_h("WARN", ("candle_age:learner", "candle_stale", "WARN"), ("swap", "swap_high", "WARN")))["saglik"]
+    assert t["renk"] == "sari" and t["uyarilar"] == ["Piyasa verisi güncel değil", "Sunucu yavaşlıyor (takas belleği yüksek)"]
+    assert "kod" not in " ".join(t["uyarilar"]) and "_" not in " ".join(t["uyarilar"])
+    isik = PP._problem(t, "live", {"renk": "yesil"}, None)
+    assert isik["renk"] == "sari" and "Piyasa verisi güncel değil" in isik["metin"]
+    y = PP.ne_yapmali("live", {"renk": "yesil"}, 2, [], t)
+    assert y.startswith("Bir şey yapmanız gerekmiyor; sağlık uyarısı inceleniyor: Piyasa verisi güncel değil")
+
+
+def test_saglik_kritik_kirmizi_senden_eylemi_ve_warmup_eki():
+    t = _tv(_h("CRIT", ("disk_free", "disk_low", "CRIT"), ("api_reachable:learner", "api_unreachable_warmup", "WARN")))["saglik"]
+    assert t["renk"] == "kirmizi" and "Disk neredeyse dolu" in t["uyarilar"][0] and "Bot yanıt vermiyor" in t["uyarilar"]
+    assert PP._problem(t, "live", {"renk": "yesil"}, None)["renk"] == "kirmizi"
+    y = PP.ne_yapmali("live", {"renk": "yesil"}, 0, [], t)
+    assert y.startswith("Sağlık uyarısı: Disk neredeyse dolu") and "yer açılması" in y
+    assert "uyarı" in PP.ne_yapmali("live", {"renk": "kirmizi"}, 0, [], t)                  # risk durumunda da anılır
+
+
+def test_saglik_bilinmeyen_kod_ve_adsiz_warn_kod_sizmaz():
+    t = _tv(_h("WARN", ("yeni_kontrol_x", "yeni_kod_y", "WARN")))["saglik"]
+    assert t["uyarilar"] == ["Bir sistem kontrolü uyarı veriyor (kod gösterilmez)"]
+    assert _tv(_h("WARN"))["saglik"]["renk"] == "sari"                                     # kayit yok ama genel durum WARN: yine sari
+    assert _tv(_h("OK"))["saglik"]["renk"] == "yesil" and _tv(_h("OK", ("swap", "ok", "OK")))["saglik"]["uyarilar"] == []
+    assert PP.ne_yapmali("live", {"renk": "yesil"}, 0, [], _tv(_h("OK"))["saglik"]).startswith("Bir şey yapmanız gerekmiyor; bot")

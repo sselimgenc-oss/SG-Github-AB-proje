@@ -202,6 +202,13 @@
     var k = el('div', 'ks' + (extra ? ' ' + extra : ''));
     return add(k, el('div', 'e', e), el('div', 'b ' + (bigCls || ''), big), alt ? el('div', 'a', alt) : null);
   }
+  var KASA_IPUCU = 'Kasa = başlangıç + kapanan K/Z + açık K/Z − açık işlemlerin giriş komisyonu';
+  function kasaKart(s) {
+    var k = sk('Kasa', usd(s.kasa), num(s.baslangic) ? 'başlangıç ' + usd(s.baslangic) : ''), q = el('span', 'ipucu', '?');
+    q.title = KASA_IPUCU; q.setAttribute('tabindex', '0'); q.setAttribute('aria-label', KASA_IPUCU);
+    k.firstChild.appendChild(q);
+    return k;
+  }
   function renderTop(p) {
     var b = clear($('bantlar')), z = clear($('serit'));
     if (!p || !p.ok) {
@@ -212,10 +219,10 @@
     var s = p.serit, r = s.risk, ro = $('rozet');
     if (p.mod) { ro.hidden = false; ro.textContent = p.mod === 'live' ? 'CANLI' : 'KÂĞIT'; } else ro.hidden = true;
     add(z,
-      sk('Kasa', usd(s.kasa), num(s.baslangic) ? 'başlangıç ' + usd(s.baslangic) : ''),
+      kasaKart(s),
       sk('Bugün K/Z', usdS(s.bugun), pc(s.bugun_yuzde), cls(s.bugun)),
-      sk('Toplam K/Z', usdS(s.toplam), pc(s.toplam_yuzde), cls(s.toplam)),
-      sk('Açık poz.', String(s.acik), num(s.acik_kz) ? usdS(s.acik_kz) + ' açık K/Z' : '', ''),
+      sk('Kapanan K/Z', usdS(s.toplam), pc(s.toplam_yuzde), cls(s.toplam)),
+      sk('Açık poz.', String(s.acik), num(s.acik_kz) ? 'açık K/Z ' + usdS(s.acik_kz) : '', ''),
       sk('Zirveden düşüş', usdS(s.dusus), pc(s.dusus_yuzde), cls(s.dusus)),
       add(el('div', 'ks risk ' + r.renk), el('div', 'e', 'Risk durumu'),
         add(el('div', 'b'), el('span', 'nokta'), el('span', '', r.metin)), el('div', 'a', r.alt)));
@@ -452,6 +459,7 @@
       add(root, katli('Sağlık', t.saglik.renk, function (b) {
         add(b, add(el('div'), rozetRenk(t.saglik.durum, t.saglik.renk)));
         t.saglik.uyarilar.forEach(function (u) { add(b, el('div', 'yok', u)); });
+        (t.saglik.senden || []).forEach(function (u) { add(b, el('div', 'yok', 'Senden: ' + u)); });
         if (t.saglik.kontrol_bayat) add(b, el('div', 'yok kotu', 'Sağlık kontrolü bir süredir çalışmamış.'));
         return b;
       }, t.saglik.renk !== 'yesil'));

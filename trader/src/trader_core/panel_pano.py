@@ -507,18 +507,20 @@ def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
 
 
 # ----------------------------------------------------------------------------- teknik
-def _saglik_cumleleri(alerts: list) -> list[str]:
+def _saglik_cumleleri(alerts: list) -> tuple[list[str], list[str]]:
+    """Sorunlu saglik kontrolleri -> (sade cumleler, 'Senden' eylemleri). Telegram'a gitmeyen kontroller de adiyla gorunur
+    (WARN/CRIT hicbir kontrol panelde adsiz kalmaz); tek sozluk: tg_sade.saglik_cumlesi. OK/SKIPPED duzeyli kayitlar atlanir."""
     out: list[str] = []
+    senden: list[str] = []
     for a in alerts:
-        k = str(a.get("code") or "")
-        ad = str(a.get("name") or "")
-        t = TS._SADE.get(k) or TS._SADE.get(ad)
-        if t is None and (k in TS._SUSTUR or ad in TS._SUSTUR):
+        if str(a.get("level") or "").upper() in ("OK", "SKIPPED", "INFO"):
             continue
-        s = t[0] if t else "Bir sistem kontrolü uyarı veriyor."
+        s, yap = TS.saglik_cumlesi(a.get("name"), a.get("code"))
         if s not in out:
             out.append(s)
-    return out[:8]
+        if yap and yap not in senden:
+            senden.append(yap)
+    return out[:8], senden[:3]
 
 
 def mutabakat_view(path: str) -> dict | None:
@@ -544,11 +546,11 @@ def teknik_view(*, health: Mapping | None, risk_rows: list | None, budget: Mappi
         out["mutabakat"] = dict(mutabakat)
     if health:
         ov = str(health.get("overall") or "UNKNOWN")
-        uy = _saglik_cumleleri(health.get("alerts") or [])
-        if ov == "WARN" and not uy:          # kullaniciya gosterilecek bir sey yok: sakin
-            ov = "OK"
+        uy, senden = _saglik_cumleleri(health.get("alerts") or [])
+        if ov in ("WARN", "CRIT", "UNKNOWN") and not uy:      # sorun var ama adi okunamadi: yine de gorunur (adsiz ama dürüst)
+            uy = [TS.SAGLIK_BILINMEYEN]
         out["saglik"] = {"durum": SAGLIK_TR.get(ov, "Bilinmiyor"), "renk": {"OK": "yesil", "WARN": "sari", "CRIT": "kirmizi"}.get(ov, "sari"),
-                         "uyarilar": uy, "kontrol_bayat": bool(health.get("check_stale"))}
+                         "uyarilar": uy, "senden": senden, "kontrol_bayat": bool(health.get("check_stale"))}
     if risk_rows:
         out["limitler"] = [{"ad": r["label"], "kullanilan": r["used"], "limit": r["limit"], "yuzde": r["pct"]} for r in risk_rows]
     kap = []
@@ -582,12 +584,17 @@ def teknik_view(*, health: Mapping | None, risk_rows: list | None, budget: Mappi
     return out
 
 
+def _ilk_sorun(saglik: Mapping) -> str:
+    uy = saglik.get("uyarilar") or []
+    return (str(uy[0]) + (f" (+{len(uy) - 1} uyarı daha)" if len(uy) > 1 else "")) if uy else "ayrıntı TEKNİK sekmesinde"
+
+
 def _problem(saglik: Mapping | None, state: str, risk: Mapping, budget: Mapping | None) -> dict:
     sebepler = []
     if state != "live":
         sebepler.append("Bot yanıt vermiyor")
     if saglik and saglik.get("renk") == "kirmizi":
-        sebepler.append("Sağlık kontrolü sorun bildiriyor")
+        sebepler.append("Sağlık kontrolü sorun bildiriyor: " + _ilk_sorun(saglik))
     if saglik and saglik.get("kontrol_bayat"):
         sebepler.append("Sağlık kontrolü güncel değil")
     if budget and str(budget.get("month_state") or "") in ("exhausted", "blocked"):
@@ -595,7 +602,7 @@ def _problem(saglik: Mapping | None, state: str, risk: Mapping, budget: Mapping 
     if sebepler:
         return {"renk": "kirmizi", "metin": "; ".join(sebepler[:2])}
     if saglik and saglik.get("renk") == "sari":
-        return {"renk": "sari", "metin": "Küçük bir uyarı var; teknik sekmesine bakabilirsin"}
+        return {"renk": "sari", "metin": "Sağlık uyarısı: " + _ilk_sorun(saglik)}
     return {"renk": "yesil", "metin": "Sistem sağlıklı"}
 
 
@@ -610,7 +617,18 @@ def kismi_durum(ders: Mapping | None, ml: Mapping | None) -> list[str]:
     return out
 
 
-def ne_yapmali(state: str, risk: Mapping, acik_n: int, kismi: list[str] | None = None) -> str:
+def saglik_yapmali(saglik: Mapping | None) -> str | None:
+    """Saglik WARN/CRIT ise 'Ne yapmaliyim?' cumlesi (kullanici eylemi gerekiyorsa o, degilse 'bir sey gerekmiyor'); yoksa None."""
+    if not saglik or saglik.get("renk") not in ("sari", "kirmizi") or not saglik.get("uyarilar"):
+        return None
+    uy = [str(u).rstrip(".") for u in saglik["uyarilar"][:2]]
+    sorun = "; ".join(uy) + (f" (+{len(saglik['uyarilar']) - 2} uyarı daha)" if len(saglik["uyarilar"]) > 2 else "")
+    if saglik.get("senden"):
+        return f"Sağlık uyarısı: {sorun}. " + " ".join(saglik["senden"][:2])
+    return f"Bir şey yapmanız gerekmiyor; sağlık uyarısı inceleniyor: {sorun}."
+
+
+def _ne_yapmali_temel(state: str, risk: Mapping, acik_n: int, kismi: list[str] | None = None) -> str:
     if state != "live":
         return "Bot yanıt vermiyor; otomatik yeniden başlatma deneniyor. Uzun sürerse bana haber ver."
     if risk["renk"] == "kirmizi":
@@ -622,3 +640,14 @@ def ne_yapmali(state: str, risk: Mapping, acik_n: int, kismi: list[str] | None =
     if acik_n:
         return f"Bir şey yapmanız gerekmiyor; bot çalışıyor, {acik_n} açık işlem izleniyor."
     return "Bir şey yapmanız gerekmiyor; bot çalışıyor, uygun fırsat bekleniyor."
+
+
+def ne_yapmali(state: str, risk: Mapping, acik_n: int, kismi: list[str] | None = None, saglik: Mapping | None = None) -> str:
+    """Her durumda saglik WARN/CRIT'i anar (bot/risk durumu once gelir, saglik cumlesi arkasina eklenir)."""
+    t = _ne_yapmali_temel(state, risk, acik_n, kismi)
+    sy = saglik_yapmali(saglik)
+    if not sy:
+        return t
+    if state == "live" and risk["renk"] == "yesil":
+        return sy + (" Ayrıca: " + "; ".join(kismi) + "." if kismi else "")      # genel "bir sey gerekmiyor" cümlesinin yerine
+    return t + " " + sy

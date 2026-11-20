@@ -387,7 +387,8 @@ def health_view(state_path: str, now: datetime, stale_s: float) -> dict:
         v = v if isinstance(v, Mapping) else {}
         name, _, code = str(k).partition("|")
         alerts.append({"name": name, "code": code, "first_seen": v.get("first_seen"),
-                       "consecutive": v.get("consecutive"), "alerted": bool(v.get("alerted"))})
+                       "consecutive": v.get("consecutive"), "alerted": bool(v.get("alerted")),
+                       "level": v.get("level")})
     rc = st.get("restart_counts") if isinstance(st.get("restart_counts"), Mapping) else {}
     return {"overall": st.get("last_overall"), "last_run_at": fmt_z(lr), "age_s": age,
             "check_stale": age is None or age > stale_s, "alerts": alerts[:50],

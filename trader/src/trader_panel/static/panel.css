@@ -24,6 +24,7 @@ button:hover{border-color:var(--vurgu)}
 @media (min-width:900px){.serit{grid-template-columns:repeat(6,minmax(0,1fr))}}
 .ks{background:var(--kart);border:1px solid var(--cizgi);border-radius:12px;padding:9px 10px;min-width:0}
 .ks .e{font-size:11px;color:var(--sol);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ks .e .ipucu{display:inline-block;margin-left:5px;width:14px;height:14px;line-height:14px;text-align:center;border:1px solid var(--cizgi);border-radius:50%;font-size:10px;cursor:help}
 .ks .b{font-size:18px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .ks .a{font-size:11.5px;color:var(--sol);margin-top:1px;line-height:1.25;overflow:hidden;text-overflow:ellipsis}
 .ks.risk .b{font-size:14.5px;white-space:normal;line-height:1.2;display:flex;align-items:center;gap:6px}

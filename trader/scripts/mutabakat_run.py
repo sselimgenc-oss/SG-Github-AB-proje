@@ -193,7 +193,7 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
     atomic_write_text(durum / "mutabakat_v1.json", json.dumps({**doc, "satirlar": satirlar}, ensure_ascii=False, indent=1) + "\n")
     atomic_write_text(durum / "mutabakat.md", M.markdown(doc, rows))
     tam = {**doc, "satirlar": satirlar}
-    gitti = kurulum_ozeti(tg_dir, durum, tam, now)
+    gitti = kurulum_ozeti(tg_dir, durum, tam, now, env=env)
     if doc["uyusmazlik_sayisi"] > 0 and not gitti:          # tek mesaj: kurulum ozeti gittiyse gunluk uyari ayni kosuda gonderilmez
         telegram_bildir(tg_dir, durum, tam, now)
     return 0, doc
@@ -202,15 +202,31 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
 OZET_KAYIT = "mutabakat_ozet_surum.json"      # son ozetin gittigi kod surumu (surum dizini); yeni kurulumda ozet bir kez gider
 
 
-def kod_surumu() -> str:
-    """Calisan kodun surum kimligi: surum dizininin gercek yolu (releases/<commit>); kurulum basina degisir."""
+RELEASE_DOSYASI = "/etc/trader-release"
+
+
+def kod_surumu(env=None) -> str:
+    """Calisan kodun surum kimligi: kurulumun yazdigi /etc/trader-release icindeki `COMMIT=<sha>` (sunucuda betik SABIT bir
+    dizinden (/opt/trader) calisir; yol her kurulumda ayni kalir, yalniz commit degisir). Dosya yoksa/okunamazsa eski davranis:
+    surum dizininin gercek yolu. Dosya yolu MUTABAKAT_RELEASE_FILE ile degistirilebilir (test)."""
+    env = os.environ if env is None else env
+    yol = (env.get("MUTABAKAT_RELEASE_FILE") or "").strip() or RELEASE_DOSYASI
+    try:
+        for ln in Path(yol).read_text(encoding="utf-8").splitlines():
+            if ln.startswith("COMMIT="):
+                sha = ln[len("COMMIT="):].strip()
+                if sha:
+                    return "commit:" + sha
+                break
+    except (OSError, ValueError):
+        pass
     return str(Path(__file__).resolve().parent.parent)
 
 
-def kurulum_ozeti(root_tg: Path, durum_dir: Path, doc: dict, now: datetime, surum: str | None = None) -> bool:
+def kurulum_ozeti(root_tg: Path, durum_dir: Path, doc: dict, now: datetime, surum: str | None = None, env=None) -> bool:
     """Kurulum sonrasi tek seferlik SESSIZ (INFO) Telegram ozeti: kod surumu son ozettekinden farkliysa bir kez gider.
     Ilk kez (kayit yok) da gider. Hata sessizce False."""
-    surum = surum or kod_surumu()
+    surum = surum or kod_surumu(env)
     kayit = durum_dir / OZET_KAYIT
     if (_json(kayit) or {}).get("surum") == surum:
         return False

@@ -414,7 +414,7 @@ def test_kurulum_ozeti_once_per_code_version_and_silent(env, monkeypatch):
     def ozetler():
         return [i for i in _outbox_items(env) if "İşlem kontrolü:" in i.get("text", "") and "long" in i.get("text", "")]
 
-    monkeypatch.setattr(R, "kod_surumu", lambda: "/rel/aaa")
+    monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/aaa")
     assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
     oz = ozetler()
     assert len(oz) == 1 and oz[0]["severity"] == "INFO"                                 # ilk kurulum: bir kez, sessiz
@@ -422,7 +422,7 @@ def test_kurulum_ozeti_once_per_code_version_and_silent(env, monkeypatch):
     assert t.startswith("[ML] ") and "uyuşmazlık" in t and "kasa" in t and len(t.splitlines()) <= 6 and "_" not in t
     assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=5), env=e) == 0
     assert len(ozetler()) == 1                                                        # ayni surum: yeni ozet yok
-    monkeypatch.setattr(R, "kod_surumu", lambda: "/rel/bbb")
+    monkeypatch.setattr(R, "kod_surumu", lambda *a, **k: "/rel/bbb")
     assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=10), env=e) == 0
     assert len(ozetler()) == 2                                                        # yeni kurulum: bir ozet daha
 
@@ -437,3 +437,34 @@ def test_islem_kontrolu_ozet_text_examples_max_three():
     assert t.count("\n- ") == 3 and "#4" not in t
     doc["kontroller"][0]["sonuc"] = "kaldı"
     assert "kasa tutmuyor ❌" in TS.islem_kontrolu_ozet(doc)
+
+
+def test_kurulum_ozeti_surum_release_dosyasindan_commit(env, tmp_path):
+    """Sunucuda betik sabit dizinden calisir; surum kimligi /etc/trader-release COMMIT'idir: commit degisince bir ozet, ayni commit'te yok."""
+    _setup(env)
+    rel = tmp_path / "trader-release"
+    e = {"TELEGRAM_VAR_DIR": str(env.root / "var" / "telegram"), "MUTABAKAT_RELEASE_FILE": str(rel)}
+
+    def ozetler():
+        return [i for i in _outbox_items(env) if "İşlem kontrolü:" in i.get("text", "") and "long" in i.get("text", "")]
+
+    def kos(dk):
+        assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=dk), env=e) == 0
+
+    rel.write_text("COMMIT=" + "a" * 40 + "\n", encoding="utf-8")
+    kos(0)
+    assert len(ozetler()) == 1
+    kos(5)
+    assert len(ozetler()) == 1                                                       # ayni commit: yok
+    rel.write_text("COMMIT=" + "b" * 40 + "\n", encoding="utf-8")
+    kos(10)
+    assert len(ozetler()) == 2                                                       # yeni commit: bir ozet daha
+    kos(15)
+    assert len(ozetler()) == 2
+
+
+def test_kod_surumu_release_yoksa_yola_duser(tmp_path):
+    a = R.kod_surumu({"MUTABAKAT_RELEASE_FILE": str(tmp_path / "yok")})
+    assert a == str(Path(R.__file__).resolve().parent.parent)
+    (tmp_path / "r").write_text("COMMIT=\n", encoding="utf-8")
+    assert R.kod_surumu({"MUTABAKAT_RELEASE_FILE": str(tmp_path / "r")}) == a

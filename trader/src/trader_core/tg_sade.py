@@ -294,6 +294,91 @@ _SADE: dict[str, tuple[str, str, str | None, str]] = {
     "backup_age": ("Yedek alınmıyor ya da çok eski.", "Yedekleme yeniden deneniyor.", None, "yedekleme düzenli"),
     "container_restarts": ("Bot sık sık yeniden başlıyor.", "Kendini toparlıyor; izleniyor.", None, "bot kararlı çalışıyor"),
 }
+# Panel (TEKNIK/OZET) icin: _SADE'de olmayan saglik kodlari -> (sade cumle, Senden | None). Telegram'a gitmeyen (_SUSTUR) kodlar da
+# panelde adiyla gorunur. Kod/ad kullaniciya SIZMAZ; bilinmeyen kod -> SAGLIK_BILINMEYEN.
+SAGLIK_BILINMEYEN = "Bir sistem kontrolü uyarı veriyor (kod gösterilmez)"
+_SAGLIK_EK: dict[str, tuple[str, str | None]] = {
+    # sunucu kaynaklari
+    "disk_unknown": ("Disk doluluğu okunamıyor", None), "memory_low": ("Sunucuda bellek azaldı", None),
+    "memory_unknown": ("Bellek durumu okunamıyor", None), "swap_high": ("Sunucu yavaşlıyor (takas belleği yüksek)", None),
+    "swap_unknown": ("Takas belleği durumu okunamıyor", None), "no_backup": ("Henüz yedek alınmamış", None),
+    "clock_skew": ("Sunucu saati ile kayıt zamanları uyuşmuyor", None),
+    "veto_missing": ("Yapay zekâ filtresi dosyası yok", None), "veto_stale": ("Yapay zekâ filtresi güncel değil", None),
+    "veto_unknown": ("Yapay zekâ filtresi durumu okunamıyor", None),
+    "budget_warn": ("Yapay zekâ bütçesi azaldı", None), "budget_unknown": ("Yapay zekâ bütçesi okunamıyor", None),
+    "internal_error": ("Sağlık kontrolü kendi içinde hata verdi", None), "missing_check": ("Bir sağlık kontrolü çalışmadı", None),
+    # bot / motor
+    "api_unreachable": ("Bot yanıt vermiyor", None), "api_unknown": ("Bot durumu doğrulanamıyor", None),
+    "loop_unknown": ("Bot döngüsü doğrulanamıyor", None),
+    "container_not_running": ("Bot çalışmıyor", None), "container_restarted": ("Bot yeniden başladı", None),
+    "container_unknown": ("Bot çalışma durumu okunamıyor", None), "oom_killed": ("Bot bellek yetmediği için kapandı", None),
+    "restart_loop": ("Bot sık sık yeniden başlıyor", None), "engine_gate_closed": ("Yeni işlem kapısı kapalı", None),
+    "engine_kill": ("Acil durdurma anahtarı açık; yeni işlem açılmıyor", "İstemeden açıldıysa bana haber ver."),
+    "gate_unknown": ("Yeni işlem kapısı durumu okunamıyor", None), "no_active_params": ("Bot ayarları (aktif parametreler) bulunamadı", None),
+    "naked_unknown": ("Stop emirleri doğrulanamıyor", None),
+    # borsa ve piyasa verisi
+    "exchange_unknown": ("Borsa bağlantısı doğrulanamıyor", None), "exchange_ban_file_corrupt": ("Borsa engel kaydı bozuk", None),
+    "feed_status_missing": ("Fiyat akışı durumu yok", None), "feed_status_stale": ("Fiyat akışı durmuş görünüyor", None),
+    "feed_status_unknown": ("Fiyat akışı durumu okunamıyor", None), "market_bars_stale": ("Piyasa verisi güncel değil", None),
+    "market_db_missing": ("Piyasa veri dosyası yok", None), "market_db_unreadable": ("Piyasa veri dosyası okunamıyor", None),
+    "candle_unknown": ("Piyasa mumları doğrulanamıyor", None), "pairs_unknown": ("İşlem çiftleri doğrulanamıyor", None),
+    "rules_incomplete": ("Bazı paritelerin borsa kuralı eksik", None), "rules_missing_increase": ("Borsa kuralı eksik parite sayısı arttı", None),
+    "rules_stale": ("Borsa kuralları eski", None), "rules_unknown": ("Borsa kuralları okunamıyor", None),
+    "rules_age_unknown": ("Borsa kuralı yaşı okunamıyor", None), "rules_missing_unknown": ("Borsa kuralı eksikliği okunamıyor", None),
+    # kayit defteri
+    "ledger_age_unknown": ("Kayıt defteri son yazım zamanı okunamıyor", None),
+    "ledger_errors": ("Kayıt defterinde yazma hataları var", None), "orphan_decisions": ("Sahipsiz karar kayıtları var", None),
+    "schema": ("Kayıt defteri şeması beklenenden farklı", "Bana haber ver."),
+    "spool_corrupt": ("Deftere yazılamayan bozuk kayıt var", None), "spool_pending": ("Deftere yazılmayı bekleyen kayıt birikti", None),
+    "spool_corrupt_unreadable": ("Bozuk kayıt dosyası okunamıyor", None),
+    "unledgered_trades": ("Deftere işlenmemiş işlem var", "Bana haber ver."),
+    "pause_audit": ("Duraklatma kaydı tutarsız", None), "pause_hold_lost": ("Duraklatma kaydı kaybolmuş", None),
+    "pause_hold_unaudited": ("Duraklatma kaydı doğrulanamadı", None), "pause_audit_unreadable": ("Duraklatma kaydı okunamıyor", None),
+    "pause_unknown": ("Duraklatma durumu okunamıyor", None),
+    # risk, hesap, canli
+    "ladder_missing": ("Risk kademesi bilgisi yok", None), "ladder_invalid": ("Risk kademesi bilgisi geçersiz", None),
+    "capital_missing": ("Sermaye bilgisi okunamıyor", None), "equity_unreadable": ("Kasa bilgisi okunamıyor", None),
+    "capital_floor": ("Sermaye koruma alt sınırına yaklaşıldı", None), "drawdown_review": ("Zirveden düşüş incelemesi gerekiyor", None),
+    "account_mode_unverified": ("Hesap ayarı doğrulanamadı, bir giriş atlandı", None),
+    "account_mode_unknown": ("Hesap ayarı bilgisi okunamıyor", None),
+    "live_paths_mismatch": ("Canlı bot ayar yolları tutarsız", "Kurulumun yeniden çalıştırılması gerekiyor; bana haber ver."),
+    # yapay zeka / egitim / davranis
+    "ml_shadow_down": ("Gölgedeki model çalışmıyor", None), "ml_expiring_7d": ("Modelin süresi 7 gün içinde doluyor", None),
+    "ml_expiring_3d": ("Modelin süresi 3 gün içinde doluyor", None),
+    "ml_restart_needed": ("Yeni model hazır ama devrede değil", None),
+    "ml_stale_data": ("Yeni model eski veriyle üretilmiş", None), "ml_file_invalid": ("Model dosyası okunamıyor", None),
+    "ml_score_errors": ("Model bazı fırsatları puanlayamıyor", None), "ml_status_unreadable": ("Model durumu okunamıyor", None),
+    "drift_alert": ("Bot beklenenden farklı davranıyor", None), "drift_missing": ("Davranış izleyicisi çalışmıyor", None),
+    "drift_stale": ("Davranış izleyicisi çalışmıyor", None), "drift_unreadable": ("Davranış izleyicisi çalışmıyor", None),
+}
+_SAGLIK_EK_AD: dict[str, str] = {   # kod taninmazsa kontrol adinin (":bot" oncesi) genel cumlesi
+    "disk_free": "Sunucuda boş disk alanı azaldı", "memory": "Sunucuda bellek azaldı", "swap": "Sunucu yavaşlıyor (takas belleği yüksek)",
+    "api_reachable": "Bot yanıt vermiyor", "bot_loop_age": "Bot döngüsü durmuş görünüyor", "ledger_write_age": "Kayıt defterine uzun süredir yazılmadı",
+    "ledger_gate": "Kayıt sistemi giriş kapısı kapalı", "spool_corrupt": "Deftere yazılamayan bozuk kayıt var",
+    "rules_coverage": "Borsa kuralları eksik", "rules_age": "Borsa kuralları eski", "rules_missing": "Bazı paritelerin borsa kuralı eksik",
+    "ml_package": "Yapay zekâ modeli sorunlu", "drift_monitor": "Bot beklenenden farklı davranıyor",
+    "account_mode": "Hesap ayarı bilgisi sorunlu", "exchange_reachable": "Borsaya ulaşılamıyor", "pause_audit": "Duraklatma kaydı tutarsız",
+    "risk_ladder": "Risk kademesi sorunlu", "budget_status": "Yapay zekâ bütçesi sorunlu", "live_paths": "Canlı bot ayar yolları tutarsız",
+}
+
+
+def saglik_cumlesi(name: Any, code: Any) -> tuple[str, str | None]:
+    """Panel icin: saglik kontrolu (ad, kod) -> (sade Turkce cumle, Senden | None). Tek sozluk: once Telegram uyari metinleri (_SADE),
+    sonra _SAGLIK_EK; bilinmeyen -> SAGLIK_BILINMEYEN. `_warmup` eki (motor yeni basladi) kodun anlamini degistirmez."""
+    c = str(code or "")
+    if c.endswith("_warmup"):
+        c = c[: -len("_warmup")]
+    base = str(name or "").partition(":")[0]
+    ent = _SADE.get(c) or _SADE.get(base)
+    if ent is not None:
+        return ent[0].rstrip("."), ent[2]
+    if c in _SAGLIK_EK:
+        return _SAGLIK_EK[c]
+    if base in _SAGLIK_EK_AD:
+        return _SAGLIK_EK_AD[base], None
+    return SAGLIK_BILINMEYEN, None
+
+
 # bu kodlar/adlar kullaniciya hic gitmez (yapabilecegi bir sey yok ya da isleme etkisi yok)
 _SUSTUR = frozenset({
     "ml_shadow_down", "ml_expiring_7d", "ml_expiring_3d", "ml_restart_needed", "ml_stale_data", "ml_file_invalid",

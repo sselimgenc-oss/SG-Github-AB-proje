@@ -382,3 +382,22 @@ def test_betiklerde_telegram_token_komut_satirinda_yok():
         lines = [ln for ln in p.read_text(encoding="utf-8").splitlines() if not ln.lstrip().startswith("#")]
         assert any("--config -" in ln for ln in lines), p.name           # Telegram istegi stdin config ile
         assert not any("curl" in ln and "$tok" in ln for ln in lines), p.name   # token hicbir curl argv'inde yok
+
+
+def test_mesaj_konusu_sozcuk_sinirinda_kesilir_utf8_guvenli(tmp_path):
+    konu = "Kasa mutabakatı şimdi çok daha sade ve anlaşılır oldu, işlem özetleri ğüşiöç ile birlikte kaydedildi ve gönderildi"
+    w = World(tmp_path, subjects=["Temel", konu])
+    w.set_release(w.shas[0])
+    assert w.run().returncode == 0
+    ilk = w.telegram()[0].split("\n")[0][len("[ML] Bot güncellendi: "):]
+    assert len(ilk) <= 90 and ilk.endswith("…") and "\ufffd" not in ilk
+    govde = ilk[:-1]
+    assert konu.startswith(govde) and konu[len(govde)] == " "              # sozcuk ortasinda kesilmez
+    assert "kaydedil" not in ilk
+
+
+def test_kisa_konu_kesilmez(tmp_path):
+    w = World(tmp_path, subjects=["Temel", "Kısa şık konu"])
+    w.set_release(w.shas[0])
+    assert w.run().returncode == 0
+    assert w.telegram()[0].split("\n")[0] == "[ML] Bot güncellendi: Kısa şık konu"
