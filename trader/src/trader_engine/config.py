@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import hashlib
 import json
 import math
 import os
@@ -33,6 +34,9 @@ class CostModel:
     trigger_source: Literal["mark", "last"] = "mark"
     granularity: Literal["1m", "15m"] = "1m"
 
+
+# 5c (1L3A motor/canli/borsa/canli_ayar.py'dan uyarlandi): API anahtar carpisma denetimi (sha256 ozetleri; deger asla yazilmaz).
+DIGER_ANAHTAR_ENV = "TRADER_DIGER_ANAHTAR_SHA256"    # "etiket:sha256hex,..." (baska hesap/bot anahtarlarinin ozetleri; deger degil)
 
 _TAG_RE = re.compile(r"[a-z0-9-]{3,32}")
 _KEY_VARS = ("BINANCE_API_KEY", "BINANCE_API_SECRET")
@@ -383,6 +387,36 @@ def _build_live(raw: Any) -> LiveSettings:
         order_quote=_bool("live.order_quote", raw.get("order_quote", d.order_quote)))
 
 
+def anahtar_ozeti(deger: str) -> str:
+    """sha256 hex ozeti (anahtar karsilastirmasi icin; degerin kendisi asla loglanmaz/yazilmaz)."""
+    return hashlib.sha256(deger.encode("utf-8")).hexdigest()
+
+
+def _diger_ozetler(env: Mapping[str, str]) -> dict[str, str]:
+    """TRADER_DIGER_ANAHTAR_SHA256='etiket:hex,etiket2:hex' -> {hex: etiket}. Bozuk giris => ConfigError (fail-closed)."""
+    ham = env.get(DIGER_ANAHTAR_ENV)
+    if ham is None or not ham.strip():
+        return {}
+    out: dict[str, str] = {}
+    for parca in ham.split(","):
+        etiket, sep, hx = parca.strip().partition(":")
+        hx = hx.strip().lower()
+        if not sep or not etiket.strip() or not re.fullmatch(r"[0-9a-f]{64}", hx):
+            raise ConfigError(f"{DIGER_ANAHTAR_ENV}: 'etiket:sha256hex' bicimi bozuk")
+        out[hx] = etiket.strip()
+    return out
+
+
+def check_key_collision(key: str, secret: str, env: Mapping[str, str]) -> None:
+    """5c: bu surecin anahtar/gizli degeri baska hesap/bot anahtarlariyla (testnet<->live<->diger botlar) CAKISAMAZ.
+    Karsilastirma sha256 ozetleriyle; mesajda yalniz etiket vardir, anahtar degeri asla. Kume bos ise denetim yoktur (davranis degismez)."""
+    diger = _diger_ozetler(env)
+    for ad, v in (("BINANCE_API_KEY", key), ("BINANCE_API_SECRET", secret)):
+        et = diger.get(anahtar_ozeti(v))
+        if et is not None:
+            raise ConfigError(f"key_collision: {ad} baska hesapla ({et}) ayni (hesap/anahtar paylasilamaz)")
+
+
 def load_keys(env: Mapping[str, str]) -> tuple[str, str]:
     """11 §3.2: (BINANCE_API_KEY, BINANCE_API_SECRET). Eksik/bos/bosluklu/<32 karakter => ConfigError('keys_missing').
     Iletide yalniz degisken adi vardir, deger asla."""
@@ -392,6 +426,7 @@ def load_keys(env: Mapping[str, str]) -> tuple[str, str]:
         if not isinstance(v, str) or len(v) < 32 or any(c.isspace() for c in v):
             raise ConfigError(f"keys_missing: {name}")
         out.append(v)
+    check_key_collision(out[0], out[1], env)       # 5c: yalniz ozet karsilastirmasi; deger iletiye yazilmaz
     return out[0], out[1]
 
 
