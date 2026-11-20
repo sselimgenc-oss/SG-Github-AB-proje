@@ -45,3 +45,5 @@ Veri yolu aynı (okuyucu, 45 dk bayatlık). Testnet/canlı yapılandırması, ri
 - **Tetik**: C1 yalnız CT ile işlem açmaz. CT adayına ek olarak kendi zaman diliminde son kapanmış mum için: long → kapanış > EMA50 ve kapanış > açılış; short → kapanış < EMA50 ve kapanış < açılış. Teyitsiz bar aday vermez ve CT dosyasını "tüketmez" (aynı dosya sonraki barda teyitlenirse aday olur).
   Teyitli aday diğer kollarla aynı kapı zincirinden geçer (kurulum başı `arm_id` ile ML filtresi ≥10 kapanmış işlemle, ardından etiket/ders kuralları, sonra risk). `ML_SCORED` alanı yalnızca testnet r03 süzgecini ilgilendirir; kâğıt filtresi bayraktan bağımsızdır.
 - **Bayat**: CT özellikleri boş (`ct_durum: "yok"`), C1 aday yok, "kalabalık" kuralı engellemez (fail-open, sayılır), sağlık `WARN ct_kadro_bayat`. Başka bir şey değişmez.
+
+- **20 Kasım 2026 (kullanıcı kararı):** "kalabalık" ders kuralı C1'e uygulanmaz (C1 tanım gereği kalabalık yönünde girer; fiyat teyidi + ML filtresi + diğer ders kurallarından geçer). Diğer kollarda kural aynen sürer ve katkısı ölçülür.

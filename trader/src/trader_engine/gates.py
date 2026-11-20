@@ -300,6 +300,8 @@ class EntryGate:
                     ct = kadro.get(row.pair) if kadro else None
                 except Exception:  # noqa: BLE001
                     ct = None
+            if row.setup == "C1":                                    # 20 Kasim kullanici karari: C1 tanim geregi kalabalik yonunde girer;
+                cfg = {k: v for k, v in cfg.items() if k != "kalabalik"}  # kalabalik kurali C1'e uygulanmaz (diger kollarda aynen)
             tetik, veri_yok = EK.degerlendir(row.side, row.regime, duygu, ct, cfg)
             for k in veri_yok:
                 self.counters["etiket_veri_yok:" + k] += 1

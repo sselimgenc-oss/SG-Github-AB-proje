@@ -132,3 +132,13 @@ def test_canli_testnet_etiket_kurali_calismaz(mk):
     e.g._etiket_karari = lambda *a, **k: (_ for _ in ()).throw(AssertionError("canlida etiket kurali cagrilmamali"))
     o = _go(e, regime="trend_down")
     assert o.code != "etiket_rejim"
+
+
+def test_kalabalik_kurali_c1e_uygulanmaz_digerlerine_aynen(mk):
+    """20 Kasim kullanici karari: C1 tanim geregi kalabalik yonunde girer; kalabalik kurali C1'i atlatmaz, diger kollari aynen."""
+    e = mk(ct={"long": 19, "short": 1, "net_yon": "long"})
+    assert _go(e, setup="C1").action == "enter"
+    assert e.g.counters["etiket_veri_yok:etiket_kalabalik"] == 0         # C1 icin kural hic degerlendirilmez (veri yok sayilmaz)
+    assert _go(e).code == "etiket_kalabalik"                              # diger kol: aynen atlar
+    e2 = mk(ct={"long": 19, "short": 1, "net_yon": "long"})
+    assert _go(e2, setup="C1", regime="trend_down", side="long").code == "etiket_rejim"   # C1'e diger kurallar uygulanir
