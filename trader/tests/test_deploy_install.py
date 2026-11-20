@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DEPLOY = ROOT / "deploy"
 SCRIPTS = [DEPLOY / "install.sh", DEPLOY / "uninstall.sh", DEPLOY / "oto_guncelle.sh",
-           DEPLOY / "trader-geri-al", DEPLOY / "trader-oto-ac"]
+           DEPLOY / "trader-geri-al", DEPLOY / "trader-oto-ac", DEPLOY / "trader-oto-simdi"]
 UNITS = sorted(p for p in DEPLOY.iterdir() if p.suffix in (".service", ".timer"))
 
 
@@ -140,7 +140,7 @@ def test_every_unit_handled_by_install():
                         "trader-haber.service",  # 19 Kasim: haber/duygu toplayici eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-ct-kadro.service",  # 19 Kasim: C1 (CT kadro) eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-engine-live.service", "trader-engine-env-retry@.service",
-                        "trader-oto-guncelle.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)
+                        "trader-oto-guncelle.service", "trader-kurulum-gozcu.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)
     for u in UNITS:
         if u.name == "trader-engine@.service":
             assert "trader-engine@learner.service" in enabled and "trader-engine@twin.service" not in enabled

@@ -1,10 +1,13 @@
 [Unit]
-Description=Trader sunucu otomatik guncelleme zamanlayicisi (saatlik; yesil commit yoksa islem yok)
+Description=Trader sunucu otomatik guncelleme zamanlayicisi (gunde iki sabit pencere: 10:30 ve 22:30 TSI; yesil commit yoksa islem yok)
 
 [Timer]
-OnCalendar=hourly
-RandomizedDelaySec=300
-Persistent=true
+# Turkiye saati UTC+3 sabit (yaz saati yok): 10:30 TSI = 07:30 UTC, 22:30 TSI = 19:30 UTC. Rastgele gecikme YOK (sabit pencere).
+# Persistent kapali: sunucu pencerede kapaliysa acilista kacirilan kurulum yapilmaz (betik pencere disinda zaten islem yapmaz).
+OnCalendar=*-*-* 07,19:30:00 UTC
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=false
 
 [Install]
 WantedBy=timers.target

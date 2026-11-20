@@ -544,6 +544,21 @@ enable_now trader-counterfactual@learner.timer   # alinmayan sinyal gece isi (23
 enable_now trader-exit-counterfactual@learner.timer   # cikis karsi-olgusu gece isi (23:40 UTC; plan 25c); defter/market salt okunur, var/<bot>/exit_counterfactual.sqlite tek yazar; yalniz kanit (ders menusune bilgi)
 enable_now trader-panel.service   # salt okunur pano: yalniz 127.0.0.1:8787, anahtar gerekmez
 
+# Kurulum isareti (docs/sunucu-kurulum.md 'Kurulum sonrasi koruma'): kod degistiyse motorlar yeniden baslamadan ONCE yazilir.
+# Okuyanlar: saglik (ilk 15 dk yalniz olumcul uyari), trader-kurulum-gozcu (20 dk oz-kontrol, 60 dk izleme + otomatik geri alma).
+# tur: oto (oto_guncelle.sh) | elle | geri-al (trader-geri-al; izlenmez, dongu olmaz). onceki: geri alinacak surum.
+OTO_STATE_DIR="/var/lib/trader-oto-guncelle"
+if [ "$CODE_CHANGED" -eq 1 ]; then
+  safe_tree_path "$OTO_STATE_DIR"
+  install -d -m 0700 -o root -g root "$OTO_STATE_DIR"
+  KURULUM_TMP="${OTO_STATE_DIR}/kurulum.json.tmp"
+  KURULUM_AT="$(date -u +%FT%TZ)"
+  printf '{"at":"%s","commit":"%s","onceki":"%s","tur":"%s"}\n' "$KURULUM_AT" "$COMMIT" "$PREV_COMMIT" "${OTO_KURULUM_TUR:-elle}" > "$KURULUM_TMP"
+  chmod 0644 "$KURULUM_TMP"
+  mv -f "$KURULUM_TMP" "${OTO_STATE_DIR}/kurulum.json"
+  rm -f "${OTO_STATE_DIR}/gozcu.json"   # onceki kurulumun izleme sayaclari yeni kuruluma tasinmaz
+fi
+
 # WP-3: motor (yazar) yeni kodla yeniden baslar => defter sema gocu motor icinde, premigrate yedegiyle olur
 if [ "$CODE_CHANGED" -eq 1 ]; then
   # besleme (feed) once yeniden baslar: motor yeni 44-parite konfigurasyonunu feed'den alir
@@ -605,14 +620,14 @@ enable_now trader-durum-yayin.timer
 # Haftalik disk bakimi (sqlite WAL checkpoint/VACUUM + eski cikti temizligi; izin listesi). unit ReadWritePaths (var) zaten yukarida olusur
 enable_now trader-bakim.timer
 # Otomatik guncelleme (docs/motor/oto-guncelleme-spec.md): komutlar root sahipli surum dizininden; durum dizini root 0700.
-OTO_STATE_DIR="/var/lib/trader-oto-guncelle"
 safe_tree_path "$OTO_STATE_DIR"
 install -d -m 0700 -o root -g root "$OTO_STATE_DIR"
-for c in trader-geri-al trader-oto-ac; do
+for c in trader-geri-al trader-oto-ac trader-oto-simdi; do
   safe_tree_path "/usr/local/sbin/$c"
   install -m 0755 -o root -g root "$REL_DIR/deploy/$c" "/usr/local/sbin/$c"
 done
-enable_now trader-oto-guncelle.timer   # saatlik; yalniz GitHub'da yesil testli commit kurulur, canli birim varsa dokunmaz
+enable_now trader-oto-guncelle.timer   # gunde iki sabit pencere (10:30 ve 22:30 TSI); yalniz GitHub'da yesil testli commit kurulur, canli birim varsa dokunmaz
+enable_now trader-kurulum-gozcu.timer  # kurulum sonrasi 20 dk oz-kontrol (yalniz sorunda mesaj) + 60 dk izleme/otomatik geri alma (kurulum.json yoksa bosta calisir)
 # Saglik birimi HEARTBEAT_URL (https) olmadan her turda cikis 1 ile coker (zorunlu ortam degiskeni): bos birakilirsa uyar
 if ! has_value /etc/trader-health.env HEARTBEAT_URL; then
   MISSING+=("/etc/trader-health.env   -> HEARTBEAT_URL (https:// dis nabiz adresi; ZORUNLU: bos iken trader-health her 5 dk basarisiz olur)"); fi

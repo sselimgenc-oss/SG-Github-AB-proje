@@ -63,6 +63,7 @@ echo "$*" >> "$OTO_TEST_LOG/uyku.log"
 FAKE_INSTALL = r'''#!/usr/bin/env bash
 # sahte install.sh: COMMIT'i kaydeder, /etc/trader-release yerine OTO_RELEASE_FILE'i yazar (basarili ise).
 echo "COMMIT=${COMMIT:-}" >> "$OTO_TEST_LOG/install.log"
+echo "TUR=${OTO_KURULUM_TUR:-}" >> "$OTO_TEST_LOG/tur.log"
 echo "kurulum ciktisi"
 [ -z "${FAKE_INSTALL_OUT_FILE:-}" ] || cat "$FAKE_INSTALL_OUT_FILE"
 [ -z "${FAKE_INSTALL_FAIL:-}" ] || exit 3
@@ -156,7 +157,7 @@ class World:
         p = self.log / "curl_argv.log"
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
-    def run(self, script: Path = SCRIPT, **extra: str) -> subprocess.CompletedProcess:
+    def run(self, script: Path = SCRIPT, *args: str, **extra: str) -> subprocess.CompletedProcess:
         env = {
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.tmp),
@@ -171,13 +172,14 @@ class World:
             "OTO_TELEGRAM_ENV": str(self.tg_env),
             "OTO_BRANCH": BRANCH,
             "OTO_TEST_LOG": str(self.log),
+            "OTO_ZORLA": "1",          # varsayilan testler sabit pencereyi atlar (pencere testleri OTO_ZORLA="" verir)
             "OTO_SIMDI_DAKIKA": "7",   # mum kapanisi penceresi disi: varsayilan testler beklemez
             "OTO_UYKU": str(self.bin / "sahte-uyku"),
             "FAKE_RUNS_FILE": str(self.runs),
             **GIT_IDENT,
         }
         env.update(extra)
-        return subprocess.run(["bash", str(script)], capture_output=True, text=True, env=env, timeout=120)
+        return subprocess.run(["bash", str(script), *args], capture_output=True, text=True, env=env, timeout=120)
 
 
 @pytest.fixture
@@ -186,7 +188,7 @@ def world(tmp_path):
 
 
 # ----------------------------------------------------------------------------- sozdizim (bash -n)
-@pytest.mark.parametrize("path", [SCRIPT, GERI_AL, OTO_AC], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [SCRIPT, GERI_AL, OTO_AC, DEPLOY / "trader-oto-simdi"], ids=lambda p: p.name)
 def test_bash_syntax(path):
     assert subprocess.run(["bash", "-n", str(path)], capture_output=True).returncode == 0
 
@@ -378,7 +380,8 @@ def test_birimler_ve_zamanlayici():
     assert "User=root" in s and "Type=oneshot" in s
     assert "ExecStart=/bin/bash /usr/local/lib/trader-root/current/deploy/oto_guncelle.sh" in s
     assert "TimeoutStartSec=45min" in s
-    assert "OnCalendar=hourly" in tm and "RandomizedDelaySec=300" in tm and "Persistent=true" in tm
+    # sabit pencereler: 10:30 ve 22:30 Turkiye saati (UTC+3, yaz saati yok) = 07:30 ve 19:30 UTC; rastgele gecikme yok
+    assert "OnCalendar=*-*-* 07,19:30:00 UTC" in tm and "RandomizedDelaySec=0" in tm and "Persistent=false" in tm
 
 
 def test_betiklerde_telegram_token_komut_satirinda_yok():
@@ -437,3 +440,117 @@ def test_kurulum_gerekmiyorsa_beklenmez(world):
     world.set_release(world.shas[2])
     r = world.run(OTO_SIMDI_DAKIKA="0")
     assert r.returncode == 0 and _uyku(world) == [] and world.install_calls() == []
+
+
+# ----------------------------------------------------------------------------- sabit kurulum pencereleri (10:30 / 22:30 TSI = 07:30 / 19:30 UTC)
+SIMDI = DEPLOY / "trader-oto-simdi"
+
+
+@pytest.mark.parametrize("sa,dk", [("7", "30"), ("7", "59"), ("8", "29"), ("19", "30"), ("20", "0"), ("20", "29")])
+def test_pencere_icinde_kurulur(world, sa, dk):
+    world.set_release(world.shas[0])
+    r = world.run(OTO_ZORLA="", OTO_SIMDI_SAAT=sa, OTO_SIMDI_DAKIKA=dk)
+    assert r.returncode == 0, r.stderr
+    assert len(world.install_calls()) == 1 and world.current() == world.shas[2]
+
+
+@pytest.mark.parametrize("sa,dk", [("7", "29"), ("8", "30"), ("10", "30"), ("12", "0"), ("19", "29"), ("20", "30"), ("22", "30"), ("0", "0")])
+def test_pencere_disinda_kurulmaz_sessiz(world, sa, dk):
+    world.set_release(world.shas[0])
+    r = world.run(OTO_ZORLA="", OTO_SIMDI_SAAT=sa, OTO_SIMDI_DAKIKA=dk)
+    assert r.returncode == 0, r.stderr
+    assert "kurulum penceresi disinda" in r.stdout
+    assert world.install_calls() == [] and world.telegram() == [] and world.history() == [] and world.curl_argv() == ""
+    assert world.current() == world.shas[0]
+
+
+def test_simdi_secenegi_pencereyi_atlar_ama_korumalari_atlamaz(world):
+    world.set_release(world.shas[0])
+    (world.state).mkdir(parents=True, exist_ok=True)
+    (world.state / "DURDUR").write_text("", encoding="utf-8")
+    r = world.run(SCRIPT, "--simdi", OTO_ZORLA="", OTO_SIMDI_SAAT="12", OTO_SIMDI_DAKIKA="0")
+    assert r.returncode == 0 and world.install_calls() == []             # DURDUR hala gecerli
+    (world.state / "DURDUR").unlink()
+    r = world.run(SCRIPT, "--simdi", OTO_ZORLA="", OTO_SIMDI_SAAT="12", OTO_SIMDI_DAKIKA="0")
+    assert r.returncode == 0, r.stderr
+    assert world.install_calls() == [f"COMMIT={world.shas[2]}"]          # pencere disinda ama acil kurulum
+    canli = World(world.tmp / "canli")
+    canli.set_release(canli.shas[0])
+    r = canli.run(SCRIPT, "--simdi", OTO_ZORLA="", OTO_SIMDI_SAAT="12", OTO_SIMDI_DAKIKA="0",
+                  FAKE_UNITS="trader-engine-live.service", FAKE_LIVE="trader-engine-live.service")
+    assert r.returncode == 0 and canli.install_calls() == []             # canli koruma hala gecerli
+
+
+def test_simdi_komutu_oto_guncelleyi_zorlar(world):
+    world.set_release(world.shas[0])
+    r = world.run(SIMDI, OTO_ZORLA="", OTO_GUNCELLE=str(SCRIPT), OTO_SIMDI_SAAT="12", OTO_SIMDI_DAKIKA="0")
+    assert r.returncode == 0, r.stderr
+    assert world.install_calls() == [f"COMMIT={world.shas[2]}"]
+
+
+def test_bilinmeyen_secenek_reddedilir(world):
+    r = world.run(SCRIPT, "--bilinmeyen")
+    assert r.returncode == 2 and world.install_calls() == []
+
+
+def test_oto_kurulum_turu_install_e_iletilir(world):
+    world.set_release(world.shas[0])
+    assert world.run().returncode == 0
+    assert (world.log / "tur.log").read_text(encoding="utf-8").split() == ["TUR=oto"]
+
+
+# ----------------------------------------------------------------------------- otomatik geri alma (trader-geri-al --otomatik)
+def _isaret(world, commit, onceki, tur="oto"):
+    world.state.mkdir(parents=True, exist_ok=True)
+    (world.state / "kurulum.json").write_text(
+        '{"at":"2026-11-20T07:33:00Z","commit":"%s","onceki":"%s","tur":"%s"}\n' % (commit, onceki, tur), encoding="utf-8")
+
+
+def test_geri_al_otomatik_onceki_surumu_kurar_isaretler_durdurmaz(world):
+    old, new = world.shas[0], world.shas[2]
+    world.set_release(old)
+    assert world.run().returncode == 0
+    _isaret(world, new, old)
+    r = world.run(GERI_AL, "--otomatik", "--neden", "motor servisi çalışmıyor")
+    assert r.returncode == 0, r.stderr
+    assert world.install_calls()[-1] == f"COMMIT={old}" and world.current() == old
+    assert (world.log / "tur.log").read_text(encoding="utf-8").split()[-1] == "TUR=geri-al"
+    assert not (world.state / "DURDUR").exists()                           # otomatik geri alma guncellemeyi durdurmaz
+    h = world.history()
+    assert h[-2][1:] == [old, new, "basarisiz"] and h[-1][1:] == [new, old, "geri_alindi"]
+    tg = world.telegram()
+    assert len(tg) == 1 and "otomatik olarak önceki sürüme döndürüldü" in tg[0] and "motor servisi çalışmıyor" in tg[0]
+    # bozuk commit bir daha denenmez; yesil commit hala o ise oto_guncelle islem yapmaz
+    n = len(world.install_calls())
+    r = world.run()
+    assert r.returncode == 0 and len(world.install_calls()) == n and "tekrar denenmez" in r.stdout
+    # daha yeni bir yesil commit gelirse kurulur (DURDUR yok)
+
+
+def test_geri_al_otomatik_isaretsiz_gecmisten_hedef_bulur(world):
+    old, new = world.shas[0], world.shas[2]
+    world.set_release(old)
+    assert world.run().returncode == 0
+    r = world.run(GERI_AL, "--otomatik")
+    assert r.returncode == 0, r.stderr
+    assert world.current() == old and not (world.state / "DURDUR").exists()
+
+
+def test_geri_al_otomatik_basarisiz_kurulumda_tek_hata_mesaji(world):
+    old, new = world.shas[0], world.shas[2]
+    world.set_release(old)
+    assert world.run().returncode == 0
+    _isaret(world, new, old)
+    r = world.run(GERI_AL, "--otomatik", FAKE_INSTALL_FAIL="1")
+    assert r.returncode == 1
+    assert world.history()[-1][1:] == [new, old, "geri_alma_basarisiz"]
+    assert all(row[3] != "basarisiz" for row in world.history())          # surum degismedi: bozuk isaretlenmez
+    assert world.telegram() == ["[ML] ⚠️ Geri alma yapılamadı; bot mevcut sürümle çalışıyor."]
+    assert not (world.state / "DURDUR").exists()
+
+
+def test_install_sh_kurulum_isareti_yazar():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert '"onceki":"%s"' in t and '"tur":"%s"' in t and "OTO_KURULUM_TUR:-elle" in t
+    assert t.index("kurulum.json") < t.index("Kod degisti: calisan motorlar yeniden baslatiliyor")   # motorlar yeniden baslamadan ONCE
+    assert "enable_now trader-kurulum-gozcu.timer" in t and "trader-oto-simdi" in t

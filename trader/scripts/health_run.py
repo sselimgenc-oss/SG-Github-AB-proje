@@ -64,6 +64,26 @@ def drift_enabled_from_env(env) -> bool:
     return str(env.get("DRIFT_CHECK_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def install_quiet_until(env, now: datetime) -> datetime | None:
+    """Kurulum sonrasi sessizlik: install.sh'in yazdigi isaretten (`kurulum.json`: {"at": ISO}) bitis zamani (at + 15 dk).
+    Isaret yok/bozuk/pencere bitmis -> None (normal uyari akisi)."""
+    path = (env.get("INSTALL_MARKER") or os.path.join(env.get("OTO_STATE_DIR", "/var/lib/trader-oto-guncelle"), "kurulum.json"))
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    at = _parse_dt(d.get("at")) if isinstance(d, dict) else None
+    if at is None:
+        return None
+    until = at + timedelta(minutes=H.QUIET_MINUTES)
+    return until if at <= now < until else None
+
+
+def _cut_title(t: str) -> str:
+    return t if len(t) <= 80 else t[:79] + "…"
+
+
 def make_cfg(env) -> H.HealthConfig:
     import dataclasses
     return dataclasses.replace(H.DEFAULT_CFG, require_bots=bots_from_env(env),
@@ -980,9 +1000,27 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
         except OSError:
             maint = None
     alerts, new_state = H.plan_alerts(report, state, now, maintenance_until=maint)
-    ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now) + disk_alerts(env, now)
-    ek_gonder, new_state["ek_uyarilar"] = ek_uyari_plani(ek, state.get("ek_uyarilar"), now)
-    alerts.extend(ek_gonder)
+    quiet_until = install_quiet_until(env, now)
+    alerts, held = H.quiet_split(alerts, report, now, quiet_until)
+    if held:   # tutulan uyarilar iletilmis sayilmaz: durum geri alinir, sorun surerse pencere sonrasinda kendiliginden gider
+        new_state = H.revert_failed_alerts(new_state, state, held)
+    if quiet_until is not None:   # ek uyarilar (CT/disk/...) olumcul degil: pencere boyunca tutulur, durum aynen kalir
+        new_state["ek_uyarilar"] = state.get("ek_uyarilar") or {}
+    else:
+        ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now) + disk_alerts(env, now)
+        ek_gonder, new_state["ek_uyarilar"] = ek_uyari_plani(ek, state.get("ek_uyarilar"), now)
+        alerts.extend(ek_gonder)
+    # sessizlik ozeti: pencerede tutulan uyari basliklari state'te birikir; pencere bitince TEK ozet gider
+    tutulan = list(state.get("quiet_held") or [])
+    if quiet_until is not None:
+        tutulan = list(dict.fromkeys(tutulan + [a.title for a in held]))[:10]
+        new_state["quiet_held"] = tutulan
+    else:
+        new_state["quiet_held"] = []
+        if tutulan:
+            alerts.append(H.Alert(H.Status.WARN, "quiet_summary", _cut_title("Kurulum sonrası tutulan uyarılar"),
+                                  "Kurulumdan sonraki ilk 15 dakikada tutulan uyarılar: " + "; ".join(tutulan)[:380]
+                                  + ". Sorun sürüyorsa ayrıca bildirilir.", "quiet|summary", now))
     if reset:
         alerts.append(H.Alert(H.Status.WARN, "state_reset", "Saglik durum dosyasi sifirlandi",
                               "state.json yok ya da bozuktu; sayaclar sifirdan basladi.", "state|state_reset", now))

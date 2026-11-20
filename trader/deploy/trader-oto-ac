@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# trader-oto-ac: DURDUR dosyasini siler; saatlik otomatik guncelleme yeniden acilir. Belirtim: docs/motor/oto-guncelleme-spec.md.
+# trader-oto-ac: DURDUR dosyasini siler; otomatik guncelleme yeniden acilir. Belirtim: docs/motor/oto-guncelleme-spec.md.
 # Kullanim (root): trader-oto-ac
 # Ortam degiskenleri (OTO_*) yalnizca testler icindir; uretimde varsayilanlar kullanilir.
 set -uo pipefail

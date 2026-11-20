@@ -128,6 +128,22 @@ Telegram `/durdur` / `/devam` disinda tek yol CLI'dir: `sudo -u trader <repo>/.v
 
 Canli birimi kaldirmak icin `install.sh --no-live` (Telegram/saglik env'lerindeki canli alanlar elle kagit degerlerine alinmalidir). Not: ders servisinin `LEDGER_PATH`i canli deftere cevrilir; bu, dersin canli islemlerden ogrenmesi demektir (mentor canliya gecis kararinda ayrica gozden gecirir).
 
+## Kurulum sonrasi koruma (otomatik guncelleme: sabit pencere, sessizlik, izleme, geri alma)
+
+**Sabit pencereler.** `trader-oto-guncelle.timer` yalniz gunde iki kez calisir: **10:30 ve 22:30 Turkiye saati** (UTC+3 sabit; = 07:30 ve 19:30 UTC). Pencere disinda betik hicbir sey kurmaz (sessizce cikar; kurulum penceresi +60 dk tolerans). Yine yalniz GitHub'da `tests.yml`'in (artik `duman` + `tests` isleri) YESIL gectigi commit kurulur; 15 dk mum kapanisina yakinsa en fazla ~4 dk bekler. **Acil kurulum (pencereyi beklemeden):** `sudo trader-oto-simdi` (= `oto_guncelle.sh --simdi`; DURDUR dosyasi, canli koruma, yesil commit ve atalik kontrolu aynen gecerli). Belirli bir kodu elle kurmak: `COMMIT=<KOD> bash /usr/local/lib/trader-root/current/deploy/install.sh`. Otomatigi durdurmak/acmak: `/var/lib/trader-oto-guncelle/DURDUR` / `trader-oto-ac`.
+
+**Kurulum isareti.** Kod degistiren her kurulumda `install.sh`, motorlar yeniden baslamadan once `/var/lib/trader-oto-guncelle/kurulum.json` yazar: `{"at","commit","onceki","tur"}` (`tur`: `oto` | `elle` | `geri-al`). Asagidaki korumalar bu isarete bakar.
+
+**1) 15 dk sessizlik (saglik).** Kurulumdan sonraki ilk 15 dk `trader-health` YALNIZ olumcul kirmizilari iletir (`FATAL_CODES`: stopsuz pozisyon, hesap modu kaymasi, defter butunlugu, bellek kaynakli olum, motor calismiyor/yeniden baslama dongusu, API yanit yok, bozuk spool, borsa engeli + acik pozisyon, sermaye tabani, canli yol uyusmazligi). Digerleri TUTULUR (durumlari geri alinir) ve pencere bitince tek `Kurulum sonrasi tutulan uyarilar` ozetiyle (sorun suruyorsa ayrica kendi uyarisiyla) gelir. Ek uyarilar (CT, disk, tutarlilik) pencere boyunca bekler. Kagitta: yalniz bildirim; islem etkilenmez.
+
+**2) 60 dk izleme + otomatik geri alma (`trader-kurulum-gozcu.timer`, 2 dk'da bir).** Kurulumdan sonraki ilk 4 dk (motor yeniden basliyor) sayilmaz; sonra UST USTE 2 turda sunlardan biri gorulurse `trader-geri-al --otomatik` calisir (systemd-run gecici birimi, `trader.slice` disinda, `MemoryMax=800M`): motor servisi `active` degil; motor `status.json` 300 sn'den eski; `NRestarts >= 3`; saglikte olumcul kirmizi (ust uste >= 2 saglik turu). Onceki surum (`kurulum.json.onceki`; yoksa gecmisten) kurulur, bozuk commit `gecmis.tsv`'ye `basarisiz` yazilir (oto_guncelle bir daha ASLA denemez), otomatik guncelleme DURDURULMAZ (sonraki yesil commit kurulabilir) ve tek Telegram mesaji nedenle gider. Canli birim varsa, kurulum `geri-al` turundaysa ya da onceki surum yoksa hicbir sey yapilmaz. `install.sh` mevcut + en fazla iki onceki surumu tutar.
+
+**3) 20 dk oz-kontrol.** Kurulumdan 20 dk sonra bir kez: saglikta ust uste >= 2 tur kirmizi (olumcul olsun olmasin) varsa TEK mesaj; sorun yoksa HICBIR sey gonderilmez. Izleme zaten sorun gorurken ikinci mesaj gitmez.
+
+**Kirmizi alarm cift dogrulama.** Hicbir kirmizi (CRIT/UNKNOWN) saglik alarmi tek basarisiz kontrolle gitmez: ilk gorulen tur "sari" (izlenir, mesaj yok), ust uste 2. turda kirmizi gider (`RED_CONFIRM_RUNS=2`). Tek istisna canli/testnet para guvenligi kodlari (`RED_SINGLE_OK`: `naked_position`, `exchange_ban_open_positions`, `account_mode_drift`, `live_paths_mismatch`; kagitta hic uretilmez). Her alarm turu icin baglam testi: `tests/test_alarm_baglam.py` (gercek kosulda 2 turda gider; zararsiz benzer kosulda gitmez).
+
+**CI duman testi.** `.github/workflows/tests.yml` `duman` isi: `scripts/ci_duman.py` motoru iceri aktarir ve sentetik veriyle 1 gunluk kagit kosusu yapar (~5 sn). Yerelde: `cd trader && python scripts/ci_duman.py`. Hicbir risk sinirina, kagit islem ayarina ya da motor davranisina dokunmaz.
+
 ## Kaldirma
 
 ```
