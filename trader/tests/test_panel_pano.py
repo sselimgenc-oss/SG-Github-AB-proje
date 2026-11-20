@@ -79,9 +79,9 @@ def test_no_raw_codes_files_sha_utc_in_data_layer(pano, env):
 def test_kol_adi_used_like_telegram(env):
     d = PanelData(load_config(env.cfg_path), clock=lambda: NOW)
     rows = d.kapanan("learner", "tumu")["rows"]
-    assert rows and all(r["kol"] == TS.kol_adi("R1@1h") == "R1 · 1s" for r in rows)
+    assert rows and all(r["kol"] == TS.kol_adi("R1@1h") == "Yatay piyasa kenarı · 1 saat" for r in rows)
     assert all(r["coin"] in ("ETH", "BTC") and r["yon"] == "long" for r in rows)
-    assert d.pano("learner")["acik"]["rows"][0]["kol"] == "R1 · 1s"
+    assert d.pano("learner")["acik"]["rows"][0]["kol"] == "Yatay piyasa kenarı · 1 saat"
 
 
 def test_tsi_day_boundary(env):
@@ -146,3 +146,55 @@ def test_panel_js_new_structure():
     assert "TAB_MS" not in js and "setInterval" in js and "location.reload" in js
     css = (STATIC / "panel.css").read_text(encoding="utf-8")
     assert "repeat(3,minmax(0,1fr))" in css and "repeat(6,minmax(0,1fr))" in css and ".gomulu .ust{display:none}" in css
+
+
+# ---------------- Turkce bicim, ek yardimcisi, ders/ML durumlari
+def _node_js(code: str) -> str:
+    import shutil
+    import subprocess
+    if shutil.which("node") is None:
+        pytest.skip("node yok")
+    r = subprocess.run(["node", "-e", code], capture_output=True, text=True, timeout=20)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_turkish_suffix_helper_and_number_format():
+    js = (STATIC / "panel.js").read_text(encoding="utf-8")
+    fn = js.split("/* ek:basla")[1].split("*/", 1)[1].split("/* ek:bitir */")[0]
+    trn = re.search(r"  function trn\(x, d\) \{.*?\n  \}\n", js, re.S).group(0)
+    want = {1: "i", 2: "si", 3: "ü", 4: "ü", 5: "i", 6: "sı", 7: "si", 8: "i", 9: "u", 10: "u", 20: "si", 30: "u", 40: "ı", 50: "si",
+            60: "ı", 70: "i", 80: "i", 90: "ı", 100: "ü", 1000: "i"}
+    out = _node_js(trn + fn + f"for (const n of {list(want)}) console.log(n + ek(n)); console.log(trn(1428.4)); console.log(trn(-7.2)); console.log(trn(0.5, 1));")
+    lines = out.split("\n")
+    for line, (n, e) in zip(lines, want.items()):
+        assert line == f"{n}'{e}", line
+    assert lines[len(want):len(want) + 3] == ["1.428,40", "7,20", "0,5"]
+
+
+def test_server_number_format_turkish():
+    assert PP.tr_sayi(1428.4) == "1.428,40" and PP.tr_sayi(-7.2) == "7,20" and PP.tr_sayi(1000000) == "1.000.000,00"
+
+
+def test_param_sentence_has_unit_and_turkish_decimal():
+    s = PP._param_farki({"stop_buffer_atr": 0.3}, {"stop_buffer_atr": 0.2})
+    assert s == "stop payı 0,3 → 0,2 ATR"
+
+
+def test_strip_has_start_not_kasa_pct_and_title_turkish(pano):
+    assert pano["serit"]["baslangic"] == 1000.0 and "kasa_yuzde" not in pano["serit"]
+    assert "<h1>İşlem Botu</h1>" in (STATIC / "index.html").read_text(encoding="utf-8")
+
+
+def test_partial_state_is_not_healthy_and_says_why():
+    ml = {"kapsam": {"aktif": 4, "toplam": 9, "en_az": 10, "eksik": []}}
+    k = PP.kismi_durum({"renk": "sari"}, ml)
+    assert k == ["ML 4/9 kolda çalışıyor, diğerlerinde yeterli işlem yok (en az 10)"]
+    y = PP.ne_yapmali("live", {"renk": "yesil"}, 3, k)
+    assert y.startswith("Bir şey yapmanız gerekmiyor; ML 4/9 kolda")
+    assert PP.kismi_durum({"renk": "kirmizi"}, None) == ["ders işlemleri etkilemiyor"]
+    assert PP.kismi_durum({"renk": "yesil"}, {"kapsam": {"aktif": 9, "toplam": 9, "en_az": 10, "eksik": []}}) == []
+
+
+def test_katki_label_uses_resolved_count():
+    assert PP.katki_olculemedi(0) == {"olculemedi": "Henüz ölçülemedi (sonucu belli 0 karar, en az 10)"}

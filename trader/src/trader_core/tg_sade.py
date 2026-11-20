@@ -92,15 +92,26 @@ def _bagla(satirlar: list[str], max_satir: int = MAX_SATIR) -> str:
 
 
 # ----------------------------------------------------------------------------- kol adi
-_TF_TR = {"15m": "15dk", "1h": "1s", "4h": "4s", "1d": "1g", "5m": "5dk", "1m": "1dk", "30m": "30dk", "1w": "1h"}
+_TF_TR = {"15m": "15 dakika", "1h": "1 saat", "4h": "4 saat", "1d": "1 gün", "5m": "5 dakika", "1m": "1 dakika",
+          "30m": "30 dakika", "1w": "1 hafta"}
+# kurulum kodu -> Turkce ad (kaynak: src/trader_engine/strategies/arms/*.py belge dizgileri)
+KURULUM_AD = {"T1": "Trend geri çekilmesi", "R1": "Yatay piyasa kenarı", "TF1": "Trend kırılımı", "B1": "Kırılım yeniden testi",
+              "H2": "İki bacaklı geri çekilme", "S1": "Sıkışma kırılımı", "F1": "Sahte kırılım dönüşü",
+              "M1": "Yapay zekâ adayı", "C1": "Kadro uzlaşısı"}
+
+
+def kurulum_adi(setup: Any) -> str:
+    s = str(setup or "?").strip().partition("@")[0]
+    return KURULUM_AD.get(s, s)
 
 
 def kol_adi(setup: Any, tf: Any = None) -> str:
-    """Kol/kurulum kimligi -> okunur ad: 'M1@1h' -> 'M1 · 1s', 'T1@15m' -> 'T1 · 15dk', 'R1@1d' -> 'R1 · 1g'.
-    `tf` ayrica verilirse (setup '@' icermiyorsa) o kullanilir. Panel de ayni fonksiyonu kullanir."""
+    """Kol/kurulum kimligi -> okunur Turkce ad: 'M1@1h' -> 'Yapay zekâ adayı · 1 saat', 'R1@1d' -> 'Yatay piyasa kenarı · 1 gün'.
+    `tf` ayrica verilirse (setup '@' icermiyorsa) o kullanilir. Telegram ve panel AYNI fonksiyonu kullanir."""
     s = str(setup or "?").strip()
-    ad, _, zf = s.partition("@")
+    _, _, zf = s.partition("@")
     zf = zf or str(tf or "")
+    ad = kurulum_adi(s)
     return f"{ad} · {_TF_TR.get(zf, zf)}" if zf else ad
 
 

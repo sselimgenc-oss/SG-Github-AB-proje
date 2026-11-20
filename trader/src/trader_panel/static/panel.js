@@ -35,17 +35,34 @@
 
   /* ---------- bicim ---------- */
   function num(x) { return typeof x === 'number' && isFinite(x); }
-  function f2(x) { return num(x) ? x.toFixed(2) : '—'; }
-  function sgn(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + Math.abs(x).toFixed(2) : '—'; }
+  function trn(x, d) {                                        // Turkce sayi: 1.428,40
+    var s = Math.abs(x).toFixed(d === undefined ? 2 : d), p = s.split('.'), g = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return p.length > 1 ? g + ',' + p[1] : g;
+  }
+  function f2(x) { return num(x) ? (x < 0 ? '−' : '') + trn(x) : '—'; }
+  function sgn(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + trn(x) : '—'; }
   function usd(x) { return num(x) ? f2(x) + ' $' : '—'; }
   function usdS(x) { return num(x) ? sgn(x) + ' $' : '—'; }
-  function pc(x) { return num(x) ? sgn(x) + '%' : ''; }
-  function px(x) { return !num(x) ? '—' : (Math.abs(x) >= 1 ? x.toFixed(2) : x.toFixed(3)); }
+  function pc(x) { return num(x) ? (x > 0 ? '+' : (x < 0 ? '−' : '')) + '%' + trn(x) : ''; }
+  function px(x) { return !num(x) ? '—' : (x < 0 ? '−' : '') + (Math.abs(x) >= 1 ? trn(x, 2) : trn(x, 3)); }
+  /* ek:basla — "12'si", "3'ü": sayinin okunusuna gore iyelik eki (son soylenen sozcuge gore) */
+  function ek(n) {
+    n = Math.abs(Math.round(n));
+    var T = {0: "'ı", 1: "'i", 2: "'si", 3: "'ü", 4: "'ü", 5: "'i", 6: "'sı", 7: "'si", 8: "'i", 9: "'u"};   // bir, iki, üç, dört, beş, altı, yedi, sekiz, dokuz
+    var O = {1: "'u", 2: "'si", 3: "'u", 4: "'ı", 5: "'si", 6: "'ı", 7: "'i", 8: "'i", 9: "'ı"};             // on, yirmi, otuz, kırk, elli, altmış, yetmiş, seksen, doksan
+    if (n === 0) return T[0];
+    if (n % 10) return T[n % 10];
+    if (n % 100) return O[(n % 100) / 10];
+    if (n % 1000) return "'ü";                                // yüz
+    if (n % 1000000) return "'i";                             // bin
+    return "'u";                                              // milyon
+  }
+  /* ek:bitir */
   function cls(x) { return !num(x) || Math.abs(x) < 0.005 ? '' : (x > 0 ? 'iyi' : 'kotu'); }
   function ago(s) {
     if (!num(s) || s < 90) return 'az önce';
     if (s < 5400) return Math.round(s / 60) + ' dk önce';
-    return (s / 3600).toFixed(1) + ' sa önce';
+    return trn(s / 3600, 1) + ' sa önce';
   }
   function etiketTsi(iso) {                                   // yalniz gosterim: TSİ (sabit +3)
     var t = Date.parse(iso);
@@ -175,7 +192,7 @@
     svg.appendChild(sv('path', {d: d + ' L' + X(n - 1).toFixed(1) + ' ' + H + ' L' + X(0).toFixed(1) + ' ' + H + ' Z', 'class': 'alan' + (neg ? ' k' : '')}));
     svg.appendChild(sv('path', {d: d, 'class': 'cizgi' + (neg ? ' k' : '')}));
     var g = el('div', 'gk'), yt = el('div', 'yt'), ek = el('div', 'ek');
-    add(yt, el('span', '', mx.toFixed(0)), el('span', '', mn.toFixed(0)));
+    add(yt, el('span', '', trn(mx, 0)), el('span', '', trn(mn, 0)));
     add(ek, el('span', '', egri[0][0]), el('span', '', egri[n - 1][0]));
     return add(g, yt, svg, ek);
   }
@@ -195,7 +212,7 @@
     var s = p.serit, r = s.risk, ro = $('rozet');
     if (p.mod) { ro.hidden = false; ro.textContent = p.mod === 'live' ? 'CANLI' : 'KÂĞIT'; } else ro.hidden = true;
     add(z,
-      sk('Kasa', usd(s.kasa), num(s.kasa_yuzde) ? pc(s.kasa_yuzde) + ' başlangıca göre' : ''),
+      sk('Kasa', usd(s.kasa), num(s.baslangic) ? 'başlangıç ' + usd(s.baslangic) : ''),
       sk('Bugün K/Z', usdS(s.bugun), pc(s.bugun_yuzde), cls(s.bugun)),
       sk('Toplam K/Z', usdS(s.toplam), pc(s.toplam_yuzde), cls(s.toplam)),
       sk('Açık poz.', String(s.acik), num(s.acik_kz) ? usdS(s.acik_kz) + ' açık K/Z' : '', ''),
@@ -261,13 +278,13 @@
     if (p.ders) {
       var d = kart('Ders', link('Ayrıntı', 'ogrenme'));
       add(d, add(el('div'), rozetRenk(p.ders.durum, p.ders.renk)));
-      if (p.ders.son) add(d, el('div', 'yok', p.ders.son.tarih + ' · ' + p.ders.son.metin));
+      if (p.ders.son) add(d, el('div', 'yok', 'Son ders: ' + p.ders.son.tarih));
       add(ig, d);
     }
     if (p.ml) {
       var m = kart('Makine öğrenmesi', link('Ayrıntı', 'ogrenme'));
       add(m, add(el('div'), rozetRenk(p.ml.durum, p.ml.renk)));
-      add(m, el('div', 'yok', p.ml.isabet.olculemedi ? p.ml.isabet.olculemedi : 'Son ' + p.ml.isabet.n + ' tahminin ' + p.ml.isabet.tutan + '\'i tuttu'));
+      add(m, el('div', 'yok', p.ml.isabet.olculemedi ? p.ml.isabet.olculemedi : 'Son ' + p.ml.isabet.n + ' tahminin ' + p.ml.isabet.tutan + ek(p.ml.isabet.tutan) + ' tuttu'));
       add(ig, m);
     }
     if (p.isik.renk !== 'kirmizi') add(ig, isikKart(p));
@@ -285,7 +302,7 @@
     var a = p.acik, k = kart('Açık işlemler');
     if (!a.n) { add(k, yok('Şu an açık işlem yok.')); add(root, k); return; }
     add(k, add(el('div', 'ozet-ic'), el('span', '', a.n + ' işlem'), add(el('span'), document.createTextNode('K/Z '), el('b', cls(a.kz), usdS(a.kz))),
-      num(a.kasa_yuzde) ? el('span', '', 'kasanın %' + a.kasa_yuzde.toFixed(0) + '\'i kullanımda') : null));
+      num(a.kasa_yuzde) ? el('span', '', 'kasanın %' + trn(a.kasa_yuzde, 0) + ek(a.kasa_yuzde) + ' kullanımda') : null));
     var rows = a.rows.map(function (r) {
       var gn = add(el('div'), el('div', 'n', px(r.giris)), el('div', 'u', '→ ' + px(r.simdi)));
       return {cells: [sym(r.coin, r.yon, r.kol), gn, kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.sure))],
@@ -311,7 +328,7 @@
       add(k, bar);
       if (!v || !v.ok) { add(k, yok('Veri şu an okunamıyor.')); add(root, k); return; }
       if (!v.n) { add(k, yok('Bu dönemde kapanan işlem yok.')); add(root, k); return; }
-      add(k, add(el('div', 'ozet-ic'), el('span', '', v.n + ' işlem'), el('span', '', 'kazanan %' + v.kazanan_yuzde.toFixed(0)),
+      add(k, add(el('div', 'ozet-ic'), el('span', '', v.n + ' işlem'), el('span', '', 'kazanan %' + trn(v.kazanan_yuzde, 0)),
         add(el('span'), document.createTextNode('net '), el('b', cls(v.net), usdS(v.net)))));
       var rows = v.rows.map(function (r) {
         return {cells: [sym(r.coin, r.yon), el('div', 'n', r.kapanis), kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.neden))],
@@ -340,7 +357,7 @@
     if (z.oran) {
       var o = kart('Kazanma oranı');
       if (z.oran.olculemedi) add(o, yok(z.oran.olculemedi));
-      else add(o, satir('Kazanan işlem', '%' + z.oran.kazanma_yuzde.toFixed(0) + ' (' + z.oran.n + ' işlem)'),
+      else add(o, satir('Kazanan işlem', '%' + trn(z.oran.kazanma_yuzde, 0) + ' (' + z.oran.n + ' işlem)'),
         satir('Ortalama kazanç', usdS(z.oran.ort_kazanc), 'iyi'), satir('Ortalama kayıp', usdS(z.oran.ort_kayip), 'kotu'));
       add(ig, o);
     }
@@ -360,8 +377,8 @@
 
   /* ÖĞRENME */
   function katkiSatir(k) {
-    if (k.olculemedi) return satir('Katkı', k.olculemedi);
-    return satir('Katkı', (k.yaklasik ? '≈ ' : '') + usdS(k.usd) + ' (' + k.n + ' karar)', cls(k.usd));
+    if (k.olculemedi) return satir('Katkı', k.olculemedi.replace('Henüz', 'henüz'));
+    return satir('Katkı', (k.yaklasik ? '≈ ' : '') + usdS(k.usd) + ' (' + k.n + ' sonucu belli karar)', cls(k.usd));
   }
   function tabOgrenme(root, p) {
     clear(root);
@@ -381,15 +398,20 @@
     if (p.ml) {
       var m = p.ml, mk = kart('Makine öğrenmesi');
       add(mk, add(el('div'), rozetRenk(m.durum, m.renk)));
-      add(mk, m.isabet.olculemedi ? satir('İsabet', m.isabet.olculemedi) : satir('İsabet', 'son ' + m.isabet.n + ' tahminin ' + m.isabet.tutan + '\'i tuttu'));
+      add(mk, m.isabet.olculemedi ? satir('İsabet', m.isabet.olculemedi) : satir('İsabet', 'son ' + m.isabet.n + ' tahminin ' + m.isabet.tutan + ek(m.isabet.tutan) + ' tuttu'));
       add(mk, satir('Son 7 gün', m.onay_7g + ' onay · ' + m.ret_7g + ' ret'), katkiSatir(m.katki));
+      if (m.kapsam && m.kapsam.eksik.length) {
+        add(mk, el('div', 'yok', 'Şu kollarda yeterli kapanmış işlem yok:'));
+        m.kapsam.eksik.forEach(function (e) { add(mk, satir(e.kol, e.n + '/' + e.en_az, 'sol')); });
+        if (m.kapsam.eksik_fazla) add(mk, el('div', 'yok', '… ve ' + m.kapsam.eksik_fazla + ' kol daha'));
+      }
       if (m.egitim) add(mk, satir('Son eğitim', m.egitim.tarih + ' · ' + m.egitim.ornek + ' örnek'));
       add(ig, mk);
       if (m.son5.length) {
         var ls = kart('Son 5 karar');
         m.son5.forEach(function (s) {
           add(ls, add(el('div', 'satir'), add(el('span'), el('b', '', s.coin), el('span', 'u sol', ' ' + s.tarih)),
-            add(el('b', ''), el('span', '', s.karar + ' · '), el('span', cls(s.kz), s.sonuc))));
+            add(el('b', ''), el('span', '', s.karar + ' · '), el('span', cls(s.kz), num(s.kz) ? usdS(s.kz) : s.sonuc))));
         });
         add(ig, ls);
       }
@@ -443,8 +465,8 @@
       return add(b, satir('Kapanan işlem', String(t.kayitlar.kapanan)), satir('Açık işlem', String(t.kayitlar.acik)), satir('Değerlendirilen fırsat', String(t.kayitlar.karar)));
     }));
     if (t.dogrulama) add(root, katli('Backtest / doğrulama', '', function (b) {
-      if (num(t.dogrulama.eslesme)) add(b, satir('Kâğıt ile geçmiş test eşleşmesi', '%' + (t.dogrulama.eslesme * 100).toFixed(0)));
-      if (num(t.dogrulama.pbo)) add(b, satir('Aşırı uyum riski (en yüksek)', '%' + (t.dogrulama.pbo * 100).toFixed(0)));
+      if (num(t.dogrulama.eslesme)) add(b, satir('Kâğıt ile geçmiş test eşleşmesi', '%' + trn(t.dogrulama.eslesme * 100, 0)));
+      if (num(t.dogrulama.pbo)) add(b, satir('Aşırı uyum riski (en yüksek)', '%' + trn(t.dogrulama.pbo * 100, 0)));
       if (t.dogrulama.uyari) add(b, el('div', 'yok kotu', 'Doğrulama raporunda uyarı var.'));
       return b;
     }));

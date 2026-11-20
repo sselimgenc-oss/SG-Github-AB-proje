@@ -247,12 +247,12 @@ def test_ders_uygulandi_ve_geri_alindi_gider_gunde_bir_kez(rig):
     ap = nt("applied", "rr_min 1.5 -> 1.8 (otomatik). Kapsam: R1+T1. Kanit: n=5. Geri alma: dugme")
     assert rig.n.notify(ap) is True and rig.n.notify(ap) is True
     assert len(rig.fake.texts) == 1
-    assert rig.fake.texts[0] == "[ML] Ders uygulandı: en düşük kazanç/risk oranı 1.5 → 1.8 · R1 + T1"
+    assert rig.fake.texts[0] == "[ML] Ders uygulandı: en düşük kazanç/risk oranı 1.5 → 1.8 · Yatay piyasa kenarı + Trend geri çekilmesi"
     rb = nt("rolled_back", "rr_min 1.8 -> 1.5: ders etkisi kotu. Kapsam: M1@1h.")
     rig.n.notify(rb)
     rig.n.notify(rb)
     assert len(rig.fake.texts) == 2
-    assert rig.fake.texts[1] == "[ML] Ders geri alındı: en düşük kazanç/risk oranı 1.8 → 1.5 · M1 · 1s (sonuç kötüleşti)"
+    assert rig.fake.texts[1] == "[ML] Ders geri alındı: en düşük kazanç/risk oranı 1.8 → 1.5 · Yapay zekâ adayı · 1 saat (sonuç kötüleşti)"
     rig.clk.adv(days=1)
     rig.n.notify(ap)
     assert len(rig.fake.texts) == 3                       # ertesi gun yine
@@ -267,9 +267,11 @@ def test_ders_teknik_hata_ve_zaman_asimi_susar(rig):
 
 
 def test_kol_adi_bicimi():
-    assert TS.kol_adi("M1@1h") == "M1 · 1s" and TS.kol_adi("T1@15m") == "T1 · 15dk"
-    assert TS.kol_adi("C1@1h") == "C1 · 1s" and TS.kol_adi("R1@1d") == "R1 · 1g" and TS.kol_adi("R1@4h") == "R1 · 4s"
-    assert TS.kol_adi("M1", "1h") == "M1 · 1s" and TS.kol_adi("M1") == "M1"
+    assert TS.kol_adi("M1@1h") == "Yapay zekâ adayı · 1 saat" and TS.kol_adi("T1@15m") == "Trend geri çekilmesi · 15 dakika"
+    assert TS.kol_adi("C1@1h") == "Kadro uzlaşısı · 1 saat" and TS.kol_adi("R1@1d") == "Yatay piyasa kenarı · 1 gün"
+    assert TS.kol_adi("R1@4h") == "Yatay piyasa kenarı · 4 saat"
+    assert TS.kol_adi("M1", "1h") == "Yapay zekâ adayı · 1 saat" and TS.kol_adi("M1") == "Yapay zekâ adayı"
+    assert TS.kol_adi("XY9@1h") == "XY9 · 1 saat"          # bilinmeyen kod ham kalir (uydurma ad yok)
 
 
 def test_islem_mesajinda_kol_adi_ledgerdan_gelir(rig):
@@ -277,7 +279,7 @@ def test_islem_mesajinda_kol_adi_ledgerdan_gelir(rig):
     (rig.tmp / "tg").mkdir(exist_ok=True)
     (rig.tmp / "tg" / "islem_imleci.json").write_text(json.dumps({"acilan": [], "kapanan": []}))
     T.islem_tick(rig.cfg, rig.n, NOW)
-    assert rig.fake.texts[0].splitlines()[0] == "[ML] 🟩 R1 · 1s · ETH · long"
+    assert rig.fake.texts[0].splitlines()[0] == "[ML] 🟩 Yatay piyasa kenarı · 1 saat · ETH · long"
     assert "öğrenen" not in "".join(rig.fake.texts)
 
 

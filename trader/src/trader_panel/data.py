@@ -239,9 +239,12 @@ class PanelData:
             teknik = PP.teknik_view(health=safe["health"], risk_rows=safe["risk"], budget=safe["budget"], tut=safe["tut"],
                                     pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders)
             isik = PP._problem(teknik.get("saglik"), s["state"], serit["risk"], safe["budget"])
+            kismi = PP.kismi_durum(ders, ml)
+            if kismi and isik["renk"] == "yesil":
+                isik = {"renk": "sari", "metin": "Sistem çalışıyor; bazı özellikler kısmen devrede"}
             return {"bot_durum": s["state"], "mod": (status or {}).get("mode"), "serit": serit, "acik": acik, "kz": kz,
                     "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "teknik": teknik,
-                    "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"])}
+                    "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"], kismi)}
         return self._wrap(fn)
 
     def kapanan(self, bot: str | None, period: str | None) -> dict:
