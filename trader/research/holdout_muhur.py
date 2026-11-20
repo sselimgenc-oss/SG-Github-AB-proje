@@ -123,7 +123,7 @@ def muhurle(history_dir: Path = HISTORY_DIR, out: Path = MUHUR_PATH, *, now: dat
 # Budama ("budama": kapi gecerse holdout neti <= 0 veya K2 p yuksek stratejiyi setten cikarma) UYGULANMADI: o mantik holdout
 # SONUCUNU okuyup mühürlü seti degistirir; bu modulun "holdout icerigine hic dokunma" sozlesmesiyle ve muhurlu veri anlamiyla
 # celisir. Yalniz belgelenir (docs/ml/pbo-holdout-muhur-spec.md ek not): holdout degerlendirmesi
-# ayri degerlendirme betiginde kalir, setten cikarma karari insan/yeni on kayit gerektirir.
+# `holdout_degerlendir.py`'de kalir, setten cikarma karari insan/yeni on kayit gerektirir.
 # ---------------------------------------------------------------------------------------------------------------------------
 def sha256_dosya(path: Path) -> str:
     h = hashlib.sha256()
