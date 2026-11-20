@@ -91,8 +91,9 @@ class StatusWriter:
         now = self.clock.now()
         f = engine.status_fields()
         marks = f.get("last_marks") or {}
+        extra = f.get("open_extra") or {}
         pos = [{"trade_id": p.trade_id, "pair": p.pair, "side": p.side, "qty": p.qty, "entry_price": p.entry_price,
-                "stop": p.current_stop, **_unrealized(p, marks.get(p.pair))}
+                "stop": p.current_stop, **_unrealized(p, marks.get(p.pair)), **(extra.get(p.trade_id) or {})}
                for p in f["open_positions"] if p.status in ("open", "closing")]
         known = [r["unrealized_pnl_usd"] for r in pos if r["unrealized_pnl_usd"] is not None]
         mark_tss = [m[1] for m in (marks.get(r["pair"]) for r in pos) if m]

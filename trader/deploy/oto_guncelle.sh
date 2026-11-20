@@ -81,8 +81,10 @@ degisiklikler() { # eski..yeni arasi birlesme haric konu satirlari (en fazla 15)
 guncelleme_metni() { # eski yeni: en cok 3 satir, sade Turkce; dosya adi yok; hangi degisiklik + geri alma tek komut
   local eski="$1" yeni="$2" toplam ilk
   toplam="$(root_git rev-list --no-merges --count "${eski}..${yeni}" 2>/dev/null || echo 0)"
-  ilk="$(root_git log --format=%s --no-merges -n 1 "${eski}..${yeni}" 2>/dev/null | head -n 1 \
-    | sed -E 's/[A-Za-z0-9_\/.-]+\.(py|sh|json|md|js|html|service|timer|sqlite)//g; s/_/ /g; s/  +/ /g; s/^ +| +$//g' | cut -c1-90)"
+  # konu secimi: en yeni "Test:" / "Merge" olmayan konu (yoksa en yeni konu); tek sozcuklu teknik onek ("Mutabakat:") atilir
+  ilk="$(root_git log --format=%s --no-merges "${eski}..${yeni}" 2>/dev/null \
+    | awk 'NR==1{ilk=$0} !/^(Test|Merge)/{print; bulundu=1; exit} END{if(!bulundu) print ilk}' | head -n 1 \
+    | sed -E 's/^[[:alnum:]_-]+: *//; s/[A-Za-z0-9_\/.-]+\.(py|sh|json|md|js|html|service|timer|sqlite)//g; s/_/ /g; s/  +/ /g; s/^ +| +$//g' | cut -c1-90)"
   [ -n "$ilk" ] || ilk="iyileştirmeler"
   printf '[ML] Bot güncellendi: %s\n' "$ilk"
   if [ "${toplam:-0}" -gt 1 ]; then printf '(ve %s değişiklik daha)\n' "$((toplam - 1))"; fi

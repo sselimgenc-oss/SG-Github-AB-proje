@@ -98,7 +98,7 @@ def test_pnl_mismatch_over_one_cent_and_within_tolerance():
     rows = motor(tr(1), tr(2))
     kap, ac = split(rows, panel_rows(rows, {1: {"kz": 10.02}, 2: {"kz": 10.005}}))
     M.panel_karsilastir(rows, kap, ac, 200)
-    assert rows[0]["panel"].startswith("FARK") and "net K/Z" in rows[0]["uyusmazlik"][0]
+    assert rows[0]["panel"].startswith("FARK") and rows[0]["uyusmazlik"] == ["K/Z farkı 0,02 $"]
     assert rows[1]["panel"] == "aynı"
 
 
@@ -106,8 +106,8 @@ def test_wrong_side_and_time_mismatch():
     rows = motor(tr(1), tr(2))
     kap, ac = split(rows, panel_rows(rows, {1: {"yon": "short"}, 2: {"kapanis": "01.01 00:00"}}))
     M.panel_karsilastir(rows, kap, ac, 200)
-    assert "yön panel=short motor=long" in rows[0]["uyusmazlik"][0]
-    assert "kapanış saati" in rows[1]["uyusmazlik"][0]
+    assert rows[0]["uyusmazlik"] == ["yön farkı"] and "yön panel=short motor=long" in rows[0]["panel"]
+    assert rows[1]["uyusmazlik"] == ["kapanış saati farkı"]
 
 
 def test_panel_extra_row_reported():
@@ -178,20 +178,42 @@ def test_recent_event_waits_instead_of_missing():
 
 
 # ---------------------------------------------------------------------------------------------------- kontroller
+def _acik(**k):
+    return {"trade_id": 7, "side": "long", "entry_price": 100.0, "qty": 2.0, "fee_paid_entry": 0.4, "funding_paid": 0.0,
+            "partial_realized_usd": 0.0, "partial_fee_usd": 0.0, **k}
+
+
 def test_kasa_equation_with_fees_and_funding():
     rows = motor(tr(1, net=10.0, fee_e=0.5, fee_x=0.5, fund=0.2), tr(2, net=-4.0, fee_e=0.3, fee_x=0.3, fund=-0.1))
     net = M.toplamlar(rows)["tumu"]["net"]
     assert net == pytest.approx(6.0)
-    st = {"equity": 1006.0, "unrealized_pnl_usd": 0.0}
-    assert M.kontrol_kasa(baslangic=1000.0, net_sql=6.0, net_motor=net, status=st, acik_giris_komisyon=0.0)["sonuc"] == "geçti"
-    # acik pozisyon: giris komisyonu kasadan dusmus, K/Z eklenmis
-    st = {"equity": 1006.0 - 0.4 + 2.5, "unrealized_pnl_usd": 2.5}
-    assert M.kontrol_kasa(baslangic=1000.0, net_sql=6.0, net_motor=net, status=st, acik_giris_komisyon=0.4)["sonuc"] == "geçti"
-    k = M.kontrol_kasa(baslangic=1000.0, net_sql=6.0, net_motor=net, status={"equity": 1006.05, "unrealized_pnl_usd": 0.0}, acik_giris_komisyon=0.0)
-    assert k["sonuc"] == "kaldı" and "fark +0.0500" in k["ayrinti"]
-    assert M.kontrol_kasa(baslangic=1000.0, net_sql=6.0, net_motor=net, status=None, acik_giris_komisyon=0.0)["sonuc"] == "atlandı"
+    kw = dict(baslangic=1000.0, net_sql=6.0, net_motor=net)
+    assert M.kontrol_kasa(**kw, status={"wallet": 1006.0, "open_positions": []})["sonuc"] == "geçti"
+    # acik pozisyon: giris komisyonu kasadan dusmus
+    assert M.kontrol_kasa(**kw, status={"wallet": 1005.6, "open_positions": [_acik()]})["sonuc"] == "geçti"
+    # kismi cikis (brut +3,00, komisyon 0,10) ve acik pozisyonda odenen fonlama (0,25) kasaya hemen islenir
+    st = {"wallet": 1006.0 - 0.4 - 0.25 + 3.0 - 0.10,
+          "open_positions": [_acik(funding_paid=0.25, partial_realized_usd=3.0, partial_fee_usd=0.10)]}
+    k = M.kontrol_kasa(**kw, status=st)
+    assert k["sonuc"] == "geçti" and k["ayrinti"] == "Kasa 1.008,25 $ tutuyor"
+    # gercek uyusmazlik: sade Turkce metin, formul/Σ/4 hane yok
+    k = M.kontrol_kasa(**kw, status={"wallet": 1005.1, "open_positions": [_acik()]})
+    assert k["sonuc"] == "kaldı" and k["ayrinti"] == "Kasa 1.005,60 $ olmalı, kayıtta 1.005,10 $ · fark 0,50 $"
+    assert "Σ" not in k["ayrinti"] and "=" not in k["ayrinti"]
+    # eski motor (yeni alanlar yok): kaldi degil atlandi
+    eski = {"wallet": 1005.6, "open_positions": [{"trade_id": 7, "side": "long", "entry_price": 100.0, "qty": 2.0}]}
+    k = M.kontrol_kasa(**kw, status=eski)
+    assert k["sonuc"] == "atlandı" and "eski sürüm" in k["ayrinti"]
+    assert M.kontrol_kasa(**kw, status=None)["sonuc"] == "atlandı"
+    assert M.kontrol_kasa(**kw, status={"equity": 1006.0, "open_positions": []})["sonuc"] == "atlandı"      # wallet yok
     # SQL toplami motor toplamindan sapiyorsa kaldi
-    assert M.kontrol_kasa(baslangic=1000.0, net_sql=6.5, net_motor=net, status={"equity": 1006.5}, acik_giris_komisyon=0.0)["sonuc"] == "kaldı"
+    assert M.kontrol_kasa(baslangic=1000.0, net_sql=6.5, net_motor=net, status={"wallet": 1006.5, "open_positions": []})["sonuc"] == "kaldı"
+
+
+def test_kasa_bilgi_satiri_ve_turkce_sayi():
+    b = M.bilgi_acik_kz({"equity": 1010.0, "wallet": 1000.0, "unrealized_pnl_usd": 9.65})
+    assert "fark 0,35 $" in b and "uyuşmazlık sayılmaz" in b and M.bilgi_acik_kz({"equity": 1.0}) is None
+    assert M.usd(1021.4) == "1.021,40" and M.isr(-3.5) == "-3,50" and M.isr(23.6387) == "+23,64"
 
 
 def test_open_position_count_mismatch():
@@ -212,7 +234,7 @@ def test_long_short_totals_and_limit_and_open_pnl_source():
     assert M.kontrol_limit(0.08, 0.08)["sonuc"] == "geçti" and M.kontrol_limit(0.05, 0.08)["sonuc"] == "kaldı"
     pos = {"trade_id": 7, "side": "long", "entry_price": 100.0, "qty": 2.0, "mark": 101.0, "unrealized_pnl_usd": 2.0}
     ok = M.kontrol_acik_kz({"open_positions": [pos]}, [{"id": 7, "simdi": 101.0, "kz": 2.0}])
-    assert ok["sonuc"] == "geçti" and "durum dosyasındaki mark" in ok["ayrinti"]
+    assert ok["sonuc"] == "geçti" and "panelle aynı" in ok["ayrinti"]
     assert M.kontrol_acik_kz({"open_positions": [pos]}, [{"id": 7, "simdi": 101.0, "kz": 2.5}])["sonuc"] == "kaldı"
 
 
@@ -233,16 +255,17 @@ def _trades(env):
         led.close()
 
 
-def _setup(env, *, extra_open=False, equity_delta=0.0, imlec=True, log=True):
+def _setup(env, *, extra_open=False, equity_delta=0.0, wallet_delta=0.0, imlec=True, log=True):
     kap, ac = _trades(env)
     net = sum(t.realized_pnl for t in kap)
     fee_open = sum(t.fee_entry for t in ac)
     pos = [{"trade_id": t.trade_id, "pair": t.pair, "side": t.side, "qty": t.qty, "entry_price": t.entry_price, "stop": 1960.0,
-            "mark": 2010.0, "notional_usd": t.qty * 2010.0, "unrealized_pnl_usd": (2010.0 - t.entry_price) * t.qty} for t in ac]
+            "mark": 2010.0, "fee_paid_entry": t.fee_entry, "funding_paid": 0.0, "partial_realized_usd": 0.0,
+            "partial_fee_usd": 0.0, "notional_usd": t.qty * 2010.0, "unrealized_pnl_usd": (2010.0 - t.entry_price) * t.qty} for t in ac]
     unreal = sum(p["unrealized_pnl_usd"] for p in pos)
     if extra_open:
         pos.append({**pos[0], "trade_id": 99})
-    env.write_status("learner", 5, wallet=1000.0 + net - fee_open, equity=1000.0 + net - fee_open + unreal + equity_delta,
+    env.write_status("learner", 5, wallet=1000.0 + net - fee_open + wallet_delta, equity=1000.0 + net - fee_open + unreal + equity_delta,
                      open_positions=pos, open_trade_ids=[p["trade_id"] for p in pos], unrealized_pnl_unused=0,
                      unrealized_pnl_usd=unreal)
     tg = env.root / "var/telegram"
@@ -280,19 +303,28 @@ def test_end_to_end_all_match(env):
 
 
 def test_end_to_end_open_count_and_kasa_mismatch_and_daily_telegram(env):
-    _setup(env, extra_open=True, equity_delta=0.5)
+    _setup(env, extra_open=True, wallet_delta=0.5)
     d = _run(env)
     ad = {k["ad"]: k for k in d["kontroller"]}
     assert ad["Açık pozisyon sayısı (motor = panel = şerit = durum)"]["sonuc"] == "kaldı"
     assert ad["Kasa = başlangıç + Σ net K/Z"]["sonuc"] == "kaldı"
     assert d["uyusmazlik_sayisi"] >= 2
-    uyari = [i for i in _outbox_items(env) if i.get("severity") != "INFO"]
-    assert len(uyari) == 1
-    item = uyari[0]
-    assert item["text"] == f"[ML] İşlem kontrolü: {d['uyusmazlik_sayisi']} uyuşmazlık bulundu, inceleniyor."
-    assert TS.kontrol(item["text"]) == [] and len(item["text"].splitlines()) <= 3
-    _run(env)                                                               # ayni gun ikinci kosu: yeni mesaj yok
-    assert len([i for i in _outbox_items(env) if i.get("severity") != "INFO"]) == 1
+    # kurulum kosusu: yalniz kurulum ozeti (INFO) gider; ayni kosuda gunluk uyari (WARN) gonderilmez
+    tum = _outbox_items(env)
+    assert [i["severity"] for i in tum] == ["INFO"]
+    t = tum[0]["text"]
+    assert t.splitlines()[0].startswith("[ML] İşlem kontrolü: 6 işlem (açık 1 / kapanan 5")
+    assert f"uyuşmazlık {d['uyusmazlik_sayisi']} · kasa tutmuyor ❌" in t and "olmalı, kayıtta" in t and "· fark " in t and " $" in t
+    assert "bulundu, inceleniyor" not in t and "Σ" not in t and TS.kontrol(t) == []
+    # sonraki kosu (ayni surum): gunluk uyari, ayni sade bicim, WARN
+    e = {"TELEGRAM_VAR_DIR": str(env.root / "var/telegram")}
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
+    uyari = [i for i in _outbox_items(env) if i.get("severity") == "WARN"]
+    assert len(uyari) == 1 and uyari[0]["text"].splitlines()[1:] == t.splitlines()[1:] and len(uyari[0]["text"].splitlines()) <= 4
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0   # ayni gun: yeni mesaj yok
+    assert len([i for i in _outbox_items(env) if i.get("severity") == "WARN"]) == 1
+    md = (env.root / "var/durum/mutabakat.md").read_text(encoding="utf-8")
+    assert "olmalı, kayıtta" in md and "+0." not in md and "Anlık kâr/zarar" not in md
 
 
 def test_end_to_end_no_telegram_records_means_before_message_system(env):

@@ -182,6 +182,24 @@ def test_partial_fill_keeps_position_open_and_resizes_stop(tmp_path):
     env.close()
 
 
+def test_open_extra_fields_explain_wallet_with_partial_fill(tmp_path):
+    """Durum dosyasi acik pozisyonda giris komisyonu, fonlama ve kismi cikis K/Z+komisyonunu verir; kasa = baslangic - bunlar."""
+    env, tid, _ = _run(tmp_path, modes=PT)
+    ex = env.engine._open_extra()[tid]                                                    # noqa: SLF001
+    pk = env.state.kv_get(f"partial:{tid}")
+    t = env.real_ledger.get_trade(tid)
+    assert ex["partial_fee_usd"] == pytest.approx(pk["fee"]) and ex["partial_realized_usd"] == pytest.approx(
+        (pk["price"] - t.entry_price) * pk["qty"]) and ex["partial_realized_usd"] > 0
+    assert ex["fee_paid_entry"] == pytest.approx(t.fee_entry)
+    beklenen = (1000.0 - ex["fee_paid_entry"] - ex["funding_paid"] + ex["partial_realized_usd"] - ex["partial_fee_usd"])
+    assert env.broker.account().wallet == pytest.approx(beklenen, abs=1e-6)
+    from trader_core import mutabakat as M
+    pos = [{"trade_id": tid, "side": "long", **ex}]
+    k = M.kontrol_kasa(baslangic=1000.0, net_sql=0.0, net_motor=0.0, status={"wallet": env.broker.account().wallet, "open_positions": pos})
+    assert k["sonuc"] == "geçti", k
+    env.close()
+
+
 def test_partial_accounting_equals_wallet_and_legs(tmp_path):
     env, tid, _ = _run(tmp_path, modes=PT, drop_low=97.0)                                 # kalan parca ilk stopta kapanir
     t = env.real_ledger.get_trade(tid)

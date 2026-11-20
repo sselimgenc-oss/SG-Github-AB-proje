@@ -79,7 +79,7 @@ def _git(cwd: Path, *args: str) -> str:
 class World:
     """Gecici sunucu: sahte komutlar, surum dosyasi, Telegram ortami, origin + root klonu, kurulum betigi."""
 
-    def __init__(self, tmp: Path, commits: int = 3):
+    def __init__(self, tmp: Path, commits: int = 3, subjects: list[str] | None = None):
         self.tmp = tmp
         self.bin = tmp / "bin"
         self.log = tmp / "log"
@@ -97,7 +97,8 @@ class World:
         self.tg_env = self.etc / "trader-telegram.env"
         self.tg_env.write_text(f"TELEGRAM_BOT_TOKEN={TOKEN}\nTELEGRAM_CHAT_ID=4242\n", encoding="utf-8")
         self.runs = tmp / "runs.json"
-        self.shas = self._make_history(commits)
+        self.subjects = subjects
+        self.shas = self._make_history(len(subjects) if subjects else commits)
         self.set_green(self.shas[-1])
 
     # ------------------------------------------------------------------ git: origin + root klonu (yerel)
@@ -110,7 +111,7 @@ class World:
         for i in range(n):
             (work / "f.txt").write_text(str(i), encoding="utf-8")
             _git(work, "add", "-A")
-            _git(work, "commit", "-q", "-m", f"degisiklik {i}")
+            _git(work, "commit", "-q", "-m", self.subjects[i] if self.subjects else f"degisiklik {i}")
             shas.append(_git(work, "rev-parse", "HEAD"))
         origin = self.tmp / "origin.git"
         _git(self.tmp, "init", "-q", "--bare", str(origin))
@@ -303,6 +304,22 @@ def test_cok_degisiklikte_mesaj_uc_satiri_asmaz(tmp_path):
     msg = w.telegram()[0].split("\n")
     assert msg == ["[ML] Bot güncellendi: degisiklik 17", "(ve 16 değişiklik daha)",
                    "Senden: sorun görürsen orkestratöre 'ML geri al' yaz."]
+
+
+def test_mesaj_konusu_test_ve_merge_atlanir_onek_temizlenir(tmp_path):
+    w = World(tmp_path, subjects=["Temel", "Mutabakat: kasa kontrolü sadeleşti", "Test: kasa testi", "Merge branch 'x'"])
+    w.set_release(w.shas[0])
+    assert w.run().returncode == 0
+    assert w.telegram() == ["[ML] Bot güncellendi: kasa kontrolü sadeleşti\n(ve 2 değişiklik daha)\n"
+                            "Senden: sorun görürsen orkestratöre 'ML geri al' yaz."]
+
+
+def test_mesaj_konusu_yalniz_test_varsa_en_yeni_konu_ve_90_karakter(tmp_path):
+    w = World(tmp_path, subjects=["Temel", "Test: " + "a" * 120])
+    w.set_release(w.shas[0])
+    assert w.run().returncode == 0
+    ilk = w.telegram()[0].split("\n")[0]
+    assert ilk.startswith("[ML] Bot güncellendi: ") and len(ilk) - len("[ML] Bot güncellendi: ") <= 90
 
 
 def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):

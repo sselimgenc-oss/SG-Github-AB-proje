@@ -201,13 +201,15 @@ def limit_doldu(zarar: float, limit: float) -> str:
                    "Açık pozisyonlar stoplarıyla yönetilmeye devam ediyor; yarına kadar yeni işlem açılmaz."])
 
 
-def islem_kontrolu(n: int) -> str:
-    """Gunluk islem mutabakati uyusmazlik bildirimi (yalniz n > 0 iken gonderilir; tek satir)."""
-    return etiketle(f"İşlem kontrolü: {int(n)} uyuşmazlık bulundu, inceleniyor.")
+def islem_kontrolu(doc: Mapping[str, Any] | int) -> str:
+    """Gunluk uyusmazlik bildirimi: kurulum ozetiyle ayni sade bicim (sayim satiri + en fazla 3 ornek). Sayi verilirse tek satir."""
+    if not isinstance(doc, Mapping):
+        return etiketle(f"İşlem kontrolü: {int(doc)} uyuşmazlık bulundu, inceleniyor.")
+    return islem_kontrolu_ozet(doc)
 
 
 def islem_kontrolu_ozet(doc: Mapping[str, Any]) -> str:
-    """Kurulum sonrasi tek seferlik, sessiz islem mutabakati ozeti (<=6 satir; en fazla 3 uyusmazlik ornegi)."""
+    """Islem mutabakati ozeti (<=4 satir; en fazla 3 ornek; sade Turkce, formul yok). Kurulum ozeti ve gunluk uyari bunu kullanir."""
     satir = doc.get("satirlar") or []
     long_n = sum(1 for r in satir if r.get("yon") == "long")
     short_n = sum(1 for r in satir if r.get("yon") == "short")

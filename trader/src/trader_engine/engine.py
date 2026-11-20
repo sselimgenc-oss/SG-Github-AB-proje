@@ -375,6 +375,32 @@ class Engine:
             return None
         return "flat" if not self.state.open_positions() else "exiting"
 
+    def _open_extra(self) -> dict:
+        """Mutabakat icin acik pozisyon basina kasaya yansiyan ama defterde henuz olmayan kalemler (yalniz kagit): giris komisyonu,
+        odenen fonlama (broker cuzdanindan duser, defter kapanista yazar), kismi cikisin brut K/Z'si ve komisyonu."""
+        if not self.is_paper:
+            return {}
+        out: dict = {}
+        try:
+            bp = {b.pair: b for b in self.broker.positions()}
+            for p in self.state.open_positions():
+                if p.status not in ("open", "closing"):
+                    continue
+                b = bp.get(p.pair)
+                d = {"fee_paid_entry": float(b.fee_paid_entry) if b is not None else float(p.fee_entry or 0.0),
+                     "funding_paid": float(b.funding_paid) if b is not None else float(p.funding_paid or 0.0),
+                     "partial_realized_usd": 0.0, "partial_fee_usd": 0.0}
+                pk = self.state.kv_get(f"partial:{p.trade_id}")
+                if isinstance(pk, dict) and pk.get("state") == "done":
+                    sgn = 1.0 if p.side == "long" else -1.0
+                    d["partial_realized_usd"] = sgn * (float(pk["price"]) - float(p.entry_price)) * float(pk["qty"])
+                    d["partial_fee_usd"] = float(pk.get("fee") or 0.0)
+                out[p.trade_id] = d
+        except Exception as e:  # noqa: BLE001 - status yazimi bozulmaz; alanlar yoksa mutabakat 'atlandi' der
+            log.warning("status: acik pozisyon ek alanlari okunamadi (%s)", type(e).__name__)
+            return {}
+        return out
+
     def status_fields(self) -> dict:
         now = self.clock.now()
         acct, stale = None, False
@@ -413,6 +439,7 @@ class Engine:
             "etiket_kurallari": self._etiket_status(),
             "cluster_counts": self.cluster_counts(),
             "last_marks": dict(self._last_marks),
+            "open_extra": self._open_extra(),
             "records": self.records_block(),
             "pause": self._pause_status(),
             "risk_ladder": self._ladder_status(),

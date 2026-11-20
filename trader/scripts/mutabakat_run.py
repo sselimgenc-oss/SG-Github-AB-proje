@@ -117,15 +117,16 @@ def isaret_fonksiyonu(tg_dir: Path, rows: list[dict]):
     return f
 
 
-def telegram_bildir(root_tg: Path, durum_dir: Path, n: int, now: datetime) -> bool:
-    """Gunde en cok bir mesaj: outbox'a yazar (telegram servisi gonderir). Yazilamazsa sessizce False."""
+def telegram_bildir(root_tg: Path, durum_dir: Path, doc: dict | int, now: datetime) -> bool:
+    """Gunde en cok bir mesaj (kurulum ozetiyle ayni sade bicim): outbox'a yazar (telegram servisi gonderir). Yazilamazsa False."""
+    n = doc if isinstance(doc, int) else int(doc.get("uyusmazlik_sayisi") or 0)
     gun = now.astimezone(M.TR).date().isoformat()
     isaret = durum_dir / "mutabakat_bildirim.json"
     if (_json(isaret) or {}).get("gun") == gun:
         return False
     try:
         from trader_core.telegram import Outbox  # noqa: PLC0415
-        ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu(n), "severity": "WARN", "dedup_key": f"mutabakat:{gun}",
+        ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu(doc), "severity": "WARN", "dedup_key": f"mutabakat:{gun}",
                                                     "expires_at": None, "reply_markup": None, "created_at": now.timestamp()})
         if ok:
             atomic_write_text(isaret, json.dumps({"gun": gun, "n": n}) + "\n")
@@ -176,9 +177,7 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
         ws = float(ws) if isinstance(ws, (int, float)) and not isinstance(ws, bool) else None
     except (OSError, ValueError, AttributeError):
         ws = None
-    acik_komisyon = sum(r["komisyon"] for r in rows if r["durum"] == "açık")
-    kontroller = [M.kontrol_kasa(baslangic=ws, net_sql=net_sql, net_motor=toplam["tumu"]["net"], status=status,
-                                 acik_giris_komisyon=acik_komisyon),
+    kontroller = [M.kontrol_kasa(baslangic=ws, net_sql=net_sql, net_motor=toplam["tumu"]["net"], status=status),
                   M.kontrol_bagimsiz_toplam(net_sql, brut_sql, toplam["tumu"]["net"])]
     gorunen = M.toplamlar(M.son_kapanan(rows, int(cfg.closed_limit))) if kap.get("daha_fazla") else toplam   # liste sinirli: ayni kume
     kontroller += M.kontrol_long_short(gorunen, kap["rows"], kap.get("n"), kap.get("net"))
@@ -187,14 +186,16 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
     kontroller.append(M.kontrol_acik_kz(status, pano["acik"]["rows"]))
     kontroller.append(M.kontrol_limit(pano["serit"]["risk"].get("limit_orani"), ayar_orani(root / "config")))
     siniri = f"Panel 'tümü' listesi son {int(cfg.closed_limit)} kapanan işlemi gösterir; toplamlar tüm işlemleri kapsar."
-    doc = M.ozet(rows, kontroller, fazla, now=now, panel_notu=siniri, telegram_kaynak=KAYNAK_NOTU)
+    bilgi = [b for b in (M.bilgi_acik_kz(status),) if b]
+    doc = M.ozet(rows, kontroller, fazla, now=now, panel_notu=siniri, telegram_kaynak=KAYNAK_NOTU, bilgi=bilgi)
     satirlar = M.temiz(rows)
     durum = root / "var" / "durum"
     atomic_write_text(durum / "mutabakat_v1.json", json.dumps({**doc, "satirlar": satirlar}, ensure_ascii=False, indent=1) + "\n")
     atomic_write_text(durum / "mutabakat.md", M.markdown(doc, rows))
-    if doc["uyusmazlik_sayisi"] > 0:
-        telegram_bildir(tg_dir, durum, doc["uyusmazlik_sayisi"], now)
-    kurulum_ozeti(tg_dir, durum, {**doc, "satirlar": satirlar}, now)
+    tam = {**doc, "satirlar": satirlar}
+    gitti = kurulum_ozeti(tg_dir, durum, tam, now)
+    if doc["uyusmazlik_sayisi"] > 0 and not gitti:          # tek mesaj: kurulum ozeti gittiyse gunluk uyari ayni kosuda gonderilmez
+        telegram_bildir(tg_dir, durum, tam, now)
     return 0, doc
 
 

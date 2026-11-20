@@ -34,6 +34,16 @@ def tsi_tam(dt: datetime | None) -> str | None:
     return None if dt is None else dt.astimezone(TR).strftime("%Y-%m-%d %H:%M")
 
 
+def isr(x, nd: int = 2) -> str:
+    """Isaretli Turkce para bicimi: -3.5 -> '-3,50', 23.6 -> '+23,60'."""
+    return ("-" if float(x) < 0 and round(abs(float(x)), nd) > 0 else "+") + TS.sayi(x, nd)
+
+
+def usd(x, nd: int = 2) -> str:
+    """Turkce para bicimi, isaretsiz: 1021.4 -> '1.021,40'."""
+    return TS.sayi(x, nd)
+
+
 def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
@@ -84,37 +94,49 @@ def panel_karsilastir(rows: list[dict], panel_kapanan: Sequence[Mapping], panel_
                 r["panel"] = f"liste sınırı dışı (panel son {panel_siniri} işlemi gösterir)"
                 continue
             r["panel"] = "YOK"
-            r["uyusmazlik"].append("panelde yok" + (" (panel işlemi diğer listede gösteriyor)" if diger else ""))
+            r["uyusmazlik"].append("panelde yok" + (" (diğer listede görünüyor)" if diger else ""))
             continue
-        fark = []
+        fark, sade = [], []                       # fark: teknik (json/md 'panel' sutunu); sade: Telegram/ozet metni
         if p.get("yon") != r["yon"]:
             fark.append(f"yön panel={p.get('yon')} motor={r['yon']}")
+            sade.append("yön farkı")
         if p.get("coin") != r["coin"]:
             fark.append(f"coin panel={p.get('coin')} motor={r['coin']}")
+            sade.append("coin farkı")
         if p.get("kol") != r["kol"]:
             fark.append(f"kol panel={p.get('kol')} motor={r['kol']}")
+            sade.append("kol farkı")
         if not _yakin(p.get("giris"), r["giris"], 1e-6):
             fark.append(f"giriş fiyatı panel={p.get('giris')} motor={r['giris']}")
+            sade.append("giriş fiyatı farkı")
         if p.get("acilis") != PP.tsi_kisa(r["_a"]):
             fark.append(f"açılış saati panel={p.get('acilis')} motor={PP.tsi_kisa(r['_a'])}")
+            sade.append("açılış saati farkı")
         if r["durum"] == "kapalı":
             if not _yakin(p.get("kz"), r["net"]):
                 fark.append(f"net K/Z panel={_n(p.get('kz'))} motor={_n(r['net'])}")
+                try:
+                    sade.append(f"K/Z farkı {usd(abs(float(p.get('kz')) - float(r['net'])))} $")
+                except (TypeError, ValueError):
+                    sade.append("K/Z farkı")
             if not _yakin(p.get("cikis"), r["cikis"], 1e-6):
                 fark.append(f"çıkış fiyatı panel={p.get('cikis')} motor={r['cikis']}")
+                sade.append("çıkış fiyatı farkı")
             if p.get("kapanis") != PP.tsi_kisa(r["_k"]):
                 fark.append(f"kapanış saati panel={p.get('kapanis')} motor={PP.tsi_kisa(r['_k'])}")
+                sade.append("kapanış saati farkı")
             if not _yakin(p.get("komisyon"), r["komisyon"]) or not _yakin(p.get("fonlama"), r["fonlama"]):
                 fark.append("komisyon/fonlama farklı")
+                sade.append("komisyon/fonlama farkı")
         r["panel"] = "aynı" if not fark else "FARK: " + "; ".join(fark)
-        r["uyusmazlik"].extend(f"panel: {x}" for x in fark)
+        r["uyusmazlik"].extend(sade)
     motor_ids = {r["islem_no"] for r in rows}
     return [f"panelde fazla işlem #{i}" for i in list(pk) + list(pa) if i not in motor_ids]
 
 
 def _n(x) -> str:
     try:
-        return f"{float(x):+.4f}"
+        return isr(x)
     except (TypeError, ValueError):
         return str(x)
 
@@ -159,7 +181,9 @@ def telegram_karsilastir(rows: list[dict], *, now: datetime, kayit: Mapping, isa
             if r["durum"] == "kapalı" else TG_YOK
         for ad in ("telegram_acildi", "telegram_kapandi"):
             if r[ad] in TG_SORUN:
-                r["uyusmazlik"].append(f"telegram {ad.split('_')[1]}: {r[ad]}")
+                tur = "açılış" if ad == "telegram_acildi" else "kapanış"
+                r["uyusmazlik"].append({TG_EKSIK: f"Telegram {tur} mesajı eksik", TG_YON: f"Telegram {tur} mesajında yön yanlış",
+                                        TG_KZ: f"Telegram {tur} mesajında K/Z yanlış"}[r[ad]])
     motor_ids = {r["islem_no"] for r in rows}
     fazla = sorted({i for (i, _t) in kayit if i not in motor_ids})
     return [f"Telegram'da fazla işlem #{i} (defterde yok)" for i in fazla]
@@ -194,94 +218,131 @@ def kontrol_long_short(motor: Mapping, panel_kapanan_rows: Sequence[Mapping], pa
         n_p, net_p = len(pl[y]), math.fsum(float(r.get("kz") or 0.0) for r in pl[y])
         ok = n_m == n_p and _yakin(net_m, net_p)
         out.append(kontrol(f"{y.capitalize()} toplamı (motor = panel)", ok,
-                           f"motor {n_m} işlem {net_m:+.4f} $; panel {n_p} işlem {net_p:+.4f} $"))
+                           f"{y.capitalize()} işlemler panelle aynı ({n_m} işlem)" if ok else
+                           f"{y.capitalize()}: kayıtta {n_m} işlem {isr(net_m)} $, panelde {n_p} işlem {isr(net_p)} $"))
     if panel_n is not None and panel_net is not None:
         ok = motor["tumu"]["n"] == panel_n and _yakin(motor["tumu"]["net"], panel_net)
         out.append(kontrol("Toplam kapanan (motor = panel 'tümü')", ok,
-                           f"motor {motor['tumu']['n']} işlem {motor['tumu']['net']:+.4f} $; panel {panel_n} işlem {panel_net:+.4f} $"))
+                           f"Kapanan işlemlerin toplamı panelle aynı ({panel_n} işlem)" if ok else
+                           f"Kapanan işlemler: kayıtta {motor['tumu']['n']} işlem {isr(motor['tumu']['net'])} $, "
+                           f"panelde {panel_n} işlem {isr(panel_net)} $"))
     return out
 
 
-def kontrol_kasa(*, baslangic: float | None, net_sql: float | None, net_motor: float, status: Mapping | None,
-                 acik_giris_komisyon: float) -> dict:
-    """kasa = baslangic + Σ net (komisyon + fonlama dahil; SQL'den bagimsiz toplam) ile status equity. Acik islem: kagit kasa acilista
-    giris komisyonunu zaten dusmustur ve K/Z dalgalanir: beklenen equity = baslangic + Σnet - acik giris komisyonu + acik K/Z."""
+def _acik_alanlari(status: Mapping) -> tuple[list[Mapping] | None, dict]:
+    """Durum dosyasindaki acik pozisyonlardan kasaya yansiyan kalemler; yeni alanlar yoksa (eski motor) (None, {})."""
+    acik = [p for p in status.get("open_positions") or [] if isinstance(p, Mapping)]
+    for p in acik:
+        if not isinstance(p.get("fee_paid_entry"), (int, float)) or not isinstance(p.get("funding_paid"), (int, float)):
+            return None, {}
+    g = lambda k: math.fsum(float(p.get(k) or 0.0) for p in acik)   # noqa: E731
+    return acik, {"giris_komisyon": g("fee_paid_entry"), "fonlama": g("funding_paid"),
+                  "kismi_kz": g("partial_realized_usd"), "kismi_komisyon": g("partial_fee_usd")}
+
+
+def kontrol_kasa(*, baslangic: float | None, net_sql: float | None, net_motor: float, status: Mapping | None) -> dict:
+    """Kasa (durum `wallet`; mark zamanlamasindan bagimsiz) = baslangic + kapananlarin net K/Z toplami (SQL) - acik islemlerin giris
+    komisyonu - acik islemlerde odenen fonlama + acik islemlerin kismi cikis K/Z'si - kismi cikis komisyonu. Kismi cikis ve fonlama
+    brokerin cuzdanina hemen islenir; defter satiri kapanista yazilir. Yeni alanlar yoksa (eski motor) kontrol 'atlandi'."""
     ad = "Kasa = başlangıç + Σ net K/Z"
     if baslangic is None or net_sql is None:
-        return kontrol(ad, None, "başlangıç kasası ya da defter toplamı okunamadı")
-    if status is None or not isinstance(status.get("equity"), (int, float)):
-        return kontrol(ad, None, "durum dosyası canlı değil (equity okunamadı)")
-    eq = float(status["equity"])
-    unreal = float(status.get("unrealized_pnl_usd") or 0.0)
-    beklenen = baslangic + net_sql - acik_giris_komisyon + unreal
-    fark = eq - beklenen
-    parca = (f"başlangıç {baslangic:.2f} + Σnet {net_sql:+.4f} (motor toplamı {net_motor:+.4f}) - açık giriş komisyonu "
-             f"{acik_giris_komisyon:.4f} + açık K/Z {unreal:+.4f} = {beklenen:.4f}; durum equity {eq:.4f}; fark {fark:+.4f} $")
-    return kontrol(ad, abs(fark) <= TOL and abs(net_sql - net_motor) <= TOL, parca)
+        return kontrol(ad, None, "Başlangıç kasası ya da defter toplamı okunamadı; kasa kontrolü atlandı")
+    if status is None or not isinstance(status.get("wallet"), (int, float)):
+        return kontrol(ad, None, "Durum dosyası canlı değil; kasa kontrolü atlandı")
+    acik, k = _acik_alanlari(status)
+    if acik is None:
+        return kontrol(ad, None, "Durum dosyası eski sürüm (açık işlem komisyon/fonlama bilgisi yok); kasa kontrolü atlandı")
+    wallet = float(status["wallet"])
+    beklenen = baslangic + net_sql - k["giris_komisyon"] - k["fonlama"] + k["kismi_kz"] - k["kismi_komisyon"]
+    fark = wallet - beklenen
+    if abs(net_sql - net_motor) > TOL:
+        return kontrol(ad, False, f"Defter toplamları tutmuyor: SQL toplamı {isr(net_sql)} $, motor toplamı {isr(net_motor)} $")
+    if abs(fark) <= TOL:
+        return kontrol(ad, True, f"Kasa {usd(wallet)} $ tutuyor")
+    return kontrol(ad, False, f"Kasa {usd(beklenen)} $ olmalı, kayıtta {usd(wallet)} $ · fark {usd(abs(fark))} $")
+
+
+def bilgi_acik_kz(status: Mapping | None) -> str | None:
+    """Bilgi satiri (uyusmazlik sayilmaz): broker equity - wallet ile durum dosyasindaki acik K/Z; fark yalniz mark zamanlamasi."""
+    if status is None or not all(isinstance(status.get(a), (int, float)) for a in ("equity", "wallet", "unrealized_pnl_usd")):
+        return None
+    broker = float(status["equity"]) - float(status["wallet"])
+    durum = float(status["unrealized_pnl_usd"])
+    return (f"Açık işlemlerin anlık kâr/zararı: kasada {isr(broker)} $, panelde {isr(durum)} $ · fark {usd(abs(broker - durum))} $ "
+            "(fiyat zamanlaması, uyuşmazlık sayılmaz)")
 
 
 def kontrol_bagimsiz_toplam(net_sql: float | None, brut_sql: float | None, net_motor: float) -> dict:
     ad = "Net K/Z: SQL toplamı = motor toplamı = brüt - komisyon - fonlama"
     if net_sql is None:
-        return kontrol(ad, None, "defter SQL toplamı okunamadı")
+        return kontrol(ad, None, "Defter toplamı okunamadı; kontrol atlandı")
     ok = abs(net_sql - net_motor) <= TOL and (brut_sql is None or abs(net_sql - brut_sql) <= TOL)
-    return kontrol(ad, ok, f"SQL net {net_sql:+.4f}; motor {net_motor:+.4f}; brüt-komisyon-fonlama {('?' if brut_sql is None else f'{brut_sql:+.4f}')}")
+    if ok:
+        return kontrol(ad, True, f"Defter toplamları tutuyor ({isr(net_sql)} $)")
+    if abs(net_sql - net_motor) > TOL:
+        return kontrol(ad, False, f"Defter toplamı {isr(net_sql)} $, motor toplamı {isr(net_motor)} $ · fark {usd(abs(net_sql - net_motor))} $")
+    return kontrol(ad, False, f"Net toplam {isr(net_sql)} $, brütten masraf düşünce {isr(brut_sql)} $ · fark {usd(abs(net_sql - brut_sql))} $")
 
 
 def kontrol_acik(motor_n: int, panel_n: int | None, serit_n: int | None, status_n: int | None) -> dict:
     ad = "Açık pozisyon sayısı (motor = panel = şerit = durum)"
-    vals = {"motor(defter)": motor_n, "panel": panel_n, "şerit": serit_n, "durum": status_n}
+    vals = {"defter": motor_n, "panel": panel_n, "şerit": serit_n, "durum": status_n}
     bilinen = {k: v for k, v in vals.items() if v is not None}
     ok = len(set(bilinen.values())) == 1 and panel_n is not None and serit_n is not None
-    return kontrol(ad, ok, ", ".join(f"{k} {v if v is not None else '?'}" for k, v in vals.items()))
+    if ok:
+        return kontrol(ad, True, f"{motor_n} açık işlem, hepsi aynı")
+    return kontrol(ad, False, "Açık işlem sayısı farklı: " + ", ".join(f"{k} {v if v is not None else 'okunamadı'}" for k, v in vals.items()))
 
 
 def kontrol_acik_kz(status: Mapping | None, panel_acik: Sequence[Mapping]) -> dict:
     """Panelin acik K/Z fiyati = durum dosyasindaki `mark` (motorun son kapanmis 1 dk mumu); piyasa veritabani okunmaz."""
     ad = "Açık K/Z fiyat kaynağı (panel = motor mark)"
-    kaynak = "kaynak: durum dosyasındaki mark (motorun son kapanmış 1 dk mumu); panel aynı alanı okur, market.sqlite okunmaz"
     if status is None:
-        return kontrol(ad, None, "durum dosyası canlı değil; " + kaynak)
+        return kontrol(ad, None, "Durum dosyası canlı değil; kontrol atlandı")
     pos = {p.get("trade_id"): p for p in status.get("open_positions") or [] if isinstance(p, Mapping)}
     if not pos and not panel_acik:
-        return kontrol(ad, True, "açık pozisyon yok; " + kaynak)
+        return kontrol(ad, True, "Açık işlem yok")
     sorun, enb = [], 0.0
     for r in panel_acik:
         p = pos.get(r.get("id"))
         if p is None:
-            sorun.append(f"#{r.get('id')} durumda yok")
+            sorun.append(f"#{r.get('id')} durum dosyasında yok")
             continue
         mark = p.get("mark")
         if mark is None or r.get("simdi") is None:
-            sorun.append(f"#{r.get('id')} mark yok")
+            sorun.append(f"#{r.get('id')} anlık fiyat yok")
             continue
         sgn = 1.0 if str(p.get("side")).lower() == "long" else -1.0
         yeniden = sgn * (float(mark) - float(p["entry_price"])) * float(p["qty"])
         d = max(abs(float(r["simdi"]) - float(mark)) * float(p["qty"]), abs(float(r.get("kz") or 0.0) - yeniden))
         enb = max(enb, d)
         if d > TOL:
-            sorun.append(f"#{r.get('id')} fark {d:.4f} $")
+            sorun.append(f"#{r.get('id')} fark {usd(d)} $")
     for i in pos:
         if i not in {r.get("id") for r in panel_acik}:
             sorun.append(f"#{i} panelde yok")
-    return kontrol(ad, not sorun, f"en büyük fark {enb:.4f} $" + (f"; sorun: {', '.join(sorun)}" if sorun else "") + "; " + kaynak)
+    if not sorun:
+        return kontrol(ad, True, "Açık işlemlerin kâr/zararı panelle aynı")
+    return kontrol(ad, False, "Açık işlem kâr/zararı panelde farklı: " + ", ".join(sorun[:3]))
 
 
 def kontrol_limit(panel_oran: float | None, ayar_orani: float | None) -> dict:
     ad = "Günlük zarar limiti oranı (panel = kâğıt ayarı)"
     if panel_oran is None or ayar_orani is None:
-        return kontrol(ad, None, "oran okunamadı")
-    return kontrol(ad, abs(panel_oran - ayar_orani) < 1e-12,
-                   f"panel %{panel_oran * 100:g}; kâğıt ayarı (engine.paper.json) %{ayar_orani * 100:g}")
+        return kontrol(ad, None, "Oran okunamadı; kontrol atlandı")
+    ok = abs(panel_oran - ayar_orani) < 1e-12
+    return kontrol(ad, ok, f"Günlük zarar limiti %{usd(ayar_orani * 100)}" + (" (panelle aynı)" if ok else
+                                                                              f" olmalı, panelde %{usd(panel_oran * 100)}"))
 
 
 # ----------------------------------------------------------------------------------------------- ozet
 def ozet(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequence[str], *, now: datetime, panel_notu: str = "",
-         telegram_kaynak: str = "") -> dict:
+         telegram_kaynak: str = "", bilgi: Sequence[str] = ()) -> dict:
     sat = [r for r in rows if r["uyusmazlik"]]
     kal = [k for k in kontroller if k["sonuc"] == "kaldı"]
-    liste = ([f"#{r['islem_no']} {r['coin']} {r['yon']}: " + "; ".join(r["uyusmazlik"]) for r in sat]
-             + list(ekstra) + [f"kontrol: {k['ad']} - {k['ayrinti']}" for k in kal])
+    liste = ([k["ayrinti"] for k in kal]
+             + [f"#{r['islem_no']} {r['coin']} {r['yon']}: " + "; ".join(r["uyusmazlik"]) for r in sat]
+             + list(ekstra))
     sayac: dict[str, int] = {}
     for r in rows:
         for a in ("telegram_acildi", "telegram_kapandi"):
@@ -296,16 +357,17 @@ def ozet(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequenc
                          "fazla": sum(1 for e in ekstra if e.startswith("Telegram")),
                          "oncesi": sum(1 for r in rows for a in ("telegram_acildi", "telegram_kapandi") if r[a] == TG_ONCESI),
                          "dagilim": dict(sorted(sayac.items())), "kaynak": telegram_kaynak},
-            "panel_notu": panel_notu, "kontroller": list(kontroller)}
+            "panel_notu": panel_notu, "bilgi": list(bilgi), "kontroller": list(kontroller)}
 
 
 def markdown(doc: Mapping, rows: Sequence[Mapping]) -> str:
     def f(x, nd=4):
-        return "—" if x is None else (f"{x:.{nd}f}" if isinstance(x, float) else str(x))
+        return "—" if x is None else (("-" if x < 0 else "") + TS.sayi(x, nd) if isinstance(x, float) else str(x))
     L = ["# İşlem mutabakatı", "",
          f"Son kontrol: {doc['uretim_tsi']} (TSİ). İşlem: {doc['islem_sayisi']} (kapanan {doc['kapanan']}, açık {doc['acik']}). "
          f"Uyuşmazlık: {doc['uyusmazlik_sayisi']}.", "", "## Kontroller", "", "| Kontrol | Sonuç | Ayrıntı |", "|---|---|---|"]
     L += [f"| {k['ad']} | {k['sonuc']} | {k['ayrinti']} |" for k in doc["kontroller"]]
+    L += ["", "## Bilgi", ""] + [f"- {b}" for b in doc.get("bilgi") or []] if doc.get("bilgi") else []
     L += ["", "## Telegram kaynağı", "", doc["telegram"].get("kaynak") or "—", "", "## Uyuşmazlıklar", ""]
     L += [f"- {u}" for u in doc["uyusmazliklar"]] or ["Yok."]
     L += ["", "## İşlemler", "",
