@@ -34,7 +34,7 @@ button:hover{border-color:var(--vurgu)}
 /* sekmeler */
 .tabs{display:flex;gap:4px;overflow-x:auto;margin:0 -16px 12px;padding:0 16px;border-bottom:1px solid var(--cizgi);scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:9px 11px;font-weight:600;font-size:13px;color:var(--sol);white-space:nowrap}
+.tabs{gap:0;justify-content:space-between}.tabs button{flex:1 1 auto;border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:9px 6px;font-weight:600;font-size:13px;color:var(--sol);white-space:nowrap}
 .tabs button.on{color:var(--yazi);border-bottom-color:var(--vurgu)}
 .sek{display:none}.sek.on{display:block}
 /* kartlar */
@@ -99,6 +99,7 @@ details>div{padding-bottom:12px}
 .lim{margin:7px 0;font-size:13.5px}
 .lim .r{display:flex;justify-content:space-between;gap:8px}
 @media (max-width:420px){
+  .tabs button{font-size:11.5px;padding:9px 3px;letter-spacing:-.2px}
   main{padding:10px 12px 32px}.tabs{margin:0 -12px 10px;padding:0 12px}
   .ks .b{font-size:16.5px}.ks.risk .b{font-size:13.5px}
 }

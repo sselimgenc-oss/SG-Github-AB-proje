@@ -254,7 +254,7 @@
     p.son3.forEach(function (r) {
       var d = el('div', 'satir');
       var sol = add(el('span'), el('b', '', r.coin), el('span', 'yon ' + r.yon, r.yon), el('span', 'u sol', ' ' + r.kapanis));
-      add(d, sol, el('b', cls(r.kz), usdS(r.kz) + ' · ' + r.neden));
+      add(d, sol, add(el('b'), el('span', cls(r.kz), usdS(r.kz)), el('span', '', ' · ' + r.neden)));
       add(s3, d);
     });
     add(ig, s3);
@@ -389,7 +389,7 @@
         var ls = kart('Son 5 karar');
         m.son5.forEach(function (s) {
           add(ls, add(el('div', 'satir'), add(el('span'), el('b', '', s.coin), el('span', 'u sol', ' ' + s.tarih)),
-            el('b', s.karar === 'Aldı' ? 'iyi' : '', s.karar + ' · ' + s.sonuc)));
+            add(el('b', ''), el('span', '', s.karar + ' · '), el('span', cls(s.kz), s.sonuc))));
         });
         add(ig, ls);
       }

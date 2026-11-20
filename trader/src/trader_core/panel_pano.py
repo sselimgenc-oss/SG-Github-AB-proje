@@ -23,8 +23,6 @@ MIN_ORAN = 5            # kazanma orani / ort. kazanc-kayip icin asgari kapanan 
 MIN_ETKI = 10           # ders / ML katkisi icin asgari sonuclu karar
 MIN_ISABET = 10         # ML isabeti icin asgari sonuclu tahmin
 
-KAPANIS_TR = {"stop": "Stop", "trail_stop": "Stop", "liquidation": "Stop", "target": "Hedef", "time_stop": "Süre",
-              "manual": "Elle", "force_exit": "Elle", "regime_flip": "Piyasa"}
 REJIM_TR = {"range": "yatay piyasa", "trend": "trend", "trending": "trend", "ranging": "yatay piyasa"}
 # giris kapisi / duraklatma kodu -> kisa sade neden (ham kod gosterilmez)
 NEDEN_KISA = {
@@ -137,7 +135,7 @@ def closed_row(t: L.TradeRecord, ctx: Ctx) -> dict:
     return {"id": t.trade_id, "coin": TS.coin(t.pair), "yon": TS.yon(t.side), "kol": ctx.kol(t),
             "kapanis": tsi_kisa(t.exit_ts), "acilis": tsi_kisa(t.entry_ts),
             "kz": pnl, "kz_yuzde": (pnl / notional * 100.0) if notional else None,
-            "neden": KAPANIS_TR.get(str(t.exit_reason), "Elle"),
+            "neden": (lambda x: {"i": "İ"}.get(x[:1], x[:1].upper()) + x[1:])(TS.kapanis_neden(t.exit_reason, pnl)),
             "giris": _px(t.entry_price), "cikis": _px(t.exit_price), "sure": sure_metni(t.entry_ts, t.exit_ts),
             "komisyon": (t.fee_entry or 0.0) + (t.fee_exit or 0.0), "fonlama": t.funding_paid or 0.0,
             "ders": bool(d is not None and d.lesson_ids)}
@@ -419,13 +417,14 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
     for d in sorted(skorlu, key=lambda d: d.bar_close_ts, reverse=True)[:5]:
         alindi = d.final_action == "entered"
         r = sonuc_r(d)
+        pn = None
         if alindi:
             pn = pnl_of.get(d.id)
             sonuc = f"{pn:+.2f} $" if pn is not None else "açık"
         else:
             sonuc = "alsaydı kazanırdı" if (r is not None and r > 0) else ("alsaydı kaybederdi" if r is not None else "sonuç bekleniyor")
         son5.append({"coin": TS.coin(d.pair), "tarih": tsi_kisa(d.bar_close_ts), "karar": "Aldı" if alindi else "Almadı",
-                     "puan": d.ml_score, "sonuc": sonuc})
+                     "puan": d.ml_score, "sonuc": sonuc, "kz": pn})
     return {"durum": durum, "renk": renk, "isabet": isabet, "onay_7g": onay, "ret_7g": ret, "katki": katki,
             "egitim": ({"tarih": tsi_gun(son_egitim), "ornek": n_ornek} if son_egitim else None), "son5": son5}
 

@@ -120,11 +120,21 @@ KAPANIS_NEDEN = {"stop": "stop", "trail_stop": "stop", "liquidation": "stop", "t
                  "manual": "elle", "force_exit": "elle", "regime_flip": "piyasa değişti"}
 
 
+def kapanis_neden(kod: Any, pnl: float | None = None) -> str:
+    """Kapanis nedeni -> sade metin (Telegram ve panel ayni fonksiyon). Iz suren stop ve kârla kapanan stop ayirt edilir."""
+    k = str(kod)
+    if k == "trail_stop":
+        return "iz süren stop"
+    if k == "stop" and pnl is not None and pnl > 0:
+        return "kâr al (stop)"
+    return KAPANIS_NEDEN.get(k, "elle")
+
+
 def islem_kapandi(kol: str, pair: Any, side: Any, pnl: float, notional: float | None, neden: Any, kritik: bool = False) -> str:
     yuz = f" ({isaretli(pnl / notional * 100, 1)}%)" if notional else ""
     isaret = "🔴" if kritik else ("🟢" if pnl > 0 else ("🔻" if pnl < 0 else "⚪"))
     return _bagla([f"{isaret} {kol} · {coin(pair)} · {yon(side)} kapandı",
-                   f"Sonuç {isaretli(pnl)} ${yuz} · {KAPANIS_NEDEN.get(str(neden), 'elle')}"])
+                   f"Sonuç {isaretli(pnl)} ${yuz} · {kapanis_neden(neden, pnl)}"])
 
 
 def islemler_acildi(satirlar: list[tuple[str, Any, Any, Any, Any, Any]]) -> str:
