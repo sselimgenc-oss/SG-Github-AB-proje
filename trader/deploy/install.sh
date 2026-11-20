@@ -544,6 +544,9 @@ if [ "$CODE_CHANGED" -eq 1 ]; then
     systemctl restart trader-feed.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-feed.service (kod degisti)" || echo "UYARI: trader-feed.service yeniden baslatilamadi (systemctl status trader-feed.service)"
   fi
 fi
+if [ "$CODE_CHANGED" -eq 1 ] && systemctl is-active --quiet trader-panel.service 2>/dev/null; then   # pano statik dosyalari acilista okur
+  systemctl restart trader-panel.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-panel.service (kod degisti)" || echo "UYARI: trader-panel.service yeniden baslatilamadi."
+fi
 if [ "$CODE_CHANGED" -eq 1 ] && [ -n "$ACTIVE_ENGINES" ]; then
   say "Kod degisti: calisan motorlar yeniden baslatiliyor (defter sema gocu motor icinde yapilir)"
   for u in $ACTIVE_ENGINES; do
