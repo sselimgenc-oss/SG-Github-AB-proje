@@ -56,6 +56,10 @@ case "$1" in
 esac
 '''
 
+FAKE_UYKU = r'''#!/usr/bin/env bash
+echo "$*" >> "$OTO_TEST_LOG/uyku.log"
+'''
+
 FAKE_INSTALL = r'''#!/usr/bin/env bash
 # sahte install.sh: COMMIT'i kaydeder, /etc/trader-release yerine OTO_RELEASE_FILE'i yazar (basarili ise).
 echo "COMMIT=${COMMIT:-}" >> "$OTO_TEST_LOG/install.log"
@@ -87,7 +91,7 @@ class World:
         self.etc = tmp / "etc"
         for d in (self.bin, self.log, self.state, self.etc):
             d.mkdir(parents=True)
-        for name, body in (("curl", FAKE_CURL), ("systemctl", FAKE_SYSTEMCTL)):
+        for name, body in (("curl", FAKE_CURL), ("systemctl", FAKE_SYSTEMCTL), ("sahte-uyku", FAKE_UYKU)):
             p = self.bin / name
             p.write_text(body, encoding="utf-8")
             p.chmod(0o755)
@@ -167,6 +171,8 @@ class World:
             "OTO_TELEGRAM_ENV": str(self.tg_env),
             "OTO_BRANCH": BRANCH,
             "OTO_TEST_LOG": str(self.log),
+            "OTO_SIMDI_DAKIKA": "7",   # mum kapanisi penceresi disi: varsayilan testler beklemez
+            "OTO_UYKU": str(self.bin / "sahte-uyku"),
             "FAKE_RUNS_FILE": str(self.runs),
             **GIT_IDENT,
         }
@@ -400,3 +406,34 @@ def test_kisa_konu_kesilmez(tmp_path):
     w.set_release(w.shas[0])
     r = w.run()
     assert r.returncode == 0 and w.telegram() == [] and "Bot güncellendi: Kısa şık konu" in r.stdout
+
+
+# ----------------------------------------------------------------------------- mum kapanisi beklemesi
+def _uyku(world):
+    p = world.log / "uyku.log"
+    return p.read_text(encoding="utf-8").split() if p.exists() else []
+
+
+@pytest.mark.parametrize("dk,sn,beklenen", [
+    ("14", "0", 240), ("29", "30", 210), ("0", "0", 180), ("15", "0", 180), ("1", "0", 120), ("2", "0", 60), ("2", "59", 1), ("44", "10", 230),
+])
+def test_kapanis_penceresinde_kurulum_ertelenir(world, dk, sn, beklenen):
+    world.set_release(world.shas[0])
+    r = world.run(OTO_SIMDI_DAKIKA=dk, OTO_SIMDI_SANIYE=sn)
+    assert r.returncode == 0, r.stderr
+    assert _uyku(world) == [str(beklenen)]
+    assert len(world.install_calls()) == 1 and world.current() == world.shas[2]
+
+
+@pytest.mark.parametrize("dk", ["3", "7", "13", "18", "58", "08"])
+def test_kapanis_penceresi_disinda_beklenmez(world, dk):
+    world.set_release(world.shas[0])
+    r = world.run(OTO_SIMDI_DAKIKA=dk)
+    assert r.returncode == 0, r.stderr
+    assert _uyku(world) == [] and len(world.install_calls()) == 1
+
+
+def test_kurulum_gerekmiyorsa_beklenmez(world):
+    world.set_release(world.shas[2])
+    r = world.run(OTO_SIMDI_DAKIKA="0")
+    assert r.returncode == 0 and _uyku(world) == [] and world.install_calls() == []
