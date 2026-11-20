@@ -62,19 +62,14 @@ journalctl -u trader-panel -n 50 --no-pager
 systemctl disable --now trader-panel                  # geri alma
 ```
 
-## Telefondan/bilgisayardan pano (Cloudflare Worker, Cloudflare Access)
+## Telefondan/bilgisayardan pano (Cloudflare Worker, kilitsiz)
 
 **Bellek verisi olmadan acmayin (bkz. "Bellek ölçümü"): 48 saatlik veri + >= ~900 MB bos RAM sart.** Sunucu her 5 dakikada panonun tek dosyalik anlik goruntusunu Cloudflare Worker'a yukler (`trader-panel-publish.timer`); sayfada "Olusturulma: ..." damgasi ve 10 dk'dan eskiyse kirmizi bayat seridi vardir. Cihazlariniza kurulum gerekmez. Canli pano yine yalniz `127.0.0.1:8787`'de kalir.
 
 Sizin yapacaklariniz:
 1. Cloudflare'da bir API token olusturun ("Edit Cloudflare Workers" sablonu). Token'i sohbete YAZMAYIN; size verecegimiz guvenli yolla (ya da sunucuda `nano /etc/trader-panel-cf.env`) girin. Hesap kimligini (Account ID) de ayni dosyaya yazin.
-2. Panoyu **Cloudflare Access** ile koruyun (19 Kasım 2026 kullanıcı kararı: parola yok). Adımlar:
-   - Cloudflare panelinde Workers & Pages → `trader-pano` → **Settings → Domains & Routes** satırındaki `workers.dev` için **Enable Cloudflare Access** (yeni arayüzde: Worker sayfasında "Access" / "Protect this Worker behind Access"). Policy: **Cloudflare account** (hesap üyeleri), Save.
-   - Zero Trust → Access → Applications'ta oluşan uygulamayı açın. Type/hedef "A Worker's production and preview URLs" olsun, Save.
-   - **Açık kalması gereken iki yol** (1L3A, CT ve orkestratör okur): Zero Trust → Access → Applications → **Add an application → Self-hosted**. Ad: `trader-pano açık json`. Public hostname: `trader-pano.sselimgenc-c18.workers.dev`, **path `rejim.json`**. İkinci bir hostname satırı ekleyin, aynı alan adı, **path `gunluk_ozet_v1.json`**. Policy: **Action = Bypass, Include = Everyone**, Save. Yolu belli olan uygulama, genel uygulamaya göre öncelik alır.
-   - Doğrulama (bilgisayarda, gizli pencerede): `https://trader-pano.sselimgenc-c18.workers.dev/rejim.json` ve `/gunluk_ozet_v1.json` giriş istemeden JSON göstermeli. Ana sayfa `/` ise Cloudflare giriş ekranına gitmeli.
-   Worker, Access'in eklediği imzalı JWT'yi (`Cf-Access-Jwt-Assertion`) takım `slmgncortak` anahtarlarıyla doğrular. JWT yoksa her istek 403 alır. Access kapalı ya da yanlış kuruluysa pano açılmaz, yalnız kapanır (kapalı-güvenli).
-3. `https://trader-pano.<hesap>.workers.dev` adresini yer imine ekleyin. Orkestra kapısının iframe'inde aynı Cloudflare girişiyle ek giriş istemeden açılır.
+2. Pano **kilitsizdir** (20 Kasım 2026 kullanıcı kararı; 1L3A ve CT panoları gibi): parola ya da Cloudflare Access gerekmez, Worker yalnız okuma (GET/HEAD) kabul eder. Daha önce Access kurduysanız, bu sürüm sunucuya kurulduktan SONRA kaldırın (önce kaldırılırsa eski Worker her isteğe 403 verir): Zero Trust → Access → Applications → `trader-pano` uygulaması (ve varsa `trader-pano açık json`) → Delete. Ayrıca Workers & Pages → `trader-pano` → Settings → Domains & Routes → `workers.dev` satırında Access açıksa kapatın. Doğrulama (gizli pencerede): `https://trader-pano.sselimgenc-c18.workers.dev/` giriş istemeden panoyu göstermeli.
+3. `https://trader-pano.<hesap>.workers.dev` adresini yer imine ekleyin. Orkestra kapısının iframe'inde giriş istemeden açılır.
 
 RISK (karariniz): Workers duzenleme token'i tek Worker'a daraltilamaz, hesap capindadir. Sunucu ele gecirilirse ayni hesaptaki diger Worker'lariniz (1L3A, CT) da uzerine yazilabilir. Oneri: bu pano icin AYRI bir Cloudflare hesabi acin; ya da riski bilerek kabul edin. Karar sizindir.
 

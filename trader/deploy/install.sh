@@ -616,8 +616,7 @@ if has_value /etc/trader-panel-cf.env CLOUDFLARE_API_TOKEN && has_value /etc/tra
   enable_now trader-panel-publish.timer
 else
   CF_TODO+=("Cloudflare'da API token olusturun (Workers duzenleme yetkisi: 'Edit Cloudflare Workers' sablonu); token ve hesap kimligini /etc/trader-panel-cf.env dosyasina nano ile yazin (sohbete yazmayin)")
-  CF_TODO+=("Worker'i bir kez olusturun (Cloudflare Access acilana kadar pano HER istekte 403 doner, guvenli): systemctl start trader-panel-publish.service")
-  CF_TODO+=("Panoyu Cloudflare Access ile koruyun (parola yok): Workers & Pages -> trader-pano -> Access -> Protect this Worker behind Access; ayrinti docs/sunucu-kurulum.md")
+  CF_TODO+=("Worker'i bir kez olusturun (pano kilitsiz, yalniz okuma; 20 Kasim kullanici karari): systemctl start trader-panel-publish.service")
   CF_TODO+=("Yayini acin: systemctl enable --now trader-panel-publish.timer (ya da install.sh'i yeniden calistirin); workers.dev adresini yer imine ekleyin")
 fi
 

@@ -204,11 +204,11 @@ def test_veri_koku_ortam_degiskeni(tmp_path):
 def test_worker_yeni_yol_parolasiz_ve_baslikli_statik():
     t = (DEPLOY / "panel_worker.js").read_text(encoding="utf-8")
     dal = t.index('pathname === "/gunluk_ozet_v1.json"')
-    auth = t.index("if (!(await accessGecerli(")
+    auth = t.index("if (!saltOkuma(istek))")
     assert dal < auth
     kosul = t[t.rfind("if (", 0, dal):dal]
     assert '"GET"' in kosul and '"HEAD"' in kosul
-    govde = t[dal:t.index("if (!(await accessGecerli(", dal)]
+    govde = t[dal:t.index("if (!saltOkuma(istek))", dal)]
     for h in ('"Content-Type", "application/json"', '"Cache-Control", "no-store"', '"Access-Control-Allow-Origin", "*"'):
         assert h in govde
 
@@ -225,9 +225,10 @@ for (const m of ['GET', 'HEAD']) {{
   if (r.headers.get('Content-Type') !== 'application/json' || r.headers.get('Cache-Control') !== 'no-store'
       || r.headers.get('Access-Control-Allow-Origin') !== '*') throw new Error('baslik ' + m);
 }}
-let r = await w.fetch(rq('/gunluk_ozet_v1.json', 'POST'), env); if (r.status !== 403) throw new Error('POST acik');
-for (const p of ['/', '/api/status', '/gunluk_ozet_v1.json/x', '/gunluk_ozet_v1.jsonx']) {{
-  r = await w.fetch(rq(p), env); if (r.status !== 403) throw new Error('korumasiz acik: ' + p);
+let r = await w.fetch(rq('/gunluk_ozet_v1.json', 'POST'), env); if (r.status !== 405) throw new Error('POST acik');
+for (const p of ['/', '/api/status', '/gunluk_ozet_v1.json/x']) {{     // 20 Kasim: pano kilitsiz, yalniz okuma
+  r = await w.fetch(rq(p), env); if (r.status !== 200) throw new Error('pano okunamadi: ' + p);
+  if (r.headers.get('Access-Control-Allow-Origin')) throw new Error('pano CORS acmamali: ' + p);
 }}
 r = await w.fetch(rq('/rejim.json'), env); if (r.status !== 200) throw new Error('rejim.json bozuldu');
 """, encoding="utf-8")

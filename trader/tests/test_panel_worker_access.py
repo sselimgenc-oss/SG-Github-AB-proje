@@ -1,4 +1,4 @@
-"""Pano Worker'i: Cloudflare Access JWT dogrulamasi (parola yok; 19 Kasim kullanici karari). Fail-closed davranis."""
+"""Pano Worker'i: 20 Kasim 2026 kullanici karari ile kilitsiz (parola/Access yok), yalniz okuma; guvenlik basliklari aynen."""
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,54 +9,32 @@ DEPLOY = Path(__file__).resolve().parents[1] / "deploy"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
-def test_access_jwt_fail_closed(tmp_path):
+def test_pano_kilitsiz_yalniz_okuma(tmp_path):
     js = tmp_path / "t.mjs"
     js.write_text(f"""import w from {str(DEPLOY / 'panel_worker.js')!r};
 const ok = (c, m) => {{ if (!c) throw new Error(m); }};
-const enc = (o) => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');
-const kp = await crypto.subtle.generateKey({{name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]),
-  hash: 'SHA-256'}}, true, ['sign', 'verify']);
-const pub = {{...(await crypto.subtle.exportKey('jwk', kp.publicKey)), kid: 'k1'}};
-const yabanci = await crypto.subtle.generateKey({{name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048,
-  publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256'}}, true, ['sign', 'verify']);
-let certCagri = 0;
-globalThis.fetch = async (u) => {{ certCagri++;
-  ok(u === 'https://slmgncortak.cloudflareaccess.com/cdn-cgi/access/certs', 'sertifika adresi ' + u);
-  return new Response(JSON.stringify({{keys: [pub]}}), {{headers: {{'Content-Type': 'application/json'}}}}); }};
-const simdi = Math.floor(Date.now() / 1000);
-async function jwt(yuk, anahtar = kp.privateKey, bas = {{alg: 'RS256', kid: 'k1'}}) {{
-  const g = enc(bas) + '.' + enc(yuk);
-  const s = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', anahtar, new TextEncoder().encode(g));
-  return g + '.' + Buffer.from(s).toString('base64url');
-}}
-const iyi = {{iss: 'https://slmgncortak.cloudflareaccess.com', aud: ['AUD1'], exp: simdi + 600, nbf: simdi - 5}};
+globalThis.fetch = async () => {{ throw new Error('dis istek yapilmamali'); }};
 const env = {{ASSETS: {{fetch: async () => new Response('pano', {{headers: {{'Content-Type': 'text/html'}}}})}}}};
-const rq = (p, t, m) => new Request('https://x' + p, {{method: m || 'GET', headers: t ? {{'Cf-Access-Jwt-Assertion': t}} : {{}}}});
-// gecerli JWT -> icerik, guvenlik basliklari, X-Frame-Options yok
-let r = await w.fetch(rq('/', await jwt(iyi)), env);
-ok(r.status === 200 && (await r.text()) === 'pano', 'gecerli jwt ' + r.status);
+const rq = (p, m, h) => new Request('https://x' + p, {{method: m || 'GET', headers: h || {{}}}});
+// JWT/oturum olmadan pano acilir; guvenlik basliklari, X-Frame-Options yok, CSP cerceve izni
+let r = await w.fetch(rq('/'), env);
+ok(r.status === 200 && (await r.text()) === 'pano', 'pano ' + r.status);
 ok(r.headers.get('Cache-Control') === 'no-store' && !r.headers.get('X-Frame-Options'), 'basliklar');
-ok(r.headers.get('Content-Security-Policy').includes('frame-ancestors') && !r.headers.get('WWW-Authenticate'), 'csp/parola yok');
-// fail-closed: baslik yok, bozuk, yanlis imza, yanlis iss, suresi dolmus, alg none, aud uyusmaz
-const kotu = [
-  ['yok', undefined], ['bozuk', 'a.b'], ['cop', 'x.y.z'],
-  ['yanlis imza', await jwt(iyi, yabanci.privateKey)],
-  ['yanlis iss', await jwt({{...iyi, iss: 'https://baska.cloudflareaccess.com'}})],
-  ['sure', await jwt({{...iyi, exp: simdi - 1}})],
-  ['nbf', await jwt({{...iyi, nbf: simdi + 3600}})],
-  ['alg none', enc({{alg: 'none'}}) + '.' + enc(iyi) + '.'],
-];
-for (const [ad, t] of kotu) {{ r = await w.fetch(rq('/api/status', t), env); ok(r.status === 403, ad + ' ' + r.status); }}
-r = await w.fetch(rq('/', await jwt(iyi)), {{...env, ACCESS_AUD: 'BASKA'}}); ok(r.status === 403, 'aud');
-r = await w.fetch(rq('/', await jwt(iyi)), {{...env, ACCESS_AUD: 'AUD1'}}); ok(r.status === 200, 'aud esit');
-ok(certCagri === 1, 'sertifika onbellegi ' + certCagri);
-// acik yollar JWT'siz (yalniz GET/HEAD); benzer yollar ve POST kapali
-for (const p of ['/rejim.json', '/gunluk_ozet_v1.json']) for (const m of ['GET', 'HEAD']) {{
-  r = await w.fetch(rq(p, undefined, m), env);
-  ok(r.status === 200 && r.headers.get('Access-Control-Allow-Origin') === '*', 'acik ' + p + m);
+ok(r.headers.get('Content-Security-Policy').includes("frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev"), 'csp');
+ok(!r.headers.get('WWW-Authenticate') && !r.headers.get('Access-Control-Allow-Origin'), 'parola/CORS yok');
+for (const p of ['/api/status', '/index.html']) {{ r = await w.fetch(rq(p, 'HEAD'), env); ok(r.status === 200, 'HEAD ' + p); }}
+// eski Access basligi etkisiz (ne gerekli ne zararli)
+r = await w.fetch(rq('/', 'GET', {{'Cf-Access-Jwt-Assertion': 'a.b.c'}}), env); ok(r.status === 200, 'eski baslik');
+// yazma yontemleri kapali
+for (const m of ['POST', 'PUT', 'PATCH', 'DELETE']) {{
+  r = await w.fetch(rq('/', m), env); ok(r.status === 405 && r.headers.get('Allow') === 'GET, HEAD', m);
 }}
-for (const p of ['/rejim.jsonx', '/gunluk_ozet_v1.json/x']) {{ r = await w.fetch(rq(p), env); ok(r.status === 403, 'benzer ' + p); }}
-r = await w.fetch(rq('/rejim.json', undefined, 'POST'), env); ok(r.status === 403, 'POST');
+r = await w.fetch(rq('/rejim.json', 'POST'), env); ok(r.status === 405, 'POST rejim');
+// acik JSON yollari CORS ile (degismedi)
+for (const p of ['/rejim.json', '/gunluk_ozet_v1.json']) for (const m of ['GET', 'HEAD']) {{
+  r = await w.fetch(rq(p, m), env);
+  ok(r.status === 200 && r.headers.get('Access-Control-Allow-Origin') === '*' && r.headers.get('Content-Type') === 'application/json', p + m);
+}}
 """, encoding="utf-8")
     (tmp_path / "package.json").write_text('{"type":"module"}')
     r = subprocess.run(["node", str(js)], capture_output=True, text=True)

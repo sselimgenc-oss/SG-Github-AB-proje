@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Panelin anlik goruntusunu uretir ve Cloudflare Workers'a yayimlar (Cloudflare Access arkasinda; bkz. docs/panel-spec.md §13).
+# Panelin anlik goruntusunu uretir ve Cloudflare Workers'a yayimlar (kilitsiz, yalniz okuma; bkz. docs/panel-spec.md §13).
 # Fikir/yapi 1L3A deploy/pano_yayinla.sh'den uyarlandi (kullanicinin kendi kodu).
 # Anahtarlar /etc/trader-panel-cf.env dosyasindan (systemd EnvironmentFile) gelir; bu betik onlari asla yazdirmaz.
-# Pano Cloudflare Access ile korunur (19 Kasim: parola kaldirildi); Worker Access JWT'sini dogrular, yoksa 403.
+# 20 Kasim kullanici karari: pano kilitsiz (parola ve Cloudflare Access yok); Worker yalniz GET/HEAD kabul eder.
 # Istege bagli: TRADER_PANEL_WORKER (varsayilan trader-pano), TRADER_DIR, WRANGLER_BIN.
 set -euo pipefail
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN tanimli degil (/etc/trader-panel-cf.env)}"
@@ -57,7 +57,7 @@ if ! timeout -k 10 180 "$wrangler" deploy --config wrangler.jsonc >"$gecici/cikt
   exit 1
 fi
 echo "panel yayimlandi: $(date -u +%FT%TZ)"
-# Herkese acik ikiz Worker (<ad>-acik): yalniz rejim.json + gunluk_ozet_v1.json + mutabakat_v1.json (pano Access arkasinda; workers.dev'de yol
+# Herkese acik ikiz Worker (<ad>-acik): yalniz rejim.json + gunluk_ozet_v1.json + mutabakat_v1.json (ayni JSON'lar ana panoda da acik; workers.dev'de yol
 # muafiyeti yok). Pano yayini zaten basarili; bu adim basarisizsa yalniz uyari.
 mkdir -p "$gecici/acik/site"
 for f in rejim.json gunluk_ozet_v1.json mutabakat_v1.json; do

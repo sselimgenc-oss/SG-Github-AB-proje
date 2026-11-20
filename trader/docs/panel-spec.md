@@ -170,6 +170,7 @@ Kullanıcı gereksinimi: panel hem bilgisayarda hem iPhone'da, aynı veriyle; ku
 - Reddedilen: Tunnel + Access (Cloudflare DNS'te alan adı gerekir; trycloudflare'de Access yok, adres değişken); Tailscale (cihaz kurulumu).
 - Sonra (doğrulanmadı): workers.dev üzerinde Cloudflare Access e-posta kodu Basic Auth'un yerini alabilir.
 - **19 Kasım 2026 (kullanıcı kararı): Basic Auth ve parola KALDIRILDI; koruma Cloudflare Access.** Worker, Access JWT'sini (`Cf-Access-Jwt-Assertion`, RS256, takım `slmgncortak`) doğrular; yoksa 403 (fail-closed). `/rejim.json` ve `/gunluk_ozet_v1.json` herkese açık kalır (Access'te yol bazlı Bypass uygulaması). Kurulum adımları: `docs/sunucu-kurulum.md`.
+- **20 Kasım 2026 (kullanıcı kararı): pano KİLİTSİZ.** 1L3A ve CT panoları gibi şifresiz/Access'siz; kâğıt dönemi bitince hepsi birlikte kapatılacak. Worker Access JWT doğrulaması kaldırıldı; yalnız GET/HEAD (diğerleri 405); güvenlik başlıkları ve orkestra kapısı çerçeve izni aynen. Pano anahtar/parola içermez.
 - Zamanlama: ~1–2 gün; 30 Kasım'dan önce sığar.
 - **Kullanıcı kararı (16 Kasım 2026):** Mevcut Cloudflare hesabı kullanılır (ayrı hesap açılmaz). Hesap çapındaki anahtar riski kabul edildi; anahtar yalnız "Workers Scripts: Edit" izinli, sunucuda 0600 dosyada tutulur.
 
