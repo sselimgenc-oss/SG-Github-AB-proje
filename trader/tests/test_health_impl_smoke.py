@@ -174,15 +174,18 @@ def test_alert_timeline_and_recovery():
 
 
 def test_immediate_and_multiple_and_failed_send():
-    a, st = H.plan_alerts(_rep(Status.CRIT, "disk_low", "disk_free"), None, NOW)
+    a0, st0 = H.plan_alerts(_rep(Status.CRIT, "disk_low", "disk_free"), None, NOW)
+    assert a0 == []                                   # kirmizi cift dogrulama: ilk tur sari
+    a, st = H.plan_alerts(_rep(Status.CRIT, "disk_low", "disk_free"), st0, NOW + timedelta(minutes=5))
     assert len(a) == 1
     # gonderim basarisiz -> geri al -> sonraki turda yeniden denenir
-    st2 = H.revert_failed_alerts(st, None, a)
-    a2, _ = H.plan_alerts(_rep(Status.CRIT, "disk_low", "disk_free"), st2, NOW + timedelta(minutes=5))
+    st2 = H.revert_failed_alerts(st, st0, a)
+    a2, _ = H.plan_alerts(_rep(Status.CRIT, "disk_low", "disk_free"), st2, NOW + timedelta(minutes=10))
     assert len(a2) == 1
     rs = tuple(H.CheckResult(f"c{i}", Status.CRIT, "disk_low", "d") for i in range(5))
     rep = H.HealthReport(NOW, rs, Status.CRIT, False)
-    a3, _ = H.plan_alerts(rep, None, NOW)
+    _, s3 = H.plan_alerts(rep, None, NOW)
+    a3, _ = H.plan_alerts(rep, s3, NOW + timedelta(minutes=5))
     assert len(a3) == 1 and a3[0].code == "multiple" and a3[0].body and "c0" not in a3[0].body and "disk_low" not in a3[0].body
     # bakim penceresi
     a4, _ = H.plan_alerts(rep, None, NOW, maintenance_until=NOW + timedelta(hours=1))

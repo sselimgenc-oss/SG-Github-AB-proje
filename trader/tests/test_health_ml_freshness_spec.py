@@ -521,7 +521,7 @@ class TestAlertTexts:
 
     def test_end_to_end_no_leak_of_model_id_or_path(self):
         err = "PackageError: /srv/models/learner_pkg.json bulunamadi"
-        steps = [(NOW, ml_report(mlp(state="no_model", error=err, model_id=MID_A)))]
+        steps = [(at_min(i * 5), ml_report(mlp(state="no_model", error=err, model_id=MID_A), now=at_min(i * 5))) for i in range(2)]
         out, _ = run_turns(steps)
         sent = [a for _, al in out for a in al]
         assert sent
@@ -531,13 +531,15 @@ class TestAlertTexts:
         assert "Model yüklenemedi — yeni işlemler durdu" in sent[0].title
 
     def test_end_to_end_expired_then_fixed(self):
-        s1 = (NOW, ml_report(mlp(state="expired", model_id=MID_A)))
-        s2 = (at_min(5), ml_report(mlp(), now=at_min(5)))
-        out, _ = run_turns([s1, s2])
-        first = out[0][1]
+        s0 = (NOW, ml_report(mlp(state="expired", model_id=MID_A)))
+        s1 = (at_min(5), ml_report(mlp(state="expired", model_id=MID_A), now=at_min(5)))   # kirmizi cift dogrulama: 2. tur
+        s2 = (at_min(10), ml_report(mlp(), now=at_min(10)))
+        out, _ = run_turns([s0, s1, s2])
+        assert not out[0][1]
+        first = out[1][1]
         assert first and "Modelin süresi doldu — yeni işlemler durdu" in first[0].title
         assert "ml_expired" not in alert_text(first[0]) and MID_A not in alert_text(first[0])
-        rec = [a for a in out[1][1] if a.level is Status.OK]
+        rec = [a for a in out[2][1] if a.level is Status.OK]
         assert rec and "Model yenilendi, yeni işlemler yeniden açık" in rec[0].title
 
 
@@ -547,8 +549,9 @@ class TestImmediate:
 
     @pytest.mark.parametrize("probe", [mlp(state="expired"), mlp(state="no_model", error="x")])
     def test_first_turn_alerts(self, probe):
-        out, _ = run_turns([(NOW, ml_report(probe))])
-        assert out[0][1], "ilk turda uyari beklenir"
+        out, _ = run_turns([(NOW, ml_report(probe)), (at_min(5), ml_report(probe, now=at_min(5)))])
+        assert not out[0][1], "kirmizi cift dogrulama: ilk tur sari (mesaj yok)"
+        assert out[1][1], "ust uste 2. turda kirmizi uyari beklenir"
 
     def test_warn_not_immediate(self):
         out, _ = run_turns([(NOW, ml_report(mlp(expires_at=NOW + 2 * DAY)))])

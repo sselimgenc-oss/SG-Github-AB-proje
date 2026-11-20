@@ -4,8 +4,8 @@ Kullanıcı şartları: (1) yalnız GitHub'daki otomatik testleri **yeşil** ge�
 
 ## Birimler
 - `deploy/oto_guncelle.sh` (root; kurulumdaki kök kopyadan çalışır: `/usr/local/lib/trader-root/current/deploy/oto_guncelle.sh`).
-- `deploy/trader-oto-guncelle.service` (Type=oneshot, root) + `.timer` (`OnCalendar=hourly`, `RandomizedDelaySec=300`, `Persistent=true`).
-- `deploy/trader-geri-al` ve `deploy/trader-oto-ac` → `install.sh` bunları `/usr/local/sbin/` altına root:root 0755 kurar.
+- `deploy/trader-oto-guncelle.service` (Type=oneshot, root) + `.timer` (`OnCalendar=*-*-* 07,19:30:00 UTC` = 10:30 ve 22:30 Türkiye saati; `RandomizedDelaySec=0`, `Persistent=false`). Kurulum yalnız bu iki sabit pencerede (+60 dk tolerans) yapılır; acil durumda `trader-oto-simdi` (= `oto_guncelle.sh --simdi`). Kurulum sonrası korumalar (sessizlik, 20 dk öz-kontrol, 60 dk izleme/otomatik geri alma): `docs/sunucu-kurulum.md` → "Kurulum sonrası koruma".
+- `deploy/trader-geri-al`, `deploy/trader-oto-ac` ve `deploy/trader-oto-simdi` → `install.sh` bunları `/usr/local/sbin/` altına root:root 0755 kurar.
 - Durum dizini `/var/lib/trader-oto-guncelle/` (root, 0700): `gecmis.tsv` (`zaman<TAB>eski<TAB>yeni<TAB>sonuc`), `kilit` (flock).
 
 ## `oto_guncelle.sh` akışı
@@ -28,6 +28,7 @@ Kullanıcı şartları: (1) yalnız GitHub'daki otomatik testleri **yeşil** ge�
 
 ## `trader-geri-al`
 - `gecmis.tsv`'deki son `basarili` satırın `eski` commit'ini kurar (`install.sh` ile), sonra `DURDUR` dosyasını oluşturur (otomatik güncelleme geri alınan sürümü tekrar kurmasın).
+- `trader-geri-al --otomatik [--neden METIN]` (yalnız `trader-kurulum-gozcu` çağırır): hedef `kurulum.json`'daki `onceki` sürüm; bozuk commit `gecmis.tsv`'ye `basarisiz` yazılır (oto_guncelle bir daha denemez); `DURDUR` KONMAZ; tek Telegram mesajı nedenle birlikte gider.
 - Telegram: `[ML] Geri alındı: <yeni7> → <eski7>. Otomatik güncelleme durduruldu; açmak için: trader-oto-ac`.
 - Geçmiş yoksa açıklayıcı mesajla çıkış 1.
 

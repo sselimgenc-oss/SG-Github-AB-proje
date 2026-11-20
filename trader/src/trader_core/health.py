@@ -1208,6 +1208,22 @@ IMMEDIATE_CODES = frozenset({"account_mode_drift", "live_paths_mismatch", "disk_
                              "exchange_ban_open_positions"})
 
 
+# Kirmizi (CRIT/UNKNOWN) cift dogrulama: hicbir kirmizi alarm tek basarisiz kontrolle gitmez; ilk gorulen tur "sari"
+# (izlenir, mesaj yok), ust uste 2. basarisiz turda kirmizi gider. Emin degilsek sari: tek seferlik okuma hatasi uyari uretmez.
+# IMMEDIATE_CODES artik yalniz WARN-disi eski ayrim icin tutulur; kirmizi icin alt sinir RED_CONFIRM_RUNS'tir.
+RED_CONFIRM_RUNS = 2
+# Tek istisna: canli/testnet para guvenligi kodlari (DD-7/8/9 belirtimleri: ilk turda uyar). Bunlar motorun kendi yapisal
+# durum alanindan okunur (olcum gurultusu degil); kagit modda hic uretilmez.
+RED_SINGLE_OK = frozenset({"naked_position", "exchange_ban_open_positions", "account_mode_drift", "live_paths_mismatch"})
+
+# Kurulum sonrasi sessizlik penceresinde (QUIET_MINUTES) YALNIZ bu kodlar iletilir (olumcul: islem/para/veri butunlugu ya da
+# motor tamamen duruyor); digerleri tutulur ve pencere bitince tek ozetle bildirilir.
+FATAL_CODES = frozenset({"naked_position", "account_mode_drift", "unledgered_trades", "schema", "oom_killed",
+                         "container_not_running", "restart_loop", "api_unreachable", "spool_corrupt",
+                         "exchange_ban_open_positions", "capital_floor", "live_paths_mismatch"})
+QUIET_MINUTES = 15
+
+
 # WARN olup ilk turda uyaran kodlar (taban her tur guncellendigi icin uyari tek tur gorunur; confirm_runs bekleyemez).
 IMMEDIATE_WARN_CODES = frozenset({"account_mode_unverified", "ml_score_errors", "exchange_ban", "exchange_ban_file_corrupt"})
 
@@ -1455,6 +1471,8 @@ def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
             repeat = cfg.warn_repeat_min
         else:
             need = 1 if r.code in IMMEDIATE_CODES else cfg.confirm_runs
+            if r.code not in RED_SINGLE_OK:
+                need = max(need, RED_CONFIRM_RUNS)
             repeat = cfg.crit_repeat_min
         is_due = False
         if not ent["alerted"]:
@@ -1495,6 +1513,19 @@ def plan_alerts(report: HealthReport, state: Mapping | None, now: datetime,
                       "last_run_at": _iso(now)})
     new_state.setdefault("restart_counts", {})
     return alerts, new_state
+
+
+def quiet_split(alerts: list, report: HealthReport, now: datetime, quiet_until: datetime | None):
+    """Kurulum sonrasi sessizlik: (gonderilecek, tutulan). Pencere disinda hepsi gonderilir. Pencerede yalniz FATAL_CODES
+    kirmizilari (ve en az bir FATAL kirmizi varken 'multiple') gider; 'Duzeldi' ve digerleri tutulur."""
+    if quiet_until is None or now >= quiet_until or quiet_until - now > timedelta(minutes=QUIET_MINUTES + 1):
+        return list(alerts), []
+    fatal_failing = any(r.status in (Status.CRIT, Status.UNKNOWN) and r.code in FATAL_CODES for r in report.failing())
+    send, held = [], []
+    for a in alerts:
+        fatal = (a.level is Status.CRIT and a.code in FATAL_CODES) or (a.code == "multiple" and fatal_failing)
+        (send if fatal else held).append(a)
+    return send, held
 
 
 def revert_failed_alerts(new_state: Mapping, prev_state: Mapping | None, failed: list[Alert]) -> dict:

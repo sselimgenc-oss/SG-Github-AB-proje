@@ -659,7 +659,10 @@ def test_r_01_four_root_units_run_from_root_tree(tmp_path):
 def test_r_02_only_the_four_units_run_as_root_and_veto_unit_is_gone():
     roots = {p.name for p in DEPLOY.glob("*.service") if unit_get(read(p), "User") == ["root"]}
     # + kullanici onayli otomatik guncelleme (docs/motor/oto-guncelleme-spec.md): yalniz root sahipli surum agacindan calisir
-    assert roots == set(ROOT_UNITS) | {"trader-oto-guncelle.service"}
+    # + kurulum gozcusu (kurulumdan sonra oz-kontrol/izleme/otomatik geri alma): root sahipli surum agacindan calisir
+    assert roots == set(ROOT_UNITS) | {"trader-oto-guncelle.service", "trader-kurulum-gozcu.service"}
+    assert unit_get(read(DEPLOY / "trader-kurulum-gozcu.service"), "ExecStart") == [
+        f"{ROOT_DIR}/venv/bin/python -I {ROOT_DIR}/current/scripts/kurulum_gozcu.py"]
     assert unit_get(read(DEPLOY / "trader-oto-guncelle.service"), "ExecStart") == [
         f"/bin/bash {ROOT_DIR}/current/deploy/oto_guncelle.sh"]
     assert not (DEPLOY / "trader-veto.service").exists()           # DD-12 WP-06a: veto birimi kaldirildi

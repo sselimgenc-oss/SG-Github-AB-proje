@@ -48,7 +48,8 @@ def test_warn_alert_prefix_and_unknown_check_is_generic():
     a, _ = _confirmed(_rep(w))
     assert a and a[0].title.startswith("⚠️ Dikkat: ")
     u = H.CheckResult("yeni_bilinmeyen", Status.CRIT, "disk_low", "ayrıntı")      # disk_low acil kod: hemen uyarır
-    a, _ = H.plan_alerts(_rep(u), None, NOW)
+    _, st0 = H.plan_alerts(_rep(u), None, NOW)
+    a, _ = H.plan_alerts(_rep(u), st0, NOW + timedelta(minutes=5))            # kirmizi cift dogrulama: 2. tur
     assert a[0].title == "🚨 Sorun: Bir sistem kontrolü sorunlu"
     assert "yeni_bilinmeyen" not in a[0].title + a[0].body and "disk_low" not in a[0].title + a[0].body
 

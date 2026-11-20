@@ -2,6 +2,9 @@
 # trader-geri-al: son basarili otomatik guncellemeden onceki surumu kurar (install.sh ile), sonra otomatik guncellemeyi
 # DURDUR dosyasiyla durdurur (geri alinan surum tekrar kurulmasin). Belirtim: docs/motor/oto-guncelleme-spec.md.
 # Kullanim (root): trader-geri-al      Geri acmak: trader-oto-ac
+# --otomatik [--neden METIN]: kurulum gozcusu (trader-kurulum-gozcu) cagirir; hedef = kurulum.json'daki onceki surum;
+#   geri alinan (bozuk) commit gecmise "basarisiz" yazilir (oto_guncelle bir daha denemez); DURDUR KONMAZ (sonraki yesil commit
+#   kurulabilir); tek Telegram mesaji nedenle birlikte gider.
 # Ortam degiskenleri (OTO_*) yalnizca testler icindir; uretimde varsayilanlar kullanilir.
 set -uo pipefail
 
@@ -10,6 +13,7 @@ RELEASE_FILE="${OTO_RELEASE_FILE:-/etc/trader-release}"
 INSTALL_SH="${OTO_INSTALL:-/usr/local/lib/trader-root/current/deploy/install.sh}"
 TG_ENV="${OTO_TELEGRAM_ENV:-/etc/trader-telegram.env}"
 INSTALL_TIMEOUT="${OTO_INSTALL_TIMEOUT:-1800}"
+MARKER="$STATE_DIR/kurulum.json"
 HIST="$STATE_DIR/gecmis.tsv"
 ILOG="$STATE_DIR/son-kurulum.log"
 
@@ -40,38 +44,71 @@ tg_send() { # token curl'e --config - ile stdin'den verilir (komut satirinda gor
   return 0
 }
 
+OTOMATIK=0
+NEDEN=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --otomatik) OTOMATIK=1; shift ;;
+    --neden) NEDEN="${2:-}"; shift 2 || shift ;;
+    *) echo "bilinmeyen secenek: $1" >&2; exit 2 ;;
+  esac
+done
+
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR" 2>/dev/null || true
 exec 9>"$STATE_DIR/kilit"
 flock -n 9 || { echo "Baska bir guncelleme ya da geri alma calisiyor; birazdan tekrar deneyin." >&2; exit 1; }
 
-if [ ! -f "$HIST" ]; then
-  echo "Geri alinacak surum yok: $HIST yok (henuz otomatik guncelleme basarili olmamis)." >&2
-  exit 1
-fi
 mevcut="$(release_commit)"
-# hedef: mevcut surumden FARKLI en son basarili guncellemenin eski surumu (geri alma tekrarlanirsa bir oncekine iner)
-hedef="$(awk -F'\t' -v m="$mevcut" '$4 == "basarili" && $2 != m {h = $2} END {print h}' "$HIST")"
+hedef=""
+if [ "$OTOMATIK" -eq 1 ]; then
+  # once kurulum isaretindeki onceki surum (elle kurulumlari da kapsar); yoksa gecmisten
+  hedef="$(sed -n 's/.*"onceki":"\([0-9a-f]\{40\}\)".*/\1/p' "$MARKER" 2>/dev/null | head -n 1)"
+  [ "$hedef" != "$mevcut" ] || hedef=""
+fi
+if [ -z "$hedef" ]; then
+  if [ ! -f "$HIST" ]; then
+    echo "Geri alinacak surum yok: $HIST yok (henuz otomatik guncelleme basarili olmamis)." >&2
+    exit 1
+  fi
+  # hedef: mevcut surumden FARKLI en son basarili guncellemenin eski surumu (geri alma tekrarlanirsa bir oncekine iner)
+  hedef="$(awk -F'\t' -v m="$mevcut" '$4 == "basarili" && $2 != m {h = $2} END {print h}' "$HIST")"
+fi
 if ! [[ "$hedef" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Geri alinacak onceki surum bulunamadi (gecmiste basarili guncelleme kaydi yok)." >&2
   exit 1
 fi
 
 echo "Geri alma: ${mevcut:0:7} -> ${hedef:0:7}"
-COMMIT="$hedef" timeout "$INSTALL_TIMEOUT" bash "$INSTALL_SH" >"$ILOG" 2>&1 9>&-
+OTO_KURULUM_TUR=geri-al COMMIT="$hedef" timeout "$INSTALL_TIMEOUT" bash "$INSTALL_SH" >"$ILOG" 2>&1 9>&-
 rc=$?
-# geri alinan surum otomatik guncellemeyle tekrar kurulmasin (kurulum basarisiz olsa da durdurulur)
-: > "$STATE_DIR/DURDUR"
+if [ "$OTOMATIK" -eq 0 ]; then
+  # geri alinan surum otomatik guncellemeyle tekrar kurulmasin (kurulum basarisiz olsa da durdurulur)
+  : > "$STATE_DIR/DURDUR"
+fi
 simdi="$(release_commit)"
 if [ "$rc" -eq 0 ] && [ "$simdi" = "$hedef" ]; then
+  if [ "$OTOMATIK" -eq 1 ]; then
+    # bozuk commit "basarisiz": oto_guncelle.sh ($3 = yeni commit, $4 = basarisiz) bir daha kurmaz
+    printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$hedef" "$mevcut" basarisiz >> "$HIST"
+  fi
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$mevcut" "$hedef" geri_alindi >> "$HIST"
-  tg_send "[ML] ⚠️ Son güncelleme geri alındı; bot önceki sürümle çalışıyor."
-  echo "Geri alindi: ${hedef} (otomatik guncelleme DURDU; acmak icin: trader-oto-ac)"
+  if [ "$OTOMATIK" -eq 1 ]; then
+    tg_send "[ML] ⚠️ Güncelleme sonrası sorun görüldü; bot otomatik olarak önceki sürüme döndürüldü. Neden: ${NEDEN:-eşik aşıldı}. Bozuk sürüm bir daha kurulmaz."
+    echo "Otomatik geri alindi: ${hedef} (bozuk surum isaretlendi; otomatik guncelleme acik)"
+  else
+    tg_send "[ML] ⚠️ Son güncelleme geri alındı; bot önceki sürümle çalışıyor."
+    echo "Geri alindi: ${hedef} (otomatik guncelleme DURDU; acmak icin: trader-oto-ac)"
+  fi
   exit 0
 fi
 
 printf '%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$mevcut" "$hedef" geri_alma_basarisiz >> "$HIST"
 tg_send "[ML] ⚠️ Geri alma yapılamadı; bot mevcut sürümle çalışıyor."
 mask < "$ILOG" >&2
-echo "Geri alma BASARISIZ (kurulum cikis=$rc). Otomatik guncelleme yine de DURDU." >&2
+if [ "$OTOMATIK" -eq 1 ]; then
+  echo "Geri alma BASARISIZ (kurulum cikis=$rc)." >&2
+else
+  echo "Geri alma BASARISIZ (kurulum cikis=$rc). Otomatik guncelleme yine de DURDU." >&2
+fi
 exit 1

@@ -1,0 +1,11 @@
+[Unit]
+Description=Trader kurulum gozcusu zamanlayicisi (2 dakikada bir; kurulum sonrasi 60 dk disinda islem yok)
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

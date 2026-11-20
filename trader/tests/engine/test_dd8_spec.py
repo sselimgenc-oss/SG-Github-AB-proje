@@ -1820,7 +1820,10 @@ def test_e4_05_immediate_code_first_sight_alert_and_recovery_message():
     t0 = datetime(2026, 11, 16, 12, 30, tzinfo=UTC)
     bad = H.HealthReport(t0, (H.CheckResult("spool_corrupt:learner", H.Status.CRIT, "spool_corrupt", "3 satir", 3.0),),
                          H.Status.CRIT, False)
-    alerts, st = H.plan_alerts(bad, None, t0)
+    first, st0 = H.plan_alerts(bad, None, t0)
+    assert not first                                  # kirmizi cift dogrulama: ilk tur sari
+    t0 = t0 + timedelta(minutes=5)
+    alerts, st = H.plan_alerts(bad, st0, t0)
     got = [a for a in alerts if a.code == "spool_corrupt"]
     assert got and got[0].level == H.Status.CRIT, alerts
     assert "Deftere yazılamayan bozuk kayıt var" in got[0].title

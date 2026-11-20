@@ -1,0 +1,17 @@
+[Unit]
+Description=Trader kurulum gozcusu (kurulumdan sonra 20 dk oz-kontrol + 60 dk izleme; esik asilirsa otomatik geri alma)
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=root
+# Kodu YALNIZ root sahipli kopyadan calistirir (DD-9 4.1); veri /opt/trader altindadir. Kurulum isareti yoksa ya da 60 dk gectiyse hemen biter.
+ExecStart=/usr/local/lib/trader-root/venv/bin/python -I /usr/local/lib/trader-root/current/scripts/kurulum_gozcu.py
+Environment=TRADER_DATA_ROOT=/opt/trader
+EnvironmentFile=-/etc/trader-health.env
+# Bu birim yalniz olcer (hafif). Geri alma (install.sh: pip/git archive/systemctl) KENDI gecici birimlerinde (systemd-run, slice DISINDA,
+# MemoryMax=800M; bkz. kurulum_gozcu.py) calisir; bu yuzden trader.slice dolmaz ve geri alma sandbox'a takilmaz.
+TimeoutStartSec=45min
+MemoryMax=100M
+CPUQuota=20%
+Nice=10
