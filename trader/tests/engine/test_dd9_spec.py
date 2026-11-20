@@ -435,7 +435,8 @@ def test_u_09_paper_engine_unit_differs_from_base_commit_only_by_dd12_changes():
         pytest.skip("git/taban commit yok")
     want = (base.replace("--bot %i --config-dir config", "--bot %i --env paper --config-dir config")
             .replace("MemoryHigh=280M", "MemoryHigh=600M").replace("MemoryMax=350M", "MemoryMax=750M")
-            .replace("EnvironmentFile=/etc/trader-veto-hmac.env\n", ""))      # DD-12 WP-06a: kagitta veto yok
+            .replace("EnvironmentFile=/etc/trader-veto-hmac.env\n", "")      # DD-12 WP-06a: kagitta veto yok
+            .replace("PYTHONPATH=/opt/trader/src\n", "PYTHONPATH=/opt/trader/src:/opt/trader/paket\n"))      # 19.11: ML filtresi ortak paketi
     strip = lambda t: [ln for ln in t.splitlines() if not ln.lstrip().startswith("#")]  # noqa: E731
     assert strip((DEPLOY / "trader-engine@.service").read_text(encoding="utf-8")) == strip(want)
 

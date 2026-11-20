@@ -84,7 +84,7 @@ def test_working_directory_and_pythonpath_point_to_repo(rendered):
             assert kv["WorkingDirectory"] == T, name
         for k, v in unit_kv(txt):
             if k == "Environment" and v.startswith("PYTHONPATH="):
-                assert v == f"PYTHONPATH={T}/src", name
+                assert v in (f"PYTHONPATH={T}/src", f"PYTHONPATH={T}/src:{T}/paket"), name      # 19.11: motor ortak paketi de okur
 
 
 def test_module_units_have_workingdirectory_and_pythonpath(rendered):

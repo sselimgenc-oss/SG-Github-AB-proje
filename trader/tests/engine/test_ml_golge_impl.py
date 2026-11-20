@@ -22,8 +22,8 @@ F = RECIPE_NAMES["r03"]
 
 def test_learner_config_and_model_copy():
     c = load_cli_config(ROOT / "config", "learner", "paper")
-    # 19 Kasim: r03 kagitta emekli (kullanici karari); paper ML kapali, eski anahtarlar yok
-    assert (c.strategy, c.ml_mode, c.ml_features, c.ml_experimental) == ("price_action_lab_ml", "off", "v1", False)
+    # 19 Kasim: r03 kagitta emekli; ML kagitta AKTIF (kurulum filtresi, kullanici karari); eski anahtarlar yok
+    assert (c.strategy, c.ml_mode, c.ml_features, c.ml_experimental) == ("price_action_lab_ml", "active", "v1", False)
     assert c.ml_model_path is None and c.ml_pairs == ()
     assert not (ROOT / "config/engine.paper-ml.json").exists()
     assert (ROOT / "models/ml1-r03.json").read_bytes() == SRC.read_bytes()
