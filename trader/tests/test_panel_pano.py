@@ -49,7 +49,7 @@ def test_limit_equals_single_source_not_hardcoded_5pct(pano):
 
 
 def test_risk_status_levels():
-    live = {"mode": "paper", "day_start_equity": 1000.0, "entries_open": True}
+    live = {"mode": "paper", "day_start_equity": 1000.0, "equity": 1000.0, "entries_open": True}
     lim = P.daily_loss_rate("paper") * 1000.0
     g = PP.risk_durumu(live, "live", False, 0.0)
     assert g["renk"] == "yesil" and g["metin"] == "Güvenli" and "günlük limite kalan" in g["alt"]
@@ -60,7 +60,13 @@ def test_risk_status_levels():
     assert k["renk"] == "kirmizi" and k["metin"] == "Durdu: piyasa verisi eski"
     d = PP.risk_durumu(live, "live", False, -lim)
     assert d["renk"] == "kirmizi" and "limiti doldu" in d["metin"]
-    assert PP.risk_durumu(live, "stale", False, 0.0)["renk"] == "kirmizi"
+    st = PP.risk_durumu(None, "stale", False, 5.0, 7200.0)             # durum eski: gri, limit/kalan yok (eski sayi canli gibi gosterilmez)
+    assert st["renk"] == "gri" and st["metin"] == "Bilinmiyor (durum bilgisi eski)" and st["limit"] is None and st["kalan"] is None
+    assert "limite kalan —" in st["alt"] and "2 sa önce" in st["alt"] and not re.search(r"\d+,\d\d \$", st["alt"])
+    assert PP.risk_durumu(None, "missing", False, 0.0)["renk"] == "gri"
+    for eksik in ({"equity": None}, {"day_start_equity": None}):         # kasa ya da gun basi yok: gri Bilinmiyor
+        m = PP.risk_durumu({**live, **eksik}, "live", False, 0.0)
+        assert m["renk"] == "gri" and m["metin"].startswith("Bilinmiyor") and m["kalan"] is None and m["alt"].endswith("—")
     assert PP.risk_durumu(live, "live", True, 0.0)["metin"] == "Durdu: acil durdurma"
     unk = PP.risk_durumu({**live, "entries_open": False, "entries_blocked_reason": "yeni_bilinmeyen_kod"}, "live", False, 0.0)
     assert "_" not in unk["metin"] and "bilinmeyen" not in unk["metin"]
@@ -140,7 +146,7 @@ def test_panel_js_free_of_forbidden_text():
 
 def test_panel_js_new_structure():
     js = (STATIC / "panel.js").read_text(encoding="utf-8")
-    for t in ("ÖZET", "AÇIK", "KAPANAN", "K/Z", "ÖĞRENME", "TEKNİK", "Risk durumu", "Zirveden düşüş", "Kapanan K/Z", "Kasa = başlangıç + kapanan K/Z + açık K/Z − açık işlemlerin giriş komisyonu", "'açık K/Z ' + usdS(s.acik_kz)", "Bugün K/Z",
+    for t in ("ÖZET", "AÇIK", "KAPANAN", "K/Z", "ÖĞRENME", "TEKNİK", "Risk durumu", "Zirveden düşüş", "Toplam K/Z", "Kasa = başlangıç + kapanan K/Z + açık K/Z − açık işlemlerin giriş komisyonu", "'açık K/Z ' + usdS(s.acik_kz)", "Bugün K/Z",
               "window.self !== window.top", "data-theme", "YENILE_S = 300", "son güncelleme"):
         assert t in js, t
     assert "TAB_MS" not in js and "setInterval" in js and "location.reload" in js
@@ -243,3 +249,30 @@ def test_saglik_bilinmeyen_kod_ve_adsiz_warn_kod_sizmaz():
     assert _tv(_h("WARN"))["saglik"]["renk"] == "sari"                                     # kayit yok ama genel durum WARN: yine sari
     assert _tv(_h("OK"))["saglik"]["renk"] == "yesil" and _tv(_h("OK", ("swap", "ok", "OK")))["saglik"]["uyarilar"] == []
     assert PP.ne_yapmali("live", {"renk": "yesil"}, 0, [], _tv(_h("OK"))["saglik"]).startswith("Bir şey yapmanız gerekmiyor; bot")
+
+
+def test_testnet_capital_missing_does_not_redden_paper():
+    h = _h("CRIT", ("risk_ladder:learner@testnet", "capital_missing", "CRIT"), ("swap", "ok", "OK"))
+    sg = _tv(h)["saglik"]
+    assert sg["renk"] == "yesil" and sg["durum"] == "Sağlam" and sg["uyarilar"] == [] and sg["senden"] == []
+    assert sg["diger_botlar"] == ["Testnet botu: sermaye kaydı girilmemiş (gerçek paraya geçişte yapılacak)"]
+    assert "inceleniyor" not in (PP.saglik_yapmali(sg) or "")
+    assert PP._problem(sg, "live", {"renk": "yesil"}, None)["renk"] == "yesil"
+    # kagit botun kendi sorunu yine gorunur
+    sg2 = _tv(_h("CRIT", ("risk_ladder:learner@testnet", "capital_missing", "CRIT"), ("candle_age:learner", "candle_stale", "CRIT")))["saglik"]
+    assert sg2["renk"] == "kirmizi" and sg2["uyarilar"] and sg2["diger_botlar"]
+
+
+def test_telegram_silent_for_testnet_ladder_alert():
+    from types import SimpleNamespace
+    a = SimpleNamespace(code="capital_missing", fingerprint="risk_ladder:learner@testnet|capital_missing", level="CRIT", title="")
+    assert TS.saglik_mesaji(a)[0] == "sustur"
+
+
+def test_stale_status_strip_grey_no_live_numbers(env, tmp_path):
+    import shutil
+    d = PanelData(load_config(env.cfg_path), clock=lambda: NOW + timedelta(hours=2)).pano("learner")      # durum dosyasi 2 saat eski
+    r = d["serit"]["risk"]
+    assert d["bot_durum"] == "stale" and r["renk"] == "gri" and r["limit"] is None and r["kalan"] is None
+    assert d["serit"]["kasa"] is None and d["serit"]["durum_yasi_s"] >= 7000
+    assert "limite kalan —" in r["alt"]

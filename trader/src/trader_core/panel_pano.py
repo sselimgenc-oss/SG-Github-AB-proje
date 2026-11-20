@@ -194,22 +194,37 @@ def open_view(ctx: Ctx, status: Mapping | None, now: datetime) -> dict:
 
 
 # ----------------------------------------------------------------------------- serit
-def risk_durumu(status: Mapping | None, state: str, kill_file: bool | None, pnl_bugun: float) -> dict:
-    """Tek Turkce risk durumu. renk: yesil Guvenli / sari Limite yakin (>=%70) / kirmizi Durdu: neden.
+def _yas_metni(age_s: float | None) -> str:
+    if age_s is None:
+        return ""
+    m = int(age_s // 60)
+    return f"{m} dk önce" if m < 120 else f"{m // 60} sa önce"
+
+
+def risk_durumu(status: Mapping | None, state: str, kill_file: bool | None, pnl_bugun: float, age_s: float | None = None) -> dict:
+    """Tek Turkce risk durumu. renk: yesil Guvenli / sari Limite yakin (>=%70) / kirmizi Durdu: neden / gri Bilinmiyor
+    (durum bilgisi eski ya da kasa/gun basi bakiyesi okunamadi: limit ve kalan gosterilmez, eski sayi canli gibi sunulmaz).
     Limit tek kaynaktan: panel_data.daily_loss_rate(mode) x gun basi equity."""
     d = status or {}
     rate = P.daily_loss_rate(d.get("mode") or "paper")
     dse = _f(d.get("day_start_equity"))
+    eq = _f(d.get("equity"))
     limit = rate * dse if dse and dse > 0 else None
     kullanilan = max(0.0, -pnl_bugun)
     kalan = max(limit - kullanilan, 0.0) if limit is not None else None
     oran = (kullanilan / limit) if limit else None
-    alt = f"günlük limite kalan {tr_sayi(kalan)} $" if kalan is not None else "günlük limit hesaplanamadı"
+    alt = f"günlük limite kalan {tr_sayi(kalan)} $" if kalan is not None else "günlük limite kalan —"
     out = {"limit": limit, "limit_orani": rate, "kullanilan": kullanilan, "kalan": kalan, "oran": oran}
     if kill_file or d.get("kill"):
         return {**out, "renk": "kirmizi", "metin": "Durdu: acil durdurma", "alt": alt}
     if state != "live":
-        return {**out, "renk": "kirmizi", "metin": "Durdu: bot yanıt vermiyor", "alt": alt if limit else "durum okunamadı"}
+        why = "durum bilgisi eski" if state == "stale" else "durum bilgisi okunamıyor"
+        yas = _yas_metni(age_s) if state == "stale" else ""
+        return {**out, "limit": None, "kalan": None, "oran": None, "renk": "gri", "metin": f"Bilinmiyor ({why})",
+                "alt": "günlük limite kalan —" + (f" · son durum {yas}" if yas else "")}
+    if eq is None or dse is None or dse <= 0:
+        return {**out, "limit": None, "kalan": None, "oran": None, "renk": "gri",
+                "metin": "Bilinmiyor (kasa ya da gün başı bakiyesi okunamadı)", "alt": "günlük limite kalan —"}
     if oran is not None and oran >= 1.0:
         return {**out, "renk": "kirmizi", "metin": "Durdu: günlük zarar limiti doldu", "alt": alt}
     if d.get("entries_open") is False:
@@ -227,11 +242,11 @@ def kz_donem(trades: list, a: datetime | None, b: datetime | None = None) -> flo
 
 
 def serit_view(ctx: Ctx, status: Mapping | None, state: str, kill_file: bool | None, start: float | None, now: datetime,
-               curve: Mapping | None) -> dict:
+               curve: Mapping | None, age_s: float | None = None) -> dict:
     d = status or {}
     eq = _f(d.get("equity"))
     pnl_bugun = kz_donem(ctx.closed, gun_basi(now), gun_basi(now, -1))
-    toplam = kz_donem(ctx.closed, None)
+    toplam = (eq - start) if (eq is not None and start) else None       # TOPLAM K/Z = kasa - baslangic (acik K/Z dahil)
     dse = _f(d.get("day_start_equity")) or start
     acik_n = len(d.get("open_positions") or []) if state == "live" else len(ctx.open)
     unreal = _f(d.get("unrealized_pnl_usd")) if state == "live" else None
@@ -249,9 +264,9 @@ def serit_view(ctx: Ctx, status: Mapping | None, state: str, kill_file: bool | N
         dd, dd_pct = min(eq - start, 0.0), min((eq / start - 1.0) * 100.0, 0.0)
     return {"kasa": eq, "baslangic": start,
             "bugun": pnl_bugun, "bugun_yuzde": (pnl_bugun / dse * 100.0) if dse else None,
-            "toplam": toplam, "toplam_yuzde": (toplam / start * 100.0) if start else None,
+            "toplam": toplam, "toplam_yuzde": (toplam / start * 100.0) if (start and toplam is not None) else None,
             "acik": acik_n, "acik_kz": unreal, "dusus": dd, "dusus_yuzde": dd_pct,
-            "risk": risk_durumu(d if state == "live" else None, state, kill_file, pnl_bugun)}
+            "durum_yasi_s": age_s, "risk": risk_durumu(d if state == "live" else None, state, kill_file, pnl_bugun, age_s)}
 
 
 # ----------------------------------------------------------------------------- K/Z
@@ -507,13 +522,25 @@ def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
 
 
 # ----------------------------------------------------------------------------- teknik
+def _testnet_alarmi(a: Mapping) -> bool:
+    """Testnet golge botuna ait kontrol (ad ':<bot>' ekinde 'testnet'): kagit botu etkilemez; yalniz TEKNIK'te gri bilgi."""
+    return "testnet" in str(a.get("name") or "").partition(":")[2].lower()
+
+
+def _testnet_cumlesi(a: Mapping) -> str:
+    if str(a.get("code") or "").removesuffix("_warmup") == "capital_missing":
+        return "Testnet botu: sermaye kaydı girilmemiş (gerçek paraya geçişte yapılacak)"
+    s, _ = TS.saglik_cumlesi(a.get("name"), a.get("code"))
+    return "Testnet botu: " + s[:1].lower() + s[1:]
+
+
 def _saglik_cumleleri(alerts: list) -> tuple[list[str], list[str]]:
     """Sorunlu saglik kontrolleri -> (sade cumleler, 'Senden' eylemleri). Telegram'a gitmeyen kontroller de adiyla gorunur
     (WARN/CRIT hicbir kontrol panelde adsiz kalmaz); tek sozluk: tg_sade.saglik_cumlesi. OK/SKIPPED duzeyli kayitlar atlanir."""
     out: list[str] = []
     senden: list[str] = []
     for a in alerts:
-        if str(a.get("level") or "").upper() in ("OK", "SKIPPED", "INFO"):
+        if str(a.get("level") or "").upper() in ("OK", "SKIPPED", "INFO") or _testnet_alarmi(a):
             continue
         s, yap = TS.saglik_cumlesi(a.get("name"), a.get("code"))
         if s not in out:
@@ -546,11 +573,22 @@ def teknik_view(*, health: Mapping | None, risk_rows: list | None, budget: Mappi
         out["mutabakat"] = dict(mutabakat)
     if health:
         ov = str(health.get("overall") or "UNKNOWN")
-        uy, senden = _saglik_cumleleri(health.get("alerts") or [])
+        alerts = health.get("alerts") or []
+        uy, senden = _saglik_cumleleri(alerts)
+        diger = []
+        for a in alerts:
+            if isinstance(a, Mapping) and str(a.get("level") or "").upper() not in ("OK", "SKIPPED", "INFO") and _testnet_alarmi(a):
+                c = _testnet_cumlesi(a)
+                if c not in diger:
+                    diger.append(c)
+        if diger and ov in ("WARN", "CRIT"):          # genel durum yalniz testnet'ten geliyorsa kagit botu sorunsuz sayilir
+            lv = {str(a.get("level") or "").upper() for a in alerts if isinstance(a, Mapping) and not _testnet_alarmi(a)}
+            ov = "CRIT" if "CRIT" in lv else ("WARN" if "WARN" in lv else ("UNKNOWN" if "UNKNOWN" in lv else "OK"))
         if ov in ("WARN", "CRIT", "UNKNOWN") and not uy:      # sorun var ama adi okunamadi: yine de gorunur (adsiz ama dürüst)
             uy = [TS.SAGLIK_BILINMEYEN]
         out["saglik"] = {"durum": SAGLIK_TR.get(ov, "Bilinmiyor"), "renk": {"OK": "yesil", "WARN": "sari", "CRIT": "kirmizi"}.get(ov, "sari"),
-                         "uyarilar": uy, "senden": senden, "kontrol_bayat": bool(health.get("check_stale"))}
+                         "uyarilar": uy, "senden": senden, "kontrol_bayat": bool(health.get("check_stale")),
+                         "diger_botlar": diger[:4]}
     if risk_rows:
         out["limitler"] = [{"ad": r["label"], "kullanilan": r["used"], "limit": r["limit"], "yuzde": r["pct"]} for r in risk_rows]
     kap = []

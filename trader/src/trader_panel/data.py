@@ -213,7 +213,7 @@ class PanelData:
                 curve = P.equity_curve(lp, b, start, self.cfg.curve_limit)
             except P.SectionError:
                 curve = None
-            serit = PP.serit_view(ctx, status, s["state"], self._kill_file(), start, now, curve)
+            serit = PP.serit_view(ctx, status, s["state"], self._kill_file(), start, now, curve, s.get("age_s"))
             acik = PP.open_view(ctx, status, now)
             kz = PP.kz_view(ctx, start, now, curve, P.paper_maps()[0])
             mlf = (status or {}).get("ml_filtre")
