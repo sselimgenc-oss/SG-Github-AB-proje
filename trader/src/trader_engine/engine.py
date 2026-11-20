@@ -74,6 +74,23 @@ SHADOW_BUDGET_S = 5.0            # WP-3 5.2: `_shadow_step` zaman butcesi (ciftl
 _EXEC_MEM_MAX = 256              # WP-3: bellekteki `decision_price` kayitlari
 
 
+def _etiket_durum_okuyucu(yol):
+    """Etiket kurallari durum dosyasi (nightly yazar) -> {kural: acik}; mtime onbellekli, yok/bozuk -> hepsi acik. Istisna firlatmaz."""
+    from trader_core import etiket_kurallari as EK
+    onb: dict = {"m": None, "v": {k: True for k in EK.KURALLAR}}
+
+    def oku():
+        try:
+            m = os.stat(yol).st_mtime_ns
+        except OSError:
+            onb["m"], onb["v"] = None, {k: True for k in EK.KURALLAR}
+            return onb["v"]
+        if m != onb["m"]:
+            onb["m"], onb["v"] = m, EK.acik_haritasi(EK.durum_oku(yol))
+        return onb["v"]
+    return oku
+
+
 def _pos_finite(x) -> bool:
     """DD-11: sayi, sonlu ve > 0 (bool/None/str degil)."""
     return (not isinstance(x, bool)) and isinstance(x, (int, float)) and math.isfinite(x) and x > 0
@@ -155,6 +172,12 @@ class Engine:
             self.gate.ct_kadro = lambda: _CT.oku(_C1.kadro_yolu(), clock.now(), evren=_evren)
             from trader_core import haber as _HB                        # haber/duygu etiketi (yalniz kayit; docs/haber-etiketi-spec.md)
             self.gate.haber_etiket = lambda pair, now_ms: _HB.etiket(pair, now_ms)
+            if cfg.etiket_kurallari:                                    # 20 Kasim: etiket kurallari (girisi yalniz atlatabilir; docs/etiket-kurallari-spec.md)
+                from trader_core import etiket_kurallari as _EK
+                _ek_yol = Path(cfg.ledger_path).parent.parent / "durum" / _EK.DOSYA
+                self.gate.etiket_cfg = cfg.etiket_kurallari
+                self.gate.etiket_durum = _etiket_durum_okuyucu(_ek_yol)
+                self._etiket_yol = _ek_yol
             if cfg.ml_mode == "active":                                 # 19.11 kullanici karari: kagitta ML filtresi AKTIF (girisi atlatabilir)
                 try:
                     from . import ogrenme_filtre as _OF
@@ -387,6 +410,7 @@ class Engine:
             "last_decision_close": self._last_decision, "last_candle_open": cand,
             "ml": self._ml_status(now),
             "ml_filtre": self._ml_filtre_status(now),
+            "etiket_kurallari": self._etiket_status(),
             "cluster_counts": self.cluster_counts(),
             "last_marks": dict(self._last_marks),
             "records": self.records_block(),
@@ -505,6 +529,29 @@ class Engine:
             c = self.gate.counters
             return {"aktif_kurulum": len(flt.aktif_kurulumlar(now)), "atladi": int(c.get("ml_filtre_atladi", 0)),
                     "gecti": int(c.get("ml_filtre_gecti", 0)), "calisiyor": bool(flt.calisiyor)}
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _etiket_status(self) -> dict | None:
+        """status.json `etiket_kurallari`: kural durumu (acik/kanita gore kapali), atlama sayaci, veri durumu. Yalniz kagit + yapilandirilmissa."""
+        if not getattr(self.gate, "etiket_cfg", None):
+            return None
+        try:
+            from trader_core import etiket_kurallari as EK
+            durum = EK.durum_oku(getattr(self, "_etiket_yol", None))
+            c = self.gate.counters
+            ct_var = None
+            if self.gate.ct_kadro is not None:
+                ct_var = bool(self.gate.ct_kadro())
+            kur = {}
+            for k in EK.KURALLAR:
+                if not EK.kural_acik_config(self.gate.etiket_cfg, k):
+                    continue
+                e = durum["kurallar"][k]
+                kur[k] = {"acik": bool(e["acik"]), "durum": EK.durum_etiketi(e), "atladi": int(c.get("etiket_atladi:" + k, 0)),
+                          "atlardi": int(c.get("etiket_atlardi:" + k, 0)), "veri_yok": int(c.get("etiket_veri_yok:" + k, 0)),
+                          "son_olay": (e["gecmis"][-1] if e["gecmis"] else None)}
+            return {"kurallar": kur, "ct_veri": ct_var}
         except Exception:  # noqa: BLE001
             return None
 

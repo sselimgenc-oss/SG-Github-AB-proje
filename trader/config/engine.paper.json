@@ -21,6 +21,12 @@
     "metal": {"pairs": ["XAU/USDT", "XAG/USDT"], "max_positions": 2},
     "enerji_sanayi": {"pairs": ["BZ/USDT", "COPPER/USDT"], "max_positions": 2}
   },
+  "etiket_kurallari": {
+    "rejim": {"acik": true},
+    "duygu": {"acik": true, "asiri_korku_max": 20, "asiri_acgozluluk_min": 80},
+    "kalabalik": {"acik": true, "min_trader": 10, "oran_min": 0.8},
+    "otomatik": {"pencere": 10, "kapat_esik_r": 1.0, "ac_esik_r": -1.0}
+  },
   "flat_bar_guard": true,
   "contract_types": ["PERPETUAL", "TRADIFI_PERPETUAL"],
   "cost_overrides": {

@@ -22,7 +22,7 @@ BIRIM = "R"
 YONTEM = "plan"
 ALINAN = "alınan işlemler"
 # Defterin skipped karar nedenleri (ledger._SKIP; sozluk disi deger gelirse ada gore sona eklenir)
-NEDEN_SIRA = ("max_positions", "cluster_cap", "flat_bar", "arm_conflict", "arm_disabled", "session_closed", "ml_filter", "ml_no_model",
+NEDEN_SIRA = ("max_positions", "cluster_cap", "flat_bar", "arm_conflict", "arm_disabled", "session_closed", "ml_filter", "etiket_rejim", "etiket_duygu", "etiket_kalabalik", "ml_no_model",
               "risk_denied", "entry_gate_closed", "veto_blocked", "veto_missing", "veto_stale", "stop_width", "rr_below_min",
               "order_failed", "llm_invalid", "other")
 

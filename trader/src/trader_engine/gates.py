@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
 
+from trader_core import etiket_kurallari as EK
 from trader_core import ledger as L
 from trader_core import risk as K
 from trader_core import veto
@@ -168,6 +169,10 @@ class EntryGate:
         # 19.11 kullanici karari: kagitta ML filtresi AKTIF (ogrenme_filtre.FiltreDeposu ya da None). YALNIZ bir girisi atlatabilir
         # (`ml_filter`); boyut/kaldirac/limit/risk yoluna girmez. Hata/paket yok => serbest.
         self.ml_filtre = None
+        # 20 Kasim kullanici karari: kagitta etiketler (rejim/duygu/CT kalabalik) girisi YALNIZ atlatabilir (docs/etiket-kurallari-spec.md).
+        # etiket_cfg = dogrulanmis cfg.etiket_kurallari ({} = kapali); etiket_durum() -> {kural: acik} (kanita gore kapanmis kurallar False).
+        self.etiket_cfg: Mapping | None = None
+        self.etiket_durum: Callable[[], Mapping[str, bool]] | None = None
         self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
@@ -263,6 +268,47 @@ class EntryGate:
             return dict(e) if e else {}
         except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
             return {}
+
+    def _etiket_karari(self, row: SignalRow, tf: str, tk: dict) -> EntryOutcome | None:
+        """Etiket kurallari (kagit): acik kural tetiklenirse `etiket_*` kodu ile atla (karar satiri; karsi-olgu mevcut yoldan).
+        Kanita gore KAPANMIS kural girisi engellemez; atlayacagi islem `features.etiket_atlardi` ile not edilir (gercek sonucu izlenir).
+        Veri yok/bayat -> engellemez (sayilir). Hata -> serbest. Boyut/kaldirac/limit'e hic girmez."""
+        cfg = self.etiket_cfg
+        if not cfg:
+            return None
+        try:
+            feats = tk.get("features") or {}
+            duygu = feats.get("duygu")
+            ct = None
+            if self.ct_kadro is not None:
+                try:
+                    kadro = self.ct_kadro()
+                    ct = kadro.get(row.pair) if kadro else None
+                except Exception:  # noqa: BLE001
+                    ct = None
+            tetik, veri_yok = EK.degerlendir(row.side, row.regime, duygu, ct, cfg)
+            for k in veri_yok:
+                self.counters["etiket_veri_yok:" + k] += 1
+            if not tetik:
+                return None
+            try:
+                acik = dict(self.etiket_durum()) if self.etiket_durum is not None else {}
+            except Exception:  # noqa: BLE001
+                acik = {}
+            engel = [k for k, _ in tetik if acik.get(k, True)]
+            kapali = [k for k, _ in tetik if not acik.get(k, True)]
+            if kapali:
+                self.counters["etiket_atlardi:" + kapali[0]] += 1
+                tk["features"] = {**(tk.get("features") or _features(row)), EK.FEATURE_ANAHTAR: ",".join(kapali)}
+            if not engel:
+                return None
+            kod = engel[0]
+            detay = dict(tetik)[kod]
+            self.counters["etiket_atladi:" + kod] += 1
+            return self._skip(row, tf, kod, skip_reason=kod, veto_reason=f"gate:{kod}:{detay}", **tk)
+        except Exception as e:  # noqa: BLE001 - etiket hatasi giris engellemez
+            log.warning("etiket kurallari hatasi, giris serbest: %s: %s", type(e).__name__, e)
+            return None
 
     def _ml_filtre_karari(self, row: SignalRow, tf: str, D: datetime, tk: dict) -> EntryOutcome | None:
         """ML filtresi (kagit): esik alti puan => `ml_filter` ile atla (karar satiri + puan; karsi-olgu mevcut atlama yolundan).
@@ -375,6 +421,9 @@ class EntryGate:
             ml_skip = self._ml_filtre_karari(row, tf, D, tk)
             if ml_skip is not None:
                 return ml_skip
+            et_skip = self._etiket_karari(row, tf, tk)                                   # 20 Kasim: etiket kurallari (ML'den sonra, risk'ten once)
+            if et_skip is not None:
+                return et_skip
             lk = veto.VetoLookup("allowed", "not_evaluated:paper", False)
         else:
             lk = self.veto.lookup(pair, row.side, now)                                  # 10

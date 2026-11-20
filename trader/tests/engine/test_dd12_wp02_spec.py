@@ -25,7 +25,7 @@ NOW = datetime(2026, 12, 2, 0, 0, tzinfo=UTC)
 V4_DATA_TABLES = ("param_versions", "param_activations", "lesson_proposals", "proposal_status_events",
                   "decision_events", "trade_entries", "trade_exits", "shadow_decisions", "equity_marks")
 NEW_SKIP = ("arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
-            "ml_no_model", "llm_invalid")
+            "ml_no_model", "llm_invalid", "etiket_rejim", "etiket_duygu", "etiket_kalabalik")
 OLD_SKIP = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
             "entry_gate_closed", "order_failed", "other", "ml_filter")
 
@@ -183,21 +183,21 @@ def arm(setup, tf):
 
 # ------------------------------------------------------------------------------------------ surum
 def test_schema_version_is_6():
-    assert L.SCHEMA_VERSION == 6
-    assert len(L.MIGRATIONS) == 6
+    assert L.SCHEMA_VERSION == 7
+    assert len(L.MIGRATIONS) == 7
     assert 4 in L._FK_OFF_MIGRATIONS                 # sartname §9 WP-02: _FK_OFF_MIGRATIONS'a 4
 
 
 def test_fresh_ledger_is_v6(fresh):
-    assert raw(fresh, "PRAGMA user_version")[0][0] == 6
-    assert raw(fresh, "SELECT MAX(to_version) FROM schema_migrations")[0][0] == 6
+    assert raw(fresh, "PRAGMA user_version")[0][0] == 7
+    assert raw(fresh, "SELECT MAX(to_version) FROM schema_migrations")[0][0] == 7
     assert raw(fresh, "PRAGMA foreign_key_check") == []
 
 
 # ------------------------------------------------------------------------------------------ goc 4 -> 5 (D-T15)
 def test_migration_preserves_every_row_and_ids(migrated):
     p, before = migrated
-    assert raw(p, "PRAGMA user_version")[0][0] == 6
+    assert raw(p, "PRAGMA user_version")[0][0] == 7
     assert (4, 5) in raw(p, "SELECT from_version, to_version FROM schema_migrations")
     for t in V4_DATA_TABLES:
         after = dump(p, t)
@@ -309,7 +309,7 @@ def test_migration_idempotent_reopen(migrated):
         open_ledger(p, "learner", clock=clock, migrate=False).close()   # v5 dosyada migrate=False sorunsuz
     assert raw(p, "SELECT from_version, to_version FROM schema_migrations ORDER BY id") == mig_before
     assert [m for m in mig_before if m == (4, 5)] == [(4, 5)]
-    assert raw(p, "PRAGMA user_version")[0][0] == 6
+    assert raw(p, "PRAGMA user_version")[0][0] == 7
     for t in V4_DATA_TABLES:
         assert dump(p, t) == snap[t]
 
@@ -330,7 +330,7 @@ def test_interrupted_migration_leaves_v4(v4, monkeypatch):
         assert dump(v4, t) == before[t], t
     monkeypatch.undo()                         # sonra yeniden denenince tamamlanir
     open_ledger(v4, "learner", clock=clock).close()
-    assert raw(v4, "PRAGMA user_version")[0][0] == 6
+    assert raw(v4, "PRAGMA user_version")[0][0] == 7
     for t in V4_DATA_TABLES:
         assert len(dump(v4, t)) == len(before[t])
 
@@ -359,7 +359,7 @@ def test_read_only_open_on_v5_works(migrated):
             led._require_writable()
     finally:
         led.close()
-    assert raw(p, "PRAGMA user_version")[0][0] == 6
+    assert raw(p, "PRAGMA user_version")[0][0] == 7
 
 
 def test_read_only_open_on_fresh_v5_works(fresh):

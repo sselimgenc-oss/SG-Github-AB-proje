@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
+from trader_core import etiket_kurallari as _EK
 from trader_core import exit_modes as _xm
 from trader_core.config_loader import deep_merge
 from trader_core.risk import LOCKED_CFG, PAPER_KEYS, RiskConfig, paper_config, tightened
@@ -117,6 +118,7 @@ class EngineConfig:
     # --- DD-12 WP-11 (yalniz mode="paper"; varsayilan bos = onceki davranis) ---
     arms: tuple[str, ...] = ()                                # bilesik strateji kurulumlari: arm_id ("T1@1h") listesi; bos = stratejinin varsayilani
     arm_max_positions: Mapping[str, int] = dataclasses.field(default_factory=dict)  # kurulum tavani: {"default": 4, "M1": 3, "T1@15m": 2}; bos = tavan yok
+    etiket_kurallari: Mapping[str, Any] = dataclasses.field(default_factory=dict)    # 20 Kasim: etiket kurallari (yalniz paper; bos = kapali; docs/etiket-kurallari-spec.md)
     exit_modes: Mapping[str, Mapping] = dataclasses.field(default_factory=dict)      # cikis kipleri (basa-bas / kismi kar); anahtar default|KURULUM|arm_id; bos = kapali (docs/cikis-kipleri-spec.md)
 
     @functools.cached_property
@@ -154,7 +156,7 @@ _STR = ("var_dir", "market_db", "history_dir", "veto_config", "kill_file")
 _OPTIONAL_KEYS = {"strategy", "target_trade_risk", "ml_mode", "ml_model_path", "ml_features", "ml_experimental", "startup_wait_s", "pause_file",
                   "leverage", "live", "ladder_follow", "shadow_blocks", "mtm_marks",
                   "optional_pairs", "retired_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
-                  "cost_overrides", "arms", "arm_max_positions", "exit_modes"}
+                  "cost_overrides", "arms", "arm_max_positions", "exit_modes", "etiket_kurallari"}
 _PAPER_ONLY_KEYS = ("optional_pairs", "ml_pairs", "max_positions", "risk", "clusters", "flat_bar_guard", "contract_types",
                     "cost_overrides", "arms", "arm_max_positions")
 _LIVE_KEYS = {f.name for f in dataclasses.fields(LiveSettings)}
@@ -520,6 +522,13 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         exit_modes = _xm.build_config(raw.get("exit_modes", {}))
     except _xm.ExitModeError as e:
         raise ConfigError(str(e)) from e
+    etiket_raw = raw.get("etiket_kurallari")
+    if etiket_raw and mode != "paper":
+        raise ConfigError(f"etiket_kurallari yalniz mode='paper' ile verilebilir (mode={mode!r})")
+    try:
+        etiket_kurallari = _EK.build_config(etiket_raw)
+    except _EK.EtiketConfigHatasi as e:
+        raise ConfigError(str(e)) from e
     if mode not in ("paper", "backtest") and exit_modes:
         raise ConfigError(f"exit_modes yalniz mode='paper'/'backtest' ile verilebilir (mode={mode!r})")
     if mode != "paper":
@@ -570,7 +579,7 @@ def _validate(raw: Mapping[str, Any]) -> EngineConfig:
         optional_pairs=optional_pairs, retired_pairs=retired_pairs, ml_pairs=ml_pairs, max_positions=max_positions,
         risk=risk_raw, clusters=clusters,
         flat_bar_guard=flat_bar_guard, contract_types=contract_types, cost_overrides=cost_overrides,
-        arms=arms, arm_max_positions=arm_caps, exit_modes=exit_modes,
+        arms=arms, arm_max_positions=arm_caps, exit_modes=exit_modes, etiket_kurallari=etiket_kurallari,
         **{n: raw[n] for n in _STR},
     )
 

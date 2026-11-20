@@ -76,7 +76,7 @@ def mk_shadow(**kw):
 # =========================================================================== sema 4 / goc
 def test_fresh_file_is_v4_with_new_objects(led):
     p = led.path
-    assert raw(p, "PRAGMA user_version")[0][0] == 6 and L.SCHEMA_VERSION == 6
+    assert raw(p, "PRAGMA user_version")[0][0] == 7 and L.SCHEMA_VERSION == 7
     assert (3, 4) in raw(p, "SELECT from_version, to_version FROM schema_migrations")
     names = {r[0] for r in raw(p, "SELECT name FROM sqlite_master")}
     assert {"shadow_decisions", "equity_marks", "v_shadow_decisions", "ix_shadow_ts"} <= names
@@ -118,7 +118,7 @@ def test_migration_3_to_4_is_additive_and_readable(tmp_path, clock):
     assert raw(p, "PRAGMA user_version")[0][0] == 3
     L.open_ledger(p, "learner", clock=clock).close()
     assert os.path.exists(str(p) + ".premigrate-v3")
-    assert raw(p, "PRAGMA user_version")[0][0] == 6     # DD-12: baslik surumu 6 (3 -> 4 -> 5 -> 6 zinciri; WP-06a)
+    assert raw(p, "PRAGMA user_version")[0][0] == 7     # DD-12: baslik surumu 6 (3 -> 4 -> 5 -> 6 zinciri; WP-06a)
     assert [r[1] for r in raw(p, "PRAGMA table_info(v_trades)")][:len(cols_v3)] == cols_v3
     assert [r[1] for r in raw(p, "PRAGMA table_info(v_decisions)")][:len(dec_cols_v3)] == dec_cols_v3
     for t, rows in before_tables.items():
@@ -710,9 +710,9 @@ def test_counterfactual_script_reports_shadow_keys_and_reads_v3(tmp_path, monkey
 
 
 # =========================================================================== rapor paketi
-def test_reports_schema_accepts_6_and_rejects_7(tmp_path):
+def test_reports_schema_accepts_7_and_rejects_8(tmp_path):
     from trader_reports import inputs as I
-    for uv, ok in ((2, True), (3, True), (4, True), (5, True), (6, True), (1, False), (7, False)):
+    for uv, ok in ((2, True), (3, True), (4, True), (5, True), (6, True), (7, True), (1, False), (8, False)):
         c = sqlite3.connect(":memory:")
         c.execute(f"PRAGMA user_version={uv}")
         if ok:
@@ -763,7 +763,7 @@ def test_reports_load_shadow_and_lock(tmp_path, led):
     led.record_shadow(mk_shadow(bar_close_ts=datetime(2026, 6, 1, 9, 0, tzinfo=UTC), pair="ETH/USDT"))
     c = I.open_ro(led.path, "ledger_missing")
     try:
-        assert I.check_ledger_schema(c) == 6
+        assert I.check_ledger_schema(c) == 7
         rows = I.load_shadow(c, None, None)
         assert [r["pair"] for r in rows] == ["BTC/USDT"]                # kilitli donem satiri okunmaz
     finally:

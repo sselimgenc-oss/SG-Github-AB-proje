@@ -434,6 +434,15 @@ def girdi_oku(config_dir: str | os.PathLike, env: str, environ: Mapping[str, str
     if g.rejim is None:
         g.notlar.append("rejim verisi yok")
     g.drift_uyari = _drift(ldir / "drift.json", now)
+    try:                                                     # etiket kurallari: gun icinde kapanan/yeniden acilan kural (en fazla 1 madde)
+        from trader_core import etiket_kurallari as EKU
+        d = EKU.durum_oku(kok / "var" / "durum" / EKU.DOSYA)
+        for k in EKU.KURALLAR:
+            for ev in d["kurallar"][k]["gecmis"]:
+                if _icinde(EKU._utc(ev.get("ts")), a, b):
+                    g.notlar.insert(0, EKU.olay_satiri({**ev, "kural": k}))
+    except Exception:  # noqa: BLE001
+        pass
     g.duygu = _duygu(kok, now)
     sag = _yol(kok, panel.get("health_state"), "/var/lib/trader-health/state.json")
     g.son_nabiz, g.hata_sayisi_gun = _saglik(sag, now)

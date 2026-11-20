@@ -482,6 +482,30 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
             "egitim": ({"tarih": tsi_gun(son_egitim), "ornek": n_ornek} if son_egitim else None), "son5": son5}
 
 
+def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
+    """OGRENME sekmesi 'Etiket kurallari' karti: kural basina acik/kapali (kanita gore kapandi/yeniden acildi + tarih), son 7 gunde atladigi
+    islem sayisi, 'alinsaydi' sonucu (R; cozulenler toplami) ya da 'Henuz olculemedi'. Veri/kural yoksa None (kart gizlenir)."""
+    import json  # noqa: PLC0415
+    from . import etiket_kurallari as EK  # noqa: PLC0415
+    var = Path(durum_yol).exists()
+    try:
+        al = json.loads(Path(alinmayan_yol).read_text(encoding="utf-8"))
+        if not isinstance(al, dict) or al.get("sema") != "ml.alinmayan_sonuc.v1":
+            al = None
+    except (OSError, ValueError):
+        al = None
+    k = EK.kart_verisi(EK.durum_oku(durum_yol), var, al)
+    if k is None:
+        return None
+    for r in k["kurallar"]:
+        r["renk"] = "yesil" if r["acik"] else "sari"
+        if r["alinsaydi_r"] is None:
+            r["sonuc"] = {"olculemedi": "Henüz ölçülemedi"}
+        else:
+            r["sonuc"] = {"r": float(r["alinsaydi_r"]), "n": r["cozulen"]}
+    return k
+
+
 # ----------------------------------------------------------------------------- teknik
 def _saglik_cumleleri(alerts: list) -> list[str]:
     out: list[str] = []

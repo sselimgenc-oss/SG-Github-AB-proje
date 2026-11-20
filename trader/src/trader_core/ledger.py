@@ -24,7 +24,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("trader_core.ledger")
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 BOTS = ("learner", "twin")
 MIN_FREE_BYTES = 50 * 1024 * 1024
 MAX_REASON = 500
@@ -114,14 +114,14 @@ _VETO = ("allowed", "blocked", "missing", "stale", "not_evaluated")
 _SKIP = ("stop_width", "rr_below_min", "veto_blocked", "veto_missing", "veto_stale", "risk_denied",
          "entry_gate_closed", "order_failed", "other", "ml_filter",
          "arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
-         "ml_no_model", "llm_invalid")
+         "ml_no_model", "llm_invalid", "etiket_rejim", "etiket_duygu", "etiket_kalabalik")
 # DD-12: kagit botta veto yok; asagidaki yeni nedenlerle atlanan karar satirlari veto_status='not_evaluated' yazar
 # (record_decision bunu zorlar; eski nedenler icin kural degismedi).
 _NEW_SKIP = ("arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
-             "ml_no_model", "llm_invalid")
+             "ml_no_model", "llm_invalid", "etiket_rejim", "etiket_duygu", "etiket_kalabalik")
 _NOT_EVAL_SKIP = ("stop_width", "rr_below_min", "other", "entry_gate_closed", "ml_filter",
                   "arm_conflict", "arm_disabled", "session_closed", "flat_bar", "cluster_cap", "max_positions",
-                  "ml_no_model", "llm_invalid")
+                  "ml_no_model", "llm_invalid", "etiket_rejim", "etiket_duygu", "etiket_kalabalik")
 _EXIT_REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit",
                  "liquidation", "other")
 _EXCURSION_TFS = ("1m", "5m", "15m")
@@ -257,7 +257,7 @@ def _json_safe(obj):
     return repr(obj)
 
 
-_ETIKET_ANAHTARLARI = ("duygu", "haber")        # features icindeki yalniz-kayit etiketleri (docs/haber-etiketi-spec.md)
+_ETIKET_ANAHTARLARI = ("duygu", "haber", "etiket_atlardi")        # features icindeki yalniz-kayit etiketleri (docs/haber-etiketi-spec.md)
 
 
 def _json_limited(obj, name) -> str:
@@ -1135,7 +1135,7 @@ def _migration_3_to_4(bot: str, now_s: str) -> str:
 
 
 _NEW_SKIPS_SQL = ("'arm_conflict','arm_disabled','session_closed','flat_bar','cluster_cap','max_positions',"
-                  "'ml_no_model','llm_invalid'")
+                  "'ml_no_model','llm_invalid','etiket_rejim','etiket_duygu','etiket_kalabalik'")
 
 
 def _decision_events_ddl_v5(name: str) -> str:
@@ -1252,9 +1252,15 @@ def _migration_5_to_6(bot: str, now_s: str) -> str:
             + _V_DECISIONS + _VIEWS_V5 + "\n" + _trigger_ddl(_APPEND_ONLY_TABLES) + "\n")
 
 
+def _migration_6_to_7(bot: str, now_s: str) -> str:
+    """Sema 7 (etiket kurallari, 20 Kasim): skip_reason sozlugune etiket_rejim/etiket_duygu/etiket_kalabalik eklenir; decision_events
+    yeniden kurulur (satirlar/id'ler korunur)."""
+    return _migration_5_to_6(bot, now_s).replace("decision_events_v6", "decision_events_v7")
+
+
 MIGRATIONS: list[Callable[[str, str], str]] = [_migration_0_to_1, _migration_1_to_2, _migration_2_to_3,
-                                                _migration_3_to_4, _migration_4_to_5, _migration_5_to_6]
-_FK_OFF_MIGRATIONS = frozenset({2, 4, 5})     # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
+                                                _migration_3_to_4, _migration_4_to_5, _migration_5_to_6, _migration_6_to_7]
+_FK_OFF_MIGRATIONS = frozenset({2, 4, 5, 6})     # tablo yeniden kurulan goclar (n -> n+1): FK denetimi islem disinda kapali
 
 
 def _map_sqlite_error(e: sqlite3.Error) -> LedgerError:
