@@ -206,6 +206,21 @@ def islem_kontrolu(n: int) -> str:
     return etiketle(f"İşlem kontrolü: {int(n)} uyuşmazlık bulundu, inceleniyor.")
 
 
+def islem_kontrolu_ozet(doc: Mapping[str, Any]) -> str:
+    """Kurulum sonrasi tek seferlik, sessiz islem mutabakati ozeti (<=6 satir; en fazla 3 uyusmazlik ornegi)."""
+    satir = doc.get("satirlar") or []
+    long_n = sum(1 for r in satir if r.get("yon") == "long")
+    short_n = sum(1 for r in satir if r.get("yon") == "short")
+    kasa = next((k for k in doc.get("kontroller") or [] if str(k.get("ad", "")).startswith("Kasa")), None)
+    kasa_t = "kasa tutuyor ✅" if kasa and kasa.get("sonuc") == "geçti" else (
+        "kasa tutmuyor ❌" if kasa and kasa.get("sonuc") == "kaldı" else "kasa ölçülemedi")
+    n, z = int(doc.get("islem_sayisi") or 0), int(doc.get("uyusmazlik_sayisi") or 0)
+    sat = [f"İşlem kontrolü: {n} işlem (açık {int(doc.get('acik') or 0)} / kapanan {int(doc.get('kapanan') or 0)} · "
+           f"long {long_n} / short {short_n}) · uyuşmazlık {z} · {kasa_t}"]
+    sat += [f"- {str(u)[:120]}" for u in list(doc.get("uyusmazliklar") or [])[:3]]
+    return _bagla(sat)
+
+
 # ----------------------------------------------------------------------------- bot durdu
 def _pozisyonlar(status_path: str | None) -> tuple[int | None, str | None]:
     """(acik pozisyon sayisi, kip); okunamazsa (None, None)."""

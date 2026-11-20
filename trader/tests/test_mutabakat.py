@@ -276,7 +276,7 @@ def test_end_to_end_all_match(env):
     assert d["satirlar"][0]["kol"] == "Yatay piyasa kenarı · 1 saat" and "_a" not in d["satirlar"][0]
     md = (env.root / "var/durum/mutabakat.md").read_text(encoding="utf-8")
     assert "İşlem no" in md and "Net K/Z $" in md and "Uyuşmazlık: 0" in md
-    assert not (env.root / "var/telegram/outbox").exists()                  # 0 uyusmazlik: sessiz
+    assert [i for i in _outbox_items(env) if i.get("severity") != "INFO"] == []      # 0 uyusmazlik: uyari yok (yalniz kurulum ozeti, sessiz)
 
 
 def test_end_to_end_open_count_and_kasa_mismatch_and_daily_telegram(env):
@@ -286,13 +286,13 @@ def test_end_to_end_open_count_and_kasa_mismatch_and_daily_telegram(env):
     assert ad["Açık pozisyon sayısı (motor = panel = şerit = durum)"]["sonuc"] == "kaldı"
     assert ad["Kasa = başlangıç + Σ net K/Z"]["sonuc"] == "kaldı"
     assert d["uyusmazlik_sayisi"] >= 2
-    spool = list((env.root / "var/telegram/outbox").glob("*.json"))
-    assert len(spool) == 1
-    item = json.loads(spool[0].read_text(encoding="utf-8"))
+    uyari = [i for i in _outbox_items(env) if i.get("severity") != "INFO"]
+    assert len(uyari) == 1
+    item = uyari[0]
     assert item["text"] == f"[ML] İşlem kontrolü: {d['uyusmazlik_sayisi']} uyuşmazlık bulundu, inceleniyor."
     assert TS.kontrol(item["text"]) == [] and len(item["text"].splitlines()) <= 3
     _run(env)                                                               # ayni gun ikinci kosu: yeni mesaj yok
-    assert len(list((env.root / "var/telegram/outbox").glob("*.json"))) == 1
+    assert len([i for i in _outbox_items(env) if i.get("severity") != "INFO"]) == 1
 
 
 def test_end_to_end_no_telegram_records_means_before_message_system(env):
@@ -362,3 +362,46 @@ def test_mutabakat_view_rejects_bad_files(tmp_path):
     assert PP.mutabakat_view(str(p)) is None
     p.write_text(json.dumps({"sema": M.SEMA, "uretim": "2026-11-20T01:40:00Z", "islem_sayisi": 12, "uyusmazlik_sayisi": 2}))
     assert PP.mutabakat_view(str(p)) == {"son": "20.11 04:40", "islem": 12, "uyusmazlik": 2}
+
+
+# ---------------------------------------------------------------- kurulum sonrasi tek seferlik sessiz ozet
+def _outbox_items(env):
+    out = []
+    for p in sorted((env.root / "var" / "telegram" / "outbox").glob("*.json")):
+        try:
+            out.append(json.loads(p.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def test_kurulum_ozeti_once_per_code_version_and_silent(env, monkeypatch):
+    _setup(env)
+    e = {"TELEGRAM_VAR_DIR": str(env.root / "var" / "telegram")}
+
+    def ozetler():
+        return [i for i in _outbox_items(env) if "İşlem kontrolü:" in i.get("text", "") and "long" in i.get("text", "")]
+
+    monkeypatch.setattr(R, "kod_surumu", lambda: "/rel/aaa")
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW, env=e) == 0
+    oz = ozetler()
+    assert len(oz) == 1 and oz[0]["severity"] == "INFO"                                 # ilk kurulum: bir kez, sessiz
+    t = oz[0]["text"]
+    assert t.startswith("[ML] ") and "uyuşmazlık" in t and "kasa" in t and len(t.splitlines()) <= 6 and "_" not in t
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=5), env=e) == 0
+    assert len(ozetler()) == 1                                                        # ayni surum: yeni ozet yok
+    monkeypatch.setattr(R, "kod_surumu", lambda: "/rel/bbb")
+    assert R.main(["--once", "--root", str(env.root)], now_fn=lambda: NOW + timedelta(minutes=10), env=e) == 0
+    assert len(ozetler()) == 2                                                        # yeni kurulum: bir ozet daha
+
+
+def test_islem_kontrolu_ozet_text_examples_max_three():
+    doc = {"islem_sayisi": 7, "acik": 2, "kapanan": 5, "uyusmazlik_sayisi": 4,
+           "uyusmazliklar": ["#1 SOL long: panelde yok", "#2 BTC short: K/Z farkı", "#3 ETH long: yön", "#4 X long: y"],
+           "satirlar": [{"yon": "long"}] * 4 + [{"yon": "short"}] * 3,
+           "kontroller": [{"ad": "Kasa = başlangıç + Σ net K/Z", "sonuc": "geçti", "ayrinti": ""}]}
+    t = TS.islem_kontrolu_ozet(doc)
+    assert "7 işlem (açık 2 / kapanan 5 · long 4 / short 3) · uyuşmazlık 4 · kasa tutuyor ✅" in t
+    assert t.count("\n- ") == 3 and "#4" not in t
+    doc["kontroller"][0]["sonuc"] = "kaldı"
+    assert "kasa tutmuyor ❌" in TS.islem_kontrolu_ozet(doc)

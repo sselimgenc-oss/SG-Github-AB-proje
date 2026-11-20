@@ -194,7 +194,35 @@ def kos(root: Path, now: datetime, env, tg_baslangic: datetime | None = None) ->
     atomic_write_text(durum / "mutabakat.md", M.markdown(doc, rows))
     if doc["uyusmazlik_sayisi"] > 0:
         telegram_bildir(tg_dir, durum, doc["uyusmazlik_sayisi"], now)
+    kurulum_ozeti(tg_dir, durum, {**doc, "satirlar": satirlar}, now)
     return 0, doc
+
+
+OZET_KAYIT = "mutabakat_ozet_surum.json"      # son ozetin gittigi kod surumu (surum dizini); yeni kurulumda ozet bir kez gider
+
+
+def kod_surumu() -> str:
+    """Calisan kodun surum kimligi: surum dizininin gercek yolu (releases/<commit>); kurulum basina degisir."""
+    return str(Path(__file__).resolve().parent.parent)
+
+
+def kurulum_ozeti(root_tg: Path, durum_dir: Path, doc: dict, now: datetime, surum: str | None = None) -> bool:
+    """Kurulum sonrasi tek seferlik SESSIZ (INFO) Telegram ozeti: kod surumu son ozettekinden farkliysa bir kez gider.
+    Ilk kez (kayit yok) da gider. Hata sessizce False."""
+    surum = surum or kod_surumu()
+    kayit = durum_dir / OZET_KAYIT
+    if (_json(kayit) or {}).get("surum") == surum:
+        return False
+    try:
+        from trader_core.telegram import Outbox  # noqa: PLC0415
+        ok = Outbox(root_tg, lambda: now).enqueue({"text": TS.islem_kontrolu_ozet(doc), "severity": "INFO",
+                                                    "dedup_key": f"mutabakat-ozet:{doc.get('uretim')}", "expires_at": None,
+                                                    "reply_markup": None, "created_at": now.timestamp()})
+        if ok:
+            atomic_write_text(kayit, json.dumps({"surum": surum, "uretim": doc.get("uretim")}) + "\n")
+        return bool(ok)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def main(argv=None, now_fn=None, env=None) -> int:
