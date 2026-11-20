@@ -28,7 +28,7 @@ ROOT_DIR="${OTO_ROOT_DIR:-/usr/local/lib/trader-root}"
 GIT_DIR_ROOT="${OTO_GIT_DIR:-${ROOT_DIR}/repo.git}"
 INSTALL_SH="${OTO_INSTALL:-${ROOT_DIR}/current/deploy/install.sh}"
 TG_ENV="${OTO_TELEGRAM_ENV:-/etc/trader-telegram.env}"
-API_URL="${OTO_API_URL:-https://api.github.com/repos/sselimgenc-oss/SG-Github-AB-proje/actions/workflows/tests.yml/runs}"
+API_URL="${OTO_API_URL:-https://api.github.com/repos/sselimgenc-oss/SG-ML-Otonom/actions/workflows/tests.yml/runs}"
 BRANCH="${OTO_BRANCH:-claude/charming-hawking-ab5w5q}"   # install.sh BRANCH ile ayni olmali
 INSTALL_TIMEOUT="${OTO_INSTALL_TIMEOUT:-1800}"            # 30 dk
 UYKU="${OTO_UYKU:-sleep}"
@@ -183,7 +183,7 @@ oto_guncelle() {
 
   # yesil commit: kimlik dogrulamasiz GitHub Actions sorgusu (yalniz tests.yml basarili kosusu)
   local json yeni
-  if ! json="$(curl -fsS --max-time 20 -H 'User-Agent: trader-oto-guncelle' \
+  if ! json="$(curl -fsSL --max-time 20 -H 'User-Agent: trader-oto-guncelle' \
         "${API_URL}?branch=${BRANCH}&status=success&per_page=1" 2>/dev/null)"; then
     log "GitHub'a ulasilamadi; islem yok"
     return 0

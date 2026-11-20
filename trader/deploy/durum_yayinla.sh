@@ -15,7 +15,7 @@ case "$dal" in canli-durum) ;; *) echo "HATA: yalniz canli-durum dalina yazilir 
 betik_dizin="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 trader_dir="${TRADER_DIR:-$(cd "$betik_dizin/.." && pwd)}"
 py="${TRADER_PY:-$trader_dir/.venv/bin/python}"
-repo="${DURUM_REPO:-git@github.com:sselimgenc-oss/SG-Github-AB-proje.git}"
+repo="${DURUM_REPO:-git@github.com:sselimgenc-oss/SG-ML-Otonom.git}"
 anahtar="${DURUM_ANAHTAR:-${HOME:-/nonexistent}/.ssh/id_ed25519}"
 if [ "${DURUM_YEREL:-0}" != "1" ]; then
   if [ ! -s "$anahtar" ]; then

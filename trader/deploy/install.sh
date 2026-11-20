@@ -11,8 +11,8 @@ set -euo pipefail
 SELF_SUM_AT_START="$(sha256sum "$0" 2>/dev/null | cut -d" " -f1 || true)"   # surum kopyasindaki betikle yeniden baslamak icin
 
 # ---- ayarlar (gerekirse degistirin) ---------------------------------------
-REPO_URL="${REPO_URL:-https://github.com/sselimgenc-oss/SG-Github-AB-proje.git}"
-REPO_SSH_URL="${REPO_SSH_URL:-git@github.com:sselimgenc-oss/SG-Github-AB-proje.git}"
+REPO_URL="${REPO_URL:-https://github.com/sselimgenc-oss/SG-ML-Otonom.git}"
+REPO_SSH_URL="${REPO_SSH_URL:-git@github.com:sselimgenc-oss/SG-ML-Otonom.git}"
 BRANCH="${BRANCH:-claude/charming-hawking-ab5w5q}"
 TRADER_USER="trader"
 TG_GROUP="trader-tg"
