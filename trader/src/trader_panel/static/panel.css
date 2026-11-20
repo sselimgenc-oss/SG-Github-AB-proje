@@ -1,10 +1,10 @@
 /* panel.css — kendi stilimiz; tema/degisken yaklasimi 1L3A pano.py CSS dizgisinden uyarlandi (kullanicinin kendi projesi, 2026-11-16). Dis URL, dis yazi tipi yok. */
-:root{--bg:#f4f6f8;--kart:#fff;--yazi:#16202a;--sol:#5a6773;--cizgi:#dde3e9;--iyi:#0e8a4f;--kotu:#c62828;--uyar:#b26a00;--vurgu:#1f6feb;--iyibg:#e3f5ea;--kotubg:#fdeaea;--uyarbg:#fff3dc;--gol:rgba(0,0,0,.06)}
-:root[data-theme="dark"]{--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--uyar:#e0a030;--vurgu:#58a6ff;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--uyar:#e0a030;--vurgu:#58a6ff;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}}
+:root{--bg:#f4f6f8;--kart:#fff;--yazi:#16202a;--sol:#5a6773;--cizgi:#dde3e9;--iyi:#0e8a4f;--kotu:#c62828;--notr:#6b7684;--uyar:#b26a00;--vurgu:#1f6feb;--r:12px;--iyibg:#e3f5ea;--kotubg:#fdeaea;--uyarbg:#fff3dc;--gol:rgba(0,0,0,.06)}
+:root[data-theme="dark"]{--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--notr:#98a4b1;--uyar:#e0a030;--vurgu:#58a6ff;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1319;--kart:#171e26;--yazi:#e6edf3;--sol:#8b98a5;--cizgi:#27313b;--iyi:#3fb97a;--kotu:#f0625f;--notr:#98a4b1;--uyar:#e0a030;--vurgu:#58a6ff;--iyibg:#12301f;--kotubg:#3a1a1b;--uyarbg:#352a12;--gol:rgba(255,255,255,.06)}}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--yazi);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{margin:0;background:var(--bg);color:var(--yazi);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:12px 16px 40px;overflow-x:hidden}
 .gomulu .ust{display:none}
 .gomulu main{padding-top:8px}
@@ -22,7 +22,7 @@ button:hover{border-color:var(--vurgu)}
 /* serit: telefonda 3x2, masaustunde 1x6 */
 .serit{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
 @media (min-width:900px){.serit{grid-template-columns:repeat(6,minmax(0,1fr))}}
-.ks{background:var(--kart);border:1px solid var(--cizgi);border-radius:12px;padding:9px 10px;min-width:0}
+.ks{background:var(--kart);border:1px solid var(--cizgi);border-radius:var(--r);padding:9px 10px;min-width:0}
 .ks .e{font-size:11px;color:var(--sol);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ks .e .ipucu{display:inline-block;margin-left:5px;width:14px;height:14px;line-height:14px;text-align:center;border:1px solid var(--cizgi);border-radius:50%;font-size:10px;cursor:help}
 .ks .b{font-size:18px;font-weight:700;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -31,7 +31,7 @@ button:hover{border-color:var(--vurgu)}
 .nokta{flex:none;width:10px;height:10px;border-radius:50%;background:var(--sol)}
 .yesil .nokta{background:var(--iyi)}.sari .nokta{background:var(--uyar)}.kirmizi .nokta{background:var(--kotu)}
 .ks.risk.yesil{border-color:var(--iyi)}.ks.risk.sari{border-color:var(--uyar);background:var(--uyarbg)}.ks.risk.kirmizi{border-color:var(--kotu);background:var(--kotubg)}
-.iyi{color:var(--iyi)}.kotu{color:var(--kotu)}.sol{color:var(--sol)}
+.iyi{color:var(--iyi)}.kotu{color:var(--kotu)}.sol,.notr{color:var(--notr)}
 /* sekmeler */
 .tabs{display:flex;gap:4px;overflow-x:auto;margin:0 -16px 12px;padding:0 16px;border-bottom:1px solid var(--cizgi);scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
@@ -41,7 +41,7 @@ button:hover{border-color:var(--vurgu)}
 /* kartlar */
 .ig{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 @media (min-width:900px){.ig.iki{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.kart{background:var(--kart);border:1px solid var(--cizgi);border-radius:14px;padding:13px 14px;min-width:0}
+.kart{background:var(--kart);border:1px solid var(--cizgi);border-radius:var(--r);padding:13px 14px;min-width:0}
 .kart h2{margin:0 0 8px;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:var(--sol);font-weight:700;display:flex;justify-content:space-between;gap:8px}
 .kart h2 a,.lnk{color:var(--vurgu);text-transform:none;letter-spacing:0;font-weight:600;cursor:pointer;background:none;border:0;padding:0;font-size:12.5px}
 .kart.kirmizi{border-color:var(--kotu);background:var(--kotubg)}
@@ -100,7 +100,7 @@ details>div{padding-bottom:12px}
 .lim{margin:7px 0;font-size:13.5px}
 .lim .r{display:flex;justify-content:space-between;gap:8px}
 @media (max-width:420px){
-  .tabs button{font-size:11.5px;padding:9px 3px;letter-spacing:-.2px}
+  .tabs button{font-size:10.5px;padding:9px 1px;letter-spacing:-.3px}
   main{padding:10px 12px 32px}.tabs{margin:0 -12px 10px;padding:0 12px}
   .ks .b{font-size:16.5px}.ks.risk .b{font-size:13.5px}
 }

@@ -58,7 +58,7 @@
     return "'u";                                              // milyon
   }
   /* ek:bitir */
-  function cls(x) { return !num(x) || Math.abs(x) < 0.005 ? '' : (x > 0 ? 'iyi' : 'kotu'); }
+  function cls(x) { return !num(x) ? '' : (Math.abs(x) < 0.005 ? 'notr' : (x > 0 ? 'iyi' : 'kotu')); }
   function ago(s) {
     if (!num(s) || s < 90) return 'az önce';
     if (s < 5400) return Math.round(s / 60) + ' dk önce';
@@ -245,9 +245,21 @@
       var b = el('button', '', x[1]);
       b.type = 'button';
       b.id = 'tab-' + x[0];
+      b.setAttribute('data-ad', x[1]);
       b.addEventListener('click', function () { sec(x[0]); });
       add(n, b);
     });
+  }
+
+  /* sekme rozetleri: yalniz AÇIK (acik pozisyon sayisi) ve KAPANAN (bugun, TR saati); digerlerinde sayi yok */
+  function rozetYaz(t, n) {
+    var bt = $('tab-' + t);
+    if (!bt || n === null || n === undefined || isNaN(n)) return;
+    bt.textContent = t === 'acik' ? 'AÇIK (' + n + ')' : 'KAPANAN (bugün ' + n + ')';
+  }
+  function sekmeSayilari(p) {
+    if (p && p.acik) rozetYaz('acik', p.acik.n);
+    get('/api/kapanan?bot=' + BOT + '&period=bugun').then(function (v) { if (v && v.ok !== false) rozetYaz('kapanan', v.n); });
   }
 
   function yokKart(txt) { return add(kart('Veri'), yok(txt)); }
@@ -516,14 +528,20 @@
   function baslat() {
     var iframe = false;
     try { iframe = window.self !== window.top; } catch (e) { iframe = true; }
-    if (iframe) document.documentElement.classList.add('gomulu');          // gomulu: kendi basligi ve Yenile/Tema yok
-    var kay = null;
-    try { kay = localStorage.getItem('pano_tema'); } catch (e) { kay = null; }
-    var koyu = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    tema(kay === 'light' || kay === 'dark' ? kay : (koyu ? 'dark' : 'light'));
-    $('tema').addEventListener('click', function () {
-      tema(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-    });
+    var tb = $('tema');
+    if (iframe) {                                           // gomulu: kendi basligi ve Yenile/Tema yok; cihaz ayari izlenir
+      document.documentElement.classList.add('gomulu');
+      if (tb) tb.hidden = true;
+    } else {
+      var kay = null;
+      try { kay = localStorage.getItem('pano_tema'); } catch (e) { kay = null; }
+      if (kay === 'light' || kay === 'dark') document.documentElement.setAttribute('data-theme', kay);   // kayit yoksa: cihaz (CSS media)
+      tb.addEventListener('click', function () {
+        var d = document.documentElement.getAttribute('data-theme');
+        if (d !== 'light' && d !== 'dark') d = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        tema(d === 'dark' ? 'light' : 'dark');
+      });
+    }
     $('yenile').addEventListener('click', function () { location.reload(); });
     if ($('snap-bant')) $('snap-bant').style.display = 'none';
     snapBanner();
@@ -532,7 +550,7 @@
     try { son = localStorage.getItem('pano_sekme'); } catch (e) { son = null; }
     sec(TABS.some(function (x) { return x[0] === son; }) ? son : 'ozet');
     if (SNAP) $('damga').style.display = 'none';
-    get('/api/pano?bot=' + BOT).then(function (p) { S.pano = p; ciz(p); guncellemeEtiketi(); if (S.tab === 'kapanan') yukleKapanan(); });
+    get('/api/pano?bot=' + BOT).then(function (p) { S.pano = p; ciz(p); sekmeSayilari(p); guncellemeEtiketi(); if (S.tab === 'kapanan') yukleKapanan(); });
     setInterval(function () { snapBanner(); guncellemeEtiketi(); }, 30000);     // yalniz etiket; ekran yeniden cizilmez
   }
   baslat();
