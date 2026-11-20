@@ -429,4 +429,4 @@ def test_telegram_daily_report_renders_from_ledger(off, tmp_path):
     out = T.build_report(cfg, now, day, {"Defter": lambda: T.rapor_defter(cfg, day)})
     n_closed = sum(1 for t in off.trades() if t["exit_ts"]
                    and (datetime.fromisoformat(t["exit_ts"].replace("Z", "+00:00")) + timedelta(hours=3)).strftime("%Y-%m-%d") == day)
-    assert f"Bugün kapanan işlem: {n_closed}" in out and "kapanan=" not in out
+    assert f"Bugün {n_closed} işlem kapandı" in out and "kapanan=" not in out      # 20.11: sade günlük özet biçimi
