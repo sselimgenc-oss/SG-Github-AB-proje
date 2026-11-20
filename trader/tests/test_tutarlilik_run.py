@@ -141,9 +141,12 @@ def test_cause_data_and_conflict_via_gaps():
     assert s["nedenler"]["data_conflict"] == 1
 
 
-def test_cause_external_feed_setup_c1_paper_only_is_data():
-    s = one(cmp_([tr(setup="C1")], []), "C1")
-    assert s["nedenler"]["veri"] == 1 and s["nedenler"]["aciklanamayan"] == 0
+def test_cause_no_external_feed_special_case_anymore():
+    """CT/ML ayriligi: kagit-yalniz kurulum ozel `veri` nedeni yoktur; eslesmeyen kagit islemi veri bosluguna bakilarak aciklanir."""
+    import tutarlilik_run as T
+    assert not hasattr(T, "EXTERNAL_FEED_SETUPS")
+    s = one(cmp_([tr(setup="T1")], []), "T1")
+    assert s["nedenler"]["veri"] == 0 and s["nedenler"]["aciklanamayan"] == 1
 
 
 def test_cause_unexplained_price_diff_and_unmatched():

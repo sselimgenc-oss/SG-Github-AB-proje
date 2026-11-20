@@ -512,6 +512,20 @@ if [ -d "$TRADER_DIR/var/twin" ]; then
   [ -e "$TWIN_ARCH" ] && TWIN_ARCH="${TWIN_ARCH}-$(date -u +%H%M%S)"
   mv "$TRADER_DIR/var/twin" "$TWIN_ARCH" && echo "Ikiz verisi arsive tasindi (silinmedi): $TWIN_ARCH"
 fi
+# CT/C1 ayriligi (docs/motor/ct-ayrilik-spec.md): CT kadro okuyucu kaldirildi. Birimler durdurulur, devre disi birakilir, dosyalari silinir
+# (tekrar calistirmada no-op). C1 verisi tek seferlik temizlenir (isaret dosyasi var/c1_temizle.done; defter dosyasina DOKUNULMAZ).
+for u in trader-ct-kadro.timer trader-ct-kadro.service; do
+  systemctl disable --now "$u" >/dev/null 2>&1 || true
+done
+rm -f "${UNIT_DIR}/trader-ct-kadro.service" "${UNIT_DIR}/trader-ct-kadro.timer"
+if [ ! -e "$TRADER_DIR/var/c1_temizle.done" ]; then
+  safe_tree_path "$TRADER_DIR/var"
+  if as_trader /usr/bin/python3 -I "$REL_DIR/scripts/c1_temizle.py" --var-dir "$TRADER_DIR/var" --saglik-durum /var/lib/trader-health/state.json; then
+    echo "C1 temizligi tamamlandi"
+  else
+    echo "UYARI: C1 temizligi tamamlanamadi (isaret yazilmadi; sonraki kurulumda yeniden denenir)"
+  fi
+fi
 LIVE_WARN=""
 # kod degistiyse yeniden baslatilacak, su an CALISAN motor birimleri (enable_now'dan once alinir; yeni acilanlar zaten yeni kodla baslar)
 ACTIVE_ENGINES=""
@@ -598,10 +612,6 @@ enable_now trader-ml-retrain.timer
 safe_tree_path "$TRADER_DIR/var/universe"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/universe"
 enable_now trader-universe.timer   # DD-12 WP-16: aylik kagit evreni (1. gun 00:30 UTC; var/universe/paper_pairs.json, ag yok)
-# 19 Kasim: C1 (CT kadro) eklendi: CT kadro okuyucu (5 dk; yalniz https okuma, anahtar yok); var/ct/kadro_yon.json + durum.json
-safe_tree_path "$TRADER_DIR/var/ct"
-install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/ct"
-enable_now trader-ct-kadro.timer
 # Haber/duygu etiketi (docs/haber-etiketi-spec.md; YALNIZ KAYIT): saatlik toplayici (yalniz https okuma, anahtar yok); var/durum/haber_v1.json
 safe_tree_path "$TRADER_DIR/var/durum"
 install -d -m 0750 -o "$TRADER_USER" -g "$TRADER_USER" "$TRADER_DIR/var/durum"

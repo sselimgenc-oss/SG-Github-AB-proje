@@ -53,10 +53,8 @@ Kayit dosyalari (`research/trial_registry.csv`, `research/ml_trial_registry.csv`
 
 - `config/engine.paper.json` `arms` icinde motor defteri olan kurulumlar (kurulum duzeyinde): -.
 - Hafif donanim serisi olan kurulumlar (25): T1@4h, T1@1d, R1@4h, R1@1d, TF1@15m, TF1@1h, TF1@4h, TF1@1d, B1@15m, B1@1h, B1@4h, B1@1d, H2@15m, H2@1h, H2@4h, H2@1d, S1@15m, S1@1h, S1@4h, S1@1d, F1@15m, F1@1h, F1@4h, F1@1d, M1@1h.
-- Seri / defter **olmayan** 7 kurulum: T1@15m, T1@1h, R1@15m, R1@1h, M1@4h, C1@1h, C1@4h. Bunlar icin PBO hesaplanmadi; deneme uydurulmadi.
+- Seri / defter **olmayan** 5 kurulum: T1@15m, T1@1h, R1@15m, R1@1h, M1@4h. Bunlar icin PBO hesaplanmadi; deneme uydurulmadi.
   - `M1@4h`: gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)
-  - `C1@1h`: CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi
-  - `C1@4h`: ayni neden
 - M1 (LightGBM/ridge onerici) adaylari: `research/paper_models.csv` ve `research/pa_proposer_build.py` yalniz egitim kaydi tutar (model sha256, satir sayisi); gonderilen paketin kendi egitim penceresi icinde degerlendirme sizinti olur, bu yuzden yalniz egitim-disi donem kullanilir (asagida bolum 5).
 - Defter ailelerinde yalniz `T1` ve `R1` var; `T1` defterlerinin bir kismi (`ml_cand_v1b_native`, `s2_base_v1b`) farkli strateji surumu (`price_action_v1`) ve 10 ciftlik evrenle kosulmustur.
 
@@ -133,8 +131,6 @@ Gonderilen `M1@1h` paketinin egitim penceresi 2024-01-16T15:00:00+00:00..2026-04
 
 ### Disarida birakilanlar
 
-- `C1@1h`: CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi
-- `C1@4h`: ayni neden
 - `M1@4h`: gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)
 
 Calisma suresi: toplam 488.2 sn (4 cekirdek; kurulum basina: B1 88.2 sn, F1 128.2 sn, H2 97.2 sn, M1 12.3 sn, R1 12.8 sn, S1 51.5 sn, T1 8.8 sn, TF1 89.3 sn).

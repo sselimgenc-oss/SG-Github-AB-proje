@@ -308,7 +308,7 @@ def kz_view(ctx: Ctx, start: float | None, now: datetime, curve: Mapping | None,
 MIN_KOL_ISLEM = 10      # motorun ogrenme_filtre.MIN_ISLEM ile ayni; esitligi tests/test_panel_pano.py denetler (core -> engine bagimliligi yok)
 
 
-# ----- ortak durum sozlugu (OZET / OGRENME / Telegram / CT ayni metni kullanir)
+# ----- ortak durum sozlugu (OZET / OGRENME / Telegram ayni metni kullanir)
 DURUM_ETKILIYOR = "Açık, işlemleri etkiliyor"
 DURUM_MODEL_BEKLENIYOR = "Açık, model bekleniyor"
 DURUM_KAPALI = "Kapalı"

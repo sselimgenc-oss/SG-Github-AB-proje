@@ -10,14 +10,13 @@
 |---|---|---|---|
 | rejim karşıtı | `etiket_rejim` | sinyal satırının rejimi (`regime.py` sınıflaması) | long + `trend_down`, short + `trend_up` |
 | uç duygu karşıtı | `etiket_duygu` | haber/duygu etiketi `duygu.deger` (0-100, 26 saatten taze) | long + değer ≤ `asiri_korku_max` (20), short + değer ≥ `asiri_acgozluluk_min` (80) |
-| kalabalık yönü | `etiket_kalabalik` | CT kadro uzlaşısı (`var/ct/kadro_yon.json`, ≤45 dk) | `net_yon` = işlem yönü, trader sayısı ≥ `min_trader` (10) ve o yönün payı ≥ `oran_min` (0,8) |
 
 Her kural `acik: false` ile yapılandırmadan kapatılabilir.
 
-**Fail-open:** etiket/veri yok, bayat veya bozuksa kural engellemez; `etiket_veri_yok:<kod>` sayacı ve `status.json` `etiket_kurallari.kurallar.<kod>.veri_yok` bunu gösterir. CT verisi hiç yoksa kalabalık kuralı fiilen etkisizdir (`status.json` `etiket_kurallari.ct_veri = false`). Kural hatası girişi engellemez (log).
+**Fail-open:** etiket/veri yok, bayat veya bozuksa kural engellemez; `etiket_veri_yok:<kod>` sayacı ve `status.json` `etiket_kurallari.kurallar.<kod>.veri_yok` bunu gösterir. Kural hatası girişi engellemez (log).
 
 ## Kayıt
-Atlanan işlem karar satırı olarak yazılır (`skip_reason` = kural kodu, `veto_reason` = `gate:<kod>:<ayrıntı>`); mevcut karşı-olgu ("alınsaydı", `cf_outcomes`/`alinmayan_sonuc`) bunu otomatik kapsar. Defter şeması **7**: `skip_reason` sözlüğüne üç kod eklendi (6→7 geçişi; satırlar/id'ler korunur; raporlar 2..7 kabul eder).
+Atlanan işlem karar satırı olarak yazılır (`skip_reason` = kural kodu, `veto_reason` = `gate:<kod>:<ayrıntı>`); mevcut karşı-olgu ("alınsaydı", `cf_outcomes`/`alinmayan_sonuc`) bunu otomatik kapsar. Defter şeması **7**: `skip_reason` sözlüğüne üç kod eklendi (üçüncüsü `etiket_kalabalik`, kural sonradan kaldırıldı; şema uyumu için sözlükte kalır, yeni karar üretmez) (6→7 geçişi; satırlar/id'ler korunur; raporlar 2..7 kabul eder).
 
 ## Otomatik kapat / izle / yeniden aç (histerezis)
 Gece işi (`scripts/counterfactual_run.py`) `var/durum/etiket_kurallari_v1.json` dosyasını günceller; motor dosyayı okur (mtime önbellekli; yok/bozuk = hepsi açık).
@@ -32,3 +31,6 @@ Gece işi (`scripts/counterfactual_run.py`) `var/durum/etiket_kurallari_v1.json`
 
 ## Testler
 `tests/test_etiket_kurallari.py` (kural mantığı, yapılandırma, kapat→izle→aç, histerezis, panel kartı, çeviriler), `tests/engine/test_etiket_kurallari_gate.py` (kapı entegrasyonu).
+
+
+> **Kaldırıldı (CT/ML ayrılığı):** "kalabalık yönü" kuralı ve CT verisi bağlantısı tamamen çıkarıldı; bkz. `docs/motor/ct-ayrilik-spec.md`.

@@ -34,7 +34,6 @@ SCHEMA = "ml.tutarlilik.v1"
 EQ_FIELDS = ("entry_price", "qty", "exit_ts", "exit_price", "exit_reason", "fee_entry", "fee_exit", "funding_paid", "realized_pnl")
 COST_FIELDS = ("fee_entry", "fee_exit", "funding_paid", "realized_pnl")
 CAUSES = ("paper_gap", "no_paper_record", "data_conflict", "maliyet", "gecikme", "veri", "aciklanamayan")
-EXTERNAL_FEED_SETUPS = ("C1",)             # CT kadro dosyasi geri testte yok (canli dosya, 45 dk bayatlik): kagit-yalniz C1 -> `veri`
 MIN_TRADES = 5
 MATCH_MIN = 0.90
 R_ABS_MIN, R_REL = 1.0, 0.20
@@ -229,10 +228,7 @@ def compare(paper_df: pd.DataFrame, bt_df: pd.DataFrame, start: datetime, end: d
     for kp in only_p:
         if kp in consumed:
             continue
-        if P[kp].get("setup") in EXTERNAL_FEED_SETUPS:
-            causes[kp] = "veri"
-        else:
-            causes[kp] = data_cause(kp[0], kp[2], P[kp]["_xt"]) or "aciklanamayan"
+        causes[kp] = data_cause(kp[0], kp[2], P[kp]["_xt"]) or "aciklanamayan"
     entry_slip, exit_slip = {}, {}
     for k in both:
         p, b = P[k], B[k]
@@ -366,7 +362,7 @@ def render_md(summary: dict, setups: list[dict]) -> str:
         L.append(f"| {s['ad']} | " + " | ".join(str(s["nedenler"][c]) for c in CAUSES) + " |")
     L += ["", "Sinif aciklamasi: `paper_gap` (kagitta kapi kapali/stale kaydi), `no_paper_record` (kagitta o bar icin karar yok: motor "
           "kapaliydi), `data_conflict` (feed cakismasi), `maliyet` (komisyon/funding), `gecikme` (kagit giris/cikis geri testten sonraki "
-          "barda), `veri` (eksik mum; C1 icin CT kadro dosyasi geri testte yok), `aciklanamayan`.",
+          "barda), `veri` (eksik mum), `aciklanamayan`.",
           "", "Bilinen sinirlar: pencere basinda acik kagit pozisyonlari geri testte yoktur (bos baslar); ML/M1 paketi ve ders durumu "
           "kosu anindaki dosyalardir.", ""]
     return "\n".join(L)

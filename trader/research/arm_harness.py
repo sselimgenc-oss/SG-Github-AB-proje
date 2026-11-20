@@ -462,8 +462,6 @@ def main(argv=None) -> int:
         meta["sure_sn"]["M1"] = round(time.time() - ts, 1)
         print(f"M1@1h: {df.shape[1]} kolon, {time.time() - ts:.0f} sn", flush=True)
     meta["dislanan"] = {
-        "C1@1h": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi",
-        "C1@4h": "ayni neden",
         "M1@4h": f"gonderilen paket egitim penceresi {json.loads((ROOT / 'models' / 'pa_proposer' / 'M1@4h.json').read_text())['meta']['train_window']} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)",
     }
     meta["toplam_sure_sn"] = round(time.time() - t0, 1)

@@ -233,7 +233,7 @@ def test_limit_doldu_acik_pozisyonlarin_akibetini_soyler(rig):
 
 
 # ------------------------------------------------------------------ susturulan turler
-@pytest.mark.parametrize("kod", ["ct_kadro_bayat", "pa_proposer_stale", "tutarlilik_sapma", "heartbeat_send_failed",
+@pytest.mark.parametrize("kod", ["pa_proposer_stale", "tutarlilik_sapma", "heartbeat_send_failed",
                                  "ml_expiring_7d", "ml_expiring_3d", "ml_shadow_down", "drift_stale", "bilinmeyen_kod"])
 def test_teknik_uyarilar_susar(rig, kod):
     assert rig.n.send(alert(kod)) is True
@@ -261,7 +261,7 @@ def test_ders_teknik_hata_ve_zaman_asimi_susar(rig):
 
 def test_kol_adi_bicimi():
     assert TS.kol_adi("M1@1h") == "Yapay zekâ adayı · 1 saat" and TS.kol_adi("T1@15m") == "Trend geri çekilmesi · 15 dakika"
-    assert TS.kol_adi("C1@1h") == "Kadro uzlaşısı · 1 saat" and TS.kol_adi("R1@1d") == "Yatay piyasa kenarı · 1 gün"
+    assert "Kadro" not in TS.KURULUM_AD.get("C1", "") and "C1" not in TS.KURULUM_AD and TS.kol_adi("R1@1d") == "Yatay piyasa kenarı · 1 gün"
     assert TS.kol_adi("R1@4h") == "Yatay piyasa kenarı · 4 saat"
     assert TS.kol_adi("M1", "1h") == "Yapay zekâ adayı · 1 saat" and TS.kol_adi("M1") == "Yapay zekâ adayı"
     assert TS.kol_adi("XY9@1h") == "XY9 · 1 saat"          # bilinmeyen kod ham kalir (uydurma ad yok)

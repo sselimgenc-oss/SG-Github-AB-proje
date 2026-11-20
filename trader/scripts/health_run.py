@@ -704,12 +704,9 @@ def pa_proposer_alerts(env: dict, now: datetime, models_dir: str | None = None) 
 
 
 # Ek (bilgi amacli) uyarilar: sade Turkce metin; dosya/servis adi yok. Ayni uyari bir kez gider, sorun surerse en fazla
-# EK_HATIRLATMA_SAAT'te bir hatirlatma, kapaninca tek "Duzeldi" (19 Kasim: CT uyarisi her turda tekrarlaniyordu).
+# EK_HATIRLATMA_SAAT'te bir hatirlatma, kapaninca tek "Duzeldi" (uyarilar her turda tekrarlanmasin).
 EK_HATIRLATMA_SAAT = 6
 EK_METIN = {   # parmak izi -> (baslik, anlami, duzeldi)
-    "ct_kadro|bayat": ("Kopya-işlem (CT) verisi gelmiyor",
-                       "CT projesinin verisi 45 dakikadan eski; bu sürede C1 kurulumu yeni aday üretmez. Diğer kurulumlar etkilenmez.",
-                       "CT verisi yeniden geliyor"),
     "pa_proposer|stale": ("M1 modeli eskidi", "M1 önerici modeli 8 günden eski; yeniden eğitilmesi gerekiyor. İşlemler etkilenmez.",
                           "M1 modeli yeniden güncel"),
     "pa_proposer|missing": ("M1 modeli bulunamadı", "M1 kurulumu şu an aday üretmiyor; diğer kurulumlar etkilenmez.",
@@ -752,9 +749,6 @@ def ek_uyari_plani(ek: list, onceki, now: datetime):
     return out, yeni
 
 
-CT_KADRO_BAYAT_DK = 45   # C1 (19 Kasim: CT kadro eklendi): son basarili okuma bu sureden eskiyse C1 aday uretmez
-
-
 def disk_alerts(env: dict, now: datetime, var_dir: str | None = None, usage_fn=None) -> list:
     """var/ dosya sisteminde kullanim >= %80 -> WARN `disk|dolu` (\"Disk dolmak üzere (%NN)\"); >= %95 -> ayrica CRIT `disk|kritik`.
     Okunamazsa uyari yok. usage_fn: shutil.disk_usage yerine (test)."""
@@ -775,28 +769,6 @@ def disk_alerts(env: dict, now: datetime, var_dir: str | None = None, usage_fn=N
     if oran >= DISK_KRITIK_ORAN:
         out.append(H.Alert(H.Status.CRIT, "disk_kritik", f"Disk neredeyse dolu (%{pct})", "", "disk|kritik", now))
     return out
-
-
-def ct_kadro_alerts(env: dict, now: datetime, var_dir: str | None = None) -> list:
-    """C1 CT kadro okuyucu: var/ct/durum.json `son_basari` 45 dk'dan eski ya da hic yok -> WARN. Motor etkilenmez (C1 aday
-    uretmez); yalniz bilgi amacli uyari. durum.json hic yazilmadiysa (birim henuz calismadi) uyari yok: bayatlik olculemez."""
-    d = Path(var_dir) if var_dir else data_root(env) / "var" / "ct"   # var_dir: ct dizini (durum.json burada)
-    try:
-        raw = (d / "durum.json").read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return []
-    except OSError:
-        raw = None
-    try:
-        son = _parse_dt_utc(json.loads(raw).get("son_basari")) if raw is not None else None
-    except (ValueError, AttributeError, TypeError):
-        son = None
-    if son is not None and (now - son) <= timedelta(minutes=CT_KADRO_BAYAT_DK):
-        return []
-    detail = "henuz basarili okuma yok" if son is None else f"son basarili okuma {(now - son).total_seconds() / 60:.0f} dk once"
-    return [H.Alert(H.Status.WARN, "ct_kadro_bayat", "CT verisi bayat",
-                    f"CT verisi bayat; C1 aday uretmiyor ({detail}). trader-ct-kadro.timer ve var/ct/durum.json'a bakin.",
-                    "ct_kadro|bayat", now)]
 
 
 def tutarlilik_alerts(env: dict, now: datetime, durum_dir: str | None = None) -> list:
@@ -1004,10 +976,10 @@ def run_once(env: dict, *, now: datetime | None = None, state_path=None, notifie
     alerts, held = H.quiet_split(alerts, report, now, quiet_until)
     if held:   # tutulan uyarilar iletilmis sayilmaz: durum geri alinir, sorun surerse pencere sonrasinda kendiliginden gider
         new_state = H.revert_failed_alerts(new_state, state, held)
-    if quiet_until is not None:   # ek uyarilar (CT/disk/...) olumcul degil: pencere boyunca tutulur, durum aynen kalir
+    if quiet_until is not None:   # ek uyarilar (disk/...) olumcul degil: pencere boyunca tutulur, durum aynen kalir
         new_state["ek_uyarilar"] = state.get("ek_uyarilar") or {}
     else:
-        ek = pa_proposer_alerts(env, now) + ct_kadro_alerts(env, now) + tutarlilik_alerts(env, now) + disk_alerts(env, now)
+        ek = pa_proposer_alerts(env, now) + tutarlilik_alerts(env, now) + disk_alerts(env, now)
         ek_gonder, new_state["ek_uyarilar"] = ek_uyari_plani(ek, state.get("ek_uyarilar"), now)
         alerts.extend(ek_gonder)
     # sessizlik ozeti: pencerede tutulan uyari basliklari state'te birikir; pencere bitince TEK ozet gider

@@ -92,14 +92,14 @@ def test_hesaplar_sanal_kasa_ve_siralama():
     bugun = GUN_BASI + timedelta(hours=1)
     adaylar = [cand("M1@1h", True, dun, 1.0), cand("M1@4h", True, bugun, 2.0),
                cand("PA1@1h", True, dun, 3.0), cand("PA1@1h", False, bugun, 5.0),      # alinmayan sayilmaz
-               cand("C1@1h", True, bugun, -1.0), cand("C1@1h", True, bugun, None)]       # cozulmemis sayilmaz
-    d = G.uret(G.Girdi(adaylar=adaylar, kurulumlar=["M1@1h", "M1@4h", "PA1@1h", "C1@1h", "X1@1h"]), NOW)
+               cand("Q1@1h", True, bugun, -1.0), cand("Q1@1h", True, bugun, None)]       # cozulmemis sayilmaz
+    d = G.uret(G.Girdi(adaylar=adaylar, kurulumlar=["M1@1h", "M1@4h", "PA1@1h", "Q1@1h", "X1@1h"]), NOW)
     h = {x["ad"]: x for x in d["hesaplar"]}
     assert h["PA1"] == {"ad": "PA1", "gun_pnl": 0.0, "toplam_pnl": 30.0, "islem": 1}
     assert h["M1"] == {"ad": "M1", "gun_pnl": 20.2, "toplam_pnl": 30.2, "islem": 2}
-    assert h["C1"] == {"ad": "C1", "gun_pnl": -10.0, "toplam_pnl": -10.0, "islem": 1}
+    assert h["Q1"] == {"ad": "Q1", "gun_pnl": -10.0, "toplam_pnl": -10.0, "islem": 1}
     assert h["X1"] == {"ad": "X1", "gun_pnl": 0.0, "toplam_pnl": 0.0, "islem": 0}
-    assert [x["ad"] for x in d["hesaplar"]] == ["M1", "PA1", "X1", "C1"]      # toplam_pnl azalan
+    assert [x["ad"] for x in d["hesaplar"]] == ["M1", "PA1", "X1", "Q1"]      # toplam_pnl azalan
     assert "en iyi kurulum: M1" in d["notlar"]
     for x in d["hesaplar"]:
         assert set(x) == {"ad", "gun_pnl", "toplam_pnl", "islem"}
@@ -133,7 +133,7 @@ def _cfg(tmp_path: Path, *, panel: bool = True) -> Path:
     (c / "engine.base.json").write_text(json.dumps({"mode": "paper", "wallet_start": 1000.0, "target_trade_risk": 0.01,
                                                     "market_db": "var/market.sqlite"}))
     (c / "engine.learner.json").write_text('{"bot": "learner"}')
-    (c / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}, "arms": ["M1@1h", "C1@1h"]}))
+    (c / "engine.paper.json").write_text(json.dumps({"risk": {"daily_max_loss": 0.08}, "arms": ["M1@1h", "Q1@1h"]}))
     if panel:
         (c / "panel.json").write_text(json.dumps({"ledger_path": "var/learner/ledger.sqlite", "kill_file": "shared/KILL",
                                                   "status_path": "var/learner/status.json",
@@ -184,7 +184,7 @@ def test_cli_gercek_defter_okuma(tmp_path):
     assert tum_anahtarlar(d) and d["gun"] == PS.DAY
     assert d["islem"]["gun_kapanan"] == 2 and d["islem"]["acik_pozisyon"] == 1 and d["islem"]["gun_acilan"] == 3
     assert d["islem"]["kazanan"] == 1 and d["islem"]["kaybeden"] == 1
-    assert {h["ad"] for h in d["hesaplar"]} >= {"M1", "C1", "R1"}
+    assert {h["ad"] for h in d["hesaplar"]} >= {"M1", "Q1", "R1"}
 
 
 def test_veri_koku_ortam_degiskeni(tmp_path):

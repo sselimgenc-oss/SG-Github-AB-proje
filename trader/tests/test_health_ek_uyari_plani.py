@@ -15,8 +15,8 @@ T0 = datetime(2026, 11, 19, 17, 20, tzinfo=timezone.utc)
 
 
 def _ct(now):
-    return H.Alert(H.Status.WARN, "ct_kadro_bayat", "CT verisi bayat",
-                   "CT verisi bayat; trader-ct-kadro.timer ve var/ct/durum.json'a bakin.", "ct_kadro|bayat", now)
+    return H.Alert(H.Status.WARN, "pa_proposer_stale", "M1 modeli eski",
+                   "M1 modeli eski; pa_proposer paketini yenileyin.", "pa_proposer|stale", now)
 
 
 def test_bir_kez_sonra_6_saatte_bir_sonra_tek_duzeldi():
@@ -28,22 +28,26 @@ def test_bir_kez_sonra_6_saatte_bir_sonra_tek_duzeldi():
     assert len(gonderilen) == 2                          # ilk + 6. saatte hatirlatma
     assert gonderilen[1].created_at - gonderilen[0].created_at == timedelta(hours=6)
     m = gonderilen[0]
-    assert m.title == "⚠️ Dikkat: Kopya-işlem (CT) verisi gelmiyor"
+    assert m.title == "⚠️ Dikkat: M1 modeli eskidi"
     for yasak in ("timer", "var/", ".json", "trader-", "durum.json"):
         assert yasak not in m.title and yasak not in m.body
     assert gonderilen[0].fingerprint != gonderilen[1].fingerprint     # hatirlatma Outbox tekrar onleyicisine takilmaz
     now = T0 + timedelta(hours=7, minutes=5)
     out, durum = HR.ek_uyari_plani([], durum, now)       # sorun kapandi
-    assert [a.title for a in out] == ["✅ Düzeldi: CT verisi yeniden geliyor"] and out[0].level is H.Status.OK
+    assert [a.title for a in out] == ["✅ Düzeldi: M1 modeli yeniden güncel"] and out[0].level is H.Status.OK
     out, durum = HR.ek_uyari_plani([], durum, now + timedelta(minutes=5))
     assert out == [] and durum == {}                     # duzeldi yalniz bir kez
 
 
+def test_ct_uyarisi_kaldirildi():
+    assert "ct_kadro|bayat" not in HR.EK_METIN and not hasattr(HR, "ct_kadro_alerts") and not hasattr(HR, "CT_KADRO_BAYAT_DK")
+
+
 def test_tum_ek_uyarilarin_sade_metni_var():
-    for fp in ("ct_kadro|bayat", "pa_proposer|stale", "pa_proposer|missing", "tutarlilik|sapma"):
+    for fp in ("pa_proposer|stale", "pa_proposer|missing", "tutarlilik|sapma"):
         baslik, anlam, duzeldi = HR.EK_METIN[fp]
         for t in (baslik, anlam, duzeldi):
-            assert "/" not in t.replace("C1", "") and ".py" not in t and "timer" not in t and t.strip()
+            assert "/" not in t and ".py" not in t and "timer" not in t and t.strip()
 
 
 # ---- disk doluluk uyarisi (var/ dosya sistemi >= %80 WARN, >= %95 ayrica CRIT) ----

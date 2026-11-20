@@ -35,8 +35,6 @@
   "COPPER/USDT"
  ],
  "dislanan": {
-  "C1@1h": "CT kadro verisi yalniz canli (var/ct/kadro_yon.json yok, tarihsel kayit yok); seri uretilemez, uydurulmadi",
-  "C1@4h": "ayni neden",
   "M1@4h": "gonderilen paket egitim penceresi {'end': '2026-04-22T20:00:00+00:00', 'start': '2021-01-11T12:00:00+00:00'} tum holdout oncesi tarihsel veriyi kapsar; egitim-disi donem yok (sizinti olurdu)"
  },
  "gecmisi_olmayan_ciftler": [

@@ -22,10 +22,10 @@ from test_engine_05_impl_smoke import T0, _params, _row  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = load_cli_config(ROOT / "config", "learner", "paper")
-EKCFG = EK.build_config({"rejim": {}, "duygu": {}, "kalabalik": {}})
+EKCFG = EK.build_config({"rejim": {}, "duygu": {}})
 
 
-def _kur(tmp_path, *, cfg=EKCFG, acik=None, duygu=None, ct=None):
+def _kur(tmp_path, *, cfg=EKCFG, acik=None, duygu=None):
     clock = SimClock(T0 + timedelta(seconds=5))
     led = L.open_ledger(str(tmp_path / "l.sqlite"), "learner", create=True, clock=clock.now)
     led.init_params(_params(), reason="strategy:price_action_v1@1b.0")
@@ -39,7 +39,6 @@ def _kur(tmp_path, *, cfg=EKCFG, acik=None, duygu=None, ct=None):
     g.etiket_cfg = cfg
     g.etiket_durum = (lambda: acik) if acik is not None else None
     g.haber_etiket = (lambda pair, ms: {"duygu": duygu, "haber": None}) if duygu is not None else None
-    g.ct_kadro = (lambda: {"BTC/USDT": ct}) if ct is not None else None
     return SimpleNamespace(g=g, led=led, state=state)
 
 
@@ -76,11 +75,9 @@ def test_rejim_karsiti_atlar_ve_satir_yazilir(mk):
     assert _go(e, regime="trend_up", side="short", planned_stop=102.0).code == "etiket_rejim"
 
 
-def test_duygu_ve_kalabalik_atlar(mk):
+def test_duygu_atlar(mk):
     e = mk(duygu={"deger": 10, "sinif": "Extreme Fear"})
     assert _go(e).code == "etiket_duygu"
-    e = mk(ct={"long": 19, "short": 1, "net_yon": "long"})
-    assert _go(e).code == "etiket_kalabalik"
 
 
 def test_boyut_ve_risk_degismez_serbest_kararda(mk):
@@ -92,15 +89,14 @@ def test_boyut_ve_risk_degismez_serbest_kararda(mk):
 
 
 def test_veri_yok_fail_open_ve_sayilir(mk):
-    e = mk()                                                              # duygu/CT yok
+    e = mk()                                                              # duygu yok
     o = _go(e)
     assert o.action == "enter"
-    assert e.g.counters["etiket_veri_yok:etiket_duygu"] == 1 and e.g.counters["etiket_veri_yok:etiket_kalabalik"] == 1
+    assert e.g.counters["etiket_veri_yok:etiket_duygu"] == 1
 
 
 def test_hata_giris_serbest(mk):
     e = mk()
-    e.g.ct_kadro = lambda: 1 / 0
     e.g.etiket_durum = lambda: 1 / 0
     assert _go(e, regime="trend_down").code == "etiket_rejim"             # durum okunamazsa kural acik sayilir
     e.g.etiket_cfg = {"rejim": 5}                                         # bozuk cfg: istisna yutulur
@@ -108,14 +104,14 @@ def test_hata_giris_serbest(mk):
 
 
 def test_kapali_kural_atlamaz_ama_not_eder(mk):
-    e = mk(acik={EK.REJIM: False, EK.DUYGU: True, EK.KALABALIK: True})
+    e = mk(acik={EK.REJIM: False, EK.DUYGU: True})
     o = _go(e, regime="trend_down")
     assert o.action == "enter" and o.event.features[EK.FEATURE_ANAHTAR] == EK.REJIM
     assert e.g.counters["etiket_atlardi:etiket_rejim"] == 1
     did = e.led.record_decision(o.event)
     assert e.led.get_decision(did).features[EK.FEATURE_ANAHTAR] == EK.REJIM
     # kapali + acik kural ayni anda: acik olan atlar
-    e2 = mk(acik={EK.REJIM: False, EK.DUYGU: True, EK.KALABALIK: True}, duygu={"deger": 5, "sinif": "x"})
+    e2 = mk(acik={EK.REJIM: False, EK.DUYGU: True}, duygu={"deger": 5, "sinif": "x"})
     o2 = _go(e2, regime="trend_down")
     assert o2.code == "etiket_duygu" and o2.event.features[EK.FEATURE_ANAHTAR] == EK.REJIM
 
@@ -134,11 +130,14 @@ def test_canli_testnet_etiket_kurali_calismaz(mk):
     assert o.code != "etiket_rejim"
 
 
-def test_kalabalik_kurali_c1e_uygulanmaz_digerlerine_aynen(mk):
-    """20 Kasim kullanici karari: C1 tanim geregi kalabalik yonunde girer; kalabalik kurali C1'i atlatmaz, diger kollari aynen."""
-    e = mk(ct={"long": 19, "short": 1, "net_yon": "long"})
-    assert _go(e, setup="C1").action == "enter"
-    assert e.g.counters["etiket_veri_yok:etiket_kalabalik"] == 0         # C1 icin kural hic degerlendirilmez (veri yok sayilmaz)
-    assert _go(e).code == "etiket_kalabalik"                              # diger kol: aynen atlar
-    e2 = mk(ct={"long": 19, "short": 1, "net_yon": "long"})
-    assert _go(e2, setup="C1", regime="trend_down", side="long").code == "etiket_rejim"   # C1'e diger kurallar uygulanir
+def test_ct_baglantisi_yok_ve_kalabalik_kurali_yok(mk):
+    """CT/ML ayriligi: kapida CT okuyucu / CT blogu / kalabalik kurali yoktur; karar features'ina ct_* anahtari girmez."""
+    e = mk()
+    assert not hasattr(e.g, "ct_kadro") and not hasattr(e.g, "_ct_blok")
+    o = _go(e)
+    assert o.action == "enter"
+    assert not any(str(k).startswith("ct_") for k in (o.event.features or {}))
+    assert not any("kalabalik" in k for k in e.g.counters)
+    e.g.ct_kadro = lambda: {"BTC/USDT": {"long": 19, "short": 1, "net_yon": "long"}}   # eski baglanti denense bile kapi okumaz
+    o2 = _go(e)
+    assert o2.action == "enter" and not any(str(k).startswith("ct_") for k in (o2.event.features or {}))

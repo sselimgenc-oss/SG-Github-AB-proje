@@ -138,7 +138,6 @@ def test_every_unit_handled_by_install():
                         "trader-durum-yayin.service",  # canli durum yayini: saatlik zamanlayici etkinlestirilir; servis tetiklenir
                         "trader-bakim.service",  # haftalik disk bakimi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-haber.service",  # 19 Kasim: haber/duygu toplayici eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
-                        "trader-ct-kadro.service",  # 19 Kasim: C1 (CT kadro) eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-engine-live.service", "trader-engine-env-retry@.service",
                         "trader-oto-guncelle.service", "trader-kurulum-gozcu.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)
     for u in UNITS:
@@ -411,3 +410,17 @@ def test_exit_counterfactual_units_and_install():
     assert "enable_now trader-exit-counterfactual@learner.timer" in t and "enable_now trader-exit-counterfactual@twin" not in t
     assert (ROOT / "scripts/exit_counterfactual_run.py").exists() and (ROOT / "docs/cikis-karsi-olgu-spec.md").exists()
     assert "trader-exit-counterfactual@twin.timer" in t                                            # ikiz birimi (varsa) kapatilir
+
+
+def test_ct_kadro_units_removed_and_c1_cleanup_wired_once():
+    """CT/ML ayriligi: CT birimleri depoda yok; install.sh sunucuda durdurur/devre disi birakir/siler (idempotent) ve C1 temizligini
+    isaret dosyasiyla tek seferlik calistirir (defter dosyasina dokunmadan)."""
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    assert not (DEPLOY / "trader-ct-kadro.service").exists() and not (DEPLOY / "trader-ct-kadro.timer").exists()
+    assert "enable_now trader-ct-kadro" not in t
+    assert 'systemctl disable --now "$u"' in t and "trader-ct-kadro.timer trader-ct-kadro.service" in t
+    assert 'rm -f "${UNIT_DIR}/trader-ct-kadro.service" "${UNIT_DIR}/trader-ct-kadro.timer"' in t
+    assert 'if [ ! -e "$TRADER_DIR/var/c1_temizle.done" ]' in t and "scripts/c1_temizle.py" in t
+    assert "var/ct" not in t.replace("var/ct/kadro", "")                       # var/ct artik olusturulmaz
+    assert not (ROOT / "scripts" / "ct_kadro_cek.py").exists() and not (ROOT / "src" / "trader_core" / "ct_kadro.py").exists()
+    assert not (ROOT / "src" / "trader_engine" / "strategies" / "arms" / "c1.py").exists()

@@ -328,7 +328,8 @@ def test_paper_config_uses_lab_with_arms_and_caps():
         assert isinstance(cap, dict) and cap
         for k, v in cap.items():
             setup = str(k).split("@")[0].upper()
-            assert v == (4 if setup in ("M1", "L1", "C1") else 6), (k, v)   # 19 Kasim: C1 (CT kadro) eklendi; 20 Kasim: tavanlar 6 / 4
+            assert v == (4 if setup in ("M1", "L1") else 6), (k, v)   # 20 Kasim: tavanlar 6 / 4
+        assert setup != "C1", k          # CT/ML ayriligi: C1 kolu kaldirildi
 
 
 def test_paper_config_loads_and_arms_parse():

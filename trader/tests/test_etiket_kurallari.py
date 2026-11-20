@@ -15,53 +15,55 @@ from trader_core import alinmayan_sonuc as AS
 from trader_engine.config import ConfigError, load_cli_config
 
 ROOT = Path(__file__).resolve().parents[1]
-CFG = EK.build_config({"rejim": {}, "duygu": {}, "kalabalik": {}})
+CFG = EK.build_config({"rejim": {}, "duygu": {}})
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------- kural mantigi
 def test_rejim_karsiti_engeller_ve_izin_verir():
-    assert EK.degerlendir("long", "trend_down", None, None, {"rejim": {"acik": True}})[0][0][0] == EK.REJIM
-    assert EK.degerlendir("short", "trend_up", None, None, {"rejim": {"acik": True}})[0][0][0] == EK.REJIM
+    assert EK.degerlendir("long", "trend_down", None, {"rejim": {"acik": True}})[0][0][0] == EK.REJIM
+    assert EK.degerlendir("short", "trend_up", None, {"rejim": {"acik": True}})[0][0][0] == EK.REJIM
     for side, reg in (("long", "trend_up"), ("short", "trend_down"), ("long", "range"), ("short", "volatile"), ("long", "unclear")):
-        assert EK.degerlendir(side, reg, None, None, {"rejim": {"acik": True}})[0] == []
+        assert EK.degerlendir(side, reg, None, {"rejim": {"acik": True}})[0] == []
 
 
 def test_duygu_asiri_ters_yon():
-    tet, yok = EK.degerlendir("long", "range", {"deger": 12, "sinif": "Extreme Fear"}, None, CFG)
+    tet, yok = EK.degerlendir("long", "range", {"deger": 12, "sinif": "Extreme Fear"}, CFG)
     assert [k for k, _ in tet] == [EK.DUYGU] and EK.DUYGU not in yok
-    assert [k for k, _ in EK.degerlendir("short", "range", {"deger": 85, "sinif": "Extreme Greed"}, None, CFG)[0]] == [EK.DUYGU]
-    assert EK.degerlendir("short", "range", {"deger": 12}, None, CFG)[0] == []          # asiri korku + short = serbest
-    assert EK.degerlendir("long", "range", {"deger": 85}, None, CFG)[0] == []          # asiri acgozluluk + long = serbest
-    assert EK.degerlendir("long", "range", {"deger": 50}, None, CFG)[0] == []
+    assert [k for k, _ in EK.degerlendir("short", "range", {"deger": 85, "sinif": "Extreme Greed"}, CFG)[0]] == [EK.DUYGU]
+    assert EK.degerlendir("short", "range", {"deger": 12}, CFG)[0] == []          # asiri korku + short = serbest
+    assert EK.degerlendir("long", "range", {"deger": 85}, CFG)[0] == []          # asiri acgozluluk + long = serbest
+    assert EK.degerlendir("long", "range", {"deger": 50}, CFG)[0] == []
 
 
-def test_kalabalik_ayni_yon_asiri():
-    ct = {"long": 18, "short": 2, "net_yon": "long"}
-    assert [k for k, _ in EK.degerlendir("long", "range", None, ct, CFG)[0]] == [EK.KALABALIK]
-    assert EK.degerlendir("short", "range", None, ct, CFG)[0] == []                      # ters yon: engel yok
-    assert EK.degerlendir("long", "range", None, {"long": 6, "short": 1, "net_yon": "long"}, CFG)[0] == []   # az trader
-    assert EK.degerlendir("long", "range", None, {"long": 12, "short": 8, "net_yon": "long"}, CFG)[0] == []  # asiri degil
-    assert EK.degerlendir("long", "range", None, {"long": 18, "short": 2, "net_yon": "notr"}, CFG)[0] == []
+def test_kalabalik_kurali_kaldirildi():
+    """CT/ML ayriligi: kalabalik kurali yok (kural listesi, varsayilan config, dogrulama); eski anahtar reddedilir."""
+    assert not hasattr(EK, "KALABALIK") and EK.KURALLAR == (EK.REJIM, EK.DUYGU)
+    assert "kalabalik" not in EK.VARSAYILAN and "kalabalik" not in EK.build_config({"rejim": {}})
+    with pytest.raises(EK.EtiketConfigHatasi):
+        EK.build_config({"kalabalik": {"acik": True}})
+    # CT verisi parametre olarak bile alinmaz: motor/ML hicbir CT girdisi gormez
+    with pytest.raises(TypeError):
+        EK.degerlendir("long", "range", None, {"long": 18, "short": 2, "net_yon": "long"}, CFG, 1)
 
 
 def test_veri_yok_fail_open_ve_kaydedilir():
-    tet, yok = EK.degerlendir("long", None, None, None, CFG)
-    assert tet == [] and set(yok) == {EK.REJIM, EK.DUYGU, EK.KALABALIK}
-    tet, yok = EK.degerlendir("long", "range", {"deger": "x"}, {"long": "?", "short": 1, "net_yon": "long"}, CFG)
-    assert tet == [] and EK.DUYGU in yok and EK.KALABALIK in yok
+    tet, yok = EK.degerlendir("long", None, None, CFG)
+    assert tet == [] and set(yok) == {EK.REJIM, EK.DUYGU}
+    tet, yok = EK.degerlendir("long", "range", {"deger": "x"}, CFG)
+    assert tet == [] and EK.DUYGU in yok
 
 
 def test_kapali_config_hic_degerlendirmez():
-    assert EK.degerlendir("long", "trend_down", {"deger": 1}, {"long": 20, "short": 0, "net_yon": "long"}, {}) == ([], [])
-    c = EK.build_config({"rejim": {"acik": False}, "duygu": {"acik": False}, "kalabalik": {"acik": False}})
-    assert EK.degerlendir("long", "trend_down", {"deger": 1}, {"long": 20, "short": 0, "net_yon": "long"}, c) == ([], [])
+    assert EK.degerlendir("long", "trend_down", {"deger": 1}, {}) == ([], [])
+    c = EK.build_config({"rejim": {"acik": False}, "duygu": {"acik": False}})
+    assert EK.degerlendir("long", "trend_down", {"deger": 1}, c) == ([], [])
 
 
 # ---------------------------------------------------------------- yapilandirma
 def test_build_config_dogrulama():
     assert EK.build_config(None) == {} and EK.build_config({}) == {}
-    for bad in ({"x": {}}, {"duygu": {"asiri_korku_max": 90}}, {"kalabalik": {"oran_min": 0.2}}, {"otomatik": {"ac_esik_r": 1}},
+    for bad in ({"x": {}}, {"duygu": {"asiri_korku_max": 90}}, {"otomatik": {"ac_esik_r": 1}},
                 {"rejim": {"acik": "evet"}}, {"duygu": {"yok": 1}}, [1]):
         with pytest.raises(EK.EtiketConfigHatasi):
             EK.build_config(bad)
@@ -154,7 +156,7 @@ def test_durum_dosyasi_yaz_oku_ve_bozuk(tmp_path):
     assert EK.acik_haritasi(EK.durum_oku(p)) == {k: True for k in EK.KURALLAR}           # yok -> hepsi acik
     d, _ = EK.guncelle(EK.bos_durum(), _cf(EK.DUYGU, [0.5] * 10, NOW - timedelta(days=5)), [], CFG, NOW)
     EK.yaz_atomik(p, d)
-    assert EK.acik_haritasi(EK.durum_oku(p)) == {EK.REJIM: True, EK.DUYGU: False, EK.KALABALIK: True}
+    assert EK.acik_haritasi(EK.durum_oku(p)) == {EK.REJIM: True, EK.DUYGU: False}
     p.write_text("{bozuk")
     assert EK.acik_haritasi(EK.durum_oku(p)) == {k: True for k in EK.KURALLAR}
 
@@ -182,16 +184,16 @@ def test_kart_verisi_ve_gizleme():
     r = {x["kural"]: x for x in k["kurallar"]}
     assert r[EK.REJIM]["atlanan_7g"] == 6 and r[EK.REJIM]["alinsaydi_r"] == -1.5 and r[EK.REJIM]["acik"] is True
     assert r[EK.DUYGU]["acik"] is False and r[EK.DUYGU]["durum"].startswith("Kanıta göre kapandı")
-    assert r[EK.KALABALIK]["alinsaydi_r"] is None and r[EK.KALABALIK]["atlanan_7g"] == 0
+    assert EK.REJIM in r and "etiket_kalabalik" not in r
 
 
 def test_panel_etiket_view_dosyalardan(tmp_path):
     dy, ay = tmp_path / "d.json", tmp_path / "a.json"
     assert PP.etiket_view(str(dy), str(ay)) is None
-    ay.write_text(json.dumps(_al([{"etiket": "etiket_kalabalik", "n": 3, "toplam_pnl": 0.8}], {})))
+    ay.write_text(json.dumps(_al([{"etiket": "etiket_duygu", "n": 3, "toplam_pnl": 0.8}], {})))
     v = PP.etiket_view(str(dy), str(ay))
     r = {x["kural"]: x for x in v["kurallar"]}
-    assert r[EK.KALABALIK]["sonuc"] == {"r": 0.8, "n": 3} and r[EK.KALABALIK]["renk"] == "yesil"
+    assert r[EK.DUYGU]["sonuc"] == {"r": 0.8, "n": 3} and r[EK.DUYGU]["renk"] == "yesil"
     assert r[EK.REJIM]["sonuc"] == {"olculemedi": "Henüz ölçülemedi"}
 
 
@@ -201,11 +203,11 @@ def test_turkce_cevirileri():
         assert kod in TG.ATLAMA_TR and TG.ATLAMA_TR[kod]
         assert kod in AS.NEDEN_SIRA
     st = {"counters": {"steps": 5, "decisions": 3, "enter": 1, "skip:etiket_rejim": 2}, "loop_at": "2026-11-20T12:00:00Z",
-          "etiket_kurallari": {"kurallar": {EK.KALABALIK: {"son_olay": {"ts": "2026-11-20T03:00:00Z", "olay": "kapandi"}},
+          "etiket_kurallari": {"kurallar": {EK.DUYGU: {"son_olay": {"ts": "2026-11-20T03:00:00Z", "olay": "kapandi"}},
                                              EK.REJIM: {"son_olay": None}}}}
     satirlar = TG._aktivite_satirlari(st)
     assert any("rejim etiketi ters yöndeydi" in s for s in satirlar)
-    assert satirlar[-1].endswith("Etiket kuralı kapatıldı: kalabalık yönü (atladığı işlemler kâr ederdi)")
+    assert satirlar[-1].endswith("Etiket kuralı kapatıldı: uç duygu karşıtı (atladığı işlemler kâr ederdi)")
     st["loop_at"] = "2026-11-25T12:00:00Z"                                              # eski olay tekrarlanmaz
     assert not any("Etiket kuralı" in s for s in TG._aktivite_satirlari(st))
 
@@ -215,10 +217,25 @@ def test_yaz_gece_durum_dosyasi_ve_olay(tmp_path, monkeypatch):
     led = tmp_path / "var" / "learner" / "ledger.sqlite"
     led.parent.mkdir(parents=True)
     L.open_ledger(str(led), "learner", create=True).close()
-    monkeypatch.setattr(AS, "_cf_satirlari", lambda yol, bot: _cf(EK.KALABALIK, [0.3] * 10, NOW - timedelta(days=4)))
+    monkeypatch.setattr(AS, "_cf_satirlari", lambda yol, bot: _cf(EK.DUYGU, [0.3] * 10, NOW - timedelta(days=4)))
     dy = tmp_path / "var" / "durum" / EK.DOSYA
-    ol = EK.yaz_gece(led, tmp_path / "cf.sqlite", "learner", NOW, dy, {"kalabalik": {"acik": True}})
-    assert [(e["kural"], e["olay"]) for e in ol] == [(EK.KALABALIK, "kapandi")]
-    assert EK.acik_haritasi(EK.durum_oku(dy))[EK.KALABALIK] is False
+    ol = EK.yaz_gece(led, tmp_path / "cf.sqlite", "learner", NOW, dy, {"duygu": {"acik": True}})
+    assert [(e["kural"], e["olay"]) for e in ol] == [(EK.DUYGU, "kapandi")]
+    assert EK.acik_haritasi(EK.durum_oku(dy))[EK.DUYGU] is False
     assert EK.yaz_gece(led, tmp_path / "cf.sqlite", "learner", NOW, dy, {}) is None            # yapilandirma yok: dokunmaz
     assert EK.yaz_gece(tmp_path / "yok.sqlite", tmp_path / "cf.sqlite", "learner", NOW, dy, {"rejim": {}}) is None   # hata yutulur
+
+
+# ---------------------------------------------------------------- CT/ML ayriligi: ML ozellikleri
+def test_ml_ozellik_sozlugu_ct_alanlarini_yok_sayar_ve_eski_paket_puanlanir():
+    import numpy as np
+
+    from trader_core import ml_live_v2 as M
+    feats = {"rr": 2.0, "ct_long": 12, "ct_short": 3, "ct_baskinlik": 0.8, "ct_yon": 1, "ct_yas_dk": 2.0, "atr_1h": 5.0}
+    d = M.setup_feature_dict(side="long", regime="trend_up", atr_ratio=1.0, session_tag=None, asset_class="kripto", pair="BTC/USDT",
+                             planned_entry=100.0, planned_stop=98.0, features=feats)
+    assert d["f_rr"] == 2.0 and d["f_atr_1h"] == 5.0
+    assert not any(k.startswith("f_ct_") for k in d)                      # CT alanlari ne egitime ne puanlamaya girer
+    # eski paket (f_ct_* bekliyor): eksik ozellik NaN -> modelin fill degeri; vektor hata vermez, giris engellenmez
+    v = M.setup_feature_vector(["f_rr", "f_ct_yon", "f_ct_trader_sayisi"], d)
+    assert v[0] == 2.0 and np.isnan(v[1]) and np.isnan(v[2])

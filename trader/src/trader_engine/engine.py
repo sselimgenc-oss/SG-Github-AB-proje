@@ -50,6 +50,7 @@ from .types import BrokerEvent, Fill, Intent, OrderRequest, Position, order_side
 log = logging.getLogger("engine")
 
 ENGINE_VERSION = "05.1"
+KALDIRILAN_KOLLAR = ("C1",)          # CT/C1 ayriligi: kullanici karariyla kaldirilan kurulumlar (acik pozisyonlari baslangicta kapatilir)
 _REASONS = ("stop", "target", "trail_stop", "regime_flip", "time_stop", "manual", "force_exit", "liquidation", "other")
 _STATUS_COUNTERS = ("callback_errors", "data_gaps", "ledger_errors", "outbox_failed", "unknown_orders", "mark_fallbacks",
                     "minute_gaps", "funding_missing", "exit_data_gap")
@@ -169,10 +170,6 @@ class Engine:
         if cfg.mode == "paper":                  # DD-12 WP-13: ders kapattigi kurulumlar (salt okunur dosya; yoksa hepsi acik)
             _arms_path = Path(cfg.ledger_path).parent / "arms_off.json"
             self.gate.arms_off = lambda: load_arms_off(_arms_path)
-            from trader_core import ct_kadro as _CT                     # 19 Kasim: CT yon etiketi (yalniz kayit/ML ozelligi)
-            from .strategies.arms import c1 as _C1
-            _evren = frozenset(cfg.pairs)
-            self.gate.ct_kadro = lambda: _CT.oku(_C1.kadro_yolu(), clock.now(), evren=_evren)
             from trader_core import haber as _HB                        # haber/duygu etiketi (yalniz kayit; docs/haber-etiketi-spec.md)
             self.gate.haber_etiket = lambda pair, now_ms: _HB.etiket(pair, now_ms)
             if cfg.etiket_kurallari:                                    # 20 Kasim: etiket kurallari (girisi yalniz atlatabilir; docs/etiket-kurallari-spec.md)
@@ -575,9 +572,6 @@ class Engine:
             from trader_core import etiket_kurallari as EK
             durum = EK.durum_oku(getattr(self, "_etiket_yol", None))
             c = self.gate.counters
-            ct_var = None
-            if self.gate.ct_kadro is not None:
-                ct_var = bool(self.gate.ct_kadro())
             kur = {}
             for k in EK.KURALLAR:
                 if not EK.kural_acik_config(self.gate.etiket_cfg, k):
@@ -586,7 +580,7 @@ class Engine:
                 kur[k] = {"acik": bool(e["acik"]), "durum": EK.durum_etiketi(e), "atladi": int(c.get("etiket_atladi:" + k, 0)),
                           "atlardi": int(c.get("etiket_atlardi:" + k, 0)), "veri_yok": int(c.get("etiket_veri_yok:" + k, 0)),
                           "son_olay": (e["gecmis"][-1] if e["gecmis"] else None)}
-            return {"kurallar": kur, "ct_veri": ct_var}
+            return {"kurallar": kur}
         except Exception:  # noqa: BLE001
             return None
 
@@ -926,6 +920,7 @@ class Engine:
         if rep.fatal:
             log.critical("baslangic mutabakati ölümcül: girisler kapali; cikislar calisir")
         self._started = True
+        self._kaldirilan_kollari_kapat(now)                       # CT/C1 ayriligi: kaldirilan kolun acik pozisyonlari piyasadan kapanir
         mins, decs = 0, 0
         if cfg.mode == "paper":
             self._adopt_new_pairs()
@@ -935,6 +930,38 @@ class Engine:
             decs = self._c["decisions"] - c0
         return RecoveryReport(replayed_minutes=mins, replayed_decisions=decs,
                               unresolved_orders=len(self.state.unresolved_orders()), reconcile=rep)
+
+    def _kaldirilan_kollari_kapat(self, now: datetime) -> int:
+        """Tek seferlik, idempotent adim (baslangicta): `KALDIRILAN_KOLLAR` kurulumlarinin ACIK pozisyonlarini piyasa fiyatindan kapatir
+        (stop/hedef beklenmez; kapanis normal yoldan: gerceklesen K/Z, komisyon ve kayma her zamanki gibi; neden `force_exit`, gunluge
+        `kol_kaldirildi`). Kalan acik pozisyon yoksa hicbir sey yapmaz (ikinci calisma no-op). Kagit: `submit_exit` (karsi tarafta
+        kagit broker); testnet/canli: yalniz normal reduce-only cikis yolu (`_submit_exit`: ban penceresi + poll). Cikis gonderilemezse
+        CRIT gunluk + sayac; sessiz birakilmaz (sonraki baslangicta yeniden denenir). Doner: gonderilen cikis sayisi."""
+        sent = 0
+        for p in self.state.open_positions():
+            if p.setup not in KALDIRILAN_KOLLAR:
+                continue
+            if p.status == "closing":
+                continue                                          # cikis zaten yolda (onceki baslangic): yeniden gonderilmez
+            if p.status != "open" or not p.qty:
+                self._c["kaldirilan_kol_bekliyor"] += 1
+                log.critical("kol_kaldirildi: trade %s (%s) durum=%s; acik degil, bu baslangicta kapatilamadi", p.trade_id, p.setup, p.status)
+                continue
+            try:
+                out = self._submit_exit(p, "force_exit", now)
+            except (StateError, EngineExit):
+                raise
+            except Exception as e:  # noqa: BLE001
+                out = None
+                log.critical("kol_kaldirildi: trade %s (%s) cikisi basarisiz: %r", p.trade_id, p.setup, e)
+            if out is None or getattr(out, "status", "") == "failed":
+                self._c["kaldirilan_kol_hata"] += 1
+                log.critical("kol_kaldirildi: trade %s (%s) cikisi gonderilemedi; pozisyon acik kaldi", p.trade_id, p.setup)
+                continue
+            sent += 1
+            self._c["kaldirilan_kol_kapatildi"] += 1
+            log.warning("kol_kaldirildi: trade %s (%s) piyasadan kapatiliyor", p.trade_id, p.setup)
+        return sent
 
     def _init_tf_and_strategy(self) -> None:
         info = self.strategy.info

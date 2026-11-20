@@ -21,7 +21,7 @@
   - `gun_acilan`, `gun_kapanan`, `kazanan`, `kaybeden`: yalnız o gün kapananlar sayılır.
   - `acik_pozisyon`: şu anki açık pozisyon sayısı.
   - `alinmayan_sinyal`: o gün kâğıt defterine girmeyen adaylar (counterfactual/alınmayan sinyal kaydı). Kayıt yoksa `null`.
-- `hesaplar`: kurulum başına (setup, örn. `PA1`, `M1`, `C1`) `{ad, gun_pnl, toplam_pnl, islem}`. `islem` toplam kapanmış işlem sayısıdır. Liste `toplam_pnl` değerine göre azalan sıradadır.
+- `hesaplar`: kurulum başına (setup, örn. `PA1`, `M1`, `T1`) `{ad, gun_pnl, toplam_pnl, islem}`. `islem` toplam kapanmış işlem sayısıdır. Liste `toplam_pnl` değerine göre azalan sıradadır.
 - `ogrenme`:
   - `aktif_ders`, `yeni_ders` (o gün eklenen), `emekli_ders` (o gün emekli edilen).
   - `filtre_aktif`: setup_filter modeli yüklüyse `true`.
@@ -33,7 +33,7 @@
 - `saglik`:
   - `son_nabiz`: sağlık işinin son başarılı koşusu.
   - `hata_sayisi_gun`: o gün WARN/CRIT sayısı. Kaynak yoksa `null`.
-- `notlar`: en fazla 5 kısa madde. Örnek: "CT verisi bayat", "en iyi kurulum: X".
+- `notlar`: en fazla 5 kısa madde. Örnek: "M1 modeli eski", "en iyi kurulum: X".
 
 ## Kurallar
 - Gizli bilgi, anahtar, e-posta ve hesap numarası yazılmaz.

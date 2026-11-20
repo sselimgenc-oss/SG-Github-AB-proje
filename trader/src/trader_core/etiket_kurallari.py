@@ -1,4 +1,4 @@
-"""Etiket kurallari (kagit, 19-20 Kasim 2026): mevcut etiketler (rejim, duygu, CT kalabalik) bir girisi YALNIZ atlatabilir.
+"""Etiket kurallari (kagit, 19-20 Kasim 2026): mevcut etiketler (rejim, duygu) bir girisi YALNIZ atlatabilir.
 
 Saf mantik (ag/dosya yok, motor bagimliligi yok). Belirtim: docs/etiket-kurallari-spec.md. Desen: 1L3A `etiket_kurallari`.
 - Kurallar yalnizca "hayir" diyebilir: boyut/kaldirac/limit/stop degismez; yeni giris acilmaz.
@@ -21,17 +21,16 @@ from typing import Any
 SEMA = "ml.etiket_kurallari.v1"
 DOSYA = "etiket_kurallari_v1.json"
 
-REJIM, DUYGU, KALABALIK = "etiket_rejim", "etiket_duygu", "etiket_kalabalik"
-KURALLAR = (REJIM, DUYGU, KALABALIK)
-CFG_ANAHTAR = {"rejim": REJIM, "duygu": DUYGU, "kalabalik": KALABALIK}
-SADE_AD = {REJIM: "rejim karşıtı", DUYGU: "uç duygu karşıtı", KALABALIK: "kalabalık yönü"}
-VERI_ADI = {REJIM: "rejim", DUYGU: "duygu", KALABALIK: "CT kadro"}
+REJIM, DUYGU = "etiket_rejim", "etiket_duygu"
+KURALLAR = (REJIM, DUYGU)
+CFG_ANAHTAR = {"rejim": REJIM, "duygu": DUYGU}
+SADE_AD = {REJIM: "rejim karşıtı", DUYGU: "uç duygu karşıtı"}
+VERI_ADI = {REJIM: "rejim", DUYGU: "duygu"}
 FEATURE_ANAHTAR = "etiket_atlardi"        # defter features: kapali kuralin atlayacagi islem (virgullu kural kodlari)
 
 VARSAYILAN = {
     "rejim": {"acik": True},
     "duygu": {"acik": True, "asiri_korku_max": 20, "asiri_acgozluluk_min": 80},
-    "kalabalik": {"acik": True, "min_trader": 10, "oran_min": 0.8},
     "otomatik": {"pencere": 10, "kapat_esik_r": 1.0, "ac_esik_r": -1.0},
 }
 
@@ -70,9 +69,6 @@ def build_config(raw: Any) -> dict:
     dg = out["duygu"]
     dg["asiri_korku_max"] = _sayi("duygu.asiri_korku_max", dg["asiri_korku_max"], 0, 50)
     dg["asiri_acgozluluk_min"] = _sayi("duygu.asiri_acgozluluk_min", dg["asiri_acgozluluk_min"], 50, 100)
-    kb = out["kalabalik"]
-    kb["min_trader"] = int(_sayi("kalabalik.min_trader", kb["min_trader"], 1, 10000))
-    kb["oran_min"] = _sayi("kalabalik.oran_min", kb["oran_min"], 0.5, 1.0)
     ot = out["otomatik"]
     ot["pencere"] = int(_sayi("otomatik.pencere", ot["pencere"], 3, 1000))
     ot["kapat_esik_r"] = _sayi("otomatik.kapat_esik_r", ot["kapat_esik_r"], 0, 100)
@@ -88,7 +84,7 @@ def kural_acik_config(cfg: Mapping | None, kod: str) -> bool:
 
 
 # ---------------------------------------------------------------- kural mantigi
-def degerlendir(side: str, regime: str | None, duygu: Mapping | None, ct: Mapping | None, cfg: Mapping | None
+def degerlendir(side: str, regime: str | None, duygu: Mapping | None, cfg: Mapping | None
                 ) -> tuple[list[tuple[str, str]], list[str]]:
     """Doner: (tetiklenenler [(kural, ayrinti)], veri_yok [kural]). Yalniz config'te acik kurallar degerlendirilir.
     Veri yoksa kural tetiklenmez (fail-open) ve `veri_yok`ta listelenir."""
@@ -112,19 +108,6 @@ def degerlendir(side: str, regime: str | None, duygu: Mapping | None, ct: Mappin
                 tet.append((DUYGU, f"long/korku={int(d)}"))
             elif side == "short" and d >= c["asiri_acgozluluk_min"]:
                 tet.append((DUYGU, f"short/acgozluluk={int(d)}"))
-    if kural_acik_config(cfg, KALABALIK):
-        if not isinstance(ct, Mapping):
-            yok.append(KALABALIK)
-        else:
-            c = cfg["kalabalik"]
-            lg, sh = ct.get("long"), ct.get("short")
-            if not all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in (lg, sh)):
-                yok.append(KALABALIK)
-            else:
-                toplam = lg + sh
-                taraf = lg if side == "long" else sh
-                if ct.get("net_yon") == side and toplam >= c["min_trader"] and taraf / toplam >= c["oran_min"]:
-                    tet.append((KALABALIK, f"{side}/{taraf}-{toplam}"))
     return tet, yok
 
 

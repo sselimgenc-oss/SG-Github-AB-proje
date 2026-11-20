@@ -14,7 +14,7 @@ Temel: `docs/motor/06-backtester.md` §8. `backtest --from-paper-ledger` ve `bac
   - Geri test çok kollu kâğıt stratejisini (`price_action_lab_ml`, overlay dahil) desteklemiyorsa bu açıkça raporlanır ve TIKANDI olarak bildirilir. Sessizce başka strateji kullanılmaz.
 - Birim: `deploy/trader-tutarlilik.service` (oneshot, kullanıcı `trader`, `Slice=trader.slice`, `MemoryMax` ölçülerek konur, `Nice=10`) ve `.timer` (`OnCalendar=Mon *-*-* 00:30:00 UTC`, `Persistent=true`). Diğer birimlerle aynı sertleştirme ve render kalıbı kullanılır. `install.sh` timer'ı etkinleştirir. Bellek bütçesi testleri (`tests/readiness/test_readiness_memory.py`) güncellenir.
 
-## Kurulum başına ölçüler (setup, ör. PA1, M1, C1)
+## Kurulum başına ölçüler (setup, ör. PA1, M1, T1)
 - **Sinyal eşleşmesi**, anahtar `(pair, side, entry_ts)`. Üç sayı tutulur: ikisinde birden olan, yalnız kâğıtta olan ve yalnız geri testte olan. Eşleşme oranı = ikisinde / (ikisinde + yalnız kâğıt + yalnız geri test).
 - **Fiyat farkı (kayma)**: eşleşenlerde giriş ve çıkış fiyatı farkının ortalaması ve en kötüsü, bps cinsinden. Kâğıt, geri teste göre ölçülür; işaret kâğıt aleyhine pozitif olur.
 - **İşlem sayısı, kazanma oranı, toplam R ve toplam PnL**: kâğıt ve geri test için yan yana, ayrıca fark.
@@ -46,4 +46,4 @@ Herhangi bir kurulumda, o kurulumun en az 5 işlemi varsa ve aşağıdakilerden 
 ## Uygulama notları (19 Kasım 2026)
 - Geri test: `backtest --env paper` (opt-in; bayraksız yol değişmez). `mode="paper"` + `engine.paper.json` katmanı + `MultiArmSignalSource` (`engine.signal_source_class`); kâğıt var/KILL/PAUSE yollarına dokunulmaz. Çekirdek özellik testi: `tests/engine/test_tutarlilik_env_backtest.py` (kâğıt motoru ile aynı pencerede alan alan eşit).
 - Ölçüm (sentetik 44 çift store, `--env paper`, 15 dk adımlar): tepe RSS ≈ 135 MB (1g kapanışı dahil) → `MemoryMax=300M`. Hız ≈ 15-18 sn/karar adımı ⇒ 672 adım ≈ 2,5-3,5 saat (tek çekirdek); birim bu yüzden `TimeoutStartSec=36000`, `CPUQuota=50%`.
-- `veri` sınıfı: kâğıt-yalnız C1 işlemleri (CT kadro dosyası geri testte yok) ve eksik mum; `data_conflict`: `gaps.reason=conflict`. Pencere başındaki açık kâğıt pozisyonları geri testte yoktur (rapora not yazılır). Elle yeniden koşu: `tutarlilik_run.py --once --start ... --end ...`.
+- `veri` sınıfı: eksik mum; `data_conflict`: `gaps.reason=conflict`. Pencere başındaki açık kâğıt pozisyonları geri testte yoktur (rapora not yazılır). Elle yeniden koşu: `tutarlilik_run.py --once --start ... --end ...`.

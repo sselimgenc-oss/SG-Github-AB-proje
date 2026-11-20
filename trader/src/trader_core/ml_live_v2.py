@@ -261,15 +261,9 @@ def setup_feature_dict(*, side: str, regime: str, atr_ratio, session_tag, asset_
     for c in _CLASSES:
         d[f"cls_{c}"] = 1.0 if cls == c else 0.0
     for k, v in (features or {}).items():
-        if isinstance(v, bool) or not isinstance(v, (int, float)):
-            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or str(k).startswith("ct_"):
+            continue                    # CT/ML ayriligi: eski kayitlardaki ct_* alanlari ozellik olmaz (eski paket eksik ozelligi doldurur)
         d[f"f_{k}"] = _fnum(v)
-    # CT bilgisi (20 Kasim): f_ct_yon / f_ct_baskinlik kararin features'indan gelir; trader sayisi buradan turetilir (log1p).
-    # CT verisi yoksa (ct_long/ct_short yok) uc ozellik de yok -> eski/yeni model NaN/fill ile puanlar. Yalniz OZELLIK, filtre degil.
-    if "f_ct_long" in d and "f_ct_short" in d:
-        top = d["f_ct_long"] + d["f_ct_short"]
-        if np.isfinite(top) and top >= 0:
-            d["f_ct_trader_sayisi"] = float(np.log1p(top))
     for lid in (lesson_ids or ()):
         d[f"ders:{lid}"] = 1.0
     return d

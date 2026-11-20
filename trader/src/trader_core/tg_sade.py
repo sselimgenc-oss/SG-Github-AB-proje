@@ -108,7 +108,7 @@ _TF_TR = {"15m": "15 dakika", "1h": "1 saat", "4h": "4 saat", "1d": "1 gün", "5
 # kurulum kodu -> Turkce ad (kaynak: src/trader_engine/strategies/arms/*.py belge dizgileri)
 KURULUM_AD = {"T1": "Trend geri çekilmesi", "R1": "Yatay piyasa kenarı", "TF1": "Trend kırılımı", "B1": "Kırılım yeniden testi",
               "H2": "İki bacaklı geri çekilme", "S1": "Sıkışma kırılımı", "F1": "Sahte kırılım dönüşü",
-              "M1": "Yapay zekâ adayı", "C1": "Kadro uzlaşısı"}
+              "M1": "Yapay zekâ adayı"}
 
 
 def kurulum_adi(setup: Any) -> str:
@@ -407,7 +407,7 @@ def saglik_cumlesi(name: Any, code: Any) -> tuple[str, str | None]:
 _SUSTUR = frozenset({
     "ml_shadow_down", "ml_expiring_7d", "ml_expiring_3d", "ml_restart_needed", "ml_stale_data", "ml_file_invalid",
     "ml_score_errors", "drift_missing", "drift_stale", "drift_unreadable", "drift_monitor", "drift_unknown",
-    "heartbeat_send_failed", "ct_kadro_bayat", "pa_proposer_stale", "pa_proposer_missing", "tutarlilik_sapma",
+    "heartbeat_send_failed", "pa_proposer_stale", "pa_proposer_missing", "tutarlilik_sapma",
     "state_reset", "rules_age", "rules_coverage", "rules_missing", "swap", "memory", "ledger_write_age", "ledger_gate",
     "pause_audit", "risk_ladder", "exchange_ban_file_corrupt", "account_mode_unverified", "account_mode_unknown",
     "live_paths_mismatch", "spool_corrupt", "budget_status", "multiple"})

@@ -245,7 +245,7 @@ def _fake_series(d: Path, days: pd.DatetimeIndex, setup="TF1", n=8, seed=0):
     cols = [f"{setup}@4h|v{i}|f1|s0" for i in range(n)]
     pd.DataFrame(rng.normal(0, 1, (len(days), n)).astype("float32"), index=days, columns=cols).to_parquet(d / f"{setup}.parquet")
     (d / "meta.json").write_text(json.dumps({"kolonlar": {c: {"kurulum": setup, "tf": "4h", "n_islem": 5} for c in cols},
-                                             "gun_izgarasi": ["a", "b"], "ciftler": ["X/USDT"], "dislanan": {"C1@1h": "veri yok"}}))
+                                             "gun_izgarasi": ["a", "b"], "ciftler": ["X/USDT"], "dislanan": {"Q1@1h": "veri yok"}}))
 
 
 def test_pbo_rapor_builds_harness_family_and_marks_arms(tmp_path):
@@ -253,11 +253,11 @@ def test_pbo_rapor_builds_harness_family_and_marks_arms(tmp_path):
     arm = tmp_path / "arm"
     arm.mkdir()
     _fake_series(arm, pd.date_range("2024-01-01", periods=300, freq="D", tz="UTC"))
-    res = P.build(tmp_path / "bt", tmp_path / "ml", ["TF1@4h", "C1@1h", "S1@1h"], arm_dir=arm)
+    res = P.build(tmp_path / "bt", tmp_path / "ml", ["TF1@4h", "Q1@1h", "S1@1h"], arm_dir=arm)
     fam = {f["aile"]: f for f in res["aileler"]}
     assert fam["Kural TF1 (harness)"]["durum"] == "tamam" and fam["Kural TF1 (harness)"]["n_yapilandirma"] == 8
     kay = {a["kurulum"]: a for a in res["kurulumlar"]}
-    assert kay["TF1@4h"]["kayit"] == "harness" and kay["S1@1h"]["kayit"] == "yok" and kay["C1@1h"]["neden"] == "veri yok"
+    assert kay["TF1@4h"]["kayit"] == "harness" and kay["S1@1h"]["kayit"] == "yok" and kay["Q1@1h"]["neden"] == "veri yok"
     assert "Kural TF1 (harness)" in P.render_md(res)
     assert P.build(tmp_path / "bt", tmp_path / "ml", ["TF1@4h"], arm_dir=arm) == P.build(tmp_path / "bt", tmp_path / "ml", ["TF1@4h"], arm_dir=arm)
 
