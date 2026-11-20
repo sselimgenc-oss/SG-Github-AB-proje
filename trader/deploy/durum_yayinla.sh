@@ -2,7 +2,8 @@
 # Canli durum yayini (CT'nin canli-durum duzeninden uyarlandi; kullanicinin kendi kodu): sunucu saatlik olarak ozet verisini
 # repo icindeki AYRI bir dala (canli-durum, klasor ml/) yazar; orkestrator ve gelistirici Telegram iletimine gerek kalmadan okur.
 # Icerik IZIN LISTESIYLE sinirli: rejim etiketi, gunluk ozet, mutabakat (acik/kapanan islemler, kasa), strateji verisi, tutarlilik,
-# etiket kurallari, motor durum dosyasi (acik pozisyonlar, kasa) ve pano anlik goruntusu (ogrenme kartlari). Anahtar, ortam dosyasi,
+# etiket kurallari, motor durum dosyasi (acik pozisyonlar, kasa), pano anlik goruntusu (ogrenme kartlari), model paketi listesi
+# (yalniz ad/boyut/zaman) ve gece egitimi ozetinin son satirlari. Anahtar, ortam dosyasi,
 # defter (sqlite) ya da kisisel veri YAYIMLANMAZ.
 # Kimlik: yalniz sunucudaki SSH deploy anahtari ($HOME/.ssh/id_ed25519; repoda ve ortam dosyalarinda sir YOK). Anahtar yoksa
 # sessizce atlanir (cikis 0): kullanici kurulum adimlarini yapana kadar uyari uretmez. Yalniz canli-durum dalina yazar.
@@ -40,6 +41,11 @@ for f in mutabakat_v1.json mutabakat.md strateji-veri-ml.md tutarlilik_v1.json e
   if [ -s "$trader_dir/var/durum/$f" ]; then cp "$trader_dir/var/durum/$f" "$cikti/$f"; fi
 done
 if [ -s "$trader_dir/var/learner/status.json" ]; then cp "$trader_dir/var/learner/status.json" "$cikti/durum.json"; fi
+# Model paketleri (yalniz ad/boyut/zaman; icerik yok) ve gece egitimi ozet satirlari: M1/filtre paketi var mi, ne zaman uretildi
+if [ -d "$trader_dir/var/learner/models" ]; then
+  TZ=UTC find "$trader_dir/var/learner/models" -type f -name '*.json' -printf '%TY-%Tm-%Td %TH:%TM UTC  %8s  %P\n' 2>/dev/null | sort > "$cikti/model_paketleri.txt" || true
+fi
+if [ -s "$trader_dir/var/learner/paper_models.csv" ]; then tail -n 40 "$trader_dir/var/learner/paper_models.csv" > "$cikti/paper_models_son.csv"; fi
 # Bos dosyalari at; hicbir sey yoksa yayimlanacak bir sey yok
 find "$cikti" -type f -size 0 -delete
 [ -n "$(ls -A "$cikti")" ] || { echo "durum-yayin: yayimlanacak dosya yok"; exit 0; }
