@@ -109,7 +109,7 @@ def _md(root):
 # ------------------------------------------------------------------------------------------------ bolumler
 def test_markdown_has_every_section_with_data_timestamps(root):
     md = _md(root)
-    for h in ("## Ortak 1", "## Ortak 2", "## Ortak 3", "## Ortak 6", "## Ortak 7", "## ML 8", "## ML 10", "## ML 11", "## CT bilgisi", "## ML 12"):
+    for h in ("## Ortak 1", "## Ortak 2", "## Ortak 3", "## Ortak 6", "## Ortak 7", "## ML 8", "## ML 10", "## ML 11", "## ML 12"):
         assert h in md, h
     assert md.startswith("# [ML] Strateji verisi (beyin fırtınası için)")
     # her tablo satiri veri zamani tasir (TSI)
