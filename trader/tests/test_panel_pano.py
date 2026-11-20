@@ -206,4 +206,4 @@ def test_ml_denominator_is_paper_config_arms_and_threshold_from_engine():
     arms = P.paper_maps()[0]
     assert len(arms) >= 9                                         # payda: kagit ayarindaki gercek kol listesi
     src = (ROOT / "src/trader_core/panel_pano.py").read_text(encoding="utf-8")
-    assert "paper_maps()[0]" in src and "MIN_KOL_ISLEM" not in src
+    assert "paper_maps()[0]" in src and "trader_engine" not in src.replace("ogrenme_filtre.MIN_ISLEM", "")      # core motoru ice aktarmaz; sabit esitligi yukarida

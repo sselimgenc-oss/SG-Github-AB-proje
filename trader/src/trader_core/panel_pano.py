@@ -289,11 +289,12 @@ def kz_view(ctx: Ctx, start: float | None, now: datetime, curve: Mapping | None,
 
 
 # ----------------------------------------------------------------------------- ogrenme (ders + ML)
+MIN_KOL_ISLEM = 10      # motorun ogrenme_filtre.MIN_ISLEM ile ayni; esitligi tests/test_panel_pano.py denetler (core -> engine bagimliligi yok)
+
+
 def min_kol_islem() -> int:
-    """Kol basina ML filtresi icin asgari kapanmis islem: motorun sabiti (kopya degil). Dinamik ice aktarma: panel kaynak
-    taramasi `trader_engine` import satirini yasaklar; yalniz bu salt okunur sabit okunur."""
-    import importlib  # noqa: PLC0415
-    return int(importlib.import_module("trader_engine.ogrenme_filtre").MIN_ISLEM)
+    """Kol basina ML filtresi icin asgari kapanmis islem (motor sabitiyle esit; testle sabitlenir)."""
+    return MIN_KOL_ISLEM
 
 
 def katki_olculemedi(n: int) -> dict:
