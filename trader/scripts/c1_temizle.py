@@ -8,11 +8,11 @@ Yaptiklari (hepsi dosya duzeyi; tekrar calistirmada no-op):
   4) `var/<bot>/arms_off.json`: C1 anahtarlari cikarilir.
   5) `var/durum/etiket_kurallari_v1.json`: kaldirilan `etiket_kalabalik` kurali durum kaydi cikarilir.
   6) Saglik durum dosyasi (--saglik-durum): kaldirilan `ct_kadro|bayat` uyari kaydi cikarilir (yoksa "Duzeldi" mesaji gider).
-  7) Defter RAPORU (salt okunur): C1 karar/islem sayisi ve toplam net K/Z hesaplanir, yalniz yazdirilir.
+  7) Defter RAPORU (salt okunur): C1 karar/islem sayisi ve toplam net K/Z hesaplanir, yalniz yazdirilir (goc oncesi bilgi).
 
-DEFTERE DOKUNULMAZ: defter tablolari yalnizca-ekleme tetikleyicileriyle korunur (trg_*_no_update/no_delete) ve her acilista
+DEFTERE/STATE'E DOKUNULMAZ (onlar `scripts/c1_goc.py` / `trader_core/kol_kaldirma.py` ile, yedekli ve dogrulamali goc'tur): defter tablolari yalnizca-ekleme tetikleyicileriyle korunur (trg_*_no_update/no_delete) ve her acilista
 `_verify` tetikleyici eksikse reddeder; ayrica kasa/mutabakat islem toplamlarindan turetilir. C1 satirlarini silmek bu butunluk
-mekanizmasini devre disi birakmayi gerektirir; bu betik bunu YAPMAZ (spec bolum 5: acik karar bekliyor).
+mekanizmasini bilincli bir goc'e (tetikleyicileri yeniden kuran, yedekli) baglar; bu betik bunu YAPMAZ (spec bolum 5).
 
 Isaret dosyasi var/c1_temizle.done YALNIZ yukaridaki dosya adimlari hatasiz bitince yazilir."""
 from __future__ import annotations

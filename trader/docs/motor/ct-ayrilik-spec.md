@@ -32,28 +32,43 @@ Eski belgeler `docs/motor/c1-ct-kadro-spec.md` (C1 kolu) ve CT bölümleri **kal
 ## 4. Veri temizliği (scripts/c1_temizle.py) — dosya düzeyi
 Silinen/ayıklanan: `var/ct/`; `…/models/ortak_filtre/aile_C1.json` ve `eski_kol/` altındaki C1 dosyaları; `paper_models.csv` C1 satırları;
 `arms_off.json` C1 anahtarları; `var/durum/etiket_kurallari_v1.json` içinden `etiket_kalabalik`; sağlık durum dosyasından `ct_kadro|bayat`.
-Yeniden üretilebilir çıktılar (özet, strateji verisi, mutabakat) silinmez: defter değişmediği sürece yeniden üretildiklerinde yine C1 içerir;
-bu yüzden temizlenmeleri bölüm 5'teki karara bağlıdır.
+Yeniden üretilebilir çıktılar (özet, strateji verisi, mutabakat) bölüm 5'teki göçle birlikte silinir ve C1'siz yeniden üretilir.
 
-## 5. AÇIK SORUN: defter satırlarının silinmesi (karar bekliyor, YAPILMADI)
-Kullanıcı kararı C1 geçmişinin defterden de silinmesini ve kasanın "C1 hiç olmamış gibi" yeniden hesaplanmasını ister.
-Bu, defterin bütünlük mekanizmasıyla çelişir; görev kuralı gereği mekanizma devre dışı bırakılmadı, çelişki raporlandı:
-1. `trade_entries`, `trade_exits`, `decision_events`, `equity_marks`, `shadow_decisions` vb. tablolarda `trg_<tablo>_no_update/no_delete`
-   tetikleyicileri (`RAISE(ABORT,'append-only')`) vardır. `Ledger._verify` her açılışta bu tetikleyicilerin tamamını arar; eksikse
-   `LedgerSchemaError` ile motor açılmaz (fail-closed). `trader-bakim` defterlere bilerek dokunmaz.
-   (`tests/test_c1_temizle.py::test_defter_yalnizca_ekleme_tetikleyicisi_silmeyi_reddeder` bunu belgeler.)
-2. Kasa/mutabakat işlem toplamlarından türetilir: `kasa = wallet_start + Σ realized_pnl` (`mutabakat.kontrol_kasa`, `kontrol_bagimsiz_toplam`),
-   paper broker cüzdanı `state.sqlite` `broker_snapshot` içindedir. C1 satırları silinirse cüzdan ve türevleri (gün başı özsermaye
-   `day_start:*`, tepe özsermaye/kademe durumu `risk_ladder`, `equity_marks`, günlük özet sanal kasası) birlikte yeniden hesaplanmalıdır.
-3. C1 gerçekleşen K/Z'si bu hesapta **çıkarılacaktır** (kullanıcı güncellemesi: bakiye de "C1 hiç olmamış gibi"); nötr taşıma kaydı yok.
-   Betik bugün yalnız salt okunur rapor üretir: `c1_karar`, `c1_islem`, `c1_kapanan`, `c1_net_kz`, `c1_giris_komisyon`,
-   `c1_cikis_komisyon`, `c1_fonlama` (sunucuda `--defter` ile).
-Önerilen yetkili yol (onay gerekir): şema sürümü artıran, defterin kendi göç mekanizmasıyla (göçler zaten tetikleyicileri bırakıp
-yeniden kurar) çalışan tek seferlik "C1 kaldırma göçü"; `_verify` tetikleyici kontrolü aynen kalır. Göç, yedeği
-`var/yedek/ledger-<zaman>.sqlite` olarak alır (yedek C1 içerir), C1'e ait `decision_events`/`trade_entries`/`trade_exits`/`trade_notes`/
-`equity_marks`/`shadow_decisions` satırlarını siler, `state.sqlite` `gecikme:<trade_id>` anahtarlarını ve `broker_snapshot` cüzdanını
-(`wallet -= Σ C1 realized_pnl`, açık C1 marjı zaten §2 ile kapandı) düzeltir, `day_start`/tepe özsermaye/kademe durumunu yeniden kurar
-ve ardından mutabakat/tutarlılık/özet çıktıları yeniden üretilir.
+## 5. Defter/state göçü ve kasa (UYGULANDI: `trader_core/kol_kaldirma.py`, `scripts/c1_goc.py`, `trader-c1-goc.service`)
+Kullanıcı onayıyla C1 geçmişi defterden silinir ve kasa "C1 hiç olmamış gibi" yeniden hesaplanır (nötr taşıma kaydı YOK).
+**Mekanizma:** defterin kendi göç deseni (`ledger._run_migrations`: tek işlem, tetikleyicileri bırak, değiştir, hepsini yeniden kur).
+Şema sürümü değişmez (veri göçü). `ledger.py`/`state.py` ve donmuş dosyalara dokunulmadı.
+1. **Önkoşul (reddet, hiçbir şey değişmez; çıkış 3):** motor çalışıyor (`systemctl is-active`); `state.positions` ya da defterde kapanmamış
+   C1 işlemi; defterde bekleyen C1 outbox satırı. Açık C1 pozisyonu varsa install motoru yeni kodla başlatır, motor açılışta C1'i piyasadan
+   kapatır (bölüm 2); install `state.sqlite`'ı ~15 dk'ya kadar yoklar, kapanınca motoru durdurup göçü yeniden dener; olmazsa göç sonraki
+   kurulumda (ya da elle `systemctl start trader-c1-goc`) tekrarlanır. İşaret yazılmadığı için tekrar güvenlidir.
+2. **Yedek:** `var/yedek/c1-goc-<zaman>/` altına `ledger.sqlite`, `state.sqlite` (sqlite backup API), `counterfactual.sqlite`,
+   `exit_counterfactual.sqlite`, Telegram işlem kayıtları ve türetilmiş durum çıktıları. Kullanıcı arşiv istemediği için başarıda
+   (ve geri yüklemeden sonra) yedek **silinir**.
+3. **Defter (tek işlem):** tetikleyiciler bırakılır; `trade_exits`, `trade_notes`, `trade_entries`, `decision_events`, `shadow_decisions`
+   içinden C1 satırları silinir; `equity_marks` geçmişi C1 etkisi çıkarılarak düzeltilir (wallet/equity/equity_low −= kayma,
+   `n_open` −= açık C1 sayısı); tüm tetikleyiciler (`_EXPECTED_TRIGGERS`: yalnızca-ekleme + excursion) yeniden kurulur; `meta`'ya
+   `kol_kaldirildi:C1` damgası eklenir; `foreign_key_check` temiz olmalı.
+4. **State (tek işlem):** C1 `positions`, `orders`, `ledger_outbox`, işlem-bazlı `kv` anahtarları (`gecikme:`, `eq:`, `partial:`, `naked:`,
+   `ext_reduction:`, `exit_retry:`, `exit_unresolved_since:`, `entry_fee_estimated:`) ve `broker_order:<cid>` silinir.
+   **Kasa:** `broker_snapshot.wallet := wallet − Σ C1 realized_pnl` (realized = brüt − giriş/çıkış komisyonu − fonlama; C1 işlemleri
+   kapalıyken cüzdana tam bu net etkisi yansımıştır). `day_start:<gün>` değerleri aynı kayma ile (gün 00:00 UTC itibarıyla) düzeltilir.
+   Paper risk kademesi bellekte tutulur (günlük dosyası yok, tepe özsermaye açılışta yeniden kurulur) ve kol küçültme çarpanı defterden
+   türetilir: ikisi de motor yeniden başlayınca C1'siz yeniden oluşur.
+5. **Yan dosyalar:** `counterfactual.sqlite`/`exit_counterfactual.sqlite` C1 satırları; `islem_gonderildi.jsonl`/`islem_imleci.json`
+   C1 işlem numaraları; türetilmiş çıktılar (`mutabakat*`, `strateji-veri-ml.md`, `tutarlilik_v1.json`) silinir ve yeniden üretilir.
+6. **Doğrulama (hepsi geçmeli):** `Ledger._verify` (motorun açılışta yaptığı) + tüm tetikleyiciler mevcut + davranış sınaması
+   (UPDATE `append-only` ile reddedilmeli) + `integrity_check` + `foreign_key_check` + C1 satırı kalmadı + state'te C1 kalmadı +
+   **kasa kalanı değişmedi**: `kalan = kasa + açık işlemlerin giriş komisyonu/fonlaması − başlangıç − Σ kapanan net K/Z` göç öncesi ve
+   sonrası aynı (sıfırsa `kasa = başlangıç + Σ net K/Z (C1 hariç)`; `mutabakat.kontrol_kasa` aynı formülü kullanır) ve yeni kasa
+   `eski kasa − Σ C1 net K/Z`'ye eşit.
+7. **Sonuç:** başarılıysa yedek silinir, `var/durum/c1_goc_raporu.json` (`eski_kasa`, `yeni_kasa`, `silinen_kayit`, `tetikler_dogrulandi`,
+   `zaman`) yazılır (`durum_yayinla.sh` izin listesinde: `canli-durum` dalında görünür), `var/c1_goc.done` işareti yazılır ve tek satır
+   Telegram mesajı gider ("Kasa: eski → yeni"). **Herhangi bir adım başarısızsa** yedekten geri yüklenir, işaret yazılmaz, CRIT günlük +
+   Telegram "CRIT" mesajı, çıkış 1; yarım göç kalmaz.
+**Bilinen sınır:** C1 pozisyonu açıkken alınmış geçmiş `equity_marks`/`day_start` değerlerindeki C1 *gerçekleşmemiş* K/Z'si geçmiş
+fiyatlar olmadan geri alınamaz; bu satırlar yalnız gerçekleşen kısım kadar düzeltilir (güncel kasa ve defter toplamları etkilenmez).
+Yedeğin kendisi (göç sırasında) C1 içerir; başarıda silinir.
 
 ## 6. Mühür / eşdeğerlik
 Holdout mührü (`research/holdout/muhur.json`) yalnız `var/history` holdout dilimi baytlarının özetidir; C1 veri içermez (C1 19 Kasım 2026'da
