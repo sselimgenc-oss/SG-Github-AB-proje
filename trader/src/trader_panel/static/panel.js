@@ -491,6 +491,11 @@
         return b;
       }, t.saglik.renk !== 'yesil'));
     }
+    if (t.dayaniklilik) add(root, katli('Dayanıklılık', 'sari', function (b) {
+      t.dayaniklilik.karantina.forEach(function (u) { add(b, el('div', 'yok kotu', u)); });
+      t.dayaniklilik.sembol.forEach(function (u) { add(b, el('div', 'yok kotu', u)); });
+      return b;
+    }, true));
     if (t.limitler) add(root, katli('Risk limitleri', '', function (b) {
       t.limitler.forEach(function (r) { add(b, bar(r.ad, r.kullanilan, r.limit, r.yuzde)); });
       return b;

@@ -559,7 +559,7 @@ def _norm_cmd_text(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower().replace("ı", "i").replace("İ", "i"))
 
 
-HELP = ("/durum  /rapor  /kurulumlar  /ders  /hepsini_kapat  /durdur  /devam  /kademe  /kademe_devam  /onayla <id>  /reddet <id>  /yardim\n"
+HELP = ("/durum  /rapor  /kurulumlar  /ders  /hepsini_kapat  /durdur  /devam  /kademe  /kademe_devam  /karantina_kaldir <kurulum>  /onayla <id>  /reddet <id>  /yardim\n"
         "/durdur: yeni girisleri durdurur, pozisyonlar acik kalir (tam kapatma icin /hepsini_kapat)")
 PAUSE_USER = "user_cmd"
 
@@ -862,6 +862,8 @@ class TelegramDaemon:
             return self._cmd_kademe()
         if cmd == "/kademe_devam":
             return self._cmd_kademe_devam_start()
+        if cmd == "/karantina_kaldir":
+            return self._cmd_karantina_start(arg)
         if cmd in ("/onayla", "/reddet"):
             return self._lesson(arg, cmd == "/onayla")
         self._reply("bilinmeyen komut. " + HELP)
@@ -1112,6 +1114,32 @@ class TelegramDaemon:
             "chat_id": self.cfg.chat_id, "created_at": now, "expires_at": now + CODE_TTL_S, **extra})
         return code
 
+    # -- kurulum karantinasi (4b; motor `dayaniklilik.karantina` yazar, istegi motor isler)
+    def _karantina_rows(self) -> list[dict]:
+        st = self._read_status() or {}
+        rows = (st.get("dayaniklilik") or {}).get("karantina") or []
+        return [r for r in rows if isinstance(r, dict) and r.get("durum") == "aktif"]
+
+    def _cmd_karantina_start(self, arg: str) -> str:
+        rows = self._karantina_rows()
+        if not rows:
+            self._reply("karantinada kurulum yok", "INFO")
+            return "none"
+        names = ", ".join(str(r.get("birim")) for r in rows)
+        t = arg.strip().lower()
+        if not t:
+            self._reply(f"Karantinada: {names}. Kullanim: /karantina_kaldir <kurulum | hepsi>", "INFO")
+            return "usage"
+        ok = t == "hepsi" or any(t == str(r.get("birim", "")).lower() or t in [str(a).lower() for a in r.get("kollar") or []]
+                                 for r in rows)
+        if not ok:
+            self._reply(f"eslesen karantina yok ({names})")
+            return "refused"
+        code = self._new_pending("karantina", target=t)
+        self._reply(f"{t}: karantina kaldirilacak, kurulum yeniden denenir (yine kod hatasi verirse hemen tekrar karantina). "
+                    f"Onay icin {CODE_TTL_S} sn icinde yalniz su 4 haneli kodu yanitla: {code}")
+        return "code_sent"
+
     def _cmd_kill_start(self) -> str:
         if self.killswitch is None:
             self._reply("kill dosyasi yapilandirilmadi")
@@ -1178,6 +1206,16 @@ class TelegramDaemon:
             return "wrong_code"
         if p["action"] == "ladder_resume":
             return self._ladder_resume_apply(who)
+        if p["action"] == "karantina":
+            try:                                              # motor ayni dizinde okur (trader_engine.arm_quarantine.RELEASE_FILE)
+                atomic_write_json(Path(self.cfg.status_path).parent / "arm_quarantine_release.json",
+                                  {"hedef": str(p.get("target") or ""), "zaman": LS.fmt_ts(self.now()), "kaynak": f"telegram:{who}"})
+            except Exception as e:  # noqa: BLE001
+                log.error("karantina istegi yazilamadi: %s", type(e).__name__)
+                self._reply(f"karantina kaldirma istegi YAZILAMADI ({type(e).__name__}); sunucuda `arm-quarantine release`", "CRIT")
+                return "karantina_failed"
+            self._reply("Karantina kaldirma istegi yazildi; motor bir dakika icinde isler.", "WARN")
+            return "karantina_release"
         if p["action"] == "kill":
             self.killswitch.set(by=f"telegram:{who}", reason="user_cmd")
             self.kill_watch = self.now().timestamp()
@@ -1352,6 +1390,7 @@ class TelegramDaemon:
                     n = TelegramNotifier(self.client, self.cfg.chat_id, self.outbox, self.now, self.sleep)
                     n.status_path = self.cfg.status_path or None
                     islem_tick(self.cfg, n, self.now())
+                    dayaniklilik_tick(self.cfg, n, self.now())
                 except Exception as e:  # noqa: BLE001
                     log.warning("islem bildirimi: %s", type(e).__name__)
             if nowt - last_drain >= 30:
@@ -2481,6 +2520,47 @@ def islem_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime 
     except Exception:  # noqa: BLE001
         pass
     return sent + zarar_tick(cfg, notifier, now)
+
+
+def dayaniklilik_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime) -> int:
+    """Motor status.json `dayaniklilik` blogundan GECIS bildirimleri: kurulum karantinasi (WARN, birim basina tek mesaj;
+    duzelince INFO) ve sembol TRADING disi (acik pozisyonsuz WARN / pozisyonlu CRIT; geri donunce INFO). Onceki durum
+    `alarm_kaydi.json` durum('dayaniklilik') icinde; ilk okumada mevcut durum bildirilir (tek sefer)."""
+    try:
+        blk = json.loads(Path(cfg.status_path).read_text(encoding="utf-8")).get("dayaniklilik")
+    except Exception:  # noqa: BLE001
+        return 0
+    if not isinstance(blk, dict):
+        return 0
+    kayit = notifier.kayit
+    prev = kayit.durum("dayaniklilik") or {}
+    q_now = {str(r.get("birim")): str(r.get("hata") or "") for r in blk.get("karantina") or []
+             if isinstance(r, dict) and r.get("durum") == "aktif"}
+    s_now = {str(r.get("cift")): str(r.get("alert") or "WARN") for r in blk.get("sembol") or [] if isinstance(r, dict)}
+    q_prev, s_prev = dict(prev.get("karantina") or {}), dict(prev.get("sembol") or {})
+    sent = 0
+
+    def send(text: str, sev: str, key: str) -> None:
+        nonlocal sent
+        sent += int(bool(notifier.send_text(text, sev, key)))
+
+    for u, err in q_now.items():
+        if u not in q_prev:
+            send(f"{u} kurulumu art arda kod hatasi verdi, yeni islem acmiyor; acik pozisyonlar stop/hedefle suruyor. "
+                 f"Hata: {err[:120]}. Kaldirmak icin /karantina_kaldir {u}", "WARN", f"karantina:{u}:{int(now.timestamp())}")
+    for u in q_prev:
+        if u not in q_now:
+            send(f"{u} kurulumu karantinadan cikti", "INFO", f"karantina-cikis:{u}:{int(now.timestamp())}")
+    for c, sev in s_now.items():
+        if c not in s_prev:
+            send(f"{c} borsada islem disi; yeni giris yok" + (", acik pozisyon var (zorla kapatma yok)" if sev == "CRIT" else ""),
+                 sev, f"sembol:{c}:{int(now.timestamp())}")
+    for c in s_prev:
+        if c not in s_now:
+            send(f"{c} yeniden islemde; yeni girisler acildi", "INFO", f"sembol-geri:{c}:{int(now.timestamp())}")
+    if q_now != q_prev or s_now != s_prev:
+        kayit.durum_yaz("dayaniklilik", {"karantina": q_now, "sembol": s_now})
+    return sent
 
 
 def zarar_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime) -> int:

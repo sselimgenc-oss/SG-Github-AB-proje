@@ -202,19 +202,36 @@ class PriceActionLab:
         setups = tuple(m.SETUP for m in self.arms_at(ctx.tf) if getattr(m, "CORE", False))
         return mask_to_setups(self._core(ctx), setups)
 
-    def compute_tf(self, ctx: StrategyContext, *, force_core: bool = False) -> dict[str, pd.DataFrame]:
+    def compute_tf(self, ctx: StrategyContext, *, force_core: bool = False, skip=(), on_error=None,
+                   on_ok=None) -> dict[str, pd.DataFrame]:
         """ctx.tf kapandi: {anahtar: aday tablosu}. `core` = CORE kurulumlarin birlesik tablosu (1s'de ML puani dahil);
-        digerleri kurulum koduyla. `force_core`: acik pozisyonun cikis baglami icin tablo gerekir (kurulum olmasa da)."""
+        digerleri kurulum koduyla. `force_core`: acik pozisyonun cikis baglami icin tablo gerekir (kurulum olmasa da).
+        Karantina kancalari (arm_quarantine.py): `skip` anahtarlar hesaplanmaz (acik pozisyon icin zorunlu `core` HARIC: tablo
+        yine hesaplanir, aday uretimini cagiran keser); `on_error(key, exc)` yalniz strateji kod hatasinda (errors.is_strategy_error)
+        cagrilir ve anahtar atlanir, diger hatalar yukselir; `on_ok(key)` basarili hesapta. Kanca yoksa eski davranis."""
+        from ..errors import is_strategy_error
         out: dict[str, pd.DataFrame] = {}
         arms = self.arms_at(ctx.tf)
-        if force_core or any(getattr(m, "CORE", False) for m in arms):
-            out[CORE_KEY] = self.compute(ctx)
+
+        def run(key: str, fn) -> None:
+            try:
+                out[key] = fn()
+            except Exception as e:  # noqa: BLE001
+                if on_error is None or not is_strategy_error(e):
+                    raise
+                on_error(key, e)
+                return
+            if on_ok is not None:
+                on_ok(key)
+
+        if (force_core or any(getattr(m, "CORE", False) for m in arms)) and (CORE_KEY not in skip or force_core):
+            run(CORE_KEY, lambda: self.compute(ctx))
         for m in arms:
-            if getattr(m, "CORE", False):
+            if getattr(m, "CORE", False) or m.SETUP in skip:
                 continue
             inp = ArmInput(pair=ctx.pair, tf=ctx.tf, D=ctx.D, trig=ctx.bars[ctx.tf], h4=ctx.bars["4h"],
                            params=S.SignalParams.from_mapping(ctx.params), core_fn=lambda c=ctx: self._core(c))
-            out[m.SETUP] = m.compute(inp)
+            run(m.SETUP, lambda m=m, inp=inp: m.compute(inp))
         return out
 
     def filter_row(self, key: str, row: pd.Series, ctx: StrategyContext) -> pd.Series:
