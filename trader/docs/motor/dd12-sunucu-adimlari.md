@@ -207,7 +207,7 @@ systemctl status trader-ml-retrain.service --no-pager | head -12
 journalctl -u trader-ml-retrain.service -n 30 --no-pager
 ```
 
-**Kontrol:** son çalıştırma `status=0/SUCCESS` ve günlükte `"status": "ok"` satırı var (M1 için `M1@1h` ve `M1@4h` ayrı ayrı `"status": "ok"`, `"m1_error": null`). `ls` ile dosya aramayın. Hata varsa `journalctl` çıktısını bana bildirin.
+**Kontrol:** son çalıştırma `status=0/SUCCESS` ve günlükte `"status": "ok"` satırı var (M1 için `M1@1h`, `M1@4h`, `M1@15m`, `M1@1d` ayrı ayrı; paket oluşmayan zaman dilimi `"status": "no_model"` ve `"reason": "model yok: N örnek, en az M"` yazar;  `"status": "ok"`, `"m1_error": null`). `ls` ile dosya aramayın. Hata varsa `journalctl` çıktısını bana bildirin.
 
 ---
 

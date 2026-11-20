@@ -43,7 +43,7 @@ def _resolve(p: str) -> str:
 
 
 PB_TFS = ("15m", "1h", "4h", "1d")
-M1_TFS = ("1h", "4h")                 # config/engine.paper.json M1@1h, M1@4h
+M1_TFS = ("1h", "4h", "15m", "1d")    # config/engine.paper.json M1@1h, M1@4h, M1@15m, M1@1d
 M1_MAX_ROWS = 50_000                  # gece tavani (spec §5.2: "tavan 50 bin satir"); ciftbasina kuyruk = 50 000 / cift sayisi
 
 
@@ -116,12 +116,16 @@ def m1_nightly(led, cf_path: str | None, *, history_dir: str, tfs, models_dir: s
             PK.save_package(pkg, models_dir)
             sha = pkg["meta"]["model_hash"]
         status = "no_model" if pkg is None else "ok"
+        reason = None
+        if pkg is None:   # paket yok: nedeni gorunur yap ("model yok: N örnek, en az M"); esik uydurulmaz
+            ys = {float(r["y"]) for r in rows}
+            reason = TR.no_model_reason(len(rows), len(ys) if rows else None)
         out[tf] = {"status": status, "hist_rows": len(hist), "paper_rows": len(paper_kept), "lock_dropped": dropped,
-                   "paper_stats": pstats, "pairs": len(bars_by)}
+                   "paper_stats": pstats, "pairs": len(bars_by), "reason": reason}
         if csv_rows is not None:
             csv_rows.append([f"m1_nightly_{tf}_{now.date().isoformat()}", "nightly_m1",
                              f"ridge_logistic;M1@{tf};stop={PB.PF.STOP_ATR};tp={PB.PF.TARGET_ATR};h={PB.PF.HORIZON};q={TR.THRESHOLD_Q}",
-                             f"hist<{LOCK_START.date()};paper>=kilit_sonrasi;rows={len(rows)};lock_dropped={dropped};status={status}",
+                             f"hist<{LOCK_START.date()};paper>=kilit_sonrasi;rows={len(rows)};lock_dropped={dropped};status={status}" + (f";{reason}" if reason else ""),
                              "", sha, now.isoformat()])
         del rows, hist, paper, paper_kept, pkg, bars_by
     return out

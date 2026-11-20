@@ -19,13 +19,14 @@ from .package import build_package
 
 THRESHOLD_Q = 0.98
 MAX_ROWS = 400_000
+MIN_ROWS = 2   # mevcut kural: en az 2 satir ve iki sinif; altinda model yok (esik uydurulmaz)
 
 
 def train_tf(rows: Sequence[Mapping], *, arm_id: str, created_at: datetime | None = None, max_rows: int = MAX_ROWS) -> dict | None:
     """Tek zaman dilimi paketi (arm_id = 'M1@<tf>') ya da None. Kilit satiri -> LockWindowError."""
     assert_no_lock(rows)
     rows = sorted(rows, key=lambda r: (r["ts"], r["side"]))[-max_rows:]
-    if len(rows) < 2:
+    if len(rows) < MIN_ROWS:
         return None
     y = np.array([float(r["y"]) for r in rows])
     if y.min() == y.max():
@@ -39,6 +40,13 @@ def train_tf(rows: Sequence[Mapping], *, arm_id: str, created_at: datetime | Non
     return build_package(arm_id, model, thr, list(F.FEATURE_NAMES), train_start=rows[0]["ts"], train_end=rows[-1]["ts"],
                          n_train=len(rows), n_pos=int(y.sum()), data_hash=row_digest(rows), lock_dropped=0,
                          base_rate=float(y.mean()), created_at=created_at)
+
+
+def no_model_reason(n_rows: int, y_classes: int | None = None) -> str:
+    """Paket olusmayan kolun gorunur nedeni (gece ciktisi/paper_models.csv): 'model yok: N örnek, en az M'."""
+    if n_rows < MIN_ROWS or y_classes is None or y_classes >= 2:
+        return f"model yok: {n_rows} örnek, en az {MIN_ROWS}"
+    return f"model yok: {n_rows} örnek, tek sınıf (iki sınıf gerekir)"
 
 
 def split_lock(rows: Iterable[Mapping]) -> tuple[list[dict], int]:

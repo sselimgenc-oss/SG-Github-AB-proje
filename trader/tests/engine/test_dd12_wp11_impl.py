@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 UTC = timezone.utc
 PAPER = load_cli_config(ROOT / "config", "learner", "paper")
 ALL_ARMS = tuple(f"{s_}@{tf}" for s_ in ("T1", "R1", "TF1", "B1", "H2", "S1", "F1") for tf in ("15m", "1h", "4h", "1d"))   # WP-12a: TF1/B1; WP-12b: H2/S1/F1
-PAPER_ARMS = ALL_ARMS + ("M1@1h", "M1@4h")   # DD-12 WP-14: M1 (ML'in kendi adayi) config/engine.paper.json'a eklendi
+PAPER_ARMS = ALL_ARMS + ("M1@1h", "M1@4h", "M1@15m", "M1@1d")   # 20 Kasim: M1 15dk/1g kagitta acik; DD-12 WP-14: M1 (ML'in kendi adayi) config/engine.paper.json'a eklendi
 PAPER_ARMS = PAPER_ARMS + ("C1@1h", "C1@4h")   # 19 Kasim: C1 (CT kadro) eklendi
 
 
