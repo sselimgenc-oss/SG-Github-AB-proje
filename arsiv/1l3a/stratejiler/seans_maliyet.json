@@ -1,6 +1,0 @@
-{
-  "_aciklama": "Seans bazlı kayma çarpanı (ön kayıt, 2026-11-19, kullanıcı onaylı). Binance TradFi perp'leri 7/24 işlem görür; dayanak piyasa kapalıyken makas ve kayma genişler. Çarpan YALNIZ kayma_bps ve stop_kayma_bps bileşenine uygulanır; komisyona, funding'e ve boyutlandırmaya (risk birimi) uygulanmaz. Kripto: çarpan yok (1.0). Dilimler motor/canli/paper_takvim.py::seans_dilimi: normal = dayanak seansı; genisletilmis (yalniz hisse) = işlem günü 04:00-açılış ve kapanış-+4 sa (NY); kapali = gece + hafta sonu + tatil.",
-  "_kaynak": "OLCUM YOK, VARSAYIM: projede seans bazlı ölçülmüş makas/spread verisi bulunmuyor (veri/ altında yalnız kitap kartlarında 'spread' geçer). Değerler sabit varsayımdır; ölçüm gelirse (canlı dolum kayıtları / emir defteri) bu dosya yeni ön kayıtla güncellenir.",
-  "hisse": {"normal": 1.0, "genisletilmis": 2.0, "kapali": 3.0},
-  "emtia": {"normal": 1.0, "kapali": 2.0}
-}
