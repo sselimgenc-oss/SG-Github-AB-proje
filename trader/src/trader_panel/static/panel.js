@@ -451,7 +451,15 @@
       });
       add(ig, ek2);
     }
-    if (!p.ders && !p.ml && !p.etiket) add(ig, yokKart('Henüz öğrenme verisi yok.'));
+    if (p.kucultme) {
+      var kk2 = kart('Kademeli küçültme');
+      add(kk2, el('div', 'yok', 'Son işlemleri zararda olan kolların işlem riski küçültüldü (kol kapanmaz; kâra dönünce geri yükselir).'));
+      p.kucultme.kollar.forEach(function (r) {
+        add(kk2, satir(r.kol, '%' + Math.round(r.carpan * 100) + ' boyut · son ' + (num(r.net_10) ? '10' : '5') + ': ' + sgn(num(r.net_10) ? r.net_10 : r.net_5) + ' R', 'kotu'));
+      });
+      add(ig, kk2);
+    }
+    if (!p.ders && !p.ml && !p.etiket && !p.kucultme) add(ig, yokKart('Henüz öğrenme verisi yok.'));
     add(root, ig);
   }
 

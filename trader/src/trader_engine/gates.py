@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Literal, Protocol
 
 from trader_core import etiket_kurallari as EK
+from trader_core import kol_kucultme as KK
 from trader_core import ledger as L
 from trader_core import risk as K
 from trader_core import veto
@@ -350,6 +351,18 @@ class EntryGate:
             log.warning("ML filtre kapisi hatasi, giris serbest: %s: %s", type(e).__name__, e)
             return None
 
+    def _kol_karari(self, aid: str) -> KK.KolKarar | None:
+        """Kademeli kucultme (kagit): kolun son kapanan islemlerinin net R'sinden carpan. Okunamazsa None (carpan yok = yapilandirma boyutu;
+        hata yalniz kucultmeyi atlar, hicbir seyi arttirmaz/engellemez)."""
+        fn = getattr(self.ledger, "arm_recent_results", None)
+        if fn is None:
+            return None
+        try:
+            return KK.karar(fn(aid, KK.KAYIT_SAYISI))
+        except Exception as e:  # noqa: BLE001
+            log.warning("kol kucultme okunamadi, tam boyut: %s: %s", type(e).__name__, e)
+            return None
+
     def _arms_off(self) -> Collection[str]:
         ao = self.arms_off
         return (ao() if callable(ao) else ao) or ()
@@ -454,7 +467,20 @@ class EntryGate:
         cand = K.Candidate(pair, row.side, float(ref), float(row.planned_stop), float(lev),
                            rules.step, rules.min_notional)
         src = self.ladder if self.ladder is not None else self.cfg
-        dec = K.check_entry(acct, cand, src.risk_config)
+        dec = None
+        if paper:                                                                       # 20 Kasim: kademeli kucultme (yalniz kagit, yalniz kucultur)
+            kk = self._kol_karari(aid)
+            if kk is not None:
+                tk["features"] = {**(tk.get("features") or _features(row)), **KK.ozellikler(kk)}
+                if kk.carpan < 1.0:
+                    dec = K.check_entry_scaled(acct, cand, src.risk_config, kk.carpan)
+                    if dec.allowed:
+                        self.counters[f"kol_kucultme:{aid}"] += 1
+                    else:                                                               # asgari boyut bile emir alt sinirinin altinda: kol kapanmaz, tam boyut denenir
+                        dec = None
+                        tk["features"] = {**tk["features"], "kol_boyut_carpani": 1.0, "kol_boyut_geri": 1}
+        if dec is None:
+            dec = K.check_entry(acct, cand, src.risk_config)
         if not dec.allowed:
             return self._skip(row, tf, "risk_denied", skip_reason="risk_denied", veto_status=vs,
                               veto_reason=lk.reason, risk_allowed=False, risk_reason=dec.reason, **tk)

@@ -1621,6 +1621,23 @@ def _model_ozet(st: Mapping[str, Any] | None) -> str:
     return ""
 
 
+def _kucultulen_kollar(cfg: TelegramConfig) -> str:
+    """Kademeli kucultme (docs/motor/kademeli-kucultme-spec.md): boyutu kucultulen kollar tek satir; yok/okunamazsa bos."""
+    try:
+        from . import kol_kucultme as KK  # noqa: PLC0415
+        from . import ledger as L  # noqa: PLC0415
+        if not cfg.ledger_path or not Path(cfg.ledger_path).exists():
+            return ""
+        led = L.open_ledger(cfg.ledger_path, "learner", create=False, read_only=True, migrate=False)
+        try:
+            return KK.satir(KK.azaltilanlar(led.arm_results_all(KK.KAYIT_SAYISI)))
+        finally:
+            led.close()
+    except Exception as e:  # noqa: BLE001 - istege bagli satir
+        log.warning("rapor: kol kucultme okunamadi: %s", type(e).__name__)
+        return ""
+
+
 def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping[str, Callable[[], str]] | None = None
                  ) -> str:
     """Günlük özet (en çok 12 satır, sade Türkçe). `sections` yalnız 'Duraklatma' için okunur; diğer bölümler panelde."""
@@ -1676,6 +1693,9 @@ def build_report(cfg: TelegramConfig, now: datetime, day: str, sections: Mapping
     ml = _model_ozet(st)
     if ml:
         out.append(ml)
+    kk = _kucultulen_kollar(cfg)
+    if kk:
+        out.append(kk)
     if cfg.health_state:
         try:
             ov = json.loads(Path(cfg.health_state).read_text(encoding="utf-8")).get("last_overall")
