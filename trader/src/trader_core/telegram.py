@@ -494,6 +494,9 @@ class TelegramNotifier:
         if r is None:
             return True
         text, key = r
+        if str(getattr(notice, "code", "")) in DERS_SESSIZ:       # ders uygulandi / geri alindi: Telegram'a gitmez (gunluk + panel)
+            logging.getLogger(__name__).info("ders (Telegram'a gonderilmedi): %s", text.replace("\n", " "))
+            return True
         if not self.kayit.gunde_bir(key, self.now().astimezone(TR).date().isoformat()):
             return True                                       # ayni ders icin gunde tek mesaj
         return self.send_text(text, "INFO" if notice.code == "applied" else "WARN", f"ders:{key}:{self.now().isoformat()}")
@@ -1433,11 +1436,7 @@ def _usd(x: float) -> str:
 
 
 def _fiyat(x: Any) -> str:
-    try:
-        v = float(x)
-    except (TypeError, ValueError):
-        return "?"
-    return tr_sayi(v, 2 if abs(v) >= 100 else 4 if abs(v) >= 1 else 6)
+    return TS.fiyat(x)                       # tek fiyat bicimi (tg_sade.fiyat)
 
 
 def _gun_tr(day: str) -> str:
@@ -2288,7 +2287,13 @@ def haftalik_metni(cfg: TelegramConfig, now: datetime) -> str:
     return TS.etiketle("\n".join(lines[:TS.MAX_SATIR]))
 
 
+HAFTALIK_TELEGRAM = False                       # haftalik ozet Telegram'a gitmez (panelde/raporda kalir)
+DERS_SESSIZ = frozenset({"applied", "rolled_back"})
+
+
 def haftalik_gonder(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime) -> bool:
+    if not HAFTALIK_TELEGRAM:
+        return False
     tr = now.astimezone(TR)
     if tr.weekday() != 6:                       # yalniz pazar
         return False

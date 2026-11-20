@@ -193,7 +193,7 @@ def test_ayni_surum_islem_yok(world):
     assert world.install_calls() == [] and world.telegram() == [] and world.history() == []
 
 
-def test_yeni_yesil_commit_kurulur_ve_telegram_yazar(world):
+def test_yeni_yesil_commit_kurulur_ve_telegram_sessiz(world):
     old, new = world.shas[0], world.shas[2]
     world.set_release(old)
     r = world.run()
@@ -202,14 +202,14 @@ def test_yeni_yesil_commit_kurulur_ve_telegram_yazar(world):
     assert world.current() == new
     rows = world.history()
     assert len(rows) == 1 and rows[0][1:] == [old, new, "basarili"]
-    msgs = world.telegram()
-    assert msgs == ["[ML] Bot güncellendi: degisiklik 2\n(ve 1 değişiklik daha)\nSenden: sorun görürsen orkestratöre 'ML geri al' yaz."]
-    assert len(msgs[0].splitlines()) <= 3 and "_" not in msgs[0] and old[:7] not in msgs[0]
+    assert world.telegram() == []                                     # basarili kurulumda Telegram'a hicbir sey gitmez
+    assert "Bot güncellendi: degisiklik 2" in r.stdout and "guncellendi:" in r.stdout   # yalniz gunluk
 
 
 def test_token_komut_satirinda_degil_stdinde(world):
     world.set_release(world.shas[0])
     assert world.run().returncode == 0
+    assert world.run(GERI_AL).returncode == 0                         # basarili guncelleme sessiz; geri alma mesaji token yolunu dener
     assert TOKEN not in world.curl_argv()                             # ps'te gorunecek argv'de token yok
     cfg = (world.log / "curl_cfg.log").read_text(encoding="utf-8")
     assert TOKEN in cfg and "api.telegram.org/bot" in cfg             # token yalniz --config - (stdin) ile gider
@@ -253,7 +253,7 @@ def test_kurulum_hatasi_basarisiz_mesaji_ve_tekrar_denememe(world):
     rows = world.history()
     assert rows[-1][1:] == [old, new, "basarisiz"]
     msgs = world.telegram()
-    assert msgs == ["[ML] Güncelleme yapılamadı; bot eski sürümle çalışmaya devam ediyor."]
+    assert msgs == ["[ML] ⚠️ Güncelleme kurulamadı; bot eski sürümle çalışıyor."]
     assert TOKEN not in msgs[0] and "SECRETKEYVALUE" not in msgs[0]
     # ayni commit bir daha denenmez
     r2 = world.run(**env)
@@ -301,25 +301,24 @@ def test_cok_degisiklikte_mesaj_uc_satiri_asmaz(tmp_path):
     w.set_release(w.shas[0])
     r = w.run()
     assert r.returncode == 0, r.stderr
-    msg = w.telegram()[0].split("\n")
-    assert msg == ["[ML] Bot güncellendi: degisiklik 17", "(ve 16 değişiklik daha)",
-                   "Senden: sorun görürsen orkestratöre 'ML geri al' yaz."]
+    assert w.telegram() == [] and "Bot güncellendi: degisiklik 17 (ve 16 değişiklik daha)" in r.stdout
 
 
 def test_mesaj_konusu_test_ve_merge_atlanir_onek_temizlenir(tmp_path):
     w = World(tmp_path, subjects=["Temel", "Mutabakat: kasa kontrolü sadeleşti", "Test: kasa testi", "Merge branch 'x'"])
     w.set_release(w.shas[0])
-    assert w.run().returncode == 0
-    assert w.telegram() == ["[ML] Bot güncellendi: kasa kontrolü sadeleşti\n(ve 2 değişiklik daha)\n"
-                            "Senden: sorun görürsen orkestratöre 'ML geri al' yaz."]
+    r = w.run()
+    assert r.returncode == 0
+    assert w.telegram() == [] and "Bot güncellendi: kasa kontrolü sadeleşti (ve 2 değişiklik daha)" in r.stdout
 
 
 def test_mesaj_konusu_yalniz_test_varsa_en_yeni_konu_ve_90_karakter(tmp_path):
     w = World(tmp_path, subjects=["Temel", "Test: " + "a" * 120])
     w.set_release(w.shas[0])
-    assert w.run().returncode == 0
-    ilk = w.telegram()[0].split("\n")[0]
-    assert ilk.startswith("[ML] Bot güncellendi: ") and len(ilk) - len("[ML] Bot güncellendi: ") <= 90
+    r = w.run()
+    assert r.returncode == 0 and w.telegram() == []
+    ilk = next(l for l in r.stdout.splitlines() if "Bot güncellendi: " in l).split("Bot güncellendi: ", 1)[1].split(" (ve ")[0].split(" Senden:")[0]
+    assert len(ilk) <= 90
 
 
 def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
@@ -333,8 +332,7 @@ def test_geri_al_onceki_surumu_kurar_ve_durdurur(world):
     assert world.current() == old
     assert (world.state / "DURDUR").exists()
     assert world.history()[-1][1:] == [new, old, "geri_alindi"]
-    assert world.telegram()[-1] == ("[ML] Bot önceki sürüme geri alındı.\n"
-                                    "Otomatik güncelleme durduruldu.")
+    assert world.telegram() == ["[ML] ⚠️ Son güncelleme geri alındı; bot önceki sürümle çalışıyor."]
     # DURDUR varken yeni yesil commit kurulmaz
     n = len(world.install_calls())
     assert world.run().returncode == 0
@@ -348,13 +346,13 @@ def test_geri_al_gecmis_yoksa_hata(world):
     assert world.install_calls() == [] and not (world.state / "DURDUR").exists()
 
 
-def test_oto_ac_durdurmayi_kaldirir_ve_bildirir(world):
+def test_oto_ac_durdurmayi_kaldirir_telegram_sessiz(world):
     world.set_release(world.shas[0])
     (world.state).mkdir(parents=True, exist_ok=True)
     (world.state / "DURDUR").write_text("", encoding="utf-8")
     assert world.run(OTO_AC).returncode == 0
     assert not (world.state / "DURDUR").exists()
-    assert world.telegram() == ["[ML] Otomatik güncelleme yeniden açıldı."]
+    assert world.telegram() == []
     assert world.run().returncode == 0                                # artik guncelleme yapar
     assert world.install_calls() == [f"COMMIT={world.shas[2]}"]
 
@@ -388,8 +386,9 @@ def test_mesaj_konusu_sozcuk_sinirinda_kesilir_utf8_guvenli(tmp_path):
     konu = "Kasa mutabakatı şimdi çok daha sade ve anlaşılır oldu, işlem özetleri ğüşiöç ile birlikte kaydedildi ve gönderildi"
     w = World(tmp_path, subjects=["Temel", konu])
     w.set_release(w.shas[0])
-    assert w.run().returncode == 0
-    ilk = w.telegram()[0].split("\n")[0][len("[ML] Bot güncellendi: "):]
+    r = w.run()
+    assert r.returncode == 0 and w.telegram() == []
+    ilk = next(l for l in r.stdout.splitlines() if "Bot güncellendi: " in l).split("Bot güncellendi: ", 1)[1].split(" (ve ")[0].split(" Senden:")[0]
     assert len(ilk) <= 90 and ilk.endswith("…") and "\ufffd" not in ilk
     govde = ilk[:-1]
     assert konu.startswith(govde) and konu[len(govde)] == " "              # sozcuk ortasinda kesilmez
@@ -399,5 +398,5 @@ def test_mesaj_konusu_sozcuk_sinirinda_kesilir_utf8_guvenli(tmp_path):
 def test_kisa_konu_kesilmez(tmp_path):
     w = World(tmp_path, subjects=["Temel", "Kısa şık konu"])
     w.set_release(w.shas[0])
-    assert w.run().returncode == 0
-    assert w.telegram()[0].split("\n")[0] == "[ML] Bot güncellendi: Kısa şık konu"
+    r = w.run()
+    assert r.returncode == 0 and w.telegram() == [] and "Bot güncellendi: Kısa şık konu" in r.stdout

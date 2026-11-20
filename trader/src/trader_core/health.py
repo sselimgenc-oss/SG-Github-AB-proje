@@ -110,6 +110,8 @@ class ApiProbe:
     acct_drift: int | None = None
     acct_unverified: int | None = None
     expect_exchange: bool = False
+    # Acik pozisyonlarin (cift, varlik sinifi kripto|hisse|emtia); None = okunamadi / sinif bilinmiyor (denetim uretilmez).
+    open_pairs: tuple[tuple[str, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -282,6 +284,7 @@ class HealthConfig:
     # Piyasa verisi (Bolum 15)
     feed_status_crit_s: int = 180
     market_bar_crit_s: int = 300
+    open_price_stale_s: int = 600      # acik pozisyonun cifti icin yeni 1m mum gelmeyeli (seans acikken) uyari esigi
     rules_warn_s: int = 24 * 3600
     # Canli/testnet (WP-B8): stopsuz pozisyon `naked_alarm_s`'i asarsa CRIT (11 §6.5: bos olmayan liste hemen CRIT => 0);
     # borsa okunamiyorsa `exchange_unreachable_s` sonra CRIT (11 §10 F1), once WARN.
@@ -300,7 +303,7 @@ class HealthConfig:
                   "disk_crit_bytes", "mem_warn_bytes", "mem_crit_bytes", "swap_warn_ratio",
                   "swap_crit_ratio", "restart_warn_delta", "restart_crit_delta", "restart_crit_runs",
                   "backup_warn_s", "backup_crit_s", "warmup_s", "confirm_runs", "crit_repeat_min",
-                  "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "rules_warn_s",
+                  "warn_repeat_min", "multiple_threshold", "feed_status_crit_s", "market_bar_crit_s", "open_price_stale_s", "rules_warn_s",
                   "exchange_unreachable_s", "drift_max_age_s"):
             _pos(n, getattr(self, n))
         w = self.ml_warn_days
@@ -675,6 +678,45 @@ def _c_market_bars(snap, cfg):
                     cfg.market_bar_crit_s)
     return _res(name, Status.OK, "ok", f"tum ciftlerde 1m mum taze (en eski {worst:.0f} sn)", worst,
                 cfg.market_bar_crit_s)
+
+
+def _canon(p: str) -> str:
+    return str(p).strip().upper().split(":", 1)[0]
+
+
+def _c_open_price(snap, bot, cfg):
+    """Acik pozisyonun cifti icin fiyat (1m mum) gelmiyor mu? Paper'da stop yalniz gelen mumda islenir (brokers/paper.py advance);
+    mum yoksa stop beklemede kalir. Seans kapaliyken (hisse/emtia hafta sonu ve seans disi) mum gelmemesi NORMALDIR: uyari yok.
+    Esik oncesi de seans aciksa (yeni acilis) sayilir; boylece acilisin ilk dakikalarinda sahte uyari cikmaz."""
+    from trader_core.arm_time import session_tag   # noqa: PLC0415
+    name = f"acik_pozisyon_fiyat_bayat:{bot}"
+    a = snap.api[bot]
+    m = snap.market
+    if not a.open_pairs:
+        return _res(name, Status.OK, "ok", "acik pozisyon yok")
+    newest = {_canon(k): v for k, v in m.newest_bar_at.items()}
+    esik = cfg.open_price_stale_s
+    once = snap.now - timedelta(seconds=esik)
+    bayat, kapali = [], 0
+    for pair, cls in a.open_pairs:
+        try:
+            if session_tag(cls, snap.now) != "open" or session_tag(cls, once) != "open":
+                kapali += 1
+                continue
+        except ValueError:
+            continue
+        t = newest.get(_canon(pair))
+        try:
+            age = float("inf") if t is None else _age_s(snap.now, t, cfg)
+        except _Skew:
+            continue
+        if age > esik:
+            bayat.append(pair)
+    if not bayat:
+        return _res(name, Status.OK, "ok", "acik pozisyonlarin fiyati geliyor" + (f" ({kapali} cift seans disi)" if kapali else ""))
+    coins = ", ".join(dict.fromkeys(p.split("/")[0].upper() for p in bayat))
+    return _res(name, Status.WARN, "open_price_stale",
+                f"{coins} için fiyat gelmiyor; açık pozisyonun stopu fiyat gelince işler", None, esik)
 
 
 def _c_rules_count(snap, cfg):
@@ -1080,6 +1122,8 @@ def evaluate(snap: HealthSnapshot, cfg: HealthConfig = DEFAULT_CFG) -> HealthRep
             results.append(_safe(f"api_reachable:{bot}", _c_api, snap, bot, cfg))
             results.append(_safe(f"bot_loop_age:{bot}", _c_loop, snap, bot, cfg))
             results.append(_safe(f"candle_age:{bot}", _c_candle, snap, bot, cfg))
+            if snap.api[bot].open_pairs is not None and snap.market is not None and snap.market.db_state == "ok":
+                results.append(_safe(f"acik_pozisyon_fiyat_bayat:{bot}", _c_open_price, snap, bot, cfg))
             if _live_mode(snap.api[bot]):
                 results.append(_safe(f"naked_position:{bot}", _c_naked, snap, bot, cfg))
                 results.append(_safe(f"exchange_reachable:{bot}", _c_exchange, snap, bot, cfg))
@@ -1279,6 +1323,8 @@ _HEALTH_TR: dict[str, tuple[str, str, str]] = {
                       "Bütçe biterse yapay zekâ filtresi çalışmaz ve yeni işlemler durur."),
     "feed_status_age": ("Fiyat akışı durmuş görünüyor", "Fiyat akışı yeniden çalışıyor",
                         "Güncel fiyat gelmiyor; yeni işlemler bekletilir."),
+    "acik_pozisyon_fiyat_bayat": ("Açık pozisyonun fiyatı gelmiyor", "Açık pozisyonun fiyatı yeniden geliyor",
+                                  "Stop, fiyat gelince işlenir; seans kapalıyken bu uyarı çıkmaz."),
     "market_bar_age": ("Piyasa verisi güncel değil", "Piyasa verisi yeniden güncel",
                        "Eski veriyle işlem açılmaz; yeni işlemler bekletilir."),
     "rules_coverage": ("Borsa kuralları eksik", "Borsa kuralları yeniden tam",
@@ -1372,6 +1418,8 @@ def _health_tr(name: str, code: str, detail: str = "") -> tuple[str, str, str]:
         m = _BAN_DETAIL.search(detail or "")
         if m:
             anlam = f"Borsa: {m.group(1)}, kalan yaklaşık {m.group(2)} dk. {anlam}"
+    if base == "acik_pozisyon_fiyat_bayat" and "için fiyat gelmiyor" in (detail or ""):
+        anlam = detail
     if base == "ml_package" and code.startswith("ml_expiring_") and "kip=shadow" in detail:
         anlam = "Yenilenmezse gölge izleme durur; işlemler etkilenmez."
     return sorun, duzeldi, anlam

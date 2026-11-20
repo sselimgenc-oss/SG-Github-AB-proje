@@ -115,8 +115,9 @@
     if (kol) add(d, el('div', 'u', kol));
     return d;
   }
-  function kzHucre(kz, yuzde) {
+  function kzHucre(kz, yuzde, bekliyor) {
     var d = el('div', 'sg');
+    if (bekliyor) { add(d, el('div', 'u', 'fiyat bekleniyor')); return d; }
     add(d, el('div', 'n ' + cls(kz), usdS(kz)));
     if (num(yuzde)) add(d, el('div', 'u ' + cls(yuzde), pc(yuzde)));
     return d;
@@ -328,8 +329,8 @@
     add(k, add(el('div', 'ozet-ic'), el('span', '', a.n + ' işlem'), add(el('span'), document.createTextNode('K/Z '), el('b', cls(a.kz), usdS(a.kz))),
       num(a.kasa_yuzde) ? el('span', '', 'kasanın %' + trn(a.kasa_yuzde, 0) + ek(a.kasa_yuzde) + ' kullanımda') : null));
     var rows = a.rows.map(function (r) {
-      var gn = add(el('div'), el('div', 'n', px(r.giris)), el('div', 'u', '→ ' + px(r.simdi)));
-      return {cells: [sym(r.coin, r.yon, r.kol), gn, kzHucre(r.kz, r.kz_yuzde), add(el('div', 'sg'), el('span', 'n', r.sure))],
+      var gn = add(el('div'), el('div', 'n', px(r.giris)), el('div', 'u', r.fiyat_bekleniyor ? '→ fiyat bekleniyor' : '→ ' + px(r.simdi)));
+      return {cells: [sym(r.coin, r.yon, r.kol), gn, kzHucre(r.kz, r.kz_yuzde, r.fiyat_bekleniyor), add(el('div', 'sg'), el('span', 'n', r.sure))],
         detail: [['Stop', px(r.stop)], ['Hedef', px(r.hedef)], ['Büyüklük', usd(r.buyukluk)], ['Kaldıraç', r.kaldirac ? r.kaldirac + 'x' : ''],
           ['Kol', r.kol], ['Açılış', r.acilis], ['Açılış nedeni', r.neden, 1]]};
     });

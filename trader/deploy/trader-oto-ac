@@ -36,7 +36,7 @@ mkdir -p "$STATE_DIR"
 if [ -e "$STATE_DIR/DURDUR" ]; then
   rm -f "$STATE_DIR/DURDUR"
   echo "Otomatik guncelleme yeniden acildi."
-  tg_send "[ML] Otomatik güncelleme yeniden açıldı."
+  log "Otomatik guncelleme yeniden acildi (Telegram mesaji yok)"
 else
   echo "Otomatik guncelleme zaten acik."
 fi
