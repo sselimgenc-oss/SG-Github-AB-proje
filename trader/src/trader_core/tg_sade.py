@@ -201,6 +201,11 @@ def limit_doldu(zarar: float, limit: float) -> str:
                    "Açık pozisyonlar stoplarıyla yönetilmeye devam ediyor; yarına kadar yeni işlem açılmaz."])
 
 
+def islem_kontrolu(n: int) -> str:
+    """Gunluk islem mutabakati uyusmazlik bildirimi (yalniz n > 0 iken gonderilir; tek satir)."""
+    return etiketle(f"İşlem kontrolü: {int(n)} uyuşmazlık bulundu, inceleniyor.")
+
+
 # ----------------------------------------------------------------------------- bot durdu
 def _pozisyonlar(status_path: str | None) -> tuple[int | None, str | None]:
     """(acik pozisyon sayisi, kip); okunamazsa (None, None)."""

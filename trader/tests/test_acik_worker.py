@@ -1,4 +1,4 @@
-"""Herkese acik ikiz Worker: yalniz rejim.json ve gunluk_ozet_v1.json (GET/HEAD); pano verisi bu Worker'a yuklenmez."""
+"""Herkese acik ikiz Worker: yalniz rejim.json, gunluk_ozet_v1.json ve mutabakat_v1.json (GET/HEAD); pano verisi bu Worker'a yuklenmez."""
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,7 +15,7 @@ def test_acik_worker_yalniz_iki_dosya(tmp_path):
 const ok = (c, m) => {{ if (!c) throw new Error(m); }};
 const env = {{ASSETS: {{fetch: async () => new Response('{{"a":1}}')}}}};
 const rq = (p, m) => new Request('https://x' + p, {{method: m || 'GET'}});
-for (const p of ['/rejim.json', '/gunluk_ozet_v1.json']) for (const m of ['GET', 'HEAD']) {{
+for (const p of ['/rejim.json', '/gunluk_ozet_v1.json', '/mutabakat_v1.json']) for (const m of ['GET', 'HEAD']) {{
   const r = await w.fetch(rq(p, m), env);
   ok(r.status === 200 && r.headers.get('Content-Type') === 'application/json' && r.headers.get('Access-Control-Allow-Origin') === '*'
      && r.headers.get('Cache-Control') === 'no-store', p + m);
@@ -34,7 +34,14 @@ def test_yayin_betigi_acik_workeri_yalniz_iki_dosyayla_kurar():
     t = (DEPLOY / "panel_yayinla.sh").read_text(encoding="utf-8")
     assert subprocess.run(["bash", "-n", str(DEPLOY / "panel_yayinla.sh")], capture_output=True).returncode == 0
     blok = t[t.index('mkdir -p "$gecici/acik/site"'):]
-    assert "for f in rejim.json gunluk_ozet_v1.json; do" in blok and "index.html" not in blok
+    assert "for f in rejim.json gunluk_ozet_v1.json mutabakat_v1.json; do" in blok and "index.html" not in blok
     assert '"name": "$ad-acik"' in blok and '"main": "acik_worker.js"' in blok
     assert "UYARI: acik yayin" in blok and "exit 1" not in blok          # pano yayinini bozmaz
     assert t.index('echo "panel yayimlandi') < t.index('mkdir -p "$gecici/acik/site"')
+
+
+def test_yayin_betigi_mutabakat_dosyasini_var_durumdan_kopyalar_eksikse_uyarir():
+    t = (DEPLOY / "panel_yayinla.sh").read_text(encoding="utf-8")
+    assert 'cp "$trader_dir/var/durum/mutabakat_v1.json" "$gecici/site/mutabakat_v1.json"' in t
+    assert "UYARI: mutabakat_v1.json yok" in t and t.index("mutabakat_v1.json yok") < t.index('echo "panel yayimlandi')
+    assert 'ACIK = new Set(["/rejim.json", "/gunluk_ozet_v1.json", "/mutabakat_v1.json"])' in (DEPLOY / "acik_worker.js").read_text(encoding="utf-8")

@@ -230,6 +230,7 @@ class PanelData:
                          ("budget", lambda: P.budget_view(self.cfg.budget_config)),
                          ("risk", lambda: P.risk_usage(lp, b, status["equity"], status["day_start_equity"], P.today_tr(now))["rows"]),
                          ("tut", lambda: P.tutarlilik_view(self._tut_path(), now)),
+                         ("mut", lambda: PP.mutabakat_view(self._mut_path())),
                          ("pbo", lambda: P.pbo_view(self._holdout_path("pbo_path", "pbo_ozet.json"),
                                                     self._holdout_path("muhur_path", "muhur.json")))):
                 try:
@@ -237,7 +238,7 @@ class PanelData:
                 except Exception:  # noqa: BLE001
                     safe[k] = None
             teknik = PP.teknik_view(health=safe["health"], risk_rows=safe["risk"], budget=safe["budget"], tut=safe["tut"],
-                                    pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders)
+                                    pbo=safe["pbo"], ctx=ctx, ml_filtre=mlf, ders=ders, mutabakat=safe["mut"])
             isik = PP._problem(teknik.get("saglik"), s["state"], serit["risk"], safe["budget"])
             kismi = PP.kismi_durum(ders, ml)
             if kismi and isik["renk"] == "yesil":
@@ -273,6 +274,9 @@ class PanelData:
     def _tut_path(self) -> str:
         c = self.cfg.tutarlilik_path
         return c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "tutarlilik_v1.json") if self.cfg.ledger_path else "")
+
+    def _mut_path(self) -> str:
+        return str(Path(self.cfg.ledger_path).parent.parent / "durum" / "mutabakat_v1.json") if self.cfg.ledger_path else ""
 
     def _holdout_path(self, key: str, name: str) -> str:
         return getattr(self.cfg, key) or str(self.cfg.base / "research" / "holdout" / name)

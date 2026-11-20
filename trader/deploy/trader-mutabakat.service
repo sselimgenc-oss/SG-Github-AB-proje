@@ -1,0 +1,28 @@
+[Unit]
+Description=Trader islem mutabakati (motor defteri = panel = Telegram; gunluk + her kurulum sonrasi; yalniz bilgi)
+Documentation=file:///opt/trader/docs/panel-spec.md
+OnFailure=trader-health-fail@%n.service
+
+[Service]
+Slice=trader.slice
+Type=oneshot
+User=trader
+Group=trader
+WorkingDirectory=/opt/trader
+# Defter SALT OKUNUR acilir (migrate yok); panel veri katmani surec ici cagrilir. Cikti: var/durum/mutabakat_v1.json + mutabakat.md.
+# Uyusmazlik varsa gunde bir Telegram mesaji: var/telegram/outbox'a yazilir, mesaji telegram servisi gonderir (anahtar gerekmez).
+Environment=TELEGRAM_VAR_DIR=/opt/trader/var/telegram
+ExecStart=/usr/bin/python3 -I /opt/trader/scripts/mutabakat_run.py --once
+TimeoutStartSec=120
+# Saf stdlib; panel gorunumu ile ayni okuma (panel 64M ile calisir); 5-10 bin islemde bile onlarca MB
+MemoryMax=128M
+CPUQuota=20%
+Nice=15
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/trader/var/durum -/opt/trader/var/telegram
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX

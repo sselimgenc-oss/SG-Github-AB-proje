@@ -32,6 +32,12 @@ fi
 if ! PYTHONPATH="$trader_dir/src" "$py" -m trader_core.gunluk_ozet --config-dir "$trader_dir/config" --env paper --out "$gecici/site/gunluk_ozet_v1.json"; then
   echo "UYARI: gunluk ozet uretilemedi $(date -u +%FT%TZ); pano yayini devam ediyor" >&2
 fi
+# Islem mutabakati (parolasiz /mutabakat_v1.json): trader-mutabakat birimi var/durum'a yazar; yoksa yalniz uyari (anahtar/kisisel veri yok).
+if [ -s "$trader_dir/var/durum/mutabakat_v1.json" ]; then
+  cp "$trader_dir/var/durum/mutabakat_v1.json" "$gecici/site/mutabakat_v1.json"
+else
+  echo "UYARI: mutabakat_v1.json yok $(date -u +%FT%TZ); pano yayini devam ediyor" >&2
+fi
 cp "$betik_dizin/panel_worker.js" "$gecici/panel_worker.js"
 cat > "$gecici/wrangler.jsonc" <<JSON
 {
@@ -51,10 +57,10 @@ if ! timeout -k 10 180 "$wrangler" deploy --config wrangler.jsonc >"$gecici/cikt
   exit 1
 fi
 echo "panel yayimlandi: $(date -u +%FT%TZ)"
-# Herkese acik ikiz Worker (<ad>-acik): yalniz rejim.json + gunluk_ozet_v1.json (pano Access arkasinda; workers.dev'de yol
+# Herkese acik ikiz Worker (<ad>-acik): yalniz rejim.json + gunluk_ozet_v1.json + mutabakat_v1.json (pano Access arkasinda; workers.dev'de yol
 # muafiyeti yok). Pano yayini zaten basarili; bu adim basarisizsa yalniz uyari.
 mkdir -p "$gecici/acik/site"
-for f in rejim.json gunluk_ozet_v1.json; do
+for f in rejim.json gunluk_ozet_v1.json mutabakat_v1.json; do
   [ -s "$gecici/site/$f" ] && cp "$gecici/site/$f" "$gecici/acik/site/$f"
 done
 cp "$betik_dizin/acik_worker.js" "$gecici/acik/acik_worker.js"

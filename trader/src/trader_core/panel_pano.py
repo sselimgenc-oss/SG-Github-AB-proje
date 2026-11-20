@@ -497,9 +497,27 @@ def _saglik_cumleleri(alerts: list) -> list[str]:
     return out[:8]
 
 
+def mutabakat_view(path: str) -> dict | None:
+    """`var/durum/mutabakat_v1.json` -> {"son": "20.11 04:40" (TSI), "islem": N, "uyusmazlik": N}; yok/bozuk/yanlis sema -> None (satir gizlenir)."""
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(d, dict) or d.get("sema") != "ml.mutabakat.v1":
+        return None
+    made = P.parse_z(d.get("uretim"))
+    n, u = d.get("islem_sayisi"), d.get("uyusmazlik_sayisi")
+    if made is None or not all(isinstance(x, int) and not isinstance(x, bool) and x >= 0 for x in (n, u)):
+        return None
+    return {"son": tsi_kisa(made), "islem": n, "uyusmazlik": u}
+
+
 def teknik_view(*, health: Mapping | None, risk_rows: list | None, budget: Mapping | None, tut: Mapping | None,
-                pbo: Mapping | None, ctx: Ctx | None, ml_filtre: Mapping | None, ders: Mapping | None) -> dict:
+                pbo: Mapping | None, ctx: Ctx | None, ml_filtre: Mapping | None, ders: Mapping | None,
+                mutabakat: Mapping | None = None) -> dict:
     out: dict[str, Any] = {}
+    if mutabakat:
+        out["mutabakat"] = dict(mutabakat)
     if health:
         ov = str(health.get("overall") or "UNKNOWN")
         uy = _saglik_cumleleri(health.get("alerts") or [])

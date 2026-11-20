@@ -30,6 +30,8 @@ ENTRIES = {
     "exit-counterfactual": ("script:scripts/exit_counterfactual_run.py", ["trader_core.exit_counterfactual", "trader_core.ledger", "trader_core.signals",
                                                                          "trader_core.regime", "trader_engine.holdout"]),
     "backup": ("script:scripts/health_backup.py", []),
+    "mutabakat": ("script:scripts/mutabakat_run.py", ["trader_core.mutabakat", "trader_core.ledger", "trader_core.panel_pano",
+                                                       "trader_panel.data", "trader_core.telegram"]),
     "tutarlilik": ("script:scripts/tutarlilik_run.py", ["trader_engine.backtest", "trader_engine.config", "trader_engine.holdout",
                                                          "trader_engine.marketdata.store", "trader_core.ledger"]),
 }

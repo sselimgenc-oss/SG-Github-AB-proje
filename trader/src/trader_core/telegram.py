@@ -2312,6 +2312,20 @@ def _kol_haritasi(path: str) -> dict:
     return out
 
 
+def gonderildi_yaz(var_dir, now: datetime, tur: str, t, pnl: float | None = None) -> None:
+    """Islem mesaji GITTI -> `<var>/islem_gonderildi.jsonl`'e tek satir (yalniz ekleme; mutabakat icin). Mesaj metni YAZILMAZ. Gonderimi
+    asla engellemez: her hata yutulur."""
+    try:
+        satir = {"ts": now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "trade_id": int(t.trade_id), "tur": tur,
+                 "yon": TS.yon(t.side), "coin": TS.coin(t.pair), "kz": None if pnl is None else round(float(pnl), 6)}
+        p = Path(var_dir)
+        p.mkdir(parents=True, exist_ok=True)
+        with open(p / "islem_gonderildi.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(satir, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _saat_gonder(kayit, now: datetime, text: str, notifier: "TelegramNotifier", anahtar: str, delta: dict) -> int:
     """Saatlik sinir: ilk 6 mesaj sessiz gider; sonrakiler `delta` ile ozete eklenir."""
     st = kayit.durum("islem_saat")
@@ -2376,8 +2390,12 @@ def islem_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime 
         yeni_acilan.setdefault(t.entry_ts.strftime("%Y-%m-%dT%H:%M"), []).append(
             (t, (kol(t), t.pair, t.side, t.entry_price, (t.qty or 0.0) * (t.entry_price or 0.0), t.planned_stop)))
     for dk, grup in yeni_acilan.items():
-        sent += _saat_gonder(kayit, now, TS.islemler_acildi([g[1] for g in grup]), notifier,
+        gitti = _saat_gonder(kayit, now, TS.islemler_acildi([g[1] for g in grup]), notifier,
                              f"islem-ac:{'-'.join(str(g[0].trade_id) for g in grup)}", {"acilan": len(grup)})
+        if gitti:
+            for g in grup:
+                gonderildi_yaz(cfg.var_dir, now, "acildi", g[0])
+        sent += gitti
     for t in sorted(kap, key=lambda t: (t.exit_ts, t.trade_id)):
         if t.trade_id in kapanan:
             continue
@@ -2385,9 +2403,12 @@ def islem_tick(cfg: TelegramConfig, notifier: "TelegramNotifier", now: datetime 
         if ilk:
             continue
         pnl = float(t.realized_pnl or 0.0)
-        sent += _saat_gonder(kayit, now, TS.islem_kapandi(kol(t), t.pair, t.side, pnl, (t.qty or 0.0) * (t.entry_price or 0.0),
+        gitti = _saat_gonder(kayit, now, TS.islem_kapandi(kol(t), t.pair, t.side, pnl, (t.qty or 0.0) * (t.entry_price or 0.0),
                                                           t.exit_reason), notifier, f"islem-kapat:{t.trade_id}",
                              {"kapanan": 1, "net": pnl})
+        if gitti:
+            gonderildi_yaz(cfg.var_dir, now, "kapandi", t, pnl)
+        sent += gitti
     try:
         atomic_write_json(imp, {"acilan": sorted(acilan)[-500:], "kapanan": sorted(kapanan)[-500:]})
     except Exception:  # noqa: BLE001

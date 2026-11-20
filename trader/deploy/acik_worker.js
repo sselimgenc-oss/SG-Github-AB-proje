@@ -1,8 +1,8 @@
 // Herkese acik ML yayini (19 Kasim 2026): pano Cloudflare Access arkasina alindi; workers.dev icin yol bazli Access
 // muafiyeti verilemedigi icin diger projelerin okudugu iki dosya bu AYRI Worker'dan parolasiz yayinlanir.
-// Yalniz GET/HEAD /rejim.json ve /gunluk_ozet_v1.json; baska her yol 404. Icerik: rejim etiketi ve gunluk ozet
-// (bakiye/pozisyon ayrintisi, anahtar, kisisel bilgi yok). Pano verisi bu Worker'a hic yuklenmez.
-const ACIK = new Set(["/rejim.json", "/gunluk_ozet_v1.json"]);
+// Yalniz GET/HEAD /rejim.json, /gunluk_ozet_v1.json ve /mutabakat_v1.json; baska her yol 404. Icerik: rejim etiketi ve gunluk ozet
+// (islem mutabakati: islem satirlari ve uyusmazlik sayisi; anahtar, kisisel bilgi yok). Pano verisi bu Worker'a hic yuklenmez.
+const ACIK = new Set(["/rejim.json", "/gunluk_ozet_v1.json", "/mutabakat_v1.json"]);
 
 export default {
   async fetch(istek, env) {

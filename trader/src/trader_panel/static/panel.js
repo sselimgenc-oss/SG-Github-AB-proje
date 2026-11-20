@@ -465,6 +465,9 @@
     if (t.kayitlar) add(root, katli('Kayıtlar', '', function (b) {
       return add(b, satir('Kapanan işlem', String(t.kayitlar.kapanan)), satir('Açık işlem', String(t.kayitlar.acik)), satir('Değerlendirilen fırsat', String(t.kayitlar.karar)));
     }));
+    if (t.mutabakat) add(root, katli('İşlem kontrolü', t.mutabakat.uyusmazlik > 0 ? 'sari' : '', function (b) {
+      return add(b, el('div', t.mutabakat.uyusmazlik > 0 ? 'yok kotu' : 'yok', 'Son kontrol: ' + t.mutabakat.son + ', ' + t.mutabakat.islem + ' işlem, ' + t.mutabakat.uyusmazlik + ' uyuşmazlık'));
+    }));
     if (t.dogrulama) add(root, katli('Backtest / doğrulama', '', function (b) {
       if (num(t.dogrulama.eslesme)) add(b, satir('Kâğıt ile geçmiş test eşleşmesi', '%' + trn(t.dogrulama.eslesme * 100, 0)));
       if (num(t.dogrulama.pbo)) add(b, satir('Aşırı uyum riski (en yüksek)', '%' + trn(t.dogrulama.pbo * 100, 0)));
