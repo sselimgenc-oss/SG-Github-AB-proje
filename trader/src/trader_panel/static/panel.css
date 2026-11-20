@@ -55,7 +55,7 @@ button:hover{border-color:var(--vurgu)}
 .satir b{font-variant-numeric:tabular-nums;text-align:right}
 .yok{color:var(--sol);font-size:13.5px;padding:6px 0}
 .rt{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:700;background:var(--gol)}
-.rt.yesil{background:var(--iyibg);color:var(--iyi)}.rt.sari{background:var(--uyarbg);color:var(--uyar)}.rt.kirmizi{background:var(--kotubg);color:var(--kotu)}
+.rt.yesil{background:var(--iyibg);color:var(--iyi)}.rt.sari{background:var(--uyarbg);color:var(--uyar)}.rt.kirmizi{background:var(--kotubg);color:var(--kotu)}.rt.gri{background:var(--gol);color:var(--notr)}
 .yon{display:inline-block;margin-left:5px;padding:0 6px;border-radius:5px;font-size:11px;font-weight:700;vertical-align:1px}
 .yon.long{background:var(--iyibg);color:var(--iyi)}.yon.short{background:var(--kotubg);color:var(--kotu)}
 /* tablolar: 4 sutun, yatay kaydirma yok */

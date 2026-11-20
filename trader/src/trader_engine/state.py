@@ -398,6 +398,15 @@ class StateStore:
         rs = self._exec("SELECT * FROM positions WHERE status IN ('opening','open','closing') ORDER BY trade_id").fetchall()
         return [_row_to_position(r) for r in rs]
 
+    def decision_ids_in_flight(self) -> set[int]:
+        """Karari hala canli bir kayda bagli olanlar: kapanmamis/dolmus pozisyon ya da teslim bekleyen outbox girisi."""
+        ids = {int(r[0]) for r in self._exec(
+            "SELECT decision_id FROM positions WHERE (status != 'closed' OR entry_price IS NOT NULL) AND decision_id IS NOT NULL")}
+        for row in self.outbox_pending():
+            if row.payload.get("decision_id") is not None:
+                ids.add(int(row.payload["decision_id"]))
+        return ids
+
     def closed_positions_since(self, since: datetime) -> list[Position]:
         rs = self._exec("SELECT * FROM positions WHERE status='closed' AND closed_ms >= ? ORDER BY closed_ms, trade_id",
                         (to_ms(since),)).fetchall()

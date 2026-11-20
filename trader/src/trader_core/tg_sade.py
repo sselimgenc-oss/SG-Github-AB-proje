@@ -327,7 +327,7 @@ _SAGLIK_EK: dict[str, tuple[str, str | None]] = {
     "rules_age_unknown": ("Borsa kuralı yaşı okunamıyor", None), "rules_missing_unknown": ("Borsa kuralı eksikliği okunamıyor", None),
     # kayit defteri
     "ledger_age_unknown": ("Kayıt defteri son yazım zamanı okunamıyor", None),
-    "ledger_errors": ("Kayıt defterinde yazma hataları var", None), "orphan_decisions": ("Sahipsiz karar kayıtları var", None),
+    "ledger_errors": ("Kayıt defterinde yazma hataları var", None), "orphan_decisions": ("Yeniden başlatma sırasında yarım kalan giriş kararları var; işlemleri etkilemez", None),
     "schema": ("Kayıt defteri şeması beklenenden farklı", "Bana haber ver."),
     "spool_corrupt": ("Deftere yazılamayan bozuk kayıt var", None), "spool_pending": ("Deftere yazılmayı bekleyen kayıt birikti", None),
     "spool_corrupt_unreadable": ("Bozuk kayıt dosyası okunamıyor", None),

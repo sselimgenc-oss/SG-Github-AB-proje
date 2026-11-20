@@ -500,7 +500,8 @@ def _c_gate(snap, bot, cfg):
     if p.orphan_ids:
         ids = ",".join(str(i) for i in list(p.orphan_ids)[:5])
         return _res(name, Status.WARN, "orphan_decisions",
-                    f"{bot} trade'e baglanmamis eski giris karari var: {ids}", len(p.orphan_ids), 0)
+                    f"{bot} yeniden baslatma sirasinda yarim kalan {len(p.orphan_ids)} giris karari var (islemleri etkilemez; "
+                    f"motor acilista duzeltir): {ids}", len(p.orphan_ids), 0)
     return _res(name, Status.OK, "ok", f"{bot} defter kapisi acik olurdu")
 
 

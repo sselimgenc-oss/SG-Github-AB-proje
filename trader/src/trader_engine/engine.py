@@ -868,6 +868,8 @@ class Engine:
         except Exception as e:  # noqa: BLE001
             log.error("spool bosaltilamadi: %s", e)
         self.state.drain_outbox(self.ledger)
+        if self.is_paper:
+            self._reconcile_orphan_decisions()
         self._refresh_params()
         self._init_tf_and_strategy()
         if self.is_paper:
@@ -1330,6 +1332,32 @@ class Engine:
             except Exception as err:  # noqa: BLE001 - best-effort
                 self._c["ledger_errors"] += 1
                 log.error("order_failed duzeltmesi yazilamadi: %r", err)
+
+    def _reconcile_orphan_decisions(self) -> int:
+        """Yeniden baslatma artigi: 'entered' karari yazildi ama islem satiri hic yazilmadi (cokme/yeniden baslatma G1 ile dolum arasinda)
+        ve hicbir canli kayit (pozisyon, outbox) buna bagli degil => karar `skipped/order_failed` olarak duzeltilir (supersedes_id; mevcut
+        defter API'si). Ticareti etkilemez; hata yutulur."""
+        n = 0
+        try:
+            ids = self.ledger.find_orphan_decisions(older_than_s=3600)
+            if not ids:
+                return 0
+            canli = self.state.decision_ids_in_flight()
+            from trader_core.ledger import DecisionEvent  # noqa: PLC0415
+            names = {f.name for f in fields(DecisionEvent)}
+            for did in ids:
+                if did in canli:
+                    continue
+                rec = self.ledger.get_decision(did)
+                kw = {k: getattr(rec, k) for k in names if hasattr(rec, k)}
+                kw.update(final_action="skipped", skip_reason="order_failed", supersedes_id=did)
+                self.ledger.record_decision(DecisionEvent(**kw))
+                n += 1
+        except Exception as e:  # noqa: BLE001 - best-effort; saglik uyarisi kalir
+            log.error("sahipsiz karar duzeltmesi yapilamadi: %r", e)
+        if n:
+            log.warning("yeniden baslatma artigi %d giris karari 'order_failed' olarak duzeltildi", n)
+        return n
 
     # ================================================================== karar adimi
     def decision_step(self, D: datetime) -> None:

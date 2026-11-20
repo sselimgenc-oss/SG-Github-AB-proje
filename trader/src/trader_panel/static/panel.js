@@ -299,18 +299,18 @@
       add(s3, d);
     });
     add(ig, s3);
-    if (p.ders) {
-      var d = kart('Ders', link('Ayrıntı', 'ogrenme'));
-      add(d, add(el('div'), rozetRenk(p.ders.durum, p.ders.renk)));
-      if (p.ders.son) add(d, el('div', 'yok', 'Son ders: ' + p.ders.son.tarih));
-      add(ig, d);
-    }
-    if (p.ml) {
-      var m = kart('Makine öğrenmesi', link('Ayrıntı', 'ogrenme'));
-      add(m, add(el('div'), rozetRenk(p.ml.durum, p.ml.renk)));
-      add(m, el('div', 'yok', p.ml.isabet.olculemedi ? p.ml.isabet.olculemedi : 'Son ' + p.ml.isabet.n + ' tahminin ' + p.ml.isabet.tutan + ek(p.ml.isabet.tutan) + ' tuttu'));
-      add(ig, m);
-    }
+    var dd = p.ders || {durum: 'Kapalı', renk: 'gri', son: null, degisen_7g: 0, katki: {olculemedi: 'Henüz ölçülemedi'}};
+    var d = kart('Ders öğrenmesi', link('Ayrıntı', 'ogrenme'));      // iki öğrenme kartı veri yokken de görünür (zorunlu)
+    add(d, add(el('div'), rozetRenk(dd.durum, dd.renk)));
+    add(d, dd.son ? satir('Son öğrendiği', dd.son.tarih) : el('div', 'yok', 'Henüz ders yok'));
+    if (dd.son) add(d, el('div', 'yok', dd.son.metin));
+    add(d, satir('Son 7 günde değiştirdiği işlem', String(dd.degisen_7g)), katkiSatir(dd.katki));
+    add(ig, d);
+    var mm = p.ml || {durum: 'Kapalı', renk: 'gri', isabet: {olculemedi: 'Henüz ölçülemedi'}};
+    var m = kart('Makine öğrenmesi', link('Ayrıntı', 'ogrenme'));
+    add(m, add(el('div'), rozetRenk(mm.durum, mm.renk)));
+    add(m, el('div', 'yok', mm.isabet.olculemedi ? mm.isabet.olculemedi : 'Son ' + mm.isabet.n + ' tahminin ' + mm.isabet.tutan + ek(mm.isabet.tutan) + ' tuttu'));
+    add(ig, m);
     if (p.isik.renk !== 'kirmizi') add(ig, isikKart(p));
     add(root, ig);
   }

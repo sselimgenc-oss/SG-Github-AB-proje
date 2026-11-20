@@ -307,6 +307,28 @@ def kz_view(ctx: Ctx, start: float | None, now: datetime, curve: Mapping | None,
 MIN_KOL_ISLEM = 10      # motorun ogrenme_filtre.MIN_ISLEM ile ayni; esitligi tests/test_panel_pano.py denetler (core -> engine bagimliligi yok)
 
 
+# ----- ortak durum sozlugu (OZET / OGRENME / Telegram / CT ayni metni kullanir)
+DURUM_ETKILIYOR = "Açık, işlemleri etkiliyor"
+DURUM_MODEL_BEKLENIYOR = "Açık, model bekleniyor"
+DURUM_KAPALI = "Kapalı"
+
+
+def durum_veri_birikiyor(x: int, y: int | None = None) -> str:
+    return f"Açık, veri birikiyor ({x}/{y})" if y else "Açık, veri birikiyor"
+
+
+def ogrenme_durumu(calisiyor: bool, etkili: bool, x: int = 0, y: int | None = None, model_bekliyor: bool = False,
+                   kol: tuple[int, int] | None = None) -> tuple[str, str]:
+    """(metin, renk): kapali = gri; etkiliyor = yesil; veri birikiyor / model bekleniyor = sari (kirmizi degil)."""
+    if not calisiyor:
+        return DURUM_KAPALI, "gri"
+    if etkili:
+        return DURUM_ETKILIYOR + (f" · {kol[0]}/{kol[1]} kol" if kol else ""), "yesil"
+    if model_bekliyor:
+        return DURUM_MODEL_BEKLENIYOR, "sari"
+    return durum_veri_birikiyor(x, y), "sari"
+
+
 def min_kol_islem() -> int:
     """Kol basina ML filtresi icin asgari kapanmis islem (motor sabitiyle esit; testle sabitlenir)."""
     return MIN_KOL_ISLEM
@@ -365,23 +387,19 @@ def ders_view(path: str, ctx: Ctx, now: datetime, status_live: bool) -> dict | N
                              "geri": a.kind == "rollback"})
     finally:
         led.close()
-    if not acts:
-        return None
     uygulanan = [a for a in acts if a.kind == "apply"]
     d7 = now - timedelta(days=7)
     degisen = sum(1 for d in ctx.decisions if d.final_action == "entered" and d.lesson_ids and d.bar_close_ts >= d7)
     sonra = (sum(1 for d in ctx.decisions if d.final_action == "entered" and d.bar_close_ts >= uygulanan[0].activated_at)
              if uygulanan else 0)
     if brake:
-        durum, renk = "Kapalı (ders freni devrede)", "sari"
+        durum, renk = "Kapalı (ders freni devrede)", "gri"
     elif uygulanan and degisen > 0:
-        durum, renk = "Açık, işlemleri etkiliyor", "yesil"
-    elif uygulanan and sonra == 0:
-        durum, renk = "Yeni ders, henüz işlem gelmedi", "sari"
+        durum, renk = ogrenme_durumu(True, True)
     elif uygulanan:
-        durum, renk = "Açık ama işlemleri etkilemiyor", "kirmizi"      # islem geldi ama etkisiz = kirmizi
+        durum, renk = ogrenme_durumu(True, False, min(eff.n if eff is not None else 0, MIN_ETKI), MIN_ETKI)
     else:
-        durum, renk = "Kapalı", "sari"
+        durum, renk = ogrenme_durumu(bool(status_live), False, min(eff.n if eff is not None else 0, MIN_ETKI), MIN_ETKI)
     son = next((s for s in satirlar if not s["geri"]), satirlar[0] if satirlar else None)
     if eff is not None and eff.n >= MIN_ETKI:
         r2usd = _usd_per_r(ctx.closed)
@@ -432,10 +450,8 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
     pnl_of = {t.decision_id: t.realized_pnl for t in ctx.closed}
     skorlu = [d for d in ctx.decisions if d.ml_score is not None or d.skip_reason == "ml_filter"]
     n_paket, n_ornek, son_egitim, paket_kur = _ml_paketleri(path, now)
-    if not skorlu and not n_paket and not ml_filtre:
-        return None
     if isinstance(ml_filtre, Mapping):
-        acik = bool(ml_filtre.get("calisiyor")) and int(ml_filtre.get("aktif_kurulum") or 0) > 0
+        acik = bool(ml_filtre.get("calisiyor"))          # kapali YALNIZ filtre gercekten calismiyorsa
         kolsay = int(ml_filtre.get("aktif_kurulum") or 0)
     else:
         acik, kolsay = n_paket > 0, n_paket
@@ -456,10 +472,12 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
         kapsam = {"aktif": len(aktif), "toplam": len(tum), "en_az": en_az,
                   "eksik": [{"kol": TS.kol_adi(a), "n": n, "en_az": en_az} for a, n in kismen[:6]],
                   "eksik_fazla": max(len(kismen) - 6, 0), "bos": sum(1 for a in kalan if kapali.get(a, 0) == 0)}
-        durum = f"Açık, {len(aktif)}/{len(tum)} kolda çalışıyor"
-        renk = "yesil" if len(aktif) == len(tum) else "sari"
+        en_cok = max(kapali.values(), default=0)
+        durum, renk = ogrenme_durumu(True, bool(aktif), min(en_cok, en_az), en_az, model_bekliyor=en_cok >= en_az,
+                                     kol=(len(aktif), len(tum)))
     else:
-        durum, renk = (f"Açık, {kolsay} kolda çalışıyor", "yesil") if acik else ("Kapalı", "sari")
+        en_cok = max(kapali.values(), default=0)
+        durum, renk = ogrenme_durumu(acik, kolsay > 0, min(en_cok, en_az), en_az, model_bekliyor=en_cok >= en_az)
 
     def sonuc_r(d):
         return r_taken.get(d.id) if d.final_action == "entered" else r_cf.get(d.id)
@@ -513,7 +531,10 @@ def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
     if k is None:
         return None
     for r in k["kurallar"]:
-        r["renk"] = "yesil" if r["acik"] else "sari"
+        if r["acik"]:
+            r["durum"], r["renk"] = ((DURUM_ETKILIYOR, "yesil") if r["atlanan_7g"] > 0 else (durum_veri_birikiyor(0), "sari"))
+        else:
+            r["durum"], r["renk"] = r["durum"].replace("Kanıta göre kapandı", "Kapalı · kanıta göre kapandı", 1), "gri"
         if r["alinsaydi_r"] is None:
             r["sonuc"] = {"olculemedi": "Henüz ölçülemedi"}
         else:
@@ -651,6 +672,9 @@ def kismi_durum(ders: Mapping | None, ml: Mapping | None) -> list[str]:
         out.append("ders işlemleri etkilemiyor")
     if ml and ml.get("kapsam") and ml["kapsam"]["aktif"] < ml["kapsam"]["toplam"]:
         k = ml["kapsam"]
+        if k["aktif"] == 0 and ml.get("durum"):
+            out.append(f"Makine öğrenmesi: {ml['durum']}")
+            return out
         out.append(f"ML {k['aktif']}/{k['toplam']} kolda çalışıyor, diğerlerinde yeterli işlem yok (en az {k['en_az']})")
     return out
 

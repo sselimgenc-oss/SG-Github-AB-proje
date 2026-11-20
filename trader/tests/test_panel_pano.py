@@ -105,7 +105,8 @@ def test_tsi_day_boundary(env):
 
 
 def test_empty_cards_hidden_and_unmeasured_text(pano):
-    assert pano["ders"] is None and pano["ml"] is None            # fikstur: ders/ML verisi yok -> kart uretilmez
+    assert pano["ders"]["durum"].startswith("Açık, veri birikiyor (0/") and pano["ders"]["son"] is None   # veri yok: kart yine uretilir (OZET'te zorunlu)
+    assert pano["ml"] is not None and pano["ml"]["durum"] in ("Kapalı", "Açık, veri birikiyor (0/10)")
     z = pano["kz"]
     assert z["oran"]["kazanma_yuzde"] == 60.0                    # 5 islem >= asgari
     o = PP.olculemedi(8, 30)
