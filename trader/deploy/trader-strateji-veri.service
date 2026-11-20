@@ -15,9 +15,9 @@ WorkingDirectory=/opt/trader
 # Cikti: var/durum/strateji-veri-ml.md ve gonderim isareti var/durum/strateji_veri_gonderildi.json (surum 1; ikinci kez gonderilmez).
 EnvironmentFile=/etc/trader-telegram.env
 ExecStart=/usr/bin/python3 -I /opt/trader/scripts/strateji_veri_run.py --once
-TimeoutStartSec=180
+TimeoutStartSec=900
 MemoryMax=128M
-CPUQuota=20%
+CPUQuota=50%
 Nice=15
 IOSchedulingClass=idle
 NoNewPrivileges=true

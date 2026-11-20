@@ -382,6 +382,20 @@ def _seans_acik(cls, now: datetime) -> bool:
         return False
 
 
+def _yeni_basladi(status: Mapping | None, now: datetime) -> bool:
+    """Durum dosyasindaki motor `started_at` FIYAT_ESIK_DK dakikadan yeniyse True (kurulum sonrasi yeniden baslatma)."""
+    v = (status or {}).get("started_at")
+    if not v:
+        return False
+    try:
+        t = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return now - t < timedelta(minutes=FIYAT_ESIK_DK)
+
+
 def sorunlar(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Sequence[str], status: Mapping | None, now: datetime) -> list[str]:
     """Telegram'a gidecek GERCEK sorunlar (sade Turkce, islem numarasi yok, coin adiyla). Bos liste = mesaj yok. 'Fiyat bekleniyor'
     (piyasa kapali / veri yok) sorun DEGILDIR; yalniz seans icinde fiyat gelmiyorsa sorun olur."""
@@ -400,9 +414,10 @@ def sorunlar(rows: Sequence[Mapping], kontroller: Sequence[Mapping], ekstra: Seq
             out.append("Açık işlemlerin kâr/zararı panelle tutmuyor")
         else:
             out.append(re.sub(r" ?#\d+", "", ay).strip() or ad)
+    taze_baslangic = _yeni_basladi(status, now)          # motor yeni (yeniden) basladi: ilk 1 dk mumu gelene kadar mark yok, sorun DEGIL
     for i in sorted({int(x) for k in kontroller for x in (k.get("fiyat_bekleniyor") or []) if isinstance(x, int)}):
         p = pos.get(i) or {}
-        if p.get("asset_class") and _seans_acik(p.get("asset_class"), now):
+        if not taze_baslangic and p.get("asset_class") and _seans_acik(p.get("asset_class"), now):
             out.append(f"{coin_of.get(i) or TS.coin(p.get('pair'))} işleminin güncel fiyatı alınamıyor")
     for r in rows:
         if r["uyusmazlik"]:

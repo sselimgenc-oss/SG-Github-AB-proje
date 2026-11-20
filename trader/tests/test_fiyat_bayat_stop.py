@@ -218,6 +218,17 @@ def test_sorunlar_fiyat_yok_seans_disinda_sorun_degil_seans_icinde_sorun():
     assert M.sorunlar([], [kasa], [], None, acik) == ["Kasa kayıtla tutmuyor: 1.023,64 $ olmalı, kayıtta 1.020,90 $"]
 
 
+def test_sorunlar_motor_yeni_basladiysa_fiyat_yok_sorun_degil_kripto():
+    """Kurulum sonrasi motor yeniden basladi, ilk 1 dk mumu gelmeden mutabakat kostu: kripto (7/24) icin yanlis uyari olmamali."""
+    rows = [{"islem_no": 7, "coin": "XRP", "uyusmazlik": []}]
+    k = M.kontrol_acik_kz({"open_positions": [{"trade_id": 7, "side": "short", "entry_price": 1.0, "qty": 1.0, "mark": None}]},
+                          [{"id": 7, "simdi": None, "kz": None}])
+    now = datetime(2026, 11, 20, 14, 6, tzinfo=UTC)
+    st = lambda bas: {"started_at": bas, "open_positions": [{"trade_id": 7, "pair": "XRP/USDT", "asset_class": "kripto"}]}   # noqa: E731
+    assert M.sorunlar(rows, [k], [], st("2026-11-20T14:05:10Z"), now) == []                         # 1 dk once basladi: mesaj yok
+    assert M.sorunlar(rows, [k], [], st("2026-11-20T13:30:00Z"), now) == ["XRP işleminin güncel fiyatı alınamıyor"]   # gercek kesinti
+
+
 # ------------------------------------------------------------------------------------------------ fiyat bicimi / sessiz mesajlar
 @pytest.mark.parametrize("v,beklenen", [(8.87, "8,87"), (2001, "2.001,00"), (1.0, "1,00"), (123.456, "123,46"), (0.1234, "0,1234"),
                                         (0.5, "0,50"), (0.12349, "0,1235"), (0.00001234, "0,000012")])
