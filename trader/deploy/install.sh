@@ -473,6 +473,13 @@ fi
 # trader.slice: tum birimlerin ortak bellek tavani (GECICI sayilar; soak'te 48 saatlik olcumle kesinlesir). 'trader-*' glob'una girmez, ayrica kurulur.
 render "$REL_DIR/deploy/trader.slice" "${UNIT_DIR}/trader.slice"
 systemctl daemon-reload
+# journald boyut siniri (drop-in; yalniz icerik degistiyse journald yeniden baslatilir; baska journald ayarina dokunmaz)
+JD_DST="/etc/systemd/journald.conf.d/trader.conf"
+install -d -m 0755 -o root -g root /etc/systemd/journald.conf.d
+if ! cmp -s "$REL_DIR/deploy/trader-journald.conf" "$JD_DST" 2>/dev/null; then
+  install -m 0644 -o root -g root "$REL_DIR/deploy/trader-journald.conf" "$JD_DST"
+  systemctl restart systemd-journald || echo "UYARI: systemd-journald yeniden baslatilamadi (drop-in bir sonraki acilista gecerli olur)"
+fi
 
 # ---- 9. veri ---------------------------------------------------------------------
 say "Gecmis veri"

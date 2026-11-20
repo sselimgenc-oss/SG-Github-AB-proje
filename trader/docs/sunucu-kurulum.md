@@ -420,6 +420,7 @@ bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh                   
 
 ## Disk bakimi ve disk uyarisi
 - `trader-bakim.timer` (pazar 04:20 UTC, Persistent) haftada bir `scripts/bakim_run.py` calistirir (`MemoryMax=128M`, idle IO, tek seferlik; hata yutulur). `var/` altindaki sqlite dosyalarinda WAL `checkpoint(TRUNCATE)` + yalniz guvenliyse `VACUUM`; motor/feed'in surekli acik tuttugu `market.sqlite`, `ledger.sqlite`, `state.sqlite` dosyalarinda YALNIZ `wal_checkpoint(PASSIVE)` (VACUUM yok). Silme yalniz acik izin listesiyle ve 90 gunden eski: `var/rapor/**` (md/json/csv/txt/html/png), `var/*/weekly_summaries/*.md`, `exitcf_bt_*` gecici dizinleri, `var/*/snapshots/*`; her dizinde en yeni dosya kalir. Defterler, `counterfactual.sqlite`, `market.sqlite`, `var/history*`, `var/durum/*.json` asla silinmez. Ne yapildigi `journalctl -u trader-bakim` ozetinde. Elle: `sudo -u trader python3 -I scripts/bakim_run.py --var-dir var --dry-run`.
+- journald siniri: `install.sh`, `deploy/trader-journald.conf` dosyasini `/etc/systemd/journald.conf.d/trader.conf` olarak kurar (`SystemMaxUse=300M`, `SystemKeepFree=1G`, `MaxRetentionSec=30day`); yalniz icerik degistiyse `systemctl restart systemd-journald` calisir (tekrar kurulumda dokunmaz).
 - Saglik denetcisi `var/` dosya sistemi kullanimi >= %80 ise "Disk dolmak uzere (%NN)" (WARN), >= %95 ise ayrica CRIT uyarisi gonderir: ilk seferde bir kez, surerse en fazla 6 saatte bir, kapaninca tek "Duzeldi". journald sistem tarafinda sinirlanir; bu is ona dokunmaz.
 
 ## Canli durum dali (saatlik; `deploy/durum_yayinla.sh`, `trader-durum-yayin.timer`)
@@ -451,3 +452,6 @@ systemctl start trader-durum-yayin.service; journalctl -u trader-durum-yayin -n 
 
 "yayimlandi" gorulmeli. "Permission denied (publickey)" = deploy anahtari eklenmemis ya da yazma izni yok. Kapatma:
 `systemctl disable --now trader-durum-yayin.timer`.
+
+## Canli/testnet anahtar carpisma denetimi (5c)
+- Anahtar carpismasi: baska hesap/bot anahtarlarinin SHA256 ozetleri `/etc/trader-testnet.env` / `/etc/trader-live.env` icine `TRADER_DIGER_ANAHTAR_SHA256=etiket:hex64,...` olarak yazilirsa, bu surecin anahtari/gizlisi o ozetlerden biriyle eslesirse motor acilmaz (`key_collision: <etiket>`; deger asla yazilmaz). Ozet: `printf %s "$ANAHTAR" | sha256sum`.
