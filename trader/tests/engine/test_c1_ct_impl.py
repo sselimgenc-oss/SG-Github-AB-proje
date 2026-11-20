@@ -223,6 +223,13 @@ def _trig() -> pd.DataFrame:
     return pd.DataFrame({"open": close - 0.02, "high": close + 0.6, "low": close - 0.6, "close": close}, index=BARS)
 
 
+def _trig_dusen() -> pd.DataFrame:
+    """Dusen seri: kapanis EMA50 altinda, mumlar kirmizi (short teyidi)."""
+    i = pd.RangeIndex(len(BARS))
+    close = pd.Series(100.0 - 0.05 * i.to_numpy(dtype=float), index=BARS)
+    return pd.DataFrame({"open": close + 0.02, "high": close + 0.6, "low": close - 0.6, "close": close}, index=BARS)
+
+
 def _inp(pair="BTC/USDT", tf="1h", trig=None, core_fn=None) -> ArmInput:
     trig = _trig() if trig is None else trig
     core = C1._bos(trig.index)
@@ -258,7 +265,7 @@ def test_c1_long_candidate_levels_and_features(kadro_yolu):
 
 def test_c1_short_candidate_mirrors_levels(kadro_yolu):
     _yaz(kadro_yolu, _belge(D - timedelta(minutes=10), [_oge("dex:NVDA", 1, 4, "short", -500.0)]))
-    trig = _trig()
+    trig = _trig_dusen()
     r = _sinyal(_inp(pair="NVDA/USDT", trig=trig))
     entry, atr = float(trig["close"].iloc[-1]), _atr_son(trig)
     assert bool(r["signal"]) and r["side"] == "short"
@@ -317,6 +324,42 @@ def test_c1_no_file_or_stale_file_no_candidates_and_no_core_call(kadro_yolu):
 def test_c1_pair_not_in_file_no_candidate(kadro_yolu):
     _yaz(kadro_yolu, _belge(D - timedelta(minutes=10), [_oge("BTC", 4, 1, "long", None)]))
     assert not bool(_sinyal(_inp(pair="ETH/USDT")).signal)
+
+
+def _teyit_trig(ema_tarafi: str, mum: str) -> pd.DataFrame:
+    """Yukselen seri; son bar kapanisi EMA50'nin ustunde/altinda, mum yesil/kirmizi olacak sekilde ayarlanir."""
+    t = _trig()
+    ema = float(I.ema(t["close"], 50).iloc[-1])
+    c = ema + 1.0 if ema_tarafi == "ust" else ema - 1.0
+    o = c - 0.3 if mum == "yesil" else c + 0.3
+    t.iloc[-1, t.columns.get_loc("close")] = c
+    t.iloc[-1, t.columns.get_loc("open")] = o
+    t.iloc[-1, t.columns.get_loc("high")] = max(c, o) + 0.6
+    t.iloc[-1, t.columns.get_loc("low")] = min(c, o) - 0.6
+    return t
+
+
+@pytest.mark.parametrize("ema_tarafi,mum,beklenen", [("ust", "yesil", True), ("alt", "yesil", False),
+                                                      ("ust", "kirmizi", False), ("alt", "kirmizi", False)])
+def test_c1_long_requires_price_action_confirmation(kadro_yolu, ema_tarafi, mum, beklenen):
+    _yaz(kadro_yolu, _belge(D - timedelta(minutes=10), [_oge("BTC", 4, 1, "long", None)]))
+    assert bool(_sinyal(_inp(trig=_teyit_trig(ema_tarafi, mum))).signal) is beklenen
+
+
+def test_c1_short_requires_price_action_confirmation(kadro_yolu):
+    _yaz(kadro_yolu, _belge(D - timedelta(minutes=10), [_oge("BTC", 1, 4, "short", None)]))
+    assert not bool(_sinyal(_inp(trig=_trig())).signal)                      # yukselen seri: short teyidi yok
+    t = _trig_dusen()
+    assert bool(_sinyal(_inp(trig=t)).signal)                                # dusen seri: teyit var
+    _yaz(kadro_yolu, _belge(D - timedelta(minutes=9), [_oge("BTC", 1, 4, "short", None)]))
+    t.iloc[-1, t.columns.get_loc("open")] = float(t["close"].iloc[-1]) - 0.3  # yesil mum: short teyidi bozulur
+    assert not bool(_sinyal(_inp(trig=t)).signal)
+
+
+def test_c1_unconfirmed_bar_does_not_consume_the_ct_file(kadro_yolu):
+    _yaz(kadro_yolu, _belge(D - timedelta(minutes=10), [_oge("BTC", 4, 1, "long", None)]))
+    assert not bool(_sinyal(_inp(trig=_teyit_trig("alt", "yesil"))).signal)   # teyitsiz: aday yok, dosya tuketilmez
+    assert bool(_sinyal(_inp(trig=_trig())).signal)                          # ayni dosya, teyitli bar: aday
 
 
 def test_c1_contract_fields():

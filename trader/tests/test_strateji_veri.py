@@ -34,10 +34,12 @@ ARMS = ["T1@1h", "T1@4h", "R1@1h", "R1@4h", "B1@1h"]
 D0 = datetime(2026, 11, 3, 6, 0, tzinfo=UTC)
 
 
-def _dec(led, i, arm, side, regime, entered, bar, skip=None):
+def _dec(led, i, arm, side, regime, entered, bar, skip=None, ct_yon=None):
     setup, tf = arm.split("@")
     feats = {"atr_1h": 20.0, "stop_dist_atr": 2.0, "atr_4h": 40.0, "pullback_ema": 1.0, "ema_value": 2000.0, "body_ratio": 0.6,
              "wick_ratio": 0.5, "rr": 2.5, "edge_dist_atr": 0.1}
+    if ct_yon is not None:
+        feats["ct_yon"] = ct_yon
     rng = regime == "range"
     long = side == "long"
     kw = dict(veto_status="allowed", veto_reason=None, risk_allowed=True, risk_reason="ok", size_qty=0.3, size_notional=600.0,
@@ -60,8 +62,9 @@ def mk(path, extra=None):
             + [("T1@4h", "short", "trend_down", "loss")] * 2 + [("T1@4h", "short", "trend_down", "win")]
             + [("R1@1h", "long", "range", "win")] * 2 + [("R1@1h", "short", "range", "loss")] + [("T1@1h", "long", "unclear", "open")])
     plan = [(a, s, r, o, D0 + timedelta(hours=3 * k)) for k, (a, s, r, o) in enumerate(plan)] + list(extra or [])
-    for i, (arm, side, regime, out, bar) in enumerate(plan, start=1):
-        did = _dec(led, i, arm, side, regime, True, bar)
+    for i, item in enumerate(plan, start=1):
+        arm, side, regime, out, bar = item[:5]
+        did = _dec(led, i, arm, side, regime, True, bar, ct_yon=item[5] if len(item) > 5 else None)
         long = side == "long"
         led.record_trade_entry(L.TradeEntry(i, did, bar + timedelta(seconds=3), 2001.0 if long else 1999.0, 0.3, 3, 0.30015))
         if out != "open":
@@ -108,7 +111,7 @@ def _md(root):
 # ------------------------------------------------------------------------------------------------ bolumler
 def test_markdown_has_every_section_with_data_timestamps(root):
     md = _md(root)
-    for h in ("## Ortak 1", "## Ortak 2", "## Ortak 3", "## Ortak 6", "## Ortak 7", "## ML 8", "## ML 10", "## ML 11", "## ML 12"):
+    for h in ("## Ortak 1", "## Ortak 2", "## Ortak 3", "## Ortak 6", "## Ortak 7", "## ML 8", "## ML 10", "## ML 11", "## CT bilgisi", "## ML 12"):
         assert h in md, h
     assert md.startswith("# [ML] Strateji verisi (beyin fırtınası için)")
     # her tablo satiri veri zamani tasir (TSI)
@@ -116,7 +119,7 @@ def test_markdown_has_every_section_with_data_timestamps(root):
         rows = [ln for ln in blk.splitlines() if "veri:" in ln]
         assert rows, blk[:30]
         for ln in blk.splitlines():                                   # tablo satirlari (ust baslik/ayirici haric) veri zamani tasir
-            if ln.startswith("| ") and "---" not in ln and "okuma:" not in ln and not ln.startswith(("| Ölçü", "| Kalem", "| Rejim", "| Hedef", "| Kol", "| Yön", "| Mekanizma", "| Kurulum")):
+            if ln.startswith("| ") and "---" not in ln and "okuma:" not in ln and not ln.startswith(("| Ölçü", "| Kalem", "| Rejim", "| Hedef", "| Kol", "| Yön", "| Mekanizma", "| Kurulum", "| CT yönü")):
                 assert "veri:" in ln, ln
     assert re.search(r"veri: \d\d\.\d\d\.\d{4} \d\d:\d\d TSİ", md)
     assert "Yorum/öneri yok" in md
@@ -183,6 +186,28 @@ def _kararlar(root):
         return SV.karar_satirlari(led.list_decisions(since_ts=SV.KILIT[1]))
     finally:
         led.close()
+
+
+def test_ct_bilgisi_section_groups_closed_trades_by_ct_yon(tmp_path):
+    for d in ("var/learner", "var/durum", "config"):
+        (tmp_path / d).mkdir(parents=True)
+    ex = [("C1@1h", "long", "range", "win", D0 + timedelta(days=5, hours=k), 1) for k in range(2)]
+    ex += [("C1@1h", "long", "range", "loss", D0 + timedelta(days=6), 1), ("C1@1h", "short", "range", "loss", D0 + timedelta(days=7), -1),
+           ("C1@1h", "short", "range", "win", D0 + timedelta(days=8), 0), ("C1@1h", "short", "range", "open", D0 + timedelta(days=9), 1)]
+    mk(tmp_path / "var/learner/ledger.sqlite", extra=ex)
+    (tmp_path / "config/panel.json").write_text(json.dumps({
+        "schema": "panel/1", "host": "127.0.0.1", "port": 18787, "status_path": "var/learner/status.json",
+        "ledger_path": "var/learner/ledger.sqlite", "budget_config": "config/budget.json", "lesson_store": "user_data/lesson.sqlite",
+        "health_state": str(tmp_path / "state.json"), "kill_file": "shared/KILL", "engine_config": "config/engine.base.json"}))
+    (tmp_path / "config/engine.paper.json").write_text(json.dumps({"arms": ARMS + ["C1@1h"]}))
+    sec = _md(tmp_path).split("## CT bilgisi")[1].split("## ML 12")[0]
+    rows = {ln.split("|")[1].strip(): [c.strip() for c in ln.split("|")[2:-1]] for ln in sec.splitlines()
+            if ln.startswith("| ") and "---" not in ln and not ln.startswith("| CT yönü")}
+    assert rows["aynı yön"][0] == "3" and rows["ters yön"][0] == "1" and rows["uzlaşı yok / nötr"][0] == "1"
+    assert rows["yok (veri yok/bayat/eski kayıt)"][0] == "10"                     # eski kayitlar (CT bilgisi yok) = 10 kapanan islem
+    assert "%66,7" in rows["aynı yön"][1] and "veri:" in rows["aynı yön"][-1]
+    d = SV.ct_ozet([{"ct_yon": None, "net": 1.0, "r": 1.0, "cikis": None}])
+    assert d["satirlar"][3]["n"] == 1 and d["satirlar"][0]["oran"] is None
 
 
 def test_ml12_band_and_tutarlilik_or_veri_yok(root):

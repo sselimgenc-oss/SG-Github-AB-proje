@@ -3,6 +3,9 @@
 Kaynak: `var/ct/kadro_yon.json` (`scripts/ct_kadro_cek.py` yazar). Dosya yok / bayat (45 dk) / bozuk -> aday yok (motor calisir).
 Sinyal (son kapanmis bar, karar ani D): cift icin kayit var; net_yon long|short; toplam = long+short >= 3; baskin taraf
 max/toplam >= 0,70 ve net_yon ile ayni; net_nominal_usd (null degilse) yonle uyumlu isaretli.
+Fiyat teyidi (20 Kasim; CT tek basina islem actirmaz): son kapanmis mum kapanisi EMA50'nin CT tarafinda (long: close > EMA50,
+short: close < EMA50) VE son kapanmis mum ayni yonde (long: close > open, short: close < open); yoksa aday yok. Sonra ML filtresi
+ve ders/etiket kurallari diger kollarla ayni kapi zincirinde uygulanir (gates.EntryGate.decide; kol arm_id ile puanlanir).
 Giris = mum kapanisi; stop = giris -/+ 1,5 ATR(14); hedef = giris +/- 2R (R = 1,5 ATR). Ayni (aralik, cift, yon) icin ayni
 `uretildi_utc` ile tek aday. Yol: `TRADER_CT_KADRO` ortam degiskeni ya da <depo>/var/ct/kadro_yon.json (M1 ile ayni kalip).
 """
@@ -15,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from trader_core import ct_kadro as CK
+from trader_core import indicators as I
 from trader_core.signals import SIGNAL_COLUMNS
 
 from . import ArmInput
@@ -34,6 +38,7 @@ MIN_TOPLAM = 3
 BASKIN_MIN = 0.70
 STOP_ATR = 1.5
 TARGET_R = 2.0
+EMA_LEN = 50
 
 _CACHE: dict = {"path": None, "mtime": None, "doc": None}     # ham (dogrulanmis) belge; yalniz dosya mtime degisince okunur
 _EMITTED: dict[tuple[str, str, str], object] = {}              # (tf, cift, yon) -> son aday verilen uretildi_utc
@@ -93,6 +98,17 @@ def _bos(index) -> pd.DataFrame:
     return pd.DataFrame({c: data[c] for c in SIGNAL_COLUMNS}, index=index)[SIGNAL_COLUMNS]
 
 
+def _fiyat_teyidi(p, i: int, s: float) -> bool:
+    """Son kapanmis bar (i): kapanis EMA50'nin CT tarafinda ve mum CT yonunde (s=+1 long, -1 short). EMA50 isinmamissa -> False."""
+    if len(p.c) < EMA_LEN:
+        return False
+    e = float(I.ema(pd.Series(p.c), EMA_LEN).iloc[i])
+    if not np.isfinite(e):
+        return False
+    c, o = float(p.c[i]), float(p.o[i])
+    return s * (c - e) > 0 and s * (c - o) > 0
+
+
 def compute(inp: ArmInput):
     aday = _aday(inp)
     if aday is None:
@@ -105,8 +121,10 @@ def compute(inp: ArmInput):
     i = len(p.c) - 1
     if i < 0 or not bool(p.ok[i]):
         return _bos(inp.trig.index)
-    tab = P.Table(p.core)
     s = P.SIGN[side]
+    if not _fiyat_teyidi(p, i, s):                    # CT tek basina yetmez: bu bar teyitsiz; _EMITTED isaretlenmez (sonraki bar deneyebilir)
+        return _bos(inp.trig.index)
+    tab = P.Table(p.core)
     atr = float(p.atr[i])
     entry = float(p.c[i])
     stop = entry - s * STOP_ATR * atr

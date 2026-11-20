@@ -103,6 +103,20 @@ def kol_id(setup: Any, tf: Any, arm_id: Any = None) -> str:
     return s if "@" in s or not tf else f"{s}@{tf}"
 
 
+def ct_yon_of(d: Any) -> int | None:
+    """Kararin features'indaki CT yonu: +1 ayni, -1 ters, 0 uzlasi yok/notr; CT bilgisi yok/eski kayit/bayat -> None."""
+    f = getattr(d, "features", None)
+    if isinstance(f, str):
+        try:
+            f = json.loads(f)
+        except ValueError:
+            f = None
+    if not isinstance(f, Mapping):
+        return None
+    v = f.get("ct_yon")
+    return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v in (-1, 0, 1) else None
+
+
 def islem_satirlari(kapali: Iterable[Any], acik: Iterable[Any], kararlar_by_id: Mapping[int, Any]) -> list[dict]:
     """Defter TradeRecord'larindan duz satirlar (kilitli donemde giris/cikis yapanlar atilir). `kapali` bool ve ts alanlari dahil."""
     out: list[dict] = []
@@ -123,7 +137,7 @@ def islem_satirlari(kapali: Iterable[Any], acik: Iterable[Any], kararlar_by_id: 
                         "net": float(t.realized_pnl) if closed else None, "brut": float(t.gross_pnl) if closed else None,
                         "r": float(t.r_multiple) if closed else None,
                         "komisyon": float(t.fee_entry or 0.0) + (float(t.fee_exit or 0.0) if closed else 0.0),
-                        "fonlama": float(t.funding_paid or 0.0) if closed else 0.0, "kayma": slip})
+                        "fonlama": float(t.funding_paid or 0.0) if closed else 0.0, "kayma": slip, "ct_yon": ct_yon_of(d)})
     return out
 
 
@@ -271,6 +285,19 @@ def yon_ozet(kap: Sequence[Mapping], kararlar: Sequence[Mapping]) -> dict:
     return {"genel": genel, "rejim": rej, "veri": _son(t["cikis"] for t in kap)}
 
 
+CT_GRUPLAR = ((1, "aynı yön"), (-1, "ters yön"), (0, "uzlaşı yok / nötr"), (None, "yok (veri yok/bayat/eski kayıt)"))
+
+
+def ct_ozet(kap: Sequence[Mapping]) -> dict:
+    """CT bilgisi: kapanan islemler `ct_yon` grubuna gore (adet / kazanma / ort. R). Yalniz gozlem; yorum yok."""
+    satir = []
+    for k, ad in CT_GRUPLAR:
+        xs = [t for t in kap if t.get("ct_yon") == k]
+        satir.append({"yon": k, "ad": ad, "n": len(xs), "oran": (sum(1 for t in xs if t["net"] > 0) / len(xs)) if xs else None,
+                      "ort_r": (sum(t["r"] for t in xs) / len(xs)) if xs else None, "veri": _son(t["cikis"] for t in xs)})
+    return {"satirlar": satir, "veri": _son(t["cikis"] for t in kap)}
+
+
 def guncel_rejim(kararlar: Sequence[Mapping]) -> tuple[str | None, datetime | None, int]:
     """Son karar zamanindan geriye 24 saatteki en sik rejim (esitlikte REJIMLER sirasi). (rejim, son karar zamani, ornek sayisi)."""
     if not kararlar:
@@ -373,7 +400,7 @@ def hesapla(*, kollar: Sequence[str], islemler: Sequence[Mapping], kararlar: Seq
             "o1": ortak1(kap), "o2": ortak2(kap), "o3": ortak3(kap), "o6": ortak6(kap),
             "o7": ortak7(kap, islemler, baslangic, kesit, kollar), "m8": ml8(kollar, islemler, kararlar), "m10": o10,
             "mek": mekanizmalar(kollar, arms_off, etiket, fren, [r["arm"] for r in o10 if r["zarar"]]),
-            "yon": yon_ozet(kap, kararlar), "m11": ml11(kararlar, kollar), "m12": ml12(kap, tutarlilik, tut_veri)}
+            "yon": yon_ozet(kap, kararlar), "ct": ct_ozet(kap), "m11": ml11(kararlar, kollar), "m12": ml12(kap, tutarlilik, tut_veri)}
 
 
 def markdown(d: Mapping) -> str:
@@ -489,6 +516,15 @@ def markdown(d: Mapping) -> str:
         L += tablo(["Kol", "Long aday (güncel rejim)", "Alınan (güncel rejim)", "Long aday (tüm kayıt)", "Alınan (tüm kayıt)", "Veri"],
                    [[s["arm"], s["aday"], s["alinan"], s["aday_toplam"], s["alinan_toplam"], veri(s["son"])] for s in m11["satirlar"]])
         a("")
+    a("## CT bilgisi — CT yönüne göre kapanan işlemler")
+    a("")
+    L += tablo(["CT yönü (işlem yönüne göre)", "İşlem", "Kazanma", "Ort. R", "Veri"],
+               [[r["ad"], r["n"], yuzde(r["oran"]), rr(r["ort_r"]) if r["n"] else "-", veri(r["veri"]) if r["n"] else "veri: işlem yok"]
+                for r in d["ct"]["satirlar"]])
+    a("")
+    a("CT yönü karar anındaki `ct_yon` kaydıdır (CT = kopya-işlem kadro verisi; yalnız kayıt/ML özelliği). Eski kayıtlar ve CT verisi "
+      "bayatken açılan işlemler 'yok' grubundadır.")
+    a("")
     a("## ML 12 — Kâğıt / geri test tutarlılığı")
     a("")
     g = m12["genel"]

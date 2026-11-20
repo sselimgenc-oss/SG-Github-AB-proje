@@ -31,3 +31,17 @@ Kullanıcı kararı: ML bu veriyle **işlem açabilir** (kendi risk limitleri ve
 
 ## 5. Sonraki parça (bu işte yok)
 Tüm adaylara `ct:ayni_yon` / `ct:ters_yon` / `ct:yok` etiketi (ML özelliği olarak; engellemez).
+
+## 6. CT bilgisi: tek tip kayıt, ML özelliği, C1 fiyat teyidi (20 Kasım 2026; kullanıcı onaylı, yalnız kâğıt)
+Veri yolu aynı (okuyucu, 45 dk bayatlık). Testnet/canlı yapılandırması, risk sınırları, merdiven, kilitli dönem mührü değişmez.
+
+- **Kayıt**: kâğıtta her karar (alınan ya da atlanan) ve dolayısıyla her işlemin `features` alanına tek tip blok (`EntryGate._ct_blok`; `_ct_yon` bunun `ct_yon` alanıdır):
+  `ct_long`, `ct_short`, `ct_baskinlik` (max/toplam), `ct_net_yon` (long/short/notr), `ct_yon` (+1 işlem yönüyle aynı, -1 ters, 0 uzlaşı yok/nötr; çift dosyada yoksa sayımlar 0 ve 0),
+  `ct_yas_dk` (veri yaşı, dakika). Veri yok/bayat → yalnız `ct_durum: "yok"` (başka `ct_` anahtarı yazılmaz). Okuma hatası kararı etkilemez. Şema değişmedi (features sözlüğü).
+- **Rapor**: strateji verisi belgesinde "CT bilgisi" bölümü: kapanan işlemler `ct_yon` grubuna göre (aynı / ters / uzlaşı yok / yok): adet, kazanma oranı, ort. R. Panelde ayrı satır eklenmedi (işlem ayrıntı listesi için doğal bir yer yok).
+- **ML özelliği (filtre değil)**: kâğıt filtreleri (`ortak_ogrenme.filtre`, kurulum süzgeci) özellik adlarını eğitim satırlarından alır ve paketin `meta.ozellikler` listesinde saklar; puanlama paketin KENDİ listesiyle yapılır, eksik özellik `fill` (ortalama) ile doldurulur.
+  `features` içindeki `ct_yon`, `ct_baskinlik` zaten `f_ct_yon`, `f_ct_baskinlik` olarak; `setup_feature_dict` ayrıca `f_ct_trader_sayisi = log1p(ct_long + ct_short)` türetir (CT yoksa üçü de yok). Yeniden eğitilene kadar eski paket eski listesiyle puanlar (uyumsuzluk/kayma yok; testli).
+  Araştırma hattındaki LightGBM sabit-liste modelleri (`trader_core/ml_features.py`, r02/r03 külliyatı) DEĞİŞMEDİ: CT tarihsel verisi yok, liste/hash eşitlik denetimleri var.
+- **Tetik**: C1 yalnız CT ile işlem açmaz. CT adayına ek olarak kendi zaman diliminde son kapanmış mum için: long → kapanış > EMA50 ve kapanış > açılış; short → kapanış < EMA50 ve kapanış < açılış. Teyitsiz bar aday vermez ve CT dosyasını "tüketmez" (aynı dosya sonraki barda teyitlenirse aday olur).
+  Teyitli aday diğer kollarla aynı kapı zincirinden geçer (kurulum başı `arm_id` ile ML filtresi ≥10 kapanmış işlemle, ardından etiket/ders kuralları, sonra risk). `ML_SCORED` alanı yalnızca testnet r03 süzgecini ilgilendirir; kâğıt filtresi bayraktan bağımsızdır.
+- **Bayat**: CT özellikleri boş (`ct_durum: "yok"`), C1 aday yok, "kalabalık" kuralı engellemez (fail-open, sayılır), sağlık `WARN ct_kadro_bayat`. Başka bir şey değişmez.

@@ -240,23 +240,37 @@ class EntryGate:
         so = self.session_off
         return so() if callable(so) else so
 
-    def _ct_yon(self, pair: str, side) -> int | None:
-        """CT uzlasisina gore yon etiketi: +1 ayni, -1 ters, 0 uzlasi yok/notr; veri yok ya da bayatsa None (etiket yazilmaz).
-        Okuma hatasi asla karari etkilemez."""
+    def _ct_blok(self, pair: str, side) -> dict:
+        """Tek tip "CT bilgisi" blogu (kayit + ML ozelligi; engellemez): ct_long, ct_short, ct_baskinlik (max/toplam), ct_net_yon,
+        ct_yon (+1 islem yonuyle ayni, -1 ters, 0 uzlasi yok/notr), ct_yas_dk. Veri yok/bayat -> {"ct_durum": "yok"} (baska ct_ anahtari
+        yok). Yon long/short degilse {} (yazilmaz). Okuma hatasi asla karari etkilemez."""
         fn = self.ct_kadro
         if fn is None or side not in ("long", "short"):
-            return None
+            return {}
         try:
             kadro = fn()
+            if not kadro:
+                return {"ct_durum": "yok"}
+            rec = kadro.get(pair)
+            rec = rec if isinstance(rec, Mapping) else {}
+            lg, sh = int(rec.get("long") or 0), int(rec.get("short") or 0)
+            yon = rec.get("net_yon")
+            toplam = lg + sh
+            yas = rec.get("veri_yasi_sn")
+            if yas is None and kadro.get("_uretildi") is not None:
+                yas = (self.clock.now() - kadro["_uretildi"]).total_seconds()
+            out: dict = {"ct_long": lg, "ct_short": sh, "ct_baskinlik": (max(lg, sh) / toplam) if toplam else 0.0,
+                         "ct_net_yon": yon if yon in ("long", "short") else "notr",
+                         "ct_yon": 0 if yon not in ("long", "short") else (1 if yon == side else -1)}
+            if yas is not None:
+                out["ct_yas_dk"] = round(float(yas) / 60.0, 1)
+            return out
         except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
-            return None
-        if not kadro:
-            return None
-        rec = kadro.get(pair)
-        yon = rec.get("net_yon") if isinstance(rec, Mapping) else None
-        if yon not in ("long", "short"):
-            return 0
-        return 1 if yon == side else -1
+            return {}
+
+    def _ct_yon(self, pair: str, side) -> int | None:
+        """CT yon etiketi (+1/-1/0); veri yok/bayat ya da hata -> None. `_ct_blok`un ct_yon alani."""
+        return self._ct_blok(pair, side).get("ct_yon")
 
     def _haber_etiketi(self, pair: str) -> dict:
         """Haber/duygu etiketi alanlari ({} = yazilmaz). Okuma hatasi asla karari etkilemez."""
@@ -362,9 +376,9 @@ class EntryGate:
         if paper:
             cls = AG.asset_class(pair, self.cfg.clusters)
             tk = {"session_tag": AG.session_tag(cls, D)}                                # etiket yasak degil, kayit
-            ct = self._ct_yon(pair, row.side)
-            if ct is not None:                                                          # CT yon etiketi (engellemez)
-                tk["features"] = {**_features(row), "ct_yon": ct}
+            ct = self._ct_blok(pair, row.side)
+            if ct:                                                                      # CT bilgisi blogu (yalniz kayit/ML ozelligi; engellemez)
+                tk["features"] = {**_features(row), **ct}
             hb = self._haber_etiketi(pair)
             if hb:                                                                      # haber/duygu etiketi (yalniz kayit; engellemez)
                 tk["features"] = {**tk.get("features", _features(row)), **hb}
