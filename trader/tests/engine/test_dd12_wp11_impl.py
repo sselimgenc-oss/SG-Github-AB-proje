@@ -238,6 +238,22 @@ def test_priority_larger_tf_wins_and_losers_are_extras(hist):
     assert fr4.status == "ok" and fr4.last is None
 
 
+def test_1d_round_logs_one_info_line(hist, caplog):
+    """1g kurulum turu: tur basina TEK INFO satiri ('1d tarama: N cift, M aday'); 4s adiminda (1g kapanmaz) satir yok."""
+    import logging
+    lab = _forced(PriceActionLab(("T1@1d",)))
+    pairs = ["BTC/USDT", "ETH/USDT"]
+    src = MultiArmSignalSource(_view(hist), lab, strict=True, pairs=pairs)
+    D = datetime(2026, 11, 7, 0, 0, tzinfo=UTC)
+    with caplog.at_level(logging.INFO, logger="engine.runner"):
+        for p in pairs:
+            src.frame(p, D, _pmap(), 1)
+        for p in pairs:                                                  # 4s adimi: 1g kapanmaz
+            src.frame(p, D + timedelta(hours=4), _pmap(), 1)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("1d tarama:")]
+    assert len(lines) == 1 and lines[0].startswith("1d tarama: 2 cift, 2 aday")
+
+
 def test_gate_arm_conflict_event_and_arm_id(hist):
     lab = _forced(PriceActionLab(("T1@1h", "T1@4h")))
     src = MultiArmSignalSource(_view(hist), lab, strict=True)

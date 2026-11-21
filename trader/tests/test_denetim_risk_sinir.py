@@ -41,16 +41,19 @@ def test_same_direction_risk_equality_allowed_just_over_denied(sabit_boyut):
     assert not d.allowed and "aynı yön" in d.reason
 
 
+LOCKED = risk.LOCKED_CFG          # kilitli (canli/testnet) gunluk butce: bugunku kayip + acik risk + yeni risk <= 0.05*1024 = 51.2
+
+
 def test_daily_budget_equality_allowed_just_over_denied(sabit_boyut):
-    assert _dec([_op("ETH/USDT", "short", 24.0), _op("SOL/USDT", "short", 24.0)], cfg=CFG_DAILY).allowed   # 48 + 16 == 64
-    d = _dec([_op("ETH/USDT", "short", 24.0), _op("SOL/USDT", "short", 24.0625)], cfg=CFG_DAILY)
+    assert _dec([_op("ETH/USDT", "short", 24.0), _op("SOL/USDT", "long", 11.2)], cfg=LOCKED).allowed   # 35.2 + 16 == 51.2
+    d = _dec([_op("ETH/USDT", "short", 24.0), _op("SOL/USDT", "long", 11.2625)], cfg=LOCKED)
     assert not d.allowed and "günlük zarar bütçesi" in d.reason
 
 
 def test_daily_budget_counts_realized_loss(sabit_boyut):
-    # gerceklesen zarar 16 (equity 1008): 16 + 32 + 16 == 64 izinli; biraz fazlasi red
-    assert _dec([_op("ETH/USDT", "short", 32.0)], cfg=CFG_DAILY, equity=1008.0).allowed
-    assert not _dec([_op("ETH/USDT", "short", 32.0625)], cfg=CFG_DAILY, equity=1008.0).allowed
+    # gerceklesen zarar 16 (equity 1008): 16 + 19.2 + 16 == 51.2 izinli; biraz fazlasi red
+    assert _dec([_op("ETH/USDT", "short", 19.2)], cfg=LOCKED, equity=1008.0).allowed
+    assert not _dec([_op("ETH/USDT", "short", 19.25)], cfg=LOCKED, equity=1008.0).allowed
 
 
 def test_daily_loss_already_hit_equality_denied(sabit_boyut):
@@ -120,3 +123,37 @@ def test_tightened_rejects_loosening_and_nonpositive_accepts_equal_and_tighter()
 def test_positive_only_fields_reject_zero(alan):
     with pytest.raises(ValueError, match="> 0"):
         RiskConfig(**{alan: 0})
+
+
+# --- Karar A (21.11): kagitta gunluk limit yalniz bugunku zarar; canli/testnet/kilitli degismez ---
+def test_paper_open_risk_beyond_8pct_allowed_up_to_24pct_no_loss(sabit_boyut):
+    cfg = paper_config(max_open_risk=0.24, max_same_dir_risk=0.16, daily_max_loss=0.08)
+    opens = [_op("ETH/USDT", "short", 80.0), _op("SOL/USDT", "short", 80.0), _op("XRP/USDT", "short", 60.0)]  # 220 + 16 < 245.76
+    assert _dec(opens, cfg=cfg).allowed                                   # acik risk 21.5% > %8, bugun zarar yok
+    assert not _dec(opens + [_op("ADA/USDT", "short", 20.0)], cfg=cfg).allowed   # 240 + 16 > 245.76 -> max_open_risk
+
+
+def test_paper_denies_after_8pct_loss_today(sabit_boyut):
+    cfg = paper_config(max_open_risk=0.24, max_same_dir_risk=0.16, daily_max_loss=0.08)
+    assert not _dec([], cfg=cfg, equity=920.0, day_start=1000.0).allowed     # tam %8 kayip -> yeni giris yok
+    assert _dec([], cfg=cfg, equity=921.0, day_start=1000.0).allowed          # %7.9 kayip: izinli (acik risk bugete sayilmaz)
+    # adim 10 tek basina (adim 4'u gecen): kayip %7.9 + acik risk 100 (%10) + yeni -> yine izinli
+    assert _dec([_op("ETH/USDT", "short", 100.0)], cfg=cfg, equity=921.0, day_start=1000.0).allowed
+
+
+def test_paper_unrealized_loss_counts_as_today_loss(sabit_boyut):
+    cfg = paper_config(max_open_risk=0.24, max_same_dir_risk=0.16, daily_max_loss=0.08)
+    assert not _dec([_op("ETH/USDT", "short", 8.0)], cfg=cfg, equity=EQ, day_start=EQ / 0.9).allowed   # equity dususu = %10 > %8
+
+
+def test_live_testnet_locked_daily_budget_unchanged(sabit_boyut):
+    """Kilitli (canli/testnet) kural AYNEN: bugunku kayip + acik risk + yeni risk <= %5; PaperRiskConfig'e ozgu degisiklik sizmaz."""
+    assert risk.RiskConfig._DAILY_INCLUDES_OPEN_RISK is True and risk.PaperRiskConfig._DAILY_INCLUDES_OPEN_RISK is False
+    assert risk.LOCKED_CFG._DAILY_INCLUDES_OPEN_RISK is True
+    # 0.05*1024 = 51.2: acik 36 + yeni 16 = 52 > 51.2 -> red (kagitta ayni durum izinli olurdu)
+    d = _dec([_op("ETH/USDT", "short", 36.0)], cfg=risk.LOCKED_CFG)
+    assert not d.allowed and "günlük zarar bütçesi" in d.reason
+    assert _dec([_op("ETH/USDT", "short", 35.0)], cfg=risk.LOCKED_CFG).allowed                         # 51 <= 51.2
+    assert not _dec([], cfg=risk.LOCKED_CFG, equity=EQ, day_start=EQ + 40.0).allowed                    # 40 + 16 > 51.2
+    import dataclasses
+    assert "daily_budget_includes_open_risk" not in {f.name for f in dataclasses.fields(risk.LOCKED_CFG)}

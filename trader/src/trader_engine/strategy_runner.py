@@ -322,12 +322,28 @@ class MultiArmSignalSource(WindowedSignalSource):
         self.quarantine = quarantine                    # arm_quarantine.ArmQuarantine | None (kurulum kod hatasi karantinasi)
         self.position_fn = position_fn                  # cift -> (trigger_tf, entry_bar_open | None) | None (motor tedarik eder)
         self._exit_views: dict[tuple[str, datetime], tuple[str, ExitContext]] = {}
+        self._d1: tuple[datetime, int, int] | None = None      # (D, taranan cift, aday) - 1g tarama turu ozeti (yalniz gunluk log)
+
+    def _d1_note(self, D: datetime, candidate: bool | None) -> None:
+        """1g kurulum turu sayaci: candidate=None -> bir cift tarandi; True -> o ciftte aday (setup+yon) uretildi. Tur, tum
+        ciftler tarandiginda (pairs biliniyorsa) ya da sonraki karar adiminda tek INFO satiri olarak yazilir. Davranis degismez."""
+        d, n, m = self._d1 if self._d1 is not None and self._d1[0] == D else (D, 0, 0)
+        self._d1 = (d, n + (candidate is None), m + (candidate is True))
+
+    def _d1_flush(self) -> None:
+        if self._d1 is None:
+            return
+        d, n, m = self._d1
+        self._d1 = None
+        log.info("1d tarama: %d cift, %d aday (%s)", n, m, d.isoformat())
 
     def _prepass_due(self, D: datetime) -> bool:
         return "1h" in arm_closing_tfs(D)               # ML v2 ozellikleri 1s mumlara kuruludur: yalniz saat basi
 
     def _new_step(self, D: datetime) -> None:
         self._exit_views.clear()
+        if self._d1 is not None and self._d1[0] != D:
+            self._d1_flush()
 
     # ------------------------------------------------------------------ veri
     def _arm_gather(self, pair: str, D: datetime, tf: str, h4: pd.DataFrame):
@@ -369,6 +385,9 @@ class MultiArmSignalSource(WindowedSignalSource):
                 raise
             self.counters["callback_errors"] += 1
             return self._bad(pair, "error", f"{type(e).__name__}: {e}", error=True)
+        finally:                                        # 1g turu tamamlandi (tum ciftler tarandi): tek ozet satiri
+            if self._d1 is not None and self._d1[0] == D and self.pairs and self._d1[1] >= len(self.pairs):
+                self._d1_flush()
 
     def _build_multi(self, pair: str, D: datetime, params: Mapping[str, object], version_id: int) -> SignalFrame:
         lab = self.strategy
@@ -388,6 +407,8 @@ class MultiArmSignalSource(WindowedSignalSource):
         if h4 is None:
             h4 = self.view.bars(pair, "4h", D, WINDOW_ARM["4h"])
         h4_bad = self._h4_checked(pair, D, h4)
+        if "1d" in tfs:
+            self._d1_note(D, None)
         cands: list[tuple[int, str, SignalRow, tuple | None]] = []
         bad: dict[str, tuple[str, str]] = {}
         exit_view = None
@@ -459,6 +480,8 @@ class MultiArmSignalSource(WindowedSignalSource):
                 is_filtered = bool(row.setup and row.side and row.skip_reason in _FILTERED_SKIPS)
                 cls = 0 if row.signal else (1 if is_filtered else 2)
                 cands.append((cls * 10 - ARM_TFS.index(tf), key, row, tb))
+                if tf == "1d" and row.setup and row.side:
+                    self._d1_note(D, True)
                 if tf == pos_tf and (key == "core" or exit_view is None):
                     exit_view = self._exit_view(sig, trig, lr, pos, D)
         if exit_view is not None:
