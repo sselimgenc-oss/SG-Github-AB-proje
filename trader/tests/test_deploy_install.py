@@ -298,7 +298,7 @@ def test_publish_timer_gated_and_wrangler_pinned():
     assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_API_TOKEN", t)
     assert re.search(r"has_value /etc/trader-panel-cf\.env CLOUDFLARE_ACCOUNT_ID", t)
     assert "enable_now trader-panel-publish.timer" in t
-    assert "PANEL_SIFRE" not in t and "Cloudflare Access" in t     # 19 Kasim: parola kaldirildi, koruma Access
+    assert "PANEL_SIFRE" not in t and "Protect this Worker behind Access" not in t   # 20 Kasim: pano kilitsiz (parola/Access yok)
     assert re.search(r'^WRANGLER_VERSION="\d+\.\d+\.\d+"', t, re.M)
     code = re.sub(r"#.*", "", t)
     assert "npm install -g" not in code and "npm i -g" not in code
@@ -309,32 +309,31 @@ def test_publish_timer_gated_and_wrangler_pinned():
 
 def test_worker_js_static():
     t = (DEPLOY / "panel_worker.js").read_text(encoding="utf-8")
-    # 19 Kasim: parola yok; Cloudflare Access JWT'si RS256 ile dogrulanir, yoksa 403 (fail-closed)
+    # 20 Kasim kullanici karari: pano kilitsiz (parola yok, Cloudflare Access JWT dogrulamasi kaldirildi); yalniz okuma (GET/HEAD)
     assert "PANEL_SIFRE" not in t and "WWW-Authenticate" not in t
-    assert "Cf-Access-Jwt-Assertion" in t and "crypto.subtle.verify" in t and "if (!(await accessGecerli(" in t
+    assert "Cf-Access-Jwt-Assertion" not in t and "crypto.subtle.verify" not in t
+    assert "if (!saltOkuma(istek)) return red();" in t
     assert re.search(r'"Cache-Control", "no-store"', t)
     for h in ("X-Content-Type-Options", "Referrer-Policy", "Content-Security-Policy"):
         assert h in t
-    # 19 Kasim: yalniz orkestra kapisi cerceveleyebilir (X-Frame-Options yerine CSP frame-ancestors)
+    # yalniz orkestra kapisi cerceveleyebilir (X-Frame-Options yerine CSP frame-ancestors)
     assert "frame-ancestors 'self' https://orkestra-kapi.sselimgenc-c18.workers.dev" in t
     assert "frame-ancestors 'none'" not in t and 'h.set("X-Frame-Options"' not in t
-    assert not re.search(r"KILITSIZ|UNLOCK|unlock|kilitsiz", t, re.I)
     assert "pano_worker.js" in t       # kaynak notu
     n = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
     assert "pano_worker.js" in n
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node yok")
-def test_worker_js_fail_closed_behaviour(tmp_path):
-    """Access JWT'si olmadan (ya da sertifika alinamazsa) pano kapali; ayrintili davranis: tests/test_panel_worker_access.py."""
+def test_worker_js_acik_yalniz_okuma(tmp_path):
+    """Pano kilitsiz: GET/HEAD icerigi doner, yazma yontemleri 405; dis istek (sertifika vb.) yapilmaz."""
     js = tmp_path / "t.mjs"
     js.write_text(f"""import w from {str(DEPLOY / 'panel_worker.js')!r};
-globalThis.fetch = async () => new Response('hata', {{status: 500}});
+globalThis.fetch = async () => {{ throw new Error('dis istek yapilmamali'); }};
 const env0 = {{ASSETS: {{fetch: async () => new Response('ok')}}}};
-const rq = (h) => new Request('https://x/', {{headers: h || {{}}}});
-let r = await w.fetch(rq(), env0); if (r.status !== 403) throw new Error('fail-open');
-r = await w.fetch(rq({{Authorization: 'Basic ' + btoa('trader:pw')}}), env0); if (r.status !== 403) throw new Error('basic acik');
-r = await w.fetch(rq({{'Cf-Access-Jwt-Assertion': 'a.b.c'}}), env0); if (r.status !== 403) throw new Error('sahte jwt');
+const rq = (m) => new Request('https://x/', {{method: m || 'GET'}});
+for (const m of ['GET', 'HEAD']) {{ const r = await w.fetch(rq(m), env0); if (r.status !== 200) throw new Error(m + ' ' + r.status); }}
+for (const m of ['POST', 'PUT', 'DELETE']) {{ const r = await w.fetch(rq(m), env0); if (r.status !== 405) throw new Error(m + ' acik'); }}
 """, encoding="utf-8")
     (tmp_path / "package.json").write_text('{"type":"module"}')
     r = subprocess.run(["node", str(js)], capture_output=True, text=True)
