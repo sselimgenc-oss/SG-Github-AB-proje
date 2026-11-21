@@ -89,6 +89,9 @@ class RiskConfig:
     max_notional_ratio: float = 1.0
 
     _LIMITS = HARD_LIMITS   # sınıf özniteliği (alan değil): `PaperRiskConfig` kağıt sınırlarını taşır
+    # Adım 10 biçimi (sınıf özniteliği, alan değil: asdict/baseline dökümleri değişmez). True (kilitli/testnet/canlı):
+    # loss_today + açık risk + yeni risk <= daily_max_loss*day_start. `PaperRiskConfig` False: yalnız bugünkü zarar.
+    _DAILY_INCLUDES_OPEN_RISK = True
 
     def __post_init__(self) -> None:
         limits = self._LIMITS
@@ -128,6 +131,9 @@ LOCKED_CFG = RiskConfig()
 class PaperRiskConfig(RiskConfig):
     """DD-12 §4.1: yalnız kağıt katmanı; alanlar RiskConfig ile aynı, üst sınırlar PAPER_LIMITS."""
     _LIMITS = PAPER_LIMITS
+    # Karar A (21 Kasim 2026): kağıtta günlük limit yalnız bugünkü zarara (gerçekleşen+gerçekleşmemiş = day_start-equity)
+    # bakar; loss_today >= daily_max_loss*day_start ise yeni giriş yok. Açık riski max_open_risk/max_same_dir_risk sınırlar.
+    _DAILY_INCLUDES_OPEN_RISK = False
 
 # DD-12 §4.1: kağıt parametreleri. Yalnız `paper_config` (trader_engine.config, mode="paper") üretir.
 PAPER_KEYS = ("target_trade_risk", "max_open_risk", "max_same_dir_risk", "daily_max_loss")
@@ -348,7 +354,10 @@ def _check_entry(state: AccountState, cand: Candidate, cfg: RiskConfig) -> Decis
         return _deny(f"aynı yön ({side}) risk sınırı aşılır")
     # 10. Günlük bütçe
     loss_today = max(0.0, day_start - equity)
-    if loss_today + total_open + size.risk_amount > cfg.daily_max_loss * day_start:
+    if cfg._DAILY_INCLUDES_OPEN_RISK:
+        if loss_today + total_open + size.risk_amount > cfg.daily_max_loss * day_start:
+            return _deny("günlük zarar bütçesi aşılır")
+    elif loss_today >= cfg.daily_max_loss * day_start:   # kağıt: %8 bugün kaybedildi -> yeni giriş yok
         return _deny("günlük zarar bütçesi aşılır")
     # 11. Teminat toplamı
     if sum(op[3] for op in opens) + size.margin > equity:

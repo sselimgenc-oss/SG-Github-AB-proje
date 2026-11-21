@@ -398,3 +398,18 @@ def test_kaldirilan_kol_arm_conflict_kazanani_gosterilmez_sayi_kalir():
     assert w["skip"]["arm_conflict"] == 3 and dict(w["detay"]["arm_conflict"]) == {"T1@1h": 1}
     m = SV.ml8(kol, [], [d("C1@1h"), d("T1@1h")], None)
     assert "C1" not in json.dumps(m["kol_detay"], default=str)
+
+
+def test_stop_genislik_dar_genis_medyan_ve_pencere():
+    """stop_width olcumu: dar/genis ayrimi features.stop_dist_atr ile bant sinirlarindan turetilir; son 12s ve tum kayit."""
+    t = datetime(2026, 11, 19, 12, 0, tzinfo=UTC)
+
+    def r(sda, ago_h, skip="stop_width", arm="T1@1h"):
+        return {"arm": arm, "skip": skip, "girdi": False, "ts": t - timedelta(hours=ago_h), "sda": sda}
+
+    rows = [r(0.3, 1), r(0.4, 2), r(3.0, 5), r(0.2, 30), r(2.5, 40), r(1.0, 1, skip="rr_below_min"), r(5.0, 1, arm="R1@1h")]
+    out = {x["arm"]: x for x in SV.stop_genislik(["T1@1h", "R1@1h", "B1@1h"], rows, t)}
+    a = out["T1@1h"]
+    assert a["son"]["n"] == 3 and a["son"]["dar"] == 2 and a["son"]["genis"] == 1 and a["son"]["medyan"] == 0.4
+    assert a["tum"]["n"] == 5 and a["tum"]["dar"] == 3 and a["tum"]["genis"] == 2 and a["tum"]["medyan"] == 0.4
+    assert out["R1@1h"]["son"]["genis"] == 1 and out["B1@1h"]["tum"]["n"] == 0 and out["B1@1h"]["tum"]["medyan"] is None

@@ -127,6 +127,14 @@ def islem_satirlari(kapali: Iterable[Any], acik: Iterable[Any], kararlar_by_id: 
     return out
 
 
+def _sda(feats: Any) -> float | None:
+    try:
+        v = float(feats["stop_dist_atr"])
+    except (TypeError, KeyError, ValueError):
+        return None
+    return v if v == v and abs(v) != float("inf") else None
+
+
 def karar_satirlari(kararlar: Iterable[Any]) -> list[dict]:
     out = []
     for d in kararlar:
@@ -134,7 +142,8 @@ def karar_satirlari(kararlar: Iterable[Any]) -> list[dict]:
             continue
         out.append({"arm": kol_id(d.setup, d.trigger_tf, getattr(d, "arm_id", None)), "side": str(d.side), "regime": str(d.regime),
                     "girdi": d.final_action == "entered", "skip": d.skip_reason, "ts": utc(d.bar_close_ts),
-                    "risk": getattr(d, "risk_reason", None), "veto": getattr(d, "veto_reason", None)})
+                    "risk": getattr(d, "risk_reason", None), "veto": getattr(d, "veto_reason", None),
+                    "sda": _sda(getattr(d, "features", None))})
     return out
 
 
@@ -311,6 +320,26 @@ def ml8(kollar: Sequence[str], tum: Sequence[Mapping], kararlar: Sequence[Mappin
                           "son": _son(d["ts"] for d in kararlar if d["arm"] == a)} for a in acmayan]}
 
 
+def stop_genislik(kollar: Sequence[str], kararlar: Sequence[Mapping], kesit: datetime | None = None) -> list[dict]:
+    """Yalniz olcum: kol basina `stop_width` skip'leri (son PENCERE_SAAT saat / tum kayit): dar (stop/ATR < bant alti) ve genis
+    (> bant ustu) sayisi ile reddedilen adaylarin medyan stop/ATR'si. Red tarafi kayitli degil; `features.stop_dist_atr`
+    bant sinirlariyla (signals.STOP_DIST_MIN_ATR/MAX_ATR) karsilastirilarak turetilir. Davranis degismez."""
+    from .signals import STOP_DIST_MAX_ATR, STOP_DIST_MIN_ATR
+    kes = kesit or _son(d["ts"] for d in kararlar)
+    out = []
+    for a in kollar:
+        sw = [d for d in kararlar if d["arm"] == a and d["skip"] == "stop_width"]
+        row = {"arm": a, "bant": (STOP_DIST_MIN_ATR, STOP_DIST_MAX_ATR)}
+        for ad, rows in (("tum", sw), ("son", [d for d in sw if kes and d["ts"] >= kes - timedelta(hours=PENCERE_SAAT)])):
+            v = [d.get("sda") for d in rows if d.get("sda") is not None]
+            dar = [x for x in v if x < STOP_DIST_MIN_ATR]
+            gen = [x for x in v if x > STOP_DIST_MAX_ATR]
+            row[ad] = {"n": len(rows), "dar": len(dar), "genis": len(gen), "belirsiz": len(rows) - len(dar) - len(gen),
+                       "medyan": statistics.median(v) if v else None}
+        out.append(row)
+    return out
+
+
 def ml10(kollar: Sequence[str], kap: Sequence[Mapping]) -> list[dict]:
     g: dict[str, list] = defaultdict(list)
     for t in kap:
@@ -430,7 +459,8 @@ def hesapla(*, kollar: Sequence[str], islemler: Sequence[Mapping], kararlar: Seq
     return {"simdi": simdi, "baslangic": baslangic, "kesit": kesit, "kap_n": len(kap), "acik_n": len(islemler) - len(kap),
             "karar_n": len(kararlar), "atlanan_kilit": atlanan, "kollar": list(kollar),
             "o1": ortak1(kap), "o2": ortak2(kap), "o3": ortak3(kap), "o6": ortak6(kap),
-            "o7": ortak7(kap, islemler, baslangic, kesit, kollar), "m8": ml8(kollar, islemler, kararlar, kesit), "m10": o10,
+            "o7": ortak7(kap, islemler, baslangic, kesit, kollar), "m8": ml8(kollar, islemler, kararlar, kesit),
+            "sw": stop_genislik(kollar, kararlar, kesit), "m10": o10,
             "mek": mekanizmalar(kollar, arms_off, fren, [r["arm"] for r in o10 if r["zarar"]]),
             "yon": yon_ozet(kap, kararlar), "m11": ml11(kararlar, kollar), "m12": ml12(kap, tutarlilik, tut_veri)}
 
@@ -539,6 +569,22 @@ def markdown(d: Mapping) -> str:
       + f" · yalnız son {PENCERE_SAAT} saatte " + (", ".join(m8["aday_yok_son"]) or "yok") + ".")
     a("")
     a("Aday = `decision_events` satırı. Golge kararlar (shadow) ve hiç kayda girmeyen sinyaller bu sayıya girmez.")
+    a("")
+    a(f"### stop_width skip'leri: dar / geniş (son {PENCERE_SAAT} saat / tüm kayıt)")
+    a("")
+    bant = d["sw"][0]["bant"] if d.get("sw") else (None, None)
+    a(f"İzinli bant: stop/ATR {bant[0]} – {bant[1]} (signals.STOP_DIST_MIN_ATR / STOP_DIST_MAX_ATR). Yalnız ölçüm; davranış değişmez. "
+      "Dar/geniş ayrımı kayıtlı `features.stop_dist_atr` değerinin banta göre karşılaştırılmasından türetilir; medyan = reddedilen adayların medyan stop/ATR'si.")
+    a("")
+
+    def sw_hucre(w: Mapping) -> str:
+        if not w["n"]:
+            return "-"
+        med = f"{w['medyan']:.2f}" if w["medyan"] is not None else "?"
+        return f"dar={w['dar']}, geniş={w['genis']}" + (f", ?={w['belirsiz']}" if w["belirsiz"] else "") + f" · medyan {med}"
+
+    L += tablo(["Kol", f"Son {PENCERE_SAAT}s", "Tüm kayıt", "Veri"],
+               [[r["arm"], sw_hucre(r["son"]), sw_hucre(r["tum"]), veri(m8["kes"])] for r in d["sw"]])
     a("")
     a("## ML 10 — Kol bazında sanal K/Z")
     a("")

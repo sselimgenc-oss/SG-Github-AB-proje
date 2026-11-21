@@ -61,6 +61,7 @@ Sayısal alanlar `int`/`float` veya `numbers.Real` (numpy dahil) olabilir; `floa
 8. Toplam açık risk + yeni risk `> max_open_risk*equity` → red.
 9. Aynı yön açık risk + yeni risk `> max_same_dir_risk*equity` → red.
 10. **Günlük bütçe:** `bugünkü_kayıp + toplam açık risk + yeni risk > daily_max_loss*day_start_equity` → red; `bugünkü_kayıp = max(0, day_start_equity - equity)`.
+    **Kağıt katmanı (Karar A, 21 Kasım 2026; yalnız `PaperRiskConfig`, `paper_config` ile üretilir):** adım 10 yalnız bugünkü zarara bakar: `bugünkü_kayıp = max(0, day_start_equity - equity)` (gerçekleşen + gerçekleşmemiş, çünkü equity açık pozisyonları işaretler); `bugünkü_kayıp ≥ daily_max_loss*day_start_equity` (kağıtta %8) ise yeni giriş yok. Açık risk bu bütçeye sayılmaz; yalnız adım 8/9 (`max_open_risk` %24, `max_same_dir_risk` %16) sınırlar. Kilitli/testnet/canlı (`RiskConfig`, `LOCKED_CFG`) adım 10'u yukarıdaki biçimiyle AYNEN uygular. Anahtar: `RiskConfig._DAILY_INCLUDES_OPEN_RISK` sınıf özniteliği (True; `PaperRiskConfig` False) — dataclass alanı değildir, config dökümleri değişmez. Teminat toplamı (adım 11) ve küme sınırları kağıtta da geçerlidir.
 11. **Teminat:** açık pozisyon teminatları toplamı + yeni teminat `> equity` → red.
 12. Hepsi geçerse `allowed=True`, `size` dolu.
 

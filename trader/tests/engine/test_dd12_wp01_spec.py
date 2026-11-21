@@ -418,9 +418,10 @@ def test_dt30_paper_davranis_toplam_ve_ayni_yon_ve_gunluk():
     st = _state(opens=[pos("BTC/USDT:USDT", "long", 30.0), pos("SOL/USDT:USDT", "short", 30.0)])
     assert check_entry(st, _cand(), rc).allowed
     assert not check_entry(st, _cand(), LOCKED_CFG).allowed
-    # ayni yon: long 75 + yeni ~10 > %8 (80) -> ret
+    # ayni yon (Karar A, 21.11): gunluk butce artik acik riski saymaz; long 75 + ~10 izinli, long 155 + ~10 > %16 (160) -> ret
     st2 = _state(opens=[pos("BTC/USDT:USDT", "long", 75.0)])
-    assert not check_entry(st2, _cand(), rc).allowed
+    assert check_entry(st2, _cand(), rc).allowed
+    assert not check_entry(_state(opens=[pos("BTC/USDT:USDT", "long", 155.0)]), _cand(), rc).allowed
     # gunluk zarar %6: paper'da kural 4 tetiklenmez (limit %8); 60+10... yalniz gunluk butce: 60 + 0 + 10 <= 80 izinli
     st3 = _state(equity=940.0, day_start=1000.0)
     assert check_entry(st3, _cand(), rc).allowed
