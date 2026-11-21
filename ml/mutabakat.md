@@ -1,24 +1,23 @@
 # İşlem mutabakatı
 
-Son kontrol: 2026-11-21 02:46 (TSİ). İşlem: 31 (kapanan 26, açık 5). Uyuşmazlık: 0.
+Son kontrol: 2026-11-21 07:40 (TSİ). İşlem: 34 (kapanan 26, açık 8). Uyuşmazlık: 0.
 
 ## Kontroller
 
 | Kontrol | Sonuç | Ayrıntı |
 |---|---|---|
-| Kasa = başlangıç + Σ net K/Z | geçti | Kasa 1.156,77 $ tutuyor |
+| Kasa = başlangıç + Σ net K/Z | geçti | Kasa 1.172,02 $ tutuyor |
 | Net K/Z: SQL toplamı = motor toplamı = brüt - komisyon - fonlama | geçti | Defter toplamları tutuyor (+144,09 $) |
 | Long toplamı (motor = panel) | geçti | Long işlemler panelle aynı (5 işlem) |
 | Short toplamı (motor = panel) | geçti | Short işlemler panelle aynı (21 işlem) |
 | Toplam kapanan (motor = panel 'tümü') | geçti | Kapanan işlemlerin toplamı panelle aynı (26 işlem) |
-| Açık pozisyon sayısı (motor = panel = şerit = durum) | geçti | 5 açık işlem, hepsi aynı |
-| Açık K/Z fiyat kaynağı (panel = motor mark) | geçti | Açık işlemlerin kâr/zararı panelle aynı; fiyat bekleniyor (piyasa kapalı/veri yok): #20, #27, #36, #37 |
+| Açık pozisyon sayısı (motor = panel = şerit = durum) | geçti | 8 açık işlem, hepsi aynı |
+| Açık K/Z fiyat kaynağı (panel = motor mark) | geçti | Açık işlemlerin kâr/zararı panelle aynı |
 | Günlük zarar limiti oranı (panel = kâğıt ayarı) | geçti | Günlük zarar limiti %8,00 (panelle aynı) |
 
 ## Bilgi
 
-- Açık işlemlerin anlık kâr/zararı: kasada +17,17 $, panelde +4,84 $ · fark 12,33 $ (fiyat zamanlaması, uyuşmazlık sayılmaz)
-- Fiyatı gelmeyen açık işlemler: #20, #27, #36, #37 · fiyat bekleniyor (piyasa kapalı/veri yok); uyuşmazlık sayılmaz
+- Açık işlemlerin anlık kâr/zararı: kasada +99,34 $, panelde +100,19 $ · fark 0,84 $ (fiyat zamanlaması, uyuşmazlık sayılmaz)
 
 ## Telegram kaynağı
 
@@ -63,3 +62,6 @@ Yok.
 | 35 | Trend kırılımı · 15 dakika | GOOGL | short | kapalı | 2026-11-20 23:15 | 2026-11-21 00:15 | 269,270000 | 267,885000 | 5,4569 | 1,0582 | 0,0000 | 4,3987 | aynı | gönderildi (kayıt) | gönderildi (kayıt) |
 | 36 | Trend geri çekilmesi · 15 dakika | HBAR | short | açık | 2026-11-21 01:30 | — | 0,051620 | — | — | 0,5734 | 0,0000 | — | aynı | gönderildi (kayıt) | — |
 | 37 | Trend geri çekilmesi · 15 dakika | XLM | short | açık | 2026-11-21 02:15 | — | 0,128250 | — | — | 0,4568 | 0,0000 | — | aynı | gönderildi (kayıt) | — |
+| 38 | İki bacaklı geri çekilme · 15 dakika | NVDA | short | açık | 2026-11-21 02:46 | — | 129,610000 | — | — | 0,3817 | 0,0000 | — | aynı | gönderildi (kayıt) | — |
+| 39 | İki bacaklı geri çekilme · 1 gün | BNB | short | açık | 2026-11-21 03:00 | — | 540,830000 | — | — | 0,0460 | 0,0000 | — | aynı | gönderildi (kayıt) | — |
+| 40 | Trend kırılımı · 1 gün | HYPE | short | açık | 2026-11-21 03:00 | — | 61,016000 | — | — | 0,0403 | 0,0000 | — | aynı | gönderildi (kayıt) | — |
