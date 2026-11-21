@@ -25,7 +25,6 @@ sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import alinmayan_sonuc as AS  # noqa: E402
 from trader_core import counterfactual as CF  # noqa: E402
-from trader_core import etiket_kurallari as EKU  # noqa: E402
 from trader_core import ledger as L  # noqa: E402
 from trader_core import lesson as LS  # noqa: E402
 from trader_engine import arm_guard as AG  # noqa: E402
@@ -179,19 +178,7 @@ def main(argv=None, *, now_fn=None) -> int:
         return EXIT_DEGRADED
     if not args.dry_run:                                    # alinmayan x sonuc raporu (yalniz bilgi; hata isi bozmaz; docs/alinmayan-sonuc-spec.md)
         AS.yaz_defterden(Path(ledger_path), Path(out_path), args.bot, now, Path(ledger_path).parent.parent / "durum" / AS.DOSYA)
-    etiket_olay = None
-    if not args.dry_run and args.bot == "learner":         # etiket kurallari: kanita gore kapat/yeniden ac (docs/etiket-kurallari-spec.md); hata isi bozmaz
-        try:
-            ham = json.loads(Path(_resolve(args.paper_config)).read_text(encoding="utf-8")).get("etiket_kurallari")
-            etiket_olay = EKU.yaz_gece(ledger_path, out_path, args.bot, now,
-                                       Path(ledger_path).parent.parent / "durum" / EKU.DOSYA, ham)
-        except Exception:  # noqa: BLE001
-            etiket_olay = None
-        for ev in etiket_olay or []:
-            log.warning("ETIKET: %s", EKU.olay_satiri(ev))
     out = {"bot": args.bot, "status": "ok", "dry_run": args.dry_run, **vars(r), **vars(sr)}
-    if etiket_olay:
-        out["etiket_kurallari"] = etiket_olay
     if lesson_block is not None:
         out["arms"] = lesson_block
     print(json.dumps(out, default=str))

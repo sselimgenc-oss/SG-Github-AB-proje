@@ -11,7 +11,7 @@ Eski belgeler `docs/motor/c1-ct-kadro-spec.md` (C1 kolu) ve CT bölümleri **kal
 - ML: `f_ct_trader_sayisi` ve her `f_ct_*` özelliği kaldırıldı; `ml_live_v2.setup_feature_dict` eski kayıtlardaki `ct_*` alanlarını
   özellik yapmaz (eğitim de puanlama da aynı fonksiyon). Eski model paketi `f_ct_*` bekliyorsa eksik özellik NaN olur, modelin `fill`
   değeri doldurur; **giriş engellenmez**.
-- Etiket kuralı "kalabalık yönü" tamamen kaldırıldı (kod, config bloğu, gate'teki C1 istisnası). `rejim` ve `duygu` kuralları aynen.
+- Etiket kuralı "kalabalık yönü" tamamen kaldırıldı (kod, config bloğu, gate'teki C1 istisnası). `rejim` kuralı aynen (`duygu` kuralı 21 Kasım'da ayrıca silindi; bkz. `docs/etiket-kurallari-spec.md`).
   `etiket_kalabalik` kodu yalnız defter şeması ve eski karar satırlarının okunur adı için kalır (şema CHECK'i değişmez).
 - Sağlık: `ct_kadro_bayat` uyarısı. Telegram: "Kadro uzlaşısı" adı. Strateji verisi: "CT bilgisi" bölümü. Tutarlılık: C1 için `veri` özel durumu.
 - `drift_monitor` içindeki `C1` bir **kural kimliğidir** (CUSUM; "C1" = 5. kural) ve bu kolla ilgisizdir; dokunulmadı.

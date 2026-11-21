@@ -59,19 +59,6 @@ def test_tutarlilik_weekly_oneshot_is_bounded_and_fits_slice():
     assert "OnCalendar=Mon *-*-* 00:30:00 UTC" in tm and "Persistent=true" in tm
 
 
-def test_haber_hourly_oneshot_is_bounded_and_fits_slice():
-    """Haber/duygu toplayici (saatlik, yalniz kayit; docs/haber-etiketi-spec.md): saf stdlib, olculen tepe RSS ~16 MB; tavan 100M."""
-    m = _mem("trader-haber.service")
-    assert m == 100
-    kv = _kv("trader-haber.service")
-    assert kv["Slice"] == "trader.slice" and kv["Nice"] == "15"
-    assert kv["ReadWritePaths"] == "/opt/trader/var/durum" and kv["ProtectSystem"] == "strict" and kv["NoNewPrivileges"] == "true"
-    assert m <= int(_kv("trader.slice")["MemoryMax"][:-1]) // 2
-    assert 1170 + 64 + 96 + 256 + 400 + 128 + m < RAM_MB + SWAP_MB
-    tm = (DEPLOY / "trader-haber.timer").read_text(encoding="utf-8")
-    assert "OnCalendar=hourly" in tm and "Persistent=true" in tm and "WantedBy=timers.target" in tm
-
-
 def test_bakim_weekly_oneshot_is_bounded_and_fits_slice():
     """Haftalik disk bakimi (pazar 04:20 UTC): saf stdlib sqlite; olculen tepe RSS ~47 MB (65 MB defter VACUUM) -> 128M tavan; idle IO."""
     m = _mem("trader-bakim.service")

@@ -442,15 +442,6 @@
         add(ig, ls);
       }
     }
-    if (p.etiket) {
-      var ek2 = kart('Etiket kuralları');
-      p.etiket.kurallar.forEach(function (r) {
-        add(ek2, add(el('div'), el('b', '', r.ad + ' '), rozetRenk(r.durum, r.renk)));
-        add(ek2, satir('Son 7 günde atladığı işlem', String(r.atlanan_7g)),
-          satir('Alınsaydı sonucu', r.sonuc.olculemedi ? r.sonuc.olculemedi : sgn(r.sonuc.r) + ' R (' + r.sonuc.n + ' işlem)', r.sonuc.olculemedi ? '' : cls(r.sonuc.r)));
-      });
-      add(ig, ek2);
-    }
     if (p.kucultme) {
       var kk2 = kart('Kademeli küçültme');
       add(kk2, el('div', 'yok', 'Son işlemleri zararda olan kolların işlem riski küçültüldü (kol kapanmaz; kâra dönünce geri yükselir).'));
@@ -459,7 +450,7 @@
       });
       add(ig, kk2);
     }
-    if (!p.ders && !p.ml && !p.etiket && !p.kucultme) add(ig, yokKart('Henüz öğrenme verisi yok.'));
+    if (!p.ders && !p.ml && !p.kucultme) add(ig, yokKart('Henüz öğrenme verisi yok.'));
     add(root, ig);
   }
 

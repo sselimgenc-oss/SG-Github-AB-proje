@@ -22,9 +22,7 @@
     "enerji_sanayi": {"pairs": ["BZ/USDT", "COPPER/USDT"], "max_positions": 3}
   },
   "etiket_kurallari": {
-    "rejim": {"acik": true},
-    "duygu": {"acik": true, "asiri_korku_max": 20, "asiri_acgozluluk_min": 80},
-    "otomatik": {"pencere": 10, "kapat_esik_r": 1.0, "ac_esik_r": -1.0}
+    "rejim": {"acik": true}
   },
   "flat_bar_guard": true,
   "contract_types": ["PERPETUAL", "TRADIFI_PERPETUAL"],

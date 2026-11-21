@@ -516,33 +516,6 @@ def ml_view(path: str, ctx: Ctx, now: datetime, ml_filtre: Mapping | None) -> di
             "egitim": ({"tarih": tsi_gun(son_egitim), "ornek": n_ornek} if son_egitim else None), "son5": son5}
 
 
-def etiket_view(durum_yol: str, alinmayan_yol: str) -> dict | None:
-    """OGRENME sekmesi 'Etiket kurallari' karti: kural basina acik/kapali (kanita gore kapandi/yeniden acildi + tarih), son 7 gunde atladigi
-    islem sayisi, 'alinsaydi' sonucu (R; cozulenler toplami) ya da 'Henuz olculemedi'. Veri/kural yoksa None (kart gizlenir)."""
-    import json  # noqa: PLC0415
-    from . import etiket_kurallari as EK  # noqa: PLC0415
-    var = Path(durum_yol).exists()
-    try:
-        al = json.loads(Path(alinmayan_yol).read_text(encoding="utf-8"))
-        if not isinstance(al, dict) or al.get("sema") != "ml.alinmayan_sonuc.v1":
-            al = None
-    except (OSError, ValueError):
-        al = None
-    k = EK.kart_verisi(EK.durum_oku(durum_yol), var, al)
-    if k is None:
-        return None
-    for r in k["kurallar"]:
-        if r["acik"]:
-            r["durum"], r["renk"] = ((DURUM_ETKILIYOR, "yesil") if r["atlanan_7g"] > 0 else (durum_veri_birikiyor(0), "sari"))
-        else:
-            r["durum"], r["renk"] = r["durum"].replace("Kanıta göre kapandı", "Kapalı · kanıta göre kapandı", 1), "gri"
-        if r["alinsaydi_r"] is None:
-            r["sonuc"] = {"olculemedi": "Henüz ölçülemedi"}
-        else:
-            r["sonuc"] = {"r": float(r["alinsaydi_r"]), "n": r["cozulen"]}
-    return k
-
-
 def kucultme_view(ledger_path: str, bot: str) -> dict | None:
     """OGRENME sekmesi 'Kademeli kucultme' karti (docs/motor/kademeli-kucultme-spec.md): boyutu kucultulen kollar
     (carpan, son 5/10 net R). Kucultulen kol yoksa ya da okunamazsa None (kart gizlenir)."""

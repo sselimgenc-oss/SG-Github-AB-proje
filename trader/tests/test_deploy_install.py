@@ -137,7 +137,6 @@ def test_every_unit_handled_by_install():
                         "trader-strateji-veri.service",  # strateji verisi: kurulum sonrasi tek seferlik sessiz Telegram belgesi (zamanlayici 6 saatte bir dosyayi yeniler; install.sh servisi ayrica kurulum sonrasi tetikler)
                         "trader-durum-yayin.service",  # canli durum yayini: saatlik zamanlayici etkinlestirilir; servis tetiklenir
                         "trader-bakim.service",  # haftalik disk bakimi (zamanlayici etkinlestirilir; servis tetiklenir)
-                        "trader-haber.service",  # 19 Kasim: haber/duygu toplayici eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-c1-goc.service",  # C1 kaldirma gocu: tek seferlik, zamanlayicisiz; yalniz install.sh baslatir (motor durdurulmusken)
                         "trader-engine-live.service", "trader-engine-env-retry@.service",
                         "trader-oto-guncelle.service", "trader-kurulum-gozcu.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)

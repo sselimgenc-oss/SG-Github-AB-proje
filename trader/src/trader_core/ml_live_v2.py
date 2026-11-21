@@ -239,6 +239,14 @@ def _fnum(x) -> float:
     return v if np.isfinite(v) else float("nan")
 
 
+_DUYGU_HABER_ON = ("duygu", "haber", "fng", "fear", "greed", "etiket_atlardi")      # 21 Kasim 2026 karari: duygu/haber hicbir ML ozelligi degil
+
+
+def _etiket_alani(k) -> bool:
+    k = str(k).lower()
+    return any(k == a or k.startswith(a + "_") for a in _DUYGU_HABER_ON)
+
+
 def setup_feature_dict(*, side: str, regime: str, atr_ratio, session_tag, asset_class: str | None, pair: str | None = None,
                        planned_entry, planned_stop, planned_target=None, rh_touches=0, rl_touches=0,
                        lesson_ids: Sequence[str] | None = None, features: Mapping | None = None) -> dict[str, float]:
@@ -261,8 +269,8 @@ def setup_feature_dict(*, side: str, regime: str, atr_ratio, session_tag, asset_
     for c in _CLASSES:
         d[f"cls_{c}"] = 1.0 if cls == c else 0.0
     for k, v in (features or {}).items():
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or str(k).startswith("ct_"):
-            continue                    # CT/ML ayriligi: eski kayitlardaki ct_* alanlari ozellik olmaz (eski paket eksik ozelligi doldurur)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or str(k).startswith("ct_") or _etiket_alani(k):
+            continue                    # eski kayitlardaki ct_* ve duygu/haber (Fear&Greed, haber tonu) alanlari ozellik olmaz (eski paket eksik ozelligi doldurur)
         d[f"f_{k}"] = _fnum(v)
     for lid in (lesson_ids or ()):
         d[f"ders:{lid}"] = 1.0

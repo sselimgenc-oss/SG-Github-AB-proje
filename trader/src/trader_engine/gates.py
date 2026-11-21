@@ -161,16 +161,12 @@ class EntryGate:
         self.entry_ref_fn = entry_ref_fn
         self.counters: Counter = Counter()
         self.session_off: Mapping[str, Collection[str]] | Callable[[], Mapping[str, Collection[str]]] | None = None  # DD-12 D-T7: dersin kapattigi seanslar (sinif|cift -> etiketler); yok = hepsi acik
-        # Haber/duygu etiketi (docs/haber-etiketi-spec.md): (cift, now_ms) -> {"duygu","haber"} ya da None (onbellek yok/bozuk/bayat).
-        # Yalniz KAYIT: features["duygu"], features["haber"]; hicbir adayi engellemez, karar/boyut/risk yoluna girmez.
-        self.haber_etiket: Callable[[str, int], Mapping | None] | None = None
         # 19.11 kullanici karari: kagitta ML filtresi AKTIF (ogrenme_filtre.FiltreDeposu ya da None). YALNIZ bir girisi atlatabilir
         # (`ml_filter`); boyut/kaldirac/limit/risk yoluna girmez. Hata/paket yok => serbest.
         self.ml_filtre = None
-        # 20 Kasim kullanici karari: kagitta etiketler (rejim/duygu) girisi YALNIZ atlatabilir (docs/etiket-kurallari-spec.md).
-        # etiket_cfg = dogrulanmis cfg.etiket_kurallari ({} = kapali); etiket_durum() -> {kural: acik} (kanita gore kapanmis kurallar False).
+        # Kagitta rejim etiketi kurali girisi YALNIZ atlatabilir (docs/etiket-kurallari-spec.md); sabit kural (otomatik acma/kapama yok).
+        # etiket_cfg = dogrulanmis cfg.etiket_kurallari ({} = kapali).
         self.etiket_cfg: Mapping | None = None
-        self.etiket_durum: Callable[[], Mapping[str, bool]] | None = None
         self.arms_off: Collection[str] | Callable[[], Collection[str]] | None = None  # DD-12 WP-13: ders kapattigi kurulumlar (arm_id); yok = hepsi acik
         self.memory_lock: str | None = None       # DD-8 O4: dosya tutusu yazilamadiysa bellek kilidi (kapi kodu); None = yok
 
@@ -238,45 +234,19 @@ class EntryGate:
         so = self.session_off
         return so() if callable(so) else so
 
-    def _haber_etiketi(self, pair: str) -> dict:
-        """Haber/duygu etiketi alanlari ({} = yazilmaz). Okuma hatasi asla karari etkilemez."""
-        fn = self.haber_etiket
-        if fn is None:
-            return {}
-        try:
-            e = fn(pair, int(self.clock.now().timestamp() * 1000))
-            return dict(e) if e else {}
-        except Exception:  # noqa: BLE001 - etiket istege bagli; hata karari etkilemez
-            return {}
-
     def _etiket_karari(self, row: SignalRow, tf: str, tk: dict) -> EntryOutcome | None:
-        """Etiket kurallari (kagit): acik kural tetiklenirse `etiket_*` kodu ile atla (karar satiri; karsi-olgu mevcut yoldan).
-        Kanita gore KAPANMIS kural girisi engellemez; atlayacagi islem `features.etiket_atlardi` ile not edilir (gercek sonucu izlenir).
-        Veri yok/bayat -> engellemez (sayilir). Hata -> serbest. Boyut/kaldirac/limit'e hic girmez."""
+        """Rejim etiketi kurali (kagit, sabit): trend karsiti giris `etiket_rejim` ile atlanir (karar satiri; karsi-olgu mevcut yoldan).
+        Veri yok (rejim bilinmiyor) -> engellemez (sayilir). Hata -> serbest. Boyut/kaldirac/limit'e hic girmez."""
         cfg = self.etiket_cfg
         if not cfg:
             return None
         try:
-            feats = tk.get("features") or {}
-            duygu = feats.get("duygu")
-            tetik, veri_yok = EK.degerlendir(row.side, row.regime, duygu, cfg)
+            tetik, veri_yok = EK.degerlendir(row.side, row.regime, cfg)
             for k in veri_yok:
                 self.counters["etiket_veri_yok:" + k] += 1
             if not tetik:
                 return None
-            try:
-                acik = dict(self.etiket_durum()) if self.etiket_durum is not None else {}
-            except Exception:  # noqa: BLE001
-                acik = {}
-            engel = [k for k, _ in tetik if acik.get(k, True)]
-            kapali = [k for k, _ in tetik if not acik.get(k, True)]
-            if kapali:
-                self.counters["etiket_atlardi:" + kapali[0]] += 1
-                tk["features"] = {**(tk.get("features") or _features(row)), EK.FEATURE_ANAHTAR: ",".join(kapali)}
-            if not engel:
-                return None
-            kod = engel[0]
-            detay = dict(tetik)[kod]
+            kod, detay = tetik[0]
             self.counters["etiket_atladi:" + kod] += 1
             return self._skip(row, tf, kod, skip_reason=kod, veto_reason=f"gate:{kod}:{detay}", **tk)
         except Exception as e:  # noqa: BLE001 - etiket hatasi giris engellemez
@@ -347,9 +317,6 @@ class EntryGate:
         if paper:
             cls = AG.asset_class(pair, self.cfg.clusters)
             tk = {"session_tag": AG.session_tag(cls, D)}                                # etiket yasak degil, kayit
-            hb = self._haber_etiketi(pair)
-            if hb:                                                                      # haber/duygu etiketi (yalniz kayit; engellemez)
-                tk["features"] = {**tk.get("features", _features(row)), **hb}
         if not row.signal:                                                              # 1 / 1b
             if (row.setup and row.side and row.skip_reason in _FILTERED_SKIPS
                     and self.cfg.record_filtered_candidates and row.param_version_id >= 1):
@@ -406,7 +373,7 @@ class EntryGate:
             ml_skip = self._ml_filtre_karari(row, tf, D, tk)
             if ml_skip is not None:
                 return ml_skip
-            et_skip = self._etiket_karari(row, tf, tk)                                   # 20 Kasim: etiket kurallari (ML'den sonra, risk'ten once)
+            et_skip = self._etiket_karari(row, tf, tk)                                   # rejim etiketi kurali (ML'den sonra, risk'ten once)
             if et_skip is not None:
                 return et_skip
             lk = veto.VetoLookup("allowed", "not_evaluated:paper", False)

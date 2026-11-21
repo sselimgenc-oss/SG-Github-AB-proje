@@ -447,7 +447,7 @@ bash /usr/local/lib/trader-root/current/deploy/canli_duman.sh                   
 Sunucu saatte bir ozet verisini repo icindeki ayri `canli-durum` dalina, `ml/` klasorune yazar (CT'nin canli-durum duzeni). Boylece
 orkestrator ve gelistirici Telegram iletimine gerek kalmadan okur. Yayimlanan dosyalar (izin listesi): `rejim.json`,
 `gunluk_ozet_v1.json`, `pano.html` (ogrenme kartlari dahil anlik pano), `mutabakat_v1.json` + `mutabakat.md` (acik/kapanan islemler,
-kasa), `strateji-veri-ml.md`, `tutarlilik_v1.json`, `etiket_kurallari_v1.json`, `durum.json` (motor durum dosyasi), `uretim.txt`.
+kasa), `strateji-veri-ml.md`, `tutarlilik_v1.json`, `durum.json` (motor durum dosyasi), `uretim.txt`.
 Defter (sqlite), ortam dosyalari ve anahtarlar yayimlanmaz; bilinen sir kaliplari gorulurse o tur hic yayimlanmaz.
 
 Kimlik yalniz sunucudaki SSH deploy anahtaridir (ozel kisim sunucudan cikmaz; GitHub'a yalniz `.pub` kismi eklenir). Anahtar yoksa

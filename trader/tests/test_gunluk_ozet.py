@@ -251,26 +251,14 @@ def test_modul_yasak_degil():
     assert not re.search(r"(?m)^\s*(from|import)\s+trader_engine", t)
 
 
-def test_duygu_notu_en_fazla_bir_madde_ve_sema_sabit():
-    d = G.uret(G.Girdi(duygu={"deger": 28, "sinif": "Fear"}), NOW)
-    assert d["notlar"] == ["Duygu: Korku (28)"] and tum_anahtarlar(d)
-    assert G.uret(G.Girdi(duygu={"deger": 80, "sinif": "Extreme Greed"}), NOW)["notlar"] == ["Duygu: Aşırı açgözlülük (80)"]
-    assert G.uret(G.Girdi(duygu={"deger": 50, "sinif": "Yeni Sinif"}), NOW)["notlar"] == ["Duygu: Yeni Sinif (50)"]
-    assert G.uret(G.Girdi(duygu=None), NOW)["notlar"] == []                                   # yok/bayat: madde yok
-    assert G.uret(G.Girdi(duygu={"bozuk": 1}), NOW)["notlar"] == []                           # bozuk: sessiz
-    d = G.uret(G.Girdi(duygu={"deger": 28, "sinif": "Fear"}, notlar=["a", "b"]), NOW)
-    assert d["notlar"] == ["a", "b", "Duygu: Korku (28)"] and len(d["notlar"]) <= 5
-
-
-def test_duygu_onbellekten_okunur_bayatsa_yok(tmp_path):
-    from trader_core import haber as HB
-    now_ms = int(NOW.timestamp() * 1000)
-    assert G._duygu(tmp_path, NOW) is None                                                   # dosya yok
-    anlik = {"duygu": {"deger": 28, "sinif": "Fear", "ms": now_ms - 3600_000}, "haberler": [], "haber_ms": None}
-    (tmp_path / "var" / "durum").mkdir(parents=True)
-    (tmp_path / "var" / "durum" / "haber_v1.json").write_text(json.dumps(HB.belge_yap(anlik, now_ms)), encoding="utf-8")
-    assert G._duygu(tmp_path, NOW) == {"deger": 28, "sinif": "Fear"}
-    assert G._duygu(tmp_path, NOW + timedelta(hours=30)) is None                             # 26 saatten eski
+def test_duygu_notu_yok():
+    """Duygu (Fear&Greed) gunluk ozete girmez: Girdi'de alan, uret'te not, okuyucu yok (21 Kasim 2026 silme karari)."""
+    import dataclasses
+    assert "duygu" not in {f.name for f in dataclasses.fields(G.Girdi)} and not hasattr(G, "_duygu")
+    with pytest.raises(TypeError):
+        G.Girdi(duygu={"deger": 28, "sinif": "Fear"})
+    d = G.uret(G.Girdi(notlar=["a", "b"]), NOW)
+    assert d["notlar"] == ["a", "b"] and not any("Duygu" in n for n in d["notlar"])
 
 
 def test_ortak_filtre_aktif_kurulum_sayisi(tmp_path):
