@@ -1,9 +1,9 @@
 {
  "sema": "ml.mutabakat.v1",
- "uretim": "2026-11-21T07:34:36Z",
- "uretim_tsi": "2026-11-21 10:34",
- "islem_sayisi": 31,
- "kapanan": 24,
+ "uretim": "2026-11-21T12:34:37Z",
+ "uretim_tsi": "2026-11-21 15:34",
+ "islem_sayisi": 34,
+ "kapanan": 27,
  "acik": 7,
  "uyusmazlik_sayisi": 0,
  "uyusmazliklar": [],
@@ -15,35 +15,35 @@
   "oncesi": 34,
   "dagilim": {
    "Telegram öncesi (mesaj sistemi yoktu)": 34,
-   "gönderildi (kayıt)": 21,
+   "gönderildi (kayıt)": 27,
    "—": 7
   },
   "kaynak": "Telegram geçmişine erişim yok; motorun gönderdi kaydı (imleç) kullanıldı. Sıra: (1) gönderim kaydı islem_gonderildi.jsonl (ts, işlem no, tür, yön, K/Z; kayıt başlangıcından itibaren), (2) outbox 'sent' işaretleri (teslim edilmiş mesajın anahtarı; mesaj metni yok), (3) islem_imleci.json (duyurulmuş işlem numaraları). Gönderim kaydından önceki işlemlerde imleç yalnız 'duyuruldu' sayıldığını gösterir, mesaj metnini kanıtlamaz; mesaj sisteminden önceki işlemler 'Telegram öncesi' sayılır, uyuşmazlık değildir."
  },
  "fiyat_bekleniyor": [
   20,
-  22,
   27,
   39,
   40,
-  54,
-  55
+  55,
+  57,
+  58
  ],
  "fiyat_bekleniyor_durum": "fiyat bekleniyor (piyasa kapalı/veri yok)",
  "panel_notu": "Panel 'tümü' listesi son 200 kapanan işlemi gösterir; toplamlar tüm işlemleri kapsar.",
  "bilgi": [
-  "Fiyatı gelmeyen açık işlemler: #20, #22, #27, #39, #40, #54, #55 · fiyat bekleniyor (piyasa kapalı/veri yok); uyuşmazlık sayılmaz"
+  "Fiyatı gelmeyen açık işlemler: #20, #27, #39, #40, #55, #57, #58 · fiyat bekleniyor (piyasa kapalı/veri yok); uyuşmazlık sayılmaz"
  ],
  "kontroller": [
   {
    "ad": "Kasa = başlangıç + Σ net K/Z",
    "sonuc": "geçti",
-   "ayrinti": "Kasa 1.169,87 $ tutuyor"
+   "ayrinti": "Kasa 1.157,01 $ tutuyor"
   },
   {
    "ad": "Net K/Z: SQL toplamı = motor toplamı = brüt - komisyon - fonlama",
    "sonuc": "geçti",
-   "ayrinti": "Defter toplamları tutuyor (+157,52 $)"
+   "ayrinti": "Defter toplamları tutuyor (+152,23 $)"
   },
   {
    "ad": "Long toplamı (motor = panel)",
@@ -53,12 +53,12 @@
   {
    "ad": "Short toplamı (motor = panel)",
    "sonuc": "geçti",
-   "ayrinti": "Short işlemler panelle aynı (19 işlem)"
+   "ayrinti": "Short işlemler panelle aynı (22 işlem)"
   },
   {
    "ad": "Toplam kapanan (motor = panel 'tümü')",
    "sonuc": "geçti",
-   "ayrinti": "Kapanan işlemlerin toplamı panelle aynı (24 işlem)"
+   "ayrinti": "Kapanan işlemlerin toplamı panelle aynı (27 işlem)"
   },
   {
    "ad": "Açık pozisyon sayısı (motor = panel = şerit = durum)",
@@ -68,15 +68,15 @@
   {
    "ad": "Açık K/Z fiyat kaynağı (panel = motor mark)",
    "sonuc": "geçti",
-   "ayrinti": "Açık işlemlerin kâr/zararı panelle aynı; fiyat bekleniyor (piyasa kapalı/veri yok): #20, #22, #27, #39, #40, #54, #55",
+   "ayrinti": "Açık işlemlerin kâr/zararı panelle aynı; fiyat bekleniyor (piyasa kapalı/veri yok): #20, #27, #39, #40, #55, #57, #58",
    "fiyat_bekleniyor": [
     20,
-    22,
     27,
     39,
     40,
-    54,
-    55
+    55,
+    57,
+    58
    ]
   },
   {
@@ -435,20 +435,19 @@
    "kol": "Sıkışma kırılımı · 1 saat",
    "coin": "ADA",
    "yon": "short",
-   "durum": "açık",
+   "durum": "kapalı",
    "acilis": "2026-11-20 05:00",
-   "kapanis": null,
+   "kapanis": "2026-11-21 14:32",
    "giris": 0.149,
-   "cikis": null,
-   "brut": null,
-   "komisyon": 0.12664999999999998,
-   "fonlama": 0.0,
-   "net": null,
+   "cikis": 0.1406,
+   "brut": 14.279999999999985,
+   "komisyon": 0.24616,
+   "fonlama": 0.15519338259282,
+   "net": 13.878646617407165,
    "uyusmazlik": [],
    "panel": "aynı",
    "telegram_acildi": "Telegram öncesi (mesaj sistemi yoktu)",
-   "telegram_kapandi": "—",
-   "fiyat_durumu": "fiyat bekleniyor (piyasa kapalı/veri yok)"
+   "telegram_kapandi": "gönderildi (kayıt)"
   },
   {
    "islem_no": 24,
@@ -648,20 +647,19 @@
    "kol": "Yapay zekâ adayı · 15 dakika",
    "coin": "NFLX",
    "yon": "short",
-   "durum": "açık",
+   "durum": "kapalı",
    "acilis": "2026-11-21 09:45",
-   "kapanis": null,
+   "kapanis": "2026-11-21 15:15",
    "giris": 56.97,
-   "cikis": null,
-   "brut": null,
-   "komisyon": 0.6215427,
+   "cikis": 57.25,
+   "brut": -6.109600000000025,
+   "komisyon": 1.2461402000000001,
    "fonlama": 0.0,
-   "net": null,
+   "net": -7.355740200000025,
    "uyusmazlik": [],
    "panel": "aynı",
    "telegram_acildi": "gönderildi (kayıt)",
-   "telegram_kapandi": "—",
-   "fiyat_durumu": "fiyat bekleniyor (piyasa kapalı/veri yok)"
+   "telegram_kapandi": "gönderildi (kayıt)"
   },
   {
    "islem_no": 55,
@@ -675,6 +673,65 @@
    "cikis": null,
    "brut": null,
    "komisyon": 0.6214163000000001,
+   "fonlama": 0.0,
+   "net": null,
+   "uyusmazlik": [],
+   "panel": "aynı",
+   "telegram_acildi": "gönderildi (kayıt)",
+   "telegram_kapandi": "—",
+   "fiyat_durumu": "fiyat bekleniyor (piyasa kapalı/veri yok)"
+  },
+  {
+   "islem_no": 56,
+   "kol": "Kırılım yeniden testi · 1 saat",
+   "coin": "AVAX",
+   "yon": "short",
+   "durum": "kapalı",
+   "acilis": "2026-11-21 11:00",
+   "kapanis": "2026-11-21 14:31",
+   "giris": 6.27,
+   "cikis": 6.419,
+   "brut": -11.324000000000002,
+   "komisyon": 0.482182,
+   "fonlama": 0.0,
+   "net": -11.806182000000002,
+   "uyusmazlik": [],
+   "panel": "aynı",
+   "telegram_acildi": "gönderildi (kayıt)",
+   "telegram_kapandi": "gönderildi (kayıt)"
+  },
+  {
+   "islem_no": 57,
+   "kol": "İki bacaklı geri çekilme · 1 saat",
+   "coin": "DOT",
+   "yon": "short",
+   "durum": "açık",
+   "acilis": "2026-11-21 15:00",
+   "kapanis": null,
+   "giris": 0.6431,
+   "cikis": null,
+   "brut": null,
+   "komisyon": 0.20338037500000003,
+   "fonlama": 0.0,
+   "net": null,
+   "uyusmazlik": [],
+   "panel": "aynı",
+   "telegram_acildi": "gönderildi (kayıt)",
+   "telegram_kapandi": "—",
+   "fiyat_durumu": "fiyat bekleniyor (piyasa kapalı/veri yok)"
+  },
+  {
+   "islem_no": 58,
+   "kol": "Trend geri çekilmesi · 15 dakika",
+   "coin": "JPM",
+   "yon": "short",
+   "durum": "açık",
+   "acilis": "2026-11-21 15:30",
+   "kapanis": null,
+   "giris": 312.12,
+   "cikis": null,
+   "brut": null,
+   "komisyon": 0.5836644,
    "fonlama": 0.0,
    "net": null,
    "uyusmazlik": [],

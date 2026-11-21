@@ -5,7 +5,6 @@
 2026-11-20 20:05 UTC      3013  pa_proposer/M1@15m.prev.json
 2026-11-20 20:05 UTC      3030  pa_proposer/M1@1d.prev.json
 2026-11-21 03:40 UTC         2  ortak_filtre/ogrenme_filtre_durum.json
-2026-11-21 03:40 UTC      1993  setup_filter/C1@1h.json
 2026-11-21 03:40 UTC      2206  setup_filter/T1@1h.json
 2026-11-21 03:40 UTC      2668  setup_filter/R1@15m.json
 2026-11-21 03:40 UTC      2680  setup_filter/T1@15m.json
