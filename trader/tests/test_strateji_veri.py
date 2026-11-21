@@ -34,7 +34,7 @@ ARMS = ["T1@1h", "T1@4h", "R1@1h", "R1@4h", "B1@1h"]
 D0 = datetime(2026, 11, 3, 6, 0, tzinfo=UTC)
 
 
-def _dec(led, i, arm, side, regime, entered, bar, skip=None):
+def _dec(led, i, arm, side, regime, entered, bar, skip=None, risk_reason=None, veto_reason=None):
     setup, tf = arm.split("@")
     feats = {"atr_1h": 20.0, "stop_dist_atr": 2.0, "atr_4h": 40.0, "pullback_ema": 1.0, "ema_value": 2000.0, "body_ratio": 0.6,
              "wick_ratio": 0.5, "rr": 2.5, "edge_dist_atr": 0.1}
@@ -43,8 +43,10 @@ def _dec(led, i, arm, side, regime, entered, bar, skip=None):
     kw = dict(veto_status="allowed", veto_reason=None, risk_allowed=True, risk_reason="ok", size_qty=0.3, size_notional=600.0,
               size_margin=200.0, size_risk_amount=13.188, leverage=3, final_action="entered", skip_reason=None)
     if not entered:
-        kw = dict(veto_status="not_evaluated", veto_reason=None, risk_allowed=None, risk_reason=None, size_qty=None, size_notional=None,
+        kw = dict(veto_status="not_evaluated", veto_reason=veto_reason, risk_allowed=None, risk_reason=risk_reason, size_qty=None, size_notional=None,
                   size_margin=None, size_risk_amount=None, leverage=None, final_action="skipped", skip_reason=skip)
+    if skip == "risk_denied":
+        kw["risk_allowed"] = False
     return led.record_decision(L.DecisionEvent(
         bar_close_ts=bar, trigger_tf=tf, pair="ETH/USDT" if i % 2 else "BTC/USDT", side=side, setup=setup, regime=regime, atr_ratio=1.1,
         rh=2100.0 if rng else None, rl=1980.0 if rng else None, rh_touches=2 if rng else 0, rl_touches=3 if rng else 0, features=feats,
@@ -74,6 +76,11 @@ def mk(path, extra=None):
         _dec(led, n + 1 + j, "R1@4h", "short", "range", False, D0 + timedelta(days=2, hours=j), "ml_filter")
     _dec(led, n + 4, "R1@4h", "short", "range", False, D0 + timedelta(days=2, hours=5), "max_positions")
     _dec(led, n + 5, "T1@1h", "long", "trend_up", False, D0 + timedelta(days=3, hours=1), "max_positions")
+    # risk_denied / arm_conflict / arm_cap ornekleri: eski (tum kayit) ve yeni (son 12 saat) pencereler
+    _dec(led, n + 6, "R1@4h", "short", "range", False, D0 + timedelta(days=1), "risk_denied", "toplam açık risk sınırı aşılır")
+    _dec(led, n + 7, "R1@4h", "short", "range", False, D0 + timedelta(days=3, hours=2), "risk_denied", "aynı yön (short) risk sınırı aşılır")
+    _dec(led, n + 8, "R1@4h", "short", "range", False, D0 + timedelta(days=3, hours=2), "arm_conflict", veto_reason="gate:arm_conflict:T1@1h")
+    _dec(led, n + 9, "R1@4h", "short", "range", False, D0 + timedelta(days=3, hours=3), "max_positions", veto_reason="gate:arm_cap:R1@4h")
     led.close()
 
 
@@ -158,8 +165,37 @@ def test_ml8_arms_without_trades_and_skip_reasons(root):
     md = _md(root)
     sec = md.split("## ML 8")[1].split("## ML 10")[0]
     assert "Yapılandırılmış kol: 5 · ≥1 işlem açan: 3 · hiç açmayan: 2" in sec
-    assert "ml_filter=3, max_positions=1" in sec and "R1@4h" in sec
+    assert "ml_filter=3" in sec and "max_positions=2" in sec and "R1@4h" in sec
     assert "B1@1h" in sec and "aday üretmedi" in sec
+
+
+def test_ml8_per_arm_skip_breakdown_and_windows(root):
+    sec = _md(root).split("## ML 8")[1].split("## ML 10")[0]
+    row = [x for x in sec.split("### Kol bazında")[1].splitlines() if x.startswith("| R1@4h |")][0]
+    cells = [c.strip() for c in row.strip("|").split("|")]
+    assert "risk_denied=2 (max_open_risk=1, max_same_dir_risk=1)" in cells[3]       # tum kayit
+    assert "arm_conflict=1 (T1@1h=1)" in cells[3] and "max_positions=2 (max_positions=1, arm_max_positions=1)" in cells[3]
+    assert "ml_filter=3" in cells[3]
+    assert "risk_denied=1 (max_same_dir_risk=1)" in cells[6] and "ml_filter" not in cells[6] and "max_open_risk" not in cells[6]   # son 12 saat
+    assert cells[4] == "3" and cells[1] == "8"
+    assert "Aday üretmedi (sinyal tarafı, filtre değil): tüm kayıtta B1@1h" in sec
+    d = SV.ml8(ARMS, [], [], None)
+    assert d["aday_yok_tum"] == list(ARMS)
+
+
+def test_risk_limiti_names():
+    assert SV.risk_limiti("günlük zarar bütçesi aşılır") == "daily_max_loss"
+    assert SV.risk_limiti("toplam teminat özsermayeyi aşar") == "margin_total" and SV.risk_limiti(None) == "?"
+    assert SV.risk_limiti("bilinmeyen") == "diğer"
+
+
+def test_rerun_refreshes_file_without_resending(root):
+    p = Poster()
+    R.kos(root, NOW, ENV, p)
+    f = root / "var/durum/strateji-veri-ml.md"
+    f.write_text("eski")
+    assert R.kos(root, NOW + timedelta(hours=6), ENV, p) == 0 and len(p.calls) == 1
+    assert b"## Ortak 1" in f.read_bytes()
 
 
 def test_ml10_flags_losing_arms_and_lists_mechanisms(root):
@@ -337,7 +373,8 @@ def test_unit_sandboxed_like_mutabakat_and_reads_telegram_env():
         assert kv[k] == mu[k], k
     assert kv["ReadWritePaths"] == "/opt/trader/var/durum"                          # var/durum disinda yazma yok
     assert "PrivateNetwork" not in kv and "AF_INET" in kv["RestrictAddressFamilies"]    # Telegram'a cikis gerekir
-    assert not (ROOT / "deploy/trader-strateji-veri.timer").exists()                 # zamanlayici yok: tek seferlik
+    tm = (ROOT / "deploy/trader-strateji-veri.timer").read_text(encoding="utf-8")        # rapor dosyasi 6 saatte bir yenilenir
+    assert "OnCalendar=*-*-* 00/6:20:00 UTC" in tm and "WantedBy=timers.target" in tm
 
 
 def test_install_starts_unit_once_after_restarts_non_fatal():
@@ -346,4 +383,4 @@ def test_install_starts_unit_once_after_restarts_non_fatal():
     blok = t[i:i + 420]
     assert "systemctl start --no-block trader-strateji-veri.service" in blok and "fail " not in blok and "exit " not in blok
     assert i > t.index("enable_now trader-engine@learner.service") and i > t.index("systemctl restart trader-telegram.service")
-    assert "enable_now trader-strateji-veri" not in t
+    assert "enable_now trader-strateji-veri.timer" in t and "enable_now trader-strateji-veri.service" not in t

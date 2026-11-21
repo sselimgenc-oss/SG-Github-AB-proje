@@ -133,7 +133,8 @@ def karar_satirlari(kararlar: Iterable[Any]) -> list[dict]:
         if not kilit_disi(d.bar_close_ts):
             continue
         out.append({"arm": kol_id(d.setup, d.trigger_tf, getattr(d, "arm_id", None)), "side": str(d.side), "regime": str(d.regime),
-                    "girdi": d.final_action == "entered", "skip": d.skip_reason, "ts": utc(d.bar_close_ts)})
+                    "girdi": d.final_action == "entered", "skip": d.skip_reason, "ts": utc(d.bar_close_ts),
+                    "risk": getattr(d, "risk_reason", None), "veto": getattr(d, "veto_reason", None)})
     return out
 
 
@@ -229,7 +230,57 @@ def ortak7(kap: Sequence[Mapping], tum: Sequence[Mapping], baslangic: datetime |
             "kol_sayisi_islemli": len(per), "kol_sayisi_yapilandirma": len(kollar), "satirlar": satir}
 
 
-def ml8(kollar: Sequence[str], tum: Sequence[Mapping], kararlar: Sequence[Mapping]) -> dict:
+# risk.py `_deny` metni (onek) -> limit adi (rapor etiketi)
+RISK_LIMIT = (("toplam açık risk", "max_open_risk"), ("aynı yön", "max_same_dir_risk"), ("günlük zarar bütçesi", "daily_max_loss"),
+              ("günlük sınır aşıldı", "daily_limit"), ("toplam teminat", "margin_total"), ("likidasyon çok yakın", "liquidation"),
+              ("boyutlandırma reddedildi", "sizing"), ("zaten açık pozisyon", "pair_already_open"), ("kaldıraç aralık", "leverage_range"),
+              ("stop yanlış tarafta", "stop_side"), ("geçersiz girdi", "invalid_input"))
+PENCERE_SAAT = 12
+
+
+def risk_limiti(reason: Any) -> str:
+    r = str(reason or "").strip()
+    for pre, ad in RISK_LIMIT:
+        if r.startswith(pre) or (pre == "zaten açık pozisyon" and pre in r):
+            return ad
+    return "diğer" if r else "?"
+
+
+def skip_detay(d: Mapping) -> tuple[str, str | None]:
+    """(skip_reason, ayrinti): risk_denied -> risk limiti adi; max_positions -> arm_max_positions|max_positions; cluster_cap -> kume;
+    arm_conflict -> kazanan kol (veto_reason `gate:arm_conflict:<kazanan>`); digerleri ayrintisiz."""
+    sk = d.get("skip") or "?"
+    veto = str(d.get("veto") or "")
+    if sk == "risk_denied":
+        return sk, risk_limiti(d.get("risk"))
+    if sk == "max_positions":
+        return sk, "arm_max_positions" if veto.startswith("gate:arm_cap:") else "max_positions"
+    if sk == "cluster_cap":
+        return sk, veto.split(":", 2)[2] if veto.count(":") >= 2 else "cluster"
+    if sk == "arm_conflict":
+        return sk, (veto.split(":", 2)[2] if veto.count(":") >= 2 else "kazanan kayıtlı değil")
+    return sk, None
+
+
+def _pencere(arm: str, kararlar: Sequence[Mapping]) -> dict:
+    skip: Counter = Counter()
+    det: dict[str, Counter] = defaultdict(Counter)
+    aday = girdi = 0
+    for d in kararlar:
+        if d["arm"] != arm:
+            continue
+        aday += 1
+        if d["girdi"]:
+            girdi += 1
+            continue
+        sk, ay = skip_detay(d)
+        skip[sk] += 1
+        if ay:
+            det[sk][ay] += 1
+    return {"aday": aday, "girdi": girdi, "skip": skip, "detay": det}
+
+
+def ml8(kollar: Sequence[str], tum: Sequence[Mapping], kararlar: Sequence[Mapping], kesit: datetime | None = None) -> dict:
     islem = Counter(t["arm"] for t in tum)
     girdi = Counter(d["arm"] for d in kararlar if d["girdi"])
     karar_n = Counter(d["arm"] for d in kararlar)
@@ -239,7 +290,12 @@ def ml8(kollar: Sequence[str], tum: Sequence[Mapping], kararlar: Sequence[Mappin
     for d in kararlar:
         if d["arm"] in acmayan and not d["girdi"]:
             skip[d["arm"]][d["skip"] or "?"] += 1
-    return {"veri": _son(d["ts"] for d in kararlar), "toplam": len(kollar), "acan": acan, "acmayan": acmayan,
+    kes = kesit or _son(d["ts"] for d in kararlar)
+    son = [d for d in kararlar if kes and d["ts"] >= kes - timedelta(hours=PENCERE_SAAT)]
+    kol_detay = [{"arm": a, "tum": _pencere(a, kararlar), "son": _pencere(a, son)} for a in kollar]
+    return {"veri": _son(d["ts"] for d in kararlar), "toplam": len(kollar), "acan": acan, "acmayan": acmayan, "kes": kes,
+            "kol_detay": kol_detay, "aday_yok_tum": [r["arm"] for r in kol_detay if r["tum"]["aday"] == 0],
+            "aday_yok_son": [r["arm"] for r in kol_detay if r["son"]["aday"] == 0 and r["tum"]["aday"] > 0],
             "yapilandirma_disi": sorted(a for a in islem if a not in kollar),
             "satirlar": [{"arm": a, "aday": karar_n.get(a, 0), "skip": skip.get(a, Counter()),
                           "son": _son(d["ts"] for d in kararlar if d["arm"] == a)} for a in acmayan]}
@@ -371,7 +427,7 @@ def hesapla(*, kollar: Sequence[str], islemler: Sequence[Mapping], kararlar: Seq
     return {"simdi": simdi, "baslangic": baslangic, "kesit": kesit, "kap_n": len(kap), "acik_n": len(islemler) - len(kap),
             "karar_n": len(kararlar), "atlanan_kilit": atlanan, "kollar": list(kollar),
             "o1": ortak1(kap), "o2": ortak2(kap), "o3": ortak3(kap), "o6": ortak6(kap),
-            "o7": ortak7(kap, islemler, baslangic, kesit, kollar), "m8": ml8(kollar, islemler, kararlar), "m10": o10,
+            "o7": ortak7(kap, islemler, baslangic, kesit, kollar), "m8": ml8(kollar, islemler, kararlar, kesit), "m10": o10,
             "mek": mekanizmalar(kollar, arms_off, etiket, fren, [r["arm"] for r in o10 if r["zarar"]]),
             "yon": yon_ozet(kap, kararlar), "m11": ml11(kararlar, kollar), "m12": ml12(kap, tutarlilik, tut_veri)}
 
@@ -454,6 +510,30 @@ def markdown(d: Mapping) -> str:
         L += tablo(["Kol", "Aday (karar kaydı)", "En sık skip_reason", "Grup (filtre/rejim/veri/eşik/risk-limit)", "Veri"], satir)
         a("")
     a("Açan kollar: " + (", ".join(m8["acan"]) or "yok"))
+    a("")
+    a(f"### Kol bazında neden işlem açmıyor (tüm kayıt / son {PENCERE_SAAT} saat)")
+    a("")
+    a(f"Pencere: «tüm kayıt» = kilitli dönem dışındaki tüm karar satırları; «son {PENCERE_SAAT} saat» = veri kesitinden ({tsi(m8['kes'])}) geriye {PENCERE_SAAT} saat. "
+      "Kâğıt risk limitleri kayıt süresince gevşetilmiş olabilir; eski `risk_denied` sayıları o günkü limitlere aittir, güncel durumu "
+      f"«son {PENCERE_SAAT} saat» sütunları gösterir. Risk reddi `risk_reason` metninden limit adına çevrilir (max_open_risk, max_same_dir_risk, daily_max_loss ...).")
+    a("")
+
+    def hucre(w: Mapping) -> str:
+        parcalar = []
+        for k, v in w["skip"].most_common():
+            ay = w["detay"].get(k)
+            if ay:
+                parcalar.append(f"{k}={v} ({', '.join(f'{x}={y}' for x, y in ay.most_common())})")
+            else:
+                parcalar.append(f"{k}={v}")
+        return "; ".join(parcalar) or "-"
+
+    L += tablo(["Kol", "Aday (tüm)", "Girdi (tüm)", "Skip (tüm)", f"Aday ({PENCERE_SAAT}s)", f"Girdi ({PENCERE_SAAT}s)", f"Skip ({PENCERE_SAAT}s)", "Veri"],
+               [[r["arm"], r["tum"]["aday"], r["tum"]["girdi"], hucre(r["tum"]), r["son"]["aday"], r["son"]["girdi"], hucre(r["son"]), veri(m8["kes"])]
+                for r in m8["kol_detay"]])
+    a("")
+    a("Aday üretmedi (sinyal tarafı, filtre değil): tüm kayıtta " + (", ".join(m8["aday_yok_tum"]) or "yok")
+      + f" · yalnız son {PENCERE_SAAT} saatte " + (", ".join(m8["aday_yok_son"]) or "yok") + ".")
     a("")
     a("Aday = `decision_events` satırı. Golge kararlar (shadow) ve hiç kayda girmeyen sinyaller bu sayıya girmez.")
     a("")

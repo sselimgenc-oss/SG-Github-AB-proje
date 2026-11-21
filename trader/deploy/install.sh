@@ -629,6 +629,7 @@ enable_now trader-mutabakat.timer
 enable_now trader-durum-yayin.timer
 # Haftalik disk bakimi (sqlite WAL checkpoint/VACUUM + eski cikti temizligi; izin listesi). unit ReadWritePaths (var) zaten yukarida olusur
 enable_now trader-bakim.timer
+enable_now trader-strateji-veri.timer   # strateji verisi raporu 6 saatte bir yenilenir (Telegram belgesi yalniz ilk kez)
 # Otomatik guncelleme (docs/motor/oto-guncelleme-spec.md): komutlar root sahipli surum dizininden; durum dizini root 0700.
 safe_tree_path "$OTO_STATE_DIR"
 install -d -m 0700 -o root -g root "$OTO_STATE_DIR"
@@ -694,7 +695,7 @@ else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRE
 # birimleri kalmamali (kaldirma yukarida yapildi; eski bir kopya kaldiysa burada gorunur).
 say "DD-12 zamanlayici denetimi"
 for t in trader-notes.timer trader-weekly-summary.timer trader-ml-retrain.timer trader-universe.timer \
-         trader-counterfactual@learner.timer trader-exit-counterfactual@learner.timer trader-tutarlilik.timer trader-mutabakat.timer trader-durum-yayin.timer trader-haber.timer trader-bakim.timer; do
+         trader-counterfactual@learner.timer trader-exit-counterfactual@learner.timer trader-tutarlilik.timer trader-mutabakat.timer trader-durum-yayin.timer trader-haber.timer trader-bakim.timer trader-strateji-veri.timer; do
   if systemctl is-enabled --quiet "$t" 2>/dev/null; then echo "  etkin: $t"; else echo "UYARI: $t etkin degil (systemctl enable --now $t)"; fi
 done
 for u in trader-veto.service trader-veto.timer trader-engine@twin.service trader-engine-retry@twin.timer; do

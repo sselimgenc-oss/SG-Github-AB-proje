@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Strateji verisi (beyin firtinasi icin): kurulumdan sonra BIR KEZ calisir, `strateji-veri-ml.md` dosyasini tek SESSIZ Telegram
-BELGESI olarak gonderir ("[ML] Strateji verisi (beyin fırtınası için)"). SALT OKUNUR: defter `read_only` + migrate yok; motoru etkilemez.
+"""Strateji verisi (beyin firtinasi icin): kurulumdan sonra ve 6 saatte bir (zamanlayici) `strateji-veri-ml.md` dosyasini yeniler; dosyayi
+tek SESSIZ Telegram BELGESI olarak yalniz BIR KEZ gonderir ("[ML] Strateji verisi (beyin fırtınası için)"). SALT OKUNUR: defter `read_only` + migrate yok; motoru etkilemez.
 
 Tekrar gondermez: basarili gonderimden sonra `<veri>/var/durum/strateji_veri_gonderildi.json` {"surum": 1, ...} yazilir; kayit
 SURUM >= bu betigin SURUM'u ise hicbir sey gonderilmez. Ikinci bir dosya icin SURUM sabiti artirilir. Gonderim basarisizsa kayit
@@ -86,9 +86,7 @@ def rapor_uret(root: Path, now: datetime) -> str | None:
 
 def kos(root: Path, now: datetime, env, http_post=None, dry_run: bool = False) -> int:
     durum = root / "var" / "durum"
-    if not dry_run and gonderildi_mi(durum):
-        print("strateji-veri: zaten gonderilmis; atlandi")
-        return 0
+    zaten = (not dry_run) and gonderildi_mi(durum)      # zamanlayici: dosya HER kosuda yenilenir (canli-durum dalina gider); Telegram yalniz bir kez
     try:
         md = rapor_uret(root, now)
     except Exception as e:  # noqa: BLE001
@@ -101,6 +99,9 @@ def kos(root: Path, now: datetime, env, http_post=None, dry_run: bool = False) -
         print(md)
         return 0
     atomic_write_text(durum / CIKTI, md)
+    if zaten:
+        print("strateji-veri: dosya yenilendi; Telegram'a zaten gonderilmis, tekrar gonderilmedi")
+        return 0
     cfg = T.TelegramConfig.from_env(env)
     if cfg is None:
         print("strateji-veri: Telegram anahtari yok; gonderilmedi (dosya yazildi)", file=sys.stderr)
