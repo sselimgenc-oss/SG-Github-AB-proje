@@ -518,6 +518,44 @@ for u in trader-ct-kadro.timer trader-ct-kadro.service; do
   systemctl disable --now "$u" >/dev/null 2>&1 || true
 done
 rm -f "${UNIT_DIR}/trader-ct-kadro.service" "${UNIT_DIR}/trader-ct-kadro.timer"
+# C1 defter/state gocu (docs/motor/ct-ayrilik-spec.md bolum 5): motor DURDURULUR, goc yedekli ve dogrulamali calisir (hata halinde yedekten
+# geri yuklenir, isaret yazilmaz), basariliysa yedek silinir ve var/durum/c1_goc_raporu.json yazilir. Acik C1 pozisyonu varsa goc
+# REDDEDILIR (hicbir sey degismez): motor yeni kodla baslar, acilista C1'i piyasadan kapatir; kapaninca (en cok ~15 dk) goc yeniden denenir.
+c1_acik_sayisi() { # state.sqlite'ta kapanmamis C1 pozisyonu (salt okunur); okunamazsa 0
+  as_trader /usr/bin/python3 -I -c "import sqlite3,sys; c=sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True); print(c.execute(\"SELECT COUNT(*) FROM positions WHERE setup='C1' AND status!='closed'\").fetchone()[0])" "$TRADER_DIR/var/learner/state.sqlite" 2>/dev/null || echo 0
+}
+c1_goc_dene() { # motoru durdurur, gocu calistirir; basariliysa 0
+  systemctl stop trader-engine@learner.service trader-engine-retry@learner.timer trader-notes.service trader-lesson.service >/dev/null 2>&1 || true
+  systemctl start trader-c1-goc.service >/dev/null 2>&1 || true
+  [ -e "$TRADER_DIR/var/c1_goc.done" ]
+}
+if [ ! -e "$TRADER_DIR/var/c1_goc.done" ] && [ -f "$TRADER_DIR/var/learner/state.sqlite" ] && [ -f "$TRADER_DIR/var/learner/ledger.sqlite" ]; then
+  if [ "$LIVE" -eq 1 ] && systemctl is-active --quiet trader-engine@learner.service 2>/dev/null; then
+    echo "UYARI: C1 gocu ertelendi: canli kipte kagit learner calisiyor (durdurulmadan goc yapilmaz)"
+  else
+    say "C1 gocu"
+    safe_tree_path "$TRADER_DIR/var" "$TRADER_DIR/var/durum"
+    if c1_goc_dene; then
+      echo "C1 gocu tamamlandi (rapor: var/durum/c1_goc_raporu.json)"
+    elif [ "$(systemctl show -p ExecMainStatus --value trader-c1-goc.service 2>/dev/null)" = "3" ]; then
+      echo "C1 gocu ertelendi: acik C1 pozisyonu var; motor baslatilip C1 piyasadan kapatilacak"
+      systemctl start trader-feed.service trader-engine@learner.service >/dev/null 2>&1 || true
+      for _ in $(seq 1 30); do
+        sleep 30
+        [ "$(c1_acik_sayisi)" = "0" ] && break
+      done
+      if [ "$(c1_acik_sayisi)" = "0" ] && c1_goc_dene; then
+        echo "C1 gocu tamamlandi (rapor: var/durum/c1_goc_raporu.json)"
+      else
+        echo "UYARI: C1 gocu tamamlanamadi (acik C1 pozisyonu kapanmadi ya da goc reddedildi); sonraki kurulumda yeniden denenir"
+        MISSING+=("C1 gocu bekliyor: acik C1 pozisyonu kapaninca 'systemctl stop trader-engine@learner; systemctl start trader-c1-goc; systemctl start trader-engine@learner' (ya da install.sh'i yeniden calistirin)")
+      fi
+    else
+      echo "CRIT: C1 gocu BASARISIZ; yedekten geri yuklendi, isaret yazilmadi (journalctl -u trader-c1-goc; Telegram'a da bildirildi). Sonraki kurulumda yeniden denenir."
+      MISSING+=("C1 gocu basarisiz oldu (veri yedekten geri yuklendi): journalctl -u trader-c1-goc")
+    fi
+  fi
+fi
 if [ ! -e "$TRADER_DIR/var/c1_temizle.done" ]; then
   safe_tree_path "$TRADER_DIR/var"
   if as_trader /usr/bin/python3 -I "$REL_DIR/scripts/c1_temizle.py" --var-dir "$TRADER_DIR/var" --saglik-durum /var/lib/trader-health/state.json; then

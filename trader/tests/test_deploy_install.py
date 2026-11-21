@@ -138,6 +138,7 @@ def test_every_unit_handled_by_install():
                         "trader-durum-yayin.service",  # canli durum yayini: saatlik zamanlayici etkinlestirilir; servis tetiklenir
                         "trader-bakim.service",  # haftalik disk bakimi (zamanlayici etkinlestirilir; servis tetiklenir)
                         "trader-haber.service",  # 19 Kasim: haber/duygu toplayici eklendi (zamanlayici etkinlestirilir; servis tetiklenir)
+                        "trader-c1-goc.service",  # C1 kaldirma gocu: tek seferlik, zamanlayicisiz; yalniz install.sh baslatir (motor durdurulmusken)
                         "trader-engine-live.service", "trader-engine-env-retry@.service",
                         "trader-oto-guncelle.service", "trader-kurulum-gozcu.service"}  # tetikleyici/sablon birimler (DD-9: canli birim yalniz --live ile, enable_now ile degil; oto-guncelle servisi zamanlayicidan tetiklenir)
     for u in UNITS:
@@ -424,3 +425,20 @@ def test_ct_kadro_units_removed_and_c1_cleanup_wired_once():
     assert "var/ct" not in t.replace("var/ct/kadro", "")                       # var/ct artik olusturulmaz
     assert not (ROOT / "scripts" / "ct_kadro_cek.py").exists() and not (ROOT / "src" / "trader_core" / "ct_kadro.py").exists()
     assert not (ROOT / "src" / "trader_engine" / "strategies" / "arms" / "c1.py").exists()
+
+
+def test_c1_goc_wired_motor_stopped_marker_and_refusal_retry():
+    t = (DEPLOY / "install.sh").read_text(encoding="utf-8")
+    u = (DEPLOY / "trader-c1-goc.service").read_text(encoding="utf-8")
+    assert "scripts/c1_goc.py" in u and "SuccessExitStatus=3" in u and "EnvironmentFile=-/etc/trader-telegram.env" in u
+    assert "--motor-birimi trader-engine@learner.service" in u and "ReadWritePaths=/opt/trader/var" in u
+    assert "c1_goc_dene()" in t and "systemctl stop trader-engine@learner.service" in t and "systemctl start trader-c1-goc.service" in t
+    assert 'if [ ! -e "$TRADER_DIR/var/c1_goc.done" ]' in t and "c1_acik_sayisi()" in t       # isaretli, acik C1 varsa reddet + yeniden dene
+    # goc, motorlar enable_now ile (yeniden) baslamadan ONCE
+    assert t.index("c1_goc_dene()") < t.index("enable_now trader-engine@learner.service") < t.index("enable_now trader-drift@learner.timer")
+    assert t.index("c1_goc_dene()") < t.index("enable_now trader-feed.service")
+
+
+def test_durum_yayinla_whitelists_c1_goc_raporu():
+    t = (DEPLOY / "durum_yayinla.sh").read_text(encoding="utf-8")
+    assert "c1_goc_raporu.json" in t.split("for f in", 1)[1].split("; do", 1)[0]
