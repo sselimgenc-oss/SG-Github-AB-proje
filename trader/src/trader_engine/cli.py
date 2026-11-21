@@ -624,15 +624,16 @@ def _testnet_wallet_balance() -> float:
     """Testnet hesabinin USDT cuzdan bakiyesi (totalWalletBalance; motorun acilista okudugu alan). Hata: ValueError."""
     import math
     import os
-    import time
 
+    from .clock import SystemClock
     from .config import load_keys
     from .errors import ConfigError
     from .exchange.binance_rest import ExchangeError, SignedRestClient
     try:
         key, secret = load_keys(os.environ)
+        saat = SystemClock()
         rest = SignedRestClient(env="testnet", api_key=key, api_secret=secret,
-                                now_ms=lambda: int(time.time() * 1000), sleep=time.sleep)
+                                now_ms=lambda: int(saat.now().timestamp() * 1000), sleep=saat.sleep)
         rest.sync_time()
         acct = rest.account()
     except (ConfigError, ExchangeError, OSError) as e:
