@@ -8,7 +8,6 @@ from types import SimpleNamespace as NS
 from panel_support import Env
 from trader_core import alinmayan_sonuc as AS
 from trader_core import counterfactual as CF
-from trader_core import haber_sonuc as HS
 from trader_core import panel_data as P
 from trader_panel.data import PanelData, load_config
 
@@ -67,8 +66,7 @@ def test_ct_sutun_uyumu():
     v = AS.olustur(CFR, ATL, ALN, NOW)
     for tb in (v["tablolar"], v["tum_zamanlar"]):
         for r in tb["neden"]:
-            assert tuple(r) == HS.SUTUNLAR == AS.SUTUNLAR            # CT rejim_sonuc_v1 satir alanlari (sira dahil)
-    assert AS._satirlar is HS._satirlar and AS.yaz_atomik is HS.yaz_atomik
+            assert tuple(r) == AS.SUTUNLAR            # CT rejim_sonuc_v1 satir alanlari (sira dahil)
 
 
 def test_gecersiz_r_ve_bilinmeyen_neden():
@@ -120,7 +118,7 @@ def test_panel_karti(env):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(AS.olustur(CFR, ATL, ALN, NOW)), encoding="utf-8")
     r = pd_.alinmayansonuc()
-    assert r["ok"] and r["var"] and r["birim"] == "R" and r["pencere_gun"] == 7 and tuple(r["tablolar"]["neden"][0]) == HS.SUTUNLAR
+    assert r["ok"] and r["var"] and r["birim"] == "R" and r["pencere_gun"] == 7 and tuple(r["tablolar"]["neden"][0]) == AS.SUTUNLAR
     assert r["cozulmedi"]["tablolar"]["flat_bar"] == 1
     p.write_text(json.dumps(AS.olustur([], [], [], NOW)), encoding="utf-8")
     assert pd_.alinmayansonuc()["neden"] == "kayit_yok"

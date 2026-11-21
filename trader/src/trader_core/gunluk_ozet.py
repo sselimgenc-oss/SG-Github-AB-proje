@@ -52,7 +52,6 @@ class Girdi:
     durdu_mu: bool | None = None
     son_nabiz: str | None = None
     hata_sayisi_gun: int | None = None
-    duygu: Mapping[str, Any] | None = None      # {deger, sinif} (haber onbellegi; bayat/yok -> None); yalniz bir not satiri uretir
     notlar: list[str] = field(default_factory=list)
 
 
@@ -149,13 +148,6 @@ def uret(g: Girdi, now: datetime) -> dict[str, Any]:
         iyi = [h for h in hesaplar if h["islem"] > 0 and (h["toplam_pnl"] or 0) > 0]
         if iyi:
             notlar.append(f"en iyi kurulum: {iyi[0]['ad']}")
-
-    if g.duygu:                                  # en fazla 1 madde; sema alani eklenmez
-        try:
-            from trader_core.haber import duygu_siniflari_tr
-            notlar.append(f"Duygu: {duygu_siniflari_tr(str(g.duygu['sinif']))} ({int(g.duygu['deger'])})")
-        except Exception:  # noqa: BLE001 - not istege bagli
-            pass
 
     aktif = yeni = emekli = None
     if g.aktivasyonlar is not None:
@@ -275,16 +267,6 @@ def _drift(yol: Path, now: datetime) -> bool | None:
         rules = d.get("rules") if isinstance(d.get("rules"), Mapping) else {}
         seviyeler = [d.get("overall")] + [r.get("level") for r in rules.values() if isinstance(r, Mapping)]
         return "UYARI" in seviyeler
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _duygu(kok: Path, now: datetime) -> dict | None:
-    """Haber onbellegindeki duygu (`var/durum/haber_v1.json`); yok/bozuk/bayatsa None."""
-    try:
-        from trader_core import haber as HB
-        anlik = HB.dosya_oku(kok / "var" / "durum" / "haber_v1.json")
-        return HB.duygu_ozet(anlik, int(now.timestamp() * 1000)) if anlik else None
     except Exception:  # noqa: BLE001
         return None
 
@@ -434,16 +416,6 @@ def girdi_oku(config_dir: str | os.PathLike, env: str, environ: Mapping[str, str
     if g.rejim is None:
         g.notlar.append("rejim verisi yok")
     g.drift_uyari = _drift(ldir / "drift.json", now)
-    try:                                                     # etiket kurallari: gun icinde kapanan/yeniden acilan kural (en fazla 1 madde)
-        from trader_core import etiket_kurallari as EKU
-        d = EKU.durum_oku(kok / "var" / "durum" / EKU.DOSYA)
-        for k in EKU.KURALLAR:
-            for ev in d["kurallar"][k]["gecmis"]:
-                if _icinde(EKU._utc(ev.get("ts")), a, b):
-                    g.notlar.insert(0, EKU.olay_satiri({**ev, "kural": k}))
-    except Exception:  # noqa: BLE001
-        pass
-    g.duygu = _duygu(kok, now)
     sag = _yol(kok, panel.get("health_state"), "/var/lib/trader-health/state.json")
     g.son_nabiz, g.hata_sayisi_gun = _saglik(sag, now)
     if g.son_nabiz is None:

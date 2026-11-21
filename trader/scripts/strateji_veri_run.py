@@ -79,7 +79,7 @@ def rapor_uret(root: Path, now: datetime) -> str | None:
     arms_off = LS.read_arms_state(led_path.parent / "arms_off.json")           # yok/bozuk -> {} (hepsi acik)
     tut, tut_t = SV.tutarlilik_oku(root / "var" / "durum" / "tutarlilik_v1.json")
     doc = SV.hesapla(kollar=yapilandirilmis_kollar(root / "config"), islemler=islemler, kararlar=kr, simdi=now, tutarlilik=tut,
-                     tut_veri=tut_t, arms_off=arms_off, etiket=SV.json_oku(root / "var" / "durum" / "etiket_kurallari_v1.json"),
+                     tut_veri=tut_t, arms_off=arms_off,
                      fren=fren, atlanan=atlanan)
     return SV.markdown(doc)
 

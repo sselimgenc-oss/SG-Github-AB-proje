@@ -1549,29 +1549,6 @@ def _risk_satirlari(st: Mapping[str, Any], pause_text: str = "", gunluk_zarar_do
     return []
 
 
-def _etiket_olay_satiri(st: Mapping[str, Any]) -> list[str]:
-    """Etiket kurali kanita gore kapandi/yeniden acildi: tek satir (son olay)."""
-    ek = st.get("etiket_kurallari")
-    if not isinstance(ek, Mapping) or not isinstance(ek.get("kurallar"), Mapping):
-        return []
-    from . import etiket_kurallari as EK
-    son = None
-    for k, v in ek["kurallar"].items():
-        ev = v.get("son_olay") if isinstance(v, Mapping) else None
-        if isinstance(ev, Mapping) and (son is None or str(ev.get("ts")) > str(son[1].get("ts"))):
-            son = (k, ev)
-    if son is None:
-        return []
-    try:                                                    # yalniz son 36 saatteki olay (eski olay her raporda tekrarlanmaz)
-        t_ev = datetime.fromisoformat(str(son[1]["ts"]).replace("Z", "+00:00"))
-        simdi = datetime.fromisoformat(str(st["loop_at"]).replace("Z", "+00:00"))
-        if simdi - t_ev > timedelta(hours=36):
-            return []
-    except (KeyError, ValueError, TypeError):
-        return []
-    return ["🏷️ " + EK.olay_satiri({"kural": son[0], "olay": "kapandi" if son[1].get("olay") == "kapandi" else "acildi"})]
-
-
 def _aktivite_satirlari(st: Mapping[str, Any]) -> list[str]:
     c = st.get("counters") or {}
     if not isinstance(c, Mapping) or "steps" not in c:
@@ -1583,7 +1560,7 @@ def _aktivite_satirlari(st: Mapping[str, Any]) -> list[str]:
                      key=lambda kv: -kv[1])[:3]
     if atlanan:
         out.append("↳ Atlananlar: " + ", ".join(f"{int(v)} {ATLAMA_TR[k]}" for k, v in atlanan))
-    return out + _etiket_olay_satiri(st)
+    return out
 
 
 def _pozisyon_satirlari(st: Mapping[str, Any]) -> list[str]:

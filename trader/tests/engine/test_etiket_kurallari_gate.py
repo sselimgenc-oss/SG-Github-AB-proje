@@ -22,10 +22,10 @@ from test_engine_05_impl_smoke import T0, _params, _row  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CFG = load_cli_config(ROOT / "config", "learner", "paper")
-EKCFG = EK.build_config({"rejim": {}, "duygu": {}})
+EKCFG = EK.build_config({"rejim": {}})
 
 
-def _kur(tmp_path, *, cfg=EKCFG, acik=None, duygu=None):
+def _kur(tmp_path, *, cfg=EKCFG):
     clock = SimClock(T0 + timedelta(seconds=5))
     led = L.open_ledger(str(tmp_path / "l.sqlite"), "learner", create=True, clock=clock.now)
     led.init_params(_params(), reason="strategy:price_action_v1@1b.0")
@@ -37,8 +37,6 @@ def _kur(tmp_path, *, cfg=EKCFG, acik=None, duygu=None):
     rules = lambda p: SymbolRules(p, p.replace("/", ""), 0.01, 0.001, 0.001, 1e9, 5.0)  # noqa: E731
     g = EntryGate(CFG, led, state, Killswitch(str(tmp_path / "KILL"), clock), NoVeto(), clock, broker, rules)
     g.etiket_cfg = cfg
-    g.etiket_durum = (lambda: acik) if acik is not None else None
-    g.haber_etiket = (lambda pair, ms: {"duygu": duygu, "haber": None}) if duygu is not None else None
     return SimpleNamespace(g=g, led=led, state=state)
 
 
@@ -75,9 +73,19 @@ def test_rejim_karsiti_atlar_ve_satir_yazilir(mk):
     assert _go(e, regime="trend_up", side="short", planned_stop=102.0).code == "etiket_rejim"
 
 
-def test_duygu_atlar(mk):
-    e = mk(duygu={"deger": 10, "sinif": "Extreme Fear"})
-    assert _go(e).code == "etiket_duygu"
+def test_duygu_haber_kapisi_yok(mk):
+    """Duygu (Fear&Greed) / haber tonu hicbir kapi girdisi degil: kapi bu kancalari tanimaz, asiri deger bile engellemez, features'a yazilmaz."""
+    e = mk()
+    for ad in ("haber_etiket", "etiket_durum", "_haber_etiketi"):
+        assert not hasattr(e.g, ad), ad
+    e.g.haber_etiket = lambda pair, ms: {"duygu": {"deger": 3, "sinif": "Extreme Fear"}, "haber": {"BTC": {"ton": "negatif"}}}   # eski kanca denense bile okunmaz
+    o = _go(e, regime="range", side="long")
+    assert o.action == "enter"
+    f = o.event.features or {}
+    assert "duygu" not in f and "haber" not in f and not any(k.startswith("etiket_") for k in f)
+    assert not any("duygu" in k for k in e.g.counters)
+    o2 = _go(e, regime="range", side="short", planned_stop=102.0)
+    assert o2.action == "enter"
 
 
 def test_boyut_ve_risk_degismez_serbest_kararda(mk):
@@ -88,32 +96,29 @@ def test_boyut_ve_risk_degismez_serbest_kararda(mk):
     assert ea == eb and (oa.size, oa.leverage) == (ob.size, ob.leverage)
 
 
-def test_veri_yok_fail_open_ve_sayilir(mk):
-    e = mk()                                                              # duygu yok
-    o = _go(e)
+def test_rejim_yok_fail_open_ve_sayilir(mk):
+    e = mk()
+    o = _go(e, regime=None)
     assert o.action == "enter"
-    assert e.g.counters["etiket_veri_yok:etiket_duygu"] == 1
+    assert e.g.counters["etiket_veri_yok:etiket_rejim"] == 1
 
 
 def test_hata_giris_serbest(mk):
     e = mk()
-    e.g.etiket_durum = lambda: 1 / 0
-    assert _go(e, regime="trend_down").code == "etiket_rejim"             # durum okunamazsa kural acik sayilir
     e.g.etiket_cfg = {"rejim": 5}                                         # bozuk cfg: istisna yutulur
     assert _go(e, regime="trend_down").action == "enter"
 
 
-def test_kapali_kural_atlamaz_ama_not_eder(mk):
-    e = mk(acik={EK.REJIM: False, EK.DUYGU: True})
+def test_etiket_atlardi_notu_yok_sabit_kural(mk):
+    """Otomatik kapama/yeniden acma silindi: kural hep acik; `etiket_atlardi` notu/sayaci hic uretilmez; durum kancasi yok."""
+    e = mk()
+    assert not hasattr(EK, "FEATURE_ANAHTAR")
+    e.g.etiket_durum = lambda: {EK.REJIM: False}                          # eski kanca denense bile kural kapanmaz
     o = _go(e, regime="trend_down")
-    assert o.action == "enter" and o.event.features[EK.FEATURE_ANAHTAR] == EK.REJIM
-    assert e.g.counters["etiket_atlardi:etiket_rejim"] == 1
-    did = e.led.record_decision(o.event)
-    assert e.led.get_decision(did).features[EK.FEATURE_ANAHTAR] == EK.REJIM
-    # kapali + acik kural ayni anda: acik olan atlar
-    e2 = mk(acik={EK.REJIM: False, EK.DUYGU: True}, duygu={"deger": 5, "sinif": "x"})
-    o2 = _go(e2, regime="trend_down")
-    assert o2.code == "etiket_duygu" and o2.event.features[EK.FEATURE_ANAHTAR] == EK.REJIM
+    assert o.code == "etiket_rejim" and o.size is None
+    ok = _go(e, regime="trend_up")
+    assert ok.action == "enter" and "etiket_atlardi" not in (ok.event.features or {})
+    assert not any("atlardi" in k for k in e.g.counters)
 
 
 def test_ml_filtre_sirasi_korunur_ve_testnet_live_kapisi_yok(mk):

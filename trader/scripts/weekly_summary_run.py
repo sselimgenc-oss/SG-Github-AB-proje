@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Haftalik ozet (DD-12 WP-09, spec eki 18 Kas 2026): haftanin islem notlarini sade Turkce ozetler (sahibin okumasi icin).
 
-Haftalik dosya SABIT BOLUM (LLM'siz: tutarlilik, haber x sonuc, cikis kaniti, PBO, alinmayan sinyal) + istege bagli "Yorum"
+Haftalik dosya SABIT BOLUM (LLM'siz: tutarlilik, cikis kaniti, PBO, alinmayan sinyal) + istege bagli "Yorum"
 paragrafindan olusur; sabit bolum anahtar olsun olmasin her hafta yazilir (Telegram gunluk raporu `telegram.rapor_ogrenme` onu okur).
 Tek LLM kullanimi yorumdur. Butce payi `haftalik_ozet` (aylik tavan 10 $; pay bitince DURUR, motor/not/ders etkilenmez):
 `budget.authorize` -> cagri -> `budget.record` (hata/sapmada `release`). API anahtari (budget.api_key_env("haftalik_ozet"))
@@ -24,7 +24,6 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
 from trader_core import budget as _budget  # noqa: E402
-from trader_core import haber_sonuc as HS  # noqa: E402
 from trader_core import ledger as L  # noqa: E402
 from trader_core import lesson as LS  # noqa: E402
 
@@ -79,25 +78,6 @@ def tutarlilik_satiri(env, now: datetime, durum_path=None) -> str:
     oran = _tr_pct(e / (e + yk + yb)) if (e + yk + yb) else "yok"
     uy = "uyarı: tutarlilik_sapma" if doc.get("uyari") else "uyarı yok"
     return f"Tutarlılık: eşleşme {oran}, ΣR farkı {dr:+.1f}R; {uy}".replace(".", ",")
-
-
-def haber_sonuc_uret(env, lp: str, now: datetime, yol=None) -> str:
-    """Haber x sonuc raporunu yazar (`var/durum/haber_sonuc_v1.json`, atomik) ve haftalik 1 satiri doner. Yalniz bilgi: her hata yutulur
-    (ozeti/LLM'i asla engellemez); hata ya da yazma yetkisi yoksa satir 'henüz veri yok'."""
-    yok = "Haber×sonuç: henüz veri yok"
-    p = Path(yol) if yol else _data_root(env) / "var" / "durum" / HS.DOSYA
-    try:
-        led = L.open_ledger(lp, "learner", create=False, read_only=True, migrate=False)
-    except Exception:  # noqa: BLE001
-        return yok
-    try:
-        return HS.telegram_satiri(HS.yaz(led, now, p))
-    except Exception:  # noqa: BLE001
-        return yok
-    finally:
-        close = getattr(led, "close", None)
-        if close:
-            close()
 
 
 def build_input(ledger, since: str, until: str) -> tuple[dict, str]:
@@ -202,7 +182,6 @@ def sabit_bolum(env, lp: str, now: datetime, lesson_store=None) -> list[str]:
         except Exception:  # noqa: BLE001
             return yok
     out = [guard(lambda: tutarlilik_satiri(env, now), "Tutarlılık: rapor yok"),
-           guard(lambda: haber_sonuc_uret(env, lp, now), "Haber×sonuç: henüz veri yok"),
            guard(lambda: cikis_kaniti_satiri(env, lp, now, lesson_store), "Çıkış kanıtı: henüz veri yok")]
     pbo = guard(lambda: pbo_satiri(env), None)
     if pbo:

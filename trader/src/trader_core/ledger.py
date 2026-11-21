@@ -257,7 +257,7 @@ def _json_safe(obj):
     return repr(obj)
 
 
-_ETIKET_ANAHTARLARI = ("duygu", "haber", "etiket_atlardi")        # features icindeki yalniz-kayit etiketleri (docs/haber-etiketi-spec.md)
+_ETIKET_ANAHTARLARI = ("duygu", "haber", "etiket_atlardi")        # ESKI satirlardaki yalniz-kayit etiketleri (21 Kasim 2026: yeni yazilmaz; eski satirlar okunur kalir)
 
 
 def _json_limited(obj, name) -> str:

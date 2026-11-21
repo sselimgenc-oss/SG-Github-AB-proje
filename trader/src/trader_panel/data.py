@@ -21,7 +21,7 @@ from trader_core import panel_pano as PP
 BOTS = ("learner",)
 DEFAULT_PORT = 8787
 _PATH_KEYS = ("status_path", "ledger_path", "budget_config", "lesson_store",
-              "health_state", "kill_file", "engine_config", "tutarlilik_path", "pbo_path", "muhur_path", "exitcf_path", "haber_path", "haber_sonuc_path", "alinmayan_sonuc_path")
+              "health_state", "kill_file", "engine_config", "tutarlilik_path", "pbo_path", "muhur_path", "exitcf_path", "alinmayan_sonuc_path")
 _NUM_KEYS = {"health_stale_s": (60, 86400), "cache_s": (0, 60), "request_timeout_s": (0.5, 30),
              "max_concurrent": (1, 16), "max_response_bytes": (1024, 4 * 1024 * 1024),
              "closed_limit": (1, P.CLOSED_MAX), "curve_limit": (1, P.CLOSED_MAX)}
@@ -226,12 +226,6 @@ class PanelData:
             except Exception:  # noqa: BLE001
                 ml = None
             try:
-                dd = Path(self.cfg.ledger_path).parent.parent / "durum" if self.cfg.ledger_path else None
-                etiket = PP.etiket_view(str(dd / "etiket_kurallari_v1.json"),
-                                        self.cfg.alinmayan_sonuc_path or str(dd / "alinmayan_sonuc_v1.json")) if dd else None
-            except Exception:  # noqa: BLE001
-                etiket = None
-            try:
                 kucultme = PP.kucultme_view(lp, b)
             except Exception:  # noqa: BLE001 - kucultme karti istege bagli
                 kucultme = None
@@ -255,7 +249,7 @@ class PanelData:
             if kismi and isik["renk"] == "yesil":
                 isik = {"renk": "sari", "metin": "Sistem çalışıyor; bazı özellikler kısmen devrede"}
             return {"bot_durum": s["state"], "mod": (status or {}).get("mode"), "serit": serit, "acik": acik, "kz": kz,
-                    "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "etiket": etiket, "kucultme": kucultme, "teknik": teknik,
+                    "son3": PP.closed_view(lp, b, "tumu", now, 3)["rows"], "ders": ders, "ml": ml, "kucultme": kucultme, "teknik": teknik,
                     "isik": isik, "yapmali": PP.ne_yapmali(s["state"], serit["risk"], acik["n"], kismi, teknik.get("saglik"))}
         return self._wrap(fn)
 
@@ -299,7 +293,7 @@ class PanelData:
         return self._wrap(lambda: P.pbo_view(self._holdout_path("pbo_path", "pbo_ozet.json"),
                                              self._holdout_path("muhur_path", "muhur.json")))
 
-    # -- cikis kaniti / haber (bos yol: exitcf = defter dizini, haber = veri koku `durum/`)
+    # -- cikis kaniti (bos yol: exitcf = defter dizini)
     def _exitcf_path(self) -> str:
         c = self.cfg.exitcf_path
         return c or (str(Path(self.cfg.ledger_path).parent / "exit_counterfactual.sqlite") if self.cfg.ledger_path else "")
@@ -313,17 +307,7 @@ class PanelData:
             return P.exitcf_view(self._exitcf_path(), self.now(), bek)
         return self._wrap(fn)
 
-    def habersonuc(self) -> dict:
-        c = self.cfg.haber_sonuc_path
-        return self._wrap(lambda: P.haber_sonuc_view(
-            c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "haber_sonuc_v1.json") if self.cfg.ledger_path else "")))
-
     def alinmayansonuc(self) -> dict:
         c = self.cfg.alinmayan_sonuc_path
         return self._wrap(lambda: P.alinmayan_sonuc_view(
             c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "alinmayan_sonuc_v1.json") if self.cfg.ledger_path else "")))
-
-    def haber(self) -> dict:
-        c = self.cfg.haber_path
-        return self._wrap(lambda: P.haber_view(
-            c or (str(Path(self.cfg.ledger_path).parent.parent / "durum" / "haber_v1.json") if self.cfg.ledger_path else ""), self.now()))

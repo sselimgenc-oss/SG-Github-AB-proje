@@ -1,4 +1,4 @@
-"""Panel: cikis kaniti ve haber/duygu kartlari (salt okunur; kaynak yok/bozuk/bayat paneli bozmaz). Sentetik veri, kilitli donem disinda."""
+"""Panel: cikis kaniti (haber/duygu paneli SILINDI) (salt okunur; kaynak yok/bozuk/bayat paneli bozmaz). Sentetik veri, kilitli donem disinda."""
 import json
 import sqlite3
 from datetime import timedelta
@@ -47,18 +47,6 @@ def put(env, rel, text):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text)
 
-
-def haber_doc(**kw):
-    ms = int(NOW.timestamp() * 1000)
-    d = {"sema": "ml.haber.v1", "uretim": z(NOW - timedelta(minutes=20)),
-         "duygu": {"deger": 28, "sinif": "Fear", "ms": ms - 3600_000},
-         "basliklar": [{"t": ms - 600_000, "b": "Bitcoin surges past record", "ton": "pozitif"},
-                       {"t": ms - 700_000, "b": "BTC rally continues", "ton": "pozitif"},
-                       {"t": ms - 800_000, "b": "Ethereum hack fears", "ton": "negatif"},
-                       {"t": ms - 900_000, "b": "Solana update", "ton": "notr"}],
-         "haber_ms": ms - 600_000}
-    d.update(kw)
-    return d
 
 
 def test_exitcf_ok_per_setup(env):
@@ -117,67 +105,32 @@ def test_exitcf_old_store_without_modes_table(env):
     assert r["ok"] and r["var"] is False and r["neden"] == "kayit_yok"
 
 
-def test_haber_ok(env):
-    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc()))
-    r = pd_(env).haber()
-    assert r["ok"] and r["var"] and r["yas_dk"] == 20
-    assert r["duygu"] == {"deger": 28, "sinif": "Fear", "sinif_tr": "Korku"}
-    assert [c["coin"] for c in r["coinler"]] == ["BTC", "ETH", "SOL"]
-    assert r["coinler"][0] == {"coin": "BTC", "adet_24s": 2, "ton": "pozitif"}
-    assert r["coinler"][1]["ton"] == "negatif"
-
-
-def test_haber_partial_and_stale(env):
-    ms = int(NOW.timestamp() * 1000)
-    # haber bayat (6 saat+), duygu taze -> yalniz duygu
-    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc(haber_ms=ms - 7 * 3600_000)))
-    r = pd_(env).haber()
-    assert r["var"] and r["duygu"]["deger"] == 28 and r["coinler"] == []
-    # ikisi de bayat -> veri yok
-    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc(haber_ms=ms - 7 * 3600_000,
-                                                              duygu={"deger": 28, "sinif": "Fear", "ms": ms - 30 * 3600_000})))
-    r = pd_(env).haber()
-    assert r["ok"] and r["var"] is False and r["neden"] == "bayat"
-
-
-@pytest.mark.parametrize("raw,neden", [(None, "dosya_yok"), ("{bozuk", "bozuk"), ("[1]", "bozuk"),
-                                       (json.dumps({"sema": "x"}), "sema_yanlis"),
-                                       (json.dumps({"sema": "ml.haber.v1", "duygu": 5, "basliklar": []}), "sema_yanlis")])
-def test_haber_missing_corrupt(env, raw, neden):
-    if raw is not None:
-        put(env, "var/durum/haber_v1.json", raw)
-    r = pd_(env).haber()
-    assert r["ok"] is True and r["var"] is False and r["neden"] == neden
-
-
 def test_views_never_raise_on_bad_input():
     assert P.exitcf_view("", NOW)["var"] is False
-    assert P.haber_view("", NOW)["var"] is False
+    assert not hasattr(P, "haber_view") and not hasattr(P, "haber_sonuc_view")
     assert P.exitcf_bekleyen(None) == [] and P.exitcf_bekleyen({"open_requests": "x", "proposals": [1]}) == []
 
 
 def test_server_endpoints_and_snapshot(env):
     mk_store(env.root / "var/learner/exit_counterfactual.sqlite", modes=[(1, "T1", "off", 1.0), (1, "T1", "partial", 2.0)])
-    put(env, "var/durum/haber_v1.json", json.dumps(haber_doc()))
     run = Running(env)
     try:
         assert run.get("/api/ciktikaniti")["var"] is True
-        assert run.get("/api/haber")["duygu"]["deger"] == 28
     finally:
         run.stop()
     html = SN.render(pd_(env))
-    assert "/api/ciktikaniti" in html and "/api/haber" in html
+    assert "/api/ciktikaniti" in html and "/api/haber" not in html
     data = SN.collect(pd_(env))
     assert data["/api/ciktikaniti"]["kurulumlar"][0]["kismi"]["n"] == 1
-    assert data["/api/haber"]["var"] is True
+    assert "/api/haber" not in data and "/api/habersonuc" not in data
 
 
 def test_snapshot_and_server_with_empty_sources(env):
     data = SN.collect(pd_(env))
-    assert data["/api/ciktikaniti"]["var"] is False and data["/api/haber"]["var"] is False
+    assert data["/api/ciktikaniti"]["var"] is False
     assert data["/api/pbo"]["ok"] is True
     run = Running(env)
     try:
-        assert run.get("/api/ciktikaniti")["neden"] == "dosya_yok" and run.get("/api/haber")["neden"] == "dosya_yok"
+        assert run.get("/api/ciktikaniti")["neden"] == "dosya_yok"
     finally:
         run.stop()

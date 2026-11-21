@@ -12,7 +12,7 @@
 
 ## Birim: R (USD değil) — gerekçe
 Alınmayan aday için kâğıt boyutlandırması (miktar, marj, kaldıraç) hiç üretilmez; kasa o andaki kullanılabilir bakiye/açık risk durumuna bağlıdır ve atlanma nedeni çoğu zaman bunun kendisidir (`max_positions`, `risk_denied`). USD'ye çevirmek varsayım uydurmak olurdu. "Alınsaydı" sonucu gece işinde net R olarak hesaplanır (maliyet düşülmüş), alınan işlemlerin `r_multiple`'ı da R'dir; iki taraf aynı birimde karşılaştırılır. Bu yüzden `toplam_pnl` / `ortalama_pnl` alanları bu raporda **R**'dir; dosyada `"birim": "R"`, pano başlığı "Toplam PnL (R) / Ort. PnL (R)".
-Not: CT/haber raporlarında aynı alan adları USD'dir; orkestratör yan yana koyarken `birim` alanına bakmalıdır.
+Not: CT raporlarında aynı alan adları USD'dir; orkestratör yan yana koyarken `birim` alanına bakmalıdır.
 
 ## Satır ve dosya
 Satır `{etiket, n, kazanan, isabet_yuzde, toplam_pnl, ortalama_pnl}`; kazanan = R > 0. `var/durum/alinmayan_sonuc_v1.json` (atomik): `{sema, uretim, birim:"R", pencere_gun:7, tablolar:{neden:[satırlar]} (son 7 gün, karar zamanına göre), tum_zamanlar:{neden:[...]}, cozulmedi:{tablolar:{neden:n}, tum_zamanlar:{neden:n}}, not}`. Her tablonun son satırı `alınan işlemler` (aynı dönem, karşılaştırma; işlem yoksa yazılmaz).

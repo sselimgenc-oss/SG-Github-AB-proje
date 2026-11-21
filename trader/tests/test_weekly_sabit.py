@@ -30,7 +30,7 @@ def test_keyless_writes_fixed_section_and_no_llm(tmp_path, capsys):
     rc, f = _run(tmp_path)
     assert rc == 0 and json.loads(capsys.readouterr().out)["comment"] == "no_api_key"
     t = f.read_text(encoding="utf-8")
-    for s in ("Tutarlılık: rapor yok", "Haber×sonuç: henüz veri yok", "Çıkış kanıtı: henüz veri yok", "Alınmayan sinyal: henüz veri yok"):
+    for s in ("Tutarlılık: rapor yok", "Çıkış kanıtı: henüz veri yok", "Alınmayan sinyal: henüz veri yok"):
         assert s in t
     assert "PBO" not in t and "## Yorum" not in t                 # PBO dosyasi yok: sessiz atla
     # Telegram yolu: sabit satirlar gunluk rapordaki haftalik ozet satirina girer, [ML] etiketi + fit_text sinirina uyar

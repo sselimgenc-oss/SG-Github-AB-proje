@@ -1,6 +1,6 @@
 """Alinmayan sinyal x sonuc raporu (`ml.alinmayan_sonuc.v1`): `var/durum/alinmayan_sonuc_v1.json`. YALNIZ BILGI: karar/emir yoluna girmez.
 
-Satir bicimi `haber_sonuc.py` / CT `rejim_sonuc` ile AYNI: {etiket, n, kazanan, isabet_yuzde, toplam_pnl, ortalama_pnl} (yardimcilar yeniden kullanilir).
+Satir bicimi CT `rejim_sonuc` ile AYNI: {etiket, n, kazanan, isabet_yuzde, toplam_pnl, ortalama_pnl}.
 BIRIM = R (USD DEGIL): alinmayan aday icin kagit boyut/dolum yoktur; "alinsaydi" sonucu `counterfactual.sqlite` `hyp_r_net` (R, maliyet dusulmus).
 `toplam_pnl`/`ortalama_pnl` alanlari bu raporda R'dir; karsilastirma satiri da R'dir (kapanan islemin `r_multiple`'i). Belirtim: docs/alinmayan-sonuc-spec.md.
 Yontem `plan` (planlanan stop/hedef, 48 mum; version>=2). Sonucu olmayan aday (bekleyen, veri bosluğu, gecersiz plan) "cozulmedi" sayilir, uydurulmaz.
@@ -8,13 +8,17 @@ Yontem `plan` (planlanan stop/hedef, 48 mum; version>=2). Sonucu olmayan aday (b
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from . import counterfactual as CF
-from .haber_sonuc import PENCERE_GUN, SUTUNLAR, _say, _satirlar, yaz_atomik  # noqa: F401  (SUTUNLAR: disa acik, CT uyumu)
+
+PENCERE_GUN = 7
+SUTUNLAR = ("etiket", "n", "kazanan", "isabet_yuzde", "toplam_pnl", "ortalama_pnl")      # CT uyumu
 
 SEMA = "ml.alinmayan_sonuc.v1"
 DOSYA = "alinmayan_sonuc_v1.json"
@@ -25,6 +29,41 @@ ALINAN = "alınan işlemler"
 NEDEN_SIRA = ("max_positions", "cluster_cap", "flat_bar", "arm_conflict", "arm_disabled", "session_closed", "ml_filter", "etiket_rejim", "etiket_duygu", "etiket_kalabalik", "ml_no_model",
               "risk_denied", "entry_gate_closed", "veto_blocked", "veto_missing", "veto_stale", "stop_width", "rr_below_min",
               "order_failed", "llm_invalid", "other")
+
+
+def _say(v: Any) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and abs(f) != float("inf") else None
+
+
+def _satirlar(kv: dict[str, list[float]], sira: tuple[str, ...]) -> list[dict]:
+    out = []
+    for etiket in sira:
+        p = kv.get(etiket)
+        if not p:
+            continue
+        toplam, kaz = sum(p), sum(1 for x in p if x > 0)
+        out.append({"etiket": etiket, "n": len(p), "kazanan": kaz, "isabet_yuzde": round(100.0 * kaz / len(p), 1),
+                    "toplam_pnl": round(toplam, 2), "ortalama_pnl": round(toplam / len(p), 2)})
+    return out
+
+
+def yaz_atomik(yol: Path, metin: str) -> None:
+    yol.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(yol.parent), prefix=".as-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(metin)
+        os.replace(tmp, yol)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _utc(dt: Any) -> datetime | None:
