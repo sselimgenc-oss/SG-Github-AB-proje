@@ -103,7 +103,8 @@ def test_balance_reader_missing_keys(monkeypatch):
 
 
 def test_install_step_testnet_only_and_conditional():
-    hits = [m.start() for m in re.finditer(r"init-from-exchange", INSTALL)]
+    hits = [m.start() for m in re.finditer(r"python3 -m trader_engine capital init-from-exchange", INSTALL)]
+    hits = [h for h in hits if "runuser" in INSTALL[INSTALL.rfind("\n", 0, h):h]]     # yalniz calistirilan satir
     assert len(hits) == 1
     t = INSTALL.index("if has_value /etc/trader-testnet.env BINANCE_API_KEY")
     e = INSTALL.index("else MISSING+=(\"/etc/trader-testnet.env")
