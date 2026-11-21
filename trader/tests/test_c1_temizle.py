@@ -110,3 +110,26 @@ def test_main_cikis_kodu_ve_isaret(tmp_path):
     assert C.main(["--var-dir", str(var), "--saglik-durum", str(saglik)]) == 0
     assert (var / C.ISARET).is_file()
     assert C.main(["--var-dir", str(tmp_path / "yok")]) == 1
+
+
+def test_v2_isaret_ve_setup_filter_ile_tum_models_c1_paketleri(tmp_path):
+    assert C.ISARET == "c1_temizle_v2.done"
+    var = tmp_path / "var"
+    sf = var / "learner" / "models" / "setup_filter"
+    sf.mkdir(parents=True)
+    for ad in ("C1@1h.json", "C1@1h.prev.json", "C1@4h.json", "T1@1h.json"):
+        (sf / ad).write_text("{}")
+    of = var / "twin" / "models" / "ortak_filtre"
+    of.mkdir(parents=True)
+    for ad in ("aile_C1.json", "aile_C1.prev.json", "aile_T1.json"):
+        (of / ad).write_text("{}")
+    (var / "learner" / "paper_models.csv").write_text(
+        "ad,sinif,tarif\nortak_filtre_aile_C1_2026-11-20,nightly,ridge;aile=C1\nsetup_filter_nightly_2026-11-20,nightly,arms=3\n"
+        "ortak_filtre_aile_T1_2026-11-20,nightly,ridge;aile=T1\n")
+    ozet = C.calistir(var)
+    assert sorted(p.name for p in sf.iterdir()) == ["T1@1h.json"]
+    assert sorted(p.name for p in of.iterdir()) == ["aile_T1.json"]
+    txt = (var / "learner" / "paper_models.csv").read_text()
+    assert "C1" not in txt and "aile_T1" in txt and "setup_filter_nightly" in txt
+    assert ozet["paket"] == 5 and (var / C.ISARET).is_file()
+    assert C.calistir(var, isaret_yaz=False).get("paket") is None                 # idempotent

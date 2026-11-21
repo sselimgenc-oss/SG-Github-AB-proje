@@ -145,6 +145,17 @@ def m1_nightly(led, cf_path: str | None, *, history_dir: str, tfs, models_dir: s
     return out
 
 
+def _config_arms(path: Path) -> list[str] | None:
+    """config/engine.paper.json `arms` (liste ya da {kurulum: [tf]}); okunamazsa None (filtre uygulanmaz)."""
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8")).get("arms")
+    except (OSError, ValueError, AttributeError):
+        return None
+    if isinstance(raw, dict):
+        return [f"{k}@{tf}" for k, tfs in raw.items() for tf in tfs]
+    return [str(a) for a in raw] if isinstance(raw, list) and raw else None
+
+
 def main(argv=None, *, now_fn=None, env=None) -> int:
     ap = argparse.ArgumentParser(prog="ml_retrain_run.py")
     ap.add_argument("--once", action="store_true", required=True)
@@ -156,6 +167,7 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
     ap.add_argument("--history-dir", default="var/history")
     ap.add_argument("--m1-models-dir", default="var/learner/models/pa_proposer")
     ap.add_argument("--m1-tfs", default=",".join(M1_TFS))
+    ap.add_argument("--paper-config", default=str(_HERE.parent / "config" / "engine.paper.json"), help="yapilandirilmis kollar (kaldirilmis kollara paket uretilmez)")
     ap.add_argument("--no-m1", action="store_true", help="yalniz kurulum suzgeci (M1 atlanir)")
     try:
         args = ap.parse_args(argv)
@@ -174,7 +186,10 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
     m1: dict = {}
     m1_err: str | None = None
     try:
+        arms = _config_arms(Path(_resolve(args.paper_config)))
         rows = T.collect_rows(led, cf if os.path.exists(cf) else None)
+        if arms is not None:                       # kaldirilmis kollarin tarihsel satirlari paket uretmez
+            rows = [r for r in rows if r.get("arm_id") in set(arms)]
         pkgs, rep = T.train_all(rows, created_at=now, max_rows=args.max_rows)
         mdir = _resolve(args.models_dir)
         for pkg in pkgs.values():
@@ -185,7 +200,7 @@ def main(argv=None, *, now_fn=None, env=None) -> int:
         ortak: dict = {}
         try:   # 19.11: kagit ML filtresi (ortak_ogrenme) - kurulum basina >=10 kapanmis islem; hata digerlerini geri almaz
             from trader_engine import ogrenme_filtre as OF
-            ortak = OF.egit_hepsi(OF.adaylar_defterden(led), OF.model_dizini(lp), now)
+            ortak = OF.egit_hepsi(OF.adaylar_defterden(led), OF.model_dizini(lp), now, kollar=arms)
         except Exception as e:  # noqa: BLE001
             ortak = {"durum": f"hata:{type(e).__name__}"}
             print(f"ortak filtre egitim hatasi: {type(e).__name__}: {e}", file=sys.stderr)

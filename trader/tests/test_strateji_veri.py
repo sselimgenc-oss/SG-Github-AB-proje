@@ -384,3 +384,17 @@ def test_install_starts_unit_once_after_restarts_non_fatal():
     assert "systemctl start --no-block trader-strateji-veri.service" in blok and "fail " not in blok and "exit " not in blok
     assert i > t.index("enable_now trader-engine@learner.service") and i > t.index("systemctl restart trader-telegram.service")
     assert "enable_now trader-strateji-veri.timer" in t and "enable_now trader-strateji-veri.service" not in t
+
+
+def test_kaldirilan_kol_arm_conflict_kazanani_gosterilmez_sayi_kalir():
+    kol = ["T1@1h", "R1@4h"]
+    def d(w):
+        return {"arm": "R1@4h", "girdi": False, "skip": "arm_conflict", "veto": f"gate:arm_conflict:{w}", "ts": D0}
+    assert SV.skip_detay(d("C1@1h"), kol) == ("arm_conflict", None)
+    assert SV.skip_detay(d("T1@1h"), kol) == ("arm_conflict", "T1@1h")
+    assert SV.skip_detay(d("T1"), kol) == ("arm_conflict", "T1")                       # kurulum adi yapilandirmada var
+    assert SV.skip_detay(d("C1@1h")) == ("arm_conflict", "C1@1h")                      # kollar verilmezse filtre yok
+    w = SV._pencere("R1@4h", [d("C1@1h"), d("C1@4h"), d("T1@1h")], kol)
+    assert w["skip"]["arm_conflict"] == 3 and dict(w["detay"]["arm_conflict"]) == {"T1@1h": 1}
+    m = SV.ml8(kol, [], [d("C1@1h"), d("T1@1h")], None)
+    assert "C1" not in json.dumps(m["kol_detay"], default=str)

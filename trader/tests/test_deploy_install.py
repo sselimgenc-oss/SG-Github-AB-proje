@@ -421,7 +421,7 @@ def test_ct_kadro_units_removed_and_c1_cleanup_wired_once():
     assert "enable_now trader-ct-kadro" not in t
     assert 'systemctl disable --now "$u"' in t and "trader-ct-kadro.timer trader-ct-kadro.service" in t
     assert 'rm -f "${UNIT_DIR}/trader-ct-kadro.service" "${UNIT_DIR}/trader-ct-kadro.timer"' in t
-    assert 'if [ ! -e "$TRADER_DIR/var/c1_temizle.done" ]' in t and "scripts/c1_temizle.py" in t
+    assert 'if [ ! -e "$TRADER_DIR/var/c1_temizle_v2.done" ]' in t and "scripts/c1_temizle.py" in t
     assert "var/ct" not in t.replace("var/ct/kadro", "")                       # var/ct artik olusturulmaz
     assert not (ROOT / "scripts" / "ct_kadro_cek.py").exists() and not (ROOT / "src" / "trader_core" / "ct_kadro.py").exists()
     assert not (ROOT / "src" / "trader_engine" / "strategies" / "arms" / "c1.py").exists()

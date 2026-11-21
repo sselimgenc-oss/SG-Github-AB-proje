@@ -3,7 +3,7 @@
 
 Yaptiklari (hepsi dosya duzeyi; tekrar calistirmada no-op):
   1) var/ct/ (CT kadro dosyalari) silinir.
-  2) Ogrenme paketleri: `**/models/ortak_filtre/aile_C1.json` ve `eski_kol/` altinda C1 kolu dosyalari silinir.
+  2) Ogrenme paketleri: `var/**/models/**` altinda adi C1 tasiyan dosyalar (setup_filter/C1@*.json, ortak_filtre/aile_C1*.json, eski_kol) silinir.
   3) `paper_models.csv`: C1 satirlari cikarilir (dosya atomik yeniden yazilir).
   4) `var/<bot>/arms_off.json`: C1 anahtarlari cikarilir.
   5) `var/durum/etiket_kurallari_v1.json`: kaldirilan `etiket_kalabalik` kurali durum kaydi cikarilir.
@@ -14,7 +14,7 @@ DEFTERE/STATE'E DOKUNULMAZ (onlar `scripts/c1_goc.py` / `trader_core/kol_kaldirm
 `_verify` tetikleyici eksikse reddeder; ayrica kasa/mutabakat islem toplamlarindan turetilir. C1 satirlarini silmek bu butunluk
 mekanizmasini bilincli bir goc'e (tetikleyicileri yeniden kuran, yedekli) baglar; bu betik bunu YAPMAZ (spec bolum 5).
 
-Isaret dosyasi var/c1_temizle.done YALNIZ yukaridaki dosya adimlari hatasiz bitince yazilir."""
+Isaret dosyasi var/c1_temizle_v2.done YALNIZ yukaridaki dosya adimlari hatasiz bitince yazilir."""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +29,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-ISARET = "c1_temizle.done"
+ISARET = "c1_temizle_v2.done"          # v1 (c1_temizle.done) yalniz ortak_filtre/eski_kol kapsiyordu; v2 setup_filter dahil tum models/** (yeniden calisir)
 KOL_RE = re.compile(r"(?<![A-Za-z0-9])C1(?![A-Za-z0-9])")
 KALABALIK = "etiket_kalabalik"
 SAGLIK_FP = "ct_kadro|bayat"
@@ -74,6 +74,16 @@ def ogrenme_paketleri(var: Path, ozet: dict) -> None:
             for p in list(eski.iterdir()):
                 if KOL_RE.search(p.name):
                     _sil(p, ozet, "paket")
+
+
+def model_paketleri(var: Path, ozet: dict) -> None:
+    """`var/**/models/**` altinda adi C1 kolu/ailesi tasiyan her paket dosyasi (setup_filter/C1@1h.json[.prev], ortak_filtre/aile_C1*.json, eski_kol)."""
+    for klasor in var.rglob("models"):
+        if not klasor.is_dir() or klasor.is_symlink():
+            continue
+        for p in list(klasor.rglob("*")):
+            if p.is_file() and KOL_RE.search(p.name.replace("aile_", "")):
+                _sil(p, ozet, "paket")
 
 
 def paper_models(var: Path, ozet: dict) -> None:
@@ -176,7 +186,7 @@ def defter_raporu(yol: Path) -> dict | None:
 
 def calistir(var: Path, *, saglik_durum: Path | None = None, defter: Path | None = None, isaret_yaz: bool = True) -> dict:
     ozet: dict = {}
-    for ad, fn in (("ct", ct_dizini), ("paketler", ogrenme_paketleri), ("paper_models", paper_models), ("arms_off", arms_off),
+    for ad, fn in (("ct", ct_dizini), ("paketler", ogrenme_paketleri), ("model_paketleri", model_paketleri), ("paper_models", paper_models), ("arms_off", arms_off),
                    ("etiket", etiket_durumu)):
         fn(var, ozet)
     try:

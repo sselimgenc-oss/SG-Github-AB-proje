@@ -272,7 +272,8 @@ def aile_adaylari(adaylar) -> dict[str, list]:
     return by
 
 
-def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yolu: str | os.PathLike | None = None) -> dict:
+def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yolu: str | os.PathLike | None = None,
+               kollar=None) -> dict:
     """AILE basina (kollar toplami >= MIN_ISLEM kapanmis islem) yeniden egitim kurali: son egitimden bu yana >= YENIDEN_ISLEM yeni
     islem ya da >= YENIDEN_GUN gun. Holdout satirlari `adaylar_defterden`de dusuruldu; `egit` kilit aralikla ayrica dusurur.
     Donus: {"durum", "aileler": {aile: {n, kollar:{arm:n}, durum, model_hash?}}, "eski_tasinan"}."""
@@ -291,6 +292,9 @@ def egit_hepsi(adaylar, klasor: str | os.PathLike, simdi: datetime, *, durum_yol
     durum = {k: v for k, v in durum.items() if str(k).startswith(AILE_ON_EK)}   # eski kol anahtarlari atilir
     eski = _eski_kol_paketlerini_ayir(Path(klasor))
     kilit = [HOLDOUT]
+    if kollar is not None:                                    # yapilandirmadaki kollar disindaki (kaldirilmis) kol aile/paket uretmez
+        izinli = set(kollar)
+        adaylar = [a for a in adaylar if a.kurulum in izinli]
     by = aile_adaylari(adaylar)
     rapor: dict[str, dict] = {}
     for aile in sorted(by):

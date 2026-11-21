@@ -246,7 +246,14 @@ def risk_limiti(reason: Any) -> str:
     return "diğer" if r else "?"
 
 
-def skip_detay(d: Mapping) -> tuple[str, str | None]:
+def _kol_taniyor(kazanan: str, kollar: Sequence[str] | None) -> bool:
+    """Kazanan, yapilandirilmis kollardan biri (ya da kurulum adi) mi? `kollar` None => filtre yok. Kaldirilan kollar raporda gorunmez."""
+    if kollar is None:
+        return True
+    return kazanan in kollar or any(k.partition("@")[0] == kazanan for k in kollar)
+
+
+def skip_detay(d: Mapping, kollar: Sequence[str] | None = None) -> tuple[str, str | None]:
     """(skip_reason, ayrinti): risk_denied -> risk limiti adi; max_positions -> arm_max_positions|max_positions; cluster_cap -> kume;
     arm_conflict -> kazanan kol (veto_reason `gate:arm_conflict:<kazanan>`); digerleri ayrintisiz."""
     sk = d.get("skip") or "?"
@@ -258,11 +265,14 @@ def skip_detay(d: Mapping) -> tuple[str, str | None]:
     if sk == "cluster_cap":
         return sk, veto.split(":", 2)[2] if veto.count(":") >= 2 else "cluster"
     if sk == "arm_conflict":
-        return sk, (veto.split(":", 2)[2] if veto.count(":") >= 2 else "kazanan kayıtlı değil")
+        if veto.count(":") >= 2:
+            kazanan = veto.split(":", 2)[2]
+            return sk, (kazanan if _kol_taniyor(kazanan, kollar) else None)     # kaldirilan kol: sayi kalir, ad gosterilmez
+        return sk, "kazanan kayıtlı değil"
     return sk, None
 
 
-def _pencere(arm: str, kararlar: Sequence[Mapping]) -> dict:
+def _pencere(arm: str, kararlar: Sequence[Mapping], kollar: Sequence[str] | None = None) -> dict:
     skip: Counter = Counter()
     det: dict[str, Counter] = defaultdict(Counter)
     aday = girdi = 0
@@ -273,7 +283,7 @@ def _pencere(arm: str, kararlar: Sequence[Mapping]) -> dict:
         if d["girdi"]:
             girdi += 1
             continue
-        sk, ay = skip_detay(d)
+        sk, ay = skip_detay(d, kollar)
         skip[sk] += 1
         if ay:
             det[sk][ay] += 1
@@ -292,7 +302,7 @@ def ml8(kollar: Sequence[str], tum: Sequence[Mapping], kararlar: Sequence[Mappin
             skip[d["arm"]][d["skip"] or "?"] += 1
     kes = kesit or _son(d["ts"] for d in kararlar)
     son = [d for d in kararlar if kes and d["ts"] >= kes - timedelta(hours=PENCERE_SAAT)]
-    kol_detay = [{"arm": a, "tum": _pencere(a, kararlar), "son": _pencere(a, son)} for a in kollar]
+    kol_detay = [{"arm": a, "tum": _pencere(a, kararlar, kollar), "son": _pencere(a, son, kollar)} for a in kollar]
     return {"veri": _son(d["ts"] for d in kararlar), "toplam": len(kollar), "acan": acan, "acmayan": acmayan, "kes": kes,
             "kol_detay": kol_detay, "aday_yok_tum": [r["arm"] for r in kol_detay if r["tum"]["aday"] == 0],
             "aday_yok_son": [r["arm"] for r in kol_detay if r["son"]["aday"] == 0 and r["tum"]["aday"] > 0],

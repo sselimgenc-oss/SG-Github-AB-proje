@@ -286,3 +286,40 @@ def test_gece_birimi_paper_models_csv_aile_satiri(tmp_path, monkeypatch):
     assert "durum=ok" in m1 and "n=11" in m1 and "M1@15m=4" in m1 and "aile=M1" in m1
     assert "durum=az_islem" in satirlar["ortak_filtre_aile_T1_2026-12-01"]
     assert (tmp_path / "models" / "ortak_filtre" / "aile_M1.json").exists()
+
+
+def test_kaldirilan_kol_icin_aile_paketi_uretilmez(tmp_path):
+    adaylar = _adaylar("C1@1h", 12) + _adaylar("T1@1h", 12)
+    r = OF.egit_hepsi(adaylar, tmp_path, NOW, kollar=["T1@1h", "T1@4h"])
+    assert list(r["aileler"]) == ["T1"]
+    assert sorted(p.name for p in tmp_path.glob("*.json") if p.name.startswith("aile_")) == ["aile_T1.json"]
+    assert "C1" not in json.dumps(r)
+    r2 = OF.egit_hepsi(adaylar, tmp_path / "b", NOW)                     # kollar verilmezse eski davranis
+    assert sorted(r2["aileler"]) == ["C1", "T1"]
+
+
+def test_ml_retrain_config_kollari_okunur(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ml_retrain_run_t", ROOT / "scripts" / "ml_retrain_run.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps({"arms": ["T1@1h", "M1@4h"]}))
+    assert mod._config_arms(p) == ["T1@1h", "M1@4h"]
+    assert mod._config_arms(tmp_path / "yok.json") is None
+
+
+def test_ml_retrain_kaldirilan_kol_paketi_yazilmaz(tmp_path, monkeypatch):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("ml_retrain_run_t2", ROOT / "scripts" / "ml_retrain_run.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    seen = {}
+    monkeypatch.setattr(mod.L, "open_ledger", lambda *a, **k: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(mod.T, "collect_rows", lambda *a, **k: [{"arm_id": "C1@1h"}, {"arm_id": "T1@1h"}])
+    monkeypatch.setattr(mod.T, "train_all", lambda rows, **k: (seen.setdefault("rows", rows) and {}, {"lock_dropped": 0}))
+    cfgp = tmp_path / "c.json"
+    cfgp.write_text(json.dumps({"arms": ["T1@1h"]}))
+    mod.main(["--once", "--ledger", str(tmp_path / "x.sqlite"), "--models-dir", str(tmp_path / "sf"), "--no-m1",
+              "--paper-models-csv", str(tmp_path / "p.csv"), "--paper-config", str(cfgp)], now_fn=lambda: NOW)
+    assert seen["rows"] == [{"arm_id": "T1@1h"}]

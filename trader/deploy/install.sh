@@ -513,7 +513,7 @@ if [ -d "$TRADER_DIR/var/twin" ]; then
   mv "$TRADER_DIR/var/twin" "$TWIN_ARCH" && echo "Ikiz verisi arsive tasindi (silinmedi): $TWIN_ARCH"
 fi
 # CT/C1 ayriligi (docs/motor/ct-ayrilik-spec.md): CT kadro okuyucu kaldirildi. Birimler durdurulur, devre disi birakilir, dosyalari silinir
-# (tekrar calistirmada no-op). C1 verisi tek seferlik temizlenir (isaret dosyasi var/c1_temizle.done; defter dosyasina DOKUNULMAZ).
+# (tekrar calistirmada no-op). C1 verisi tek seferlik temizlenir (isaret dosyasi var/c1_temizle_v2.done; defter dosyasina DOKUNULMAZ).
 for u in trader-ct-kadro.timer trader-ct-kadro.service; do
   systemctl disable --now "$u" >/dev/null 2>&1 || true
 done
@@ -556,7 +556,7 @@ if [ ! -e "$TRADER_DIR/var/c1_goc.done" ] && [ -f "$TRADER_DIR/var/learner/state
     fi
   fi
 fi
-if [ ! -e "$TRADER_DIR/var/c1_temizle.done" ]; then
+if [ ! -e "$TRADER_DIR/var/c1_temizle_v2.done" ]; then
   safe_tree_path "$TRADER_DIR/var"
   if as_trader /usr/bin/python3 -I "$REL_DIR/scripts/c1_temizle.py" --var-dir "$TRADER_DIR/var" --saglik-durum /var/lib/trader-health/state.json; then
     echo "C1 temizligi tamamlandi"
