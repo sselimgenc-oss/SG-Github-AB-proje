@@ -620,6 +620,64 @@ def _write_row(log, kind, a, now, **fields):
     return row, None
 
 
+def _testnet_wallet_balance() -> float:
+    """Testnet hesabinin USDT cuzdan bakiyesi (totalWalletBalance; motorun acilista okudugu alan). Hata: ValueError."""
+    import math
+    import os
+    import time
+
+    from .config import load_keys
+    from .errors import ConfigError
+    from .exchange.binance_rest import ExchangeError, SignedRestClient
+    try:
+        key, secret = load_keys(os.environ)
+        rest = SignedRestClient(env="testnet", api_key=key, api_secret=secret,
+                                now_ms=lambda: int(time.time() * 1000), sleep=time.sleep)
+        rest.sync_time()
+        acct = rest.account()
+    except (ConfigError, ExchangeError, OSError) as e:
+        raise ValueError(f"testnet bakiyesi okunamadi: {type(e).__name__}") from e
+    raw = acct.get("totalWalletBalance") if isinstance(acct, dict) else None
+    try:
+        bal = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError("testnet bakiyesi okunamadi: totalWalletBalance gecersiz") from None
+    if not math.isfinite(bal) or bal <= 0:
+        raise ValueError("testnet bakiyesi pozitif sonlu degil")
+    return bal
+
+
+def _cmd_capital_from_exchange(a, *, fetch=None) -> int:
+    """YALNIZ testnet: gunluk bossa `initial` satirini testnet borsasindan okunan bakiyeyle yazar (kurulum adimi).
+    Dolu gunluk: dokunmaz (cikis 0). Okuma hatasi: hicbir sey yazmaz, cikis != 0."""
+    if getattr(a, "env", None) != "testnet":
+        print("hata: init-from-exchange yalniz --env testnet (paper/live reddedildi)", file=sys.stderr)
+        return EXIT_FAZ_B
+    cfg, log, rc = _ladder_ctx(a, write=True)
+    if rc is not None:
+        return rc
+    if cfg.mode != "testnet":
+        print("hata: init-from-exchange yalniz testnet kipinde", file=sys.stderr)
+        return EXIT_FAZ_B
+    if _by_of(a) is None:
+        return EXIT_FAZ_B
+    st, rows, rc = _state_or_exit(log, need=False)
+    if rc is not None:
+        return rc
+    if rows:
+        print("gunluk dolu: dokunulmadi (init-from-exchange yalniz bos gunluge yazar)")
+        return EXIT_OK
+    try:
+        bal = (fetch or _testnet_wallet_balance)()
+    except ValueError as e:
+        print(f"hata: {e}; hicbir sey yazilmadi", file=sys.stderr)
+        return EXIT_FAZ_B
+    a.amount = bal
+    a.note = "testnet bakiye (borsadan okundu, totalWalletBalance)"
+    a.cap_cmd = "init"
+    return _cmd_capital(a)
+
+
 def _cmd_capital(a) -> int:
     import math
 
@@ -627,6 +685,8 @@ def _cmd_capital(a) -> int:
 
     from .clock import SystemClock
     op = a.cap_cmd
+    if op == "init-from-exchange":
+        return _cmd_capital_from_exchange(a)
     write = op != "list"
     cfg, log, rc = _ladder_ctx(a, write=write)
     if rc is not None:
@@ -903,6 +963,11 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "withdraw":
             q.add_argument("--equity", type=float, default=None)
         q.set_defaults(fn=_cmd_capital)
+    q = csub.add_parser("init-from-exchange")          # yalniz testnet: bakiye borsadan okunur (docs/sunucu-kurulum.md)
+    bot_args(q)
+    env_arg(q)
+    q.add_argument("--by", default=None, required=True)
+    q.set_defaults(fn=_cmd_capital, note="")
     p = sub.add_parser("ladder")
     lsub = p.add_subparsers(dest="lad_cmd", required=True)
     for name in ("status", "resume", "floor-restart", "step-up"):

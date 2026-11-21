@@ -672,6 +672,19 @@ if has_value /etc/trader-testnet.env BINANCE_API_KEY && has_value /etc/trader-te
   # saglik denetcisi golge motoru da izler (stopsuz pozisyon / borsa erisimi); kullanici degeri korunur
   grep -q '^HEALTH_SHADOW_VAR_DIR=' /etc/trader-health.env || echo "HEALTH_SHADOW_VAR_DIR=" >> /etc/trader-health.env
   sed -i "s#^HEALTH_SHADOW_VAR_DIR=\$#HEALTH_SHADOW_VAR_DIR=${TRADER_DIR}/var-testnet#" /etc/trader-health.env
+  # testnet sermaye kaydi (bos ise, borsadan okunan testnet bakiyesiyle; var olana dokunmaz). Hata kurulumu durdurmaz.
+  TN_WAS_ACTIVE=0; systemctl is-active --quiet trader-engine-testnet.service 2>/dev/null && TN_WAS_ACTIVE=1
+  # shellcheck disable=SC1091
+  if TN_OUT="$( set -a; . /etc/trader-testnet.env; set +a; cd "$TRADER_DIR" && PYTHONPATH="$TRADER_DIR/src" runuser -u "$TRADER_USER" -m -- python3 -m trader_engine capital init-from-exchange --bot learner --env testnet --by kurulum.testnet --config-dir config 2>&1 )"; then
+    echo "$TN_OUT" | sed 's/^/  /'
+    if [ "$TN_WAS_ACTIVE" -eq 1 ] && printf '%s' "$TN_OUT" | grep -q '^yazildi:'; then
+      systemctl restart trader-engine-testnet.service >/dev/null 2>&1 && echo "Yeniden baslatildi: trader-engine-testnet.service (sermaye kaydi alindi)" || echo "UYARI: trader-engine-testnet.service yeniden baslatilamadi."
+    fi
+  else
+    echo "$TN_OUT" | sed 's/^/  /'
+    TESTNET_CAPITAL_WARN="testnet sermaye kaydi yazilamadi (borsa bakiyesi okunamadi): elle: python3 -m trader_engine capital init-from-exchange --bot learner --env testnet --by kurulum.testnet"
+    echo "UYARI: $TESTNET_CAPITAL_WARN"
+  fi
   enable_now trader-engine-testnet.service
   enable_now trader-engine-env-retry@testnet.timer   # acilis kapisi (cikis 7) yeniden deneme: testnet birimi icin (DD-9 §2.3)
 else MISSING+=("/etc/trader-testnet.env  -> BINANCE_API_KEY ve BINANCE_API_SECRET (Binance Futures TESTNET anahtari; testnet golge motoru, ikisi de dolu olmadan acilmaz)"); fi
@@ -711,6 +724,9 @@ fi
 if [ -n "$LIVE_WARN" ]; then echo "UYARI: $LIVE_WARN"; fi
 if [ "$NO_LIVE" -eq 1 ]; then echo "UYARI (--no-live): /etc/trader-telegram.env, /etc/trader-health.env (LIVE_BOTS, LIVE_VAR_DIR, LIVE_PAUSE_FILE, KILL_FILE, ENGINE_STATUS_PATH, LEDGER_PATH, LADDER_BOTS) ve /etc/trader-lesson.env (LEDGER_PATH) hala CANLI yollari tasiyor olabilir; elle kagit degerlerine alin."; fi
 if [ "$LIVE" -eq 1 ]; then echo "CANLI birim kuruldu ve etkin ama BASLATILMADI (systemctl start trader-engine-live yalniz canliya gecis gunu listesiyle)."; fi
+if [ -n "${TESTNET_CAPITAL_WARN:-}" ]; then
+  echo "YAPILACAKLAR (testnet sermaye kaydi):"; echo "  - $TESTNET_CAPITAL_WARN"
+fi
 if [ "${#MISSING[@]}" -gt 0 ]; then
   echo "YAPILACAKLAR (anahtarlar doldurulmadan bu zamanlayicilar KAPALI birakildi):"
   for m in "${MISSING[@]}"; do echo "  - $m"; done
